@@ -11191,6 +11191,10 @@ at plan-build time. This is the umbrella gate for the streaming-queries
 feature; additional capabilities may be gated by their own settings.
 )", EXPERIMENTAL, \
         {"26.6", false, false, "New setting"}) \
+    DECLARE(Bool, report_streaming_cursor, false, R"(
+This is an internal setting that should not be used directly. The initiator of an incremental refresh of a refreshable materialized view from a `Distributed` table sets it for the shards: a shard sends the cursor that its bounded streaming read (`STREAM BOUNDED`) advanced to back to the initiator, in a `StreamingCursor` packet before `EndOfStream`.
+)", 0, \
+        {"26.11", false, false, "New internal setting."}) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries

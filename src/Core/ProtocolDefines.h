@@ -399,6 +399,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// `INSERT`) after it has received all the data. Older initiators do not expect it.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT = 54496;
 
+/// The server sends the `StreamingCursor` packet before `EndOfStream` of a secondary query with `report_streaming_cursor`.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_STREAMING_CURSOR = 54498;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -407,5 +410,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54497;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54498;
 }

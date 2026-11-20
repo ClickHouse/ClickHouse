@@ -318,6 +318,7 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
+            case Protocol::Server::StreamingCursor:
             case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::MergeTreeAllRangesAnnouncement:
             case Protocol::Server::MergeTreeReadTaskRequest:
@@ -438,6 +439,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
+        case Protocol::Server::StreamingCursor:
         case Protocol::Server::TimezoneUpdate:
         case Protocol::Server::MergeTreeAllRangesAnnouncement:
         case Protocol::Server::MergeTreeReadTaskRequest:

@@ -1,6 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Core/Streaming/CursorTree.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
@@ -62,6 +63,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool report_streaming_cursor;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
@@ -76,6 +78,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SYSTEM_ERROR;
@@ -1039,9 +1042,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             packet.exception->rethrow();
             break;
 
+        case Protocol::Server::StreamingCursor:
+            processStreamingCursor(packet.streaming_cursor);
+            break;
+
         case Protocol::Server::EndOfStream:
             if (!connections->hasActiveConnections())
             {
+                /// Fail rather than let the incremental refresh persist a cursor without the part of this shard.
+                if (context->getSettingsRef()[Setting::report_streaming_cursor] && !received_streaming_cursor)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Shard {} did not send the cursor of its streaming read, which an incremental refresh needs",
+                        shard_scope.shard_num);
                 finished = true;
                 finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
                 /// TODO: Replace with Type::Finished
@@ -1134,6 +1146,17 @@ void RemoteQueryExecutor::processProfileEventsPacket(Block block)
     if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
         if (!profile_queue->emplace(std::move(block)))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+}
+
+void RemoteQueryExecutor::processStreamingCursor(const CursorTreeNodePtr & cursor)
+{
+    received_streaming_cursor = true;
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor)
+        return;
+
+    /// The cursor of a `Distributed` table is a map: shard number -> the cursor of the table on the shard.
+    StreamingCursor::createChild(std::move(streaming_cursor), {toString(shard_scope.shard_num)})->merge(cursor);
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()
@@ -1355,6 +1378,10 @@ void RemoteQueryExecutor::finishUnlocked()
             case Protocol::Server::Progress:
                 if (progress_callback)
                     progress_callback(packet.progress);
+                break;
+
+            case Protocol::Server::StreamingCursor:
+                processStreamingCursor(packet.streaming_cursor);
                 break;
 
             default:

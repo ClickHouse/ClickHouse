@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <optional>
+#include <ranges>
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -47,6 +48,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
@@ -5290,6 +5292,36 @@ void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
 std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
 {
     return streaming_cursor;
+}
+
+void StreamingCursor::merge(const CursorTreeNodePtr & cursor)
+{
+    if (parent)
+    {
+        auto wrapped = cursor;
+        for (const auto & key : path | std::views::reverse)
+        {
+            auto node = std::make_shared<CursorTreeNode>();
+            node->setSubtree(key, std::move(wrapped));
+            wrapped = std::move(node);
+        }
+        parent->merge(wrapped);
+        return;
+    }
+
+    auto canonical = buildCursorTree(cursorTreeToMap(cursor));
+    std::lock_guard lock(mutex);
+    if (!tree)
+        tree = std::make_shared<CursorTreeNode>();
+    mergeCursors(tree, canonical);
+}
+
+std::shared_ptr<StreamingCursor> StreamingCursor::createChild(std::shared_ptr<StreamingCursor> parent, Strings path)
+{
+    auto child = std::make_shared<StreamingCursor>();
+    child->parent = std::move(parent);
+    child->path = std::move(path);
+    return child;
 }
 
 

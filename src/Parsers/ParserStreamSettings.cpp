@@ -1,5 +1,7 @@
 #include <Core/Field.h>
 
+#include <limits>
+
 #include <Common/IntervalKind.h>
 
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -63,11 +65,25 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
         }
         else
         {
+            /// A value may be negative: a cursor has e.g. `block_offset` -1 for "no row of the block read yet",
+            /// and a formatted cursor (in the query for a shard of a `Distributed` table) must be parsed back.
+            ParserToken minus(TokenType::Minus);
+            const bool negative = minus.ignore(pos, expected);
+
             ASTPtr val_ast;
             if (!value_p.parse(pos, val_ast, expected))
                 return false;
 
-            flat.push_back(Tuple{new_path, val_ast->as<ASTLiteral>()->value});
+            Field value = val_ast->as<ASTLiteral>()->value;
+            if (negative)
+            {
+                const UInt64 magnitude = value.safeGet<UInt64>();
+                if (magnitude > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    return false;
+                value = -static_cast<Int64>(magnitude);
+            }
+
+            flat.push_back(Tuple{new_path, value});
         }
     }
 

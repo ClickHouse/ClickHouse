@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Streaming/CursorTree.h>
+
 #include <Common/Throttler.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -43,6 +45,9 @@ struct Packet
     std::optional<ParallelReadRequest> request;
 
     std::string server_timezone;
+
+    /// The `StreamingCursor` packet.
+    CursorTreeNodePtr streaming_cursor;
 };
 
 

@@ -12402,6 +12402,21 @@ size_t MergeTreeData::getTotalMarksCount() const
     return total_marks;
 }
 
+void MergeTreeData::checkStreamingCursorForIncrementalRefresh() const
+{
+    /// The cursor is expressed in `_block_number`/`_block_offset`, stable across merges only when these are persisted.
+    if (merging_params.mode != MergingParams::Ordinary)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Incremental refresh source table {} uses a merging engine that rewrites historical rows on merge; only plain MergeTree is supported",
+            getStorageID().getNameForLogs());
+
+    const auto settings = getSettings();
+    if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Incremental refresh source table {} must set enable_block_number_column = 1 and enable_block_offset_column = 1",
+            getStorageID().getNameForLogs());
+}
+
 bool MergeTreeData::supportsLightweightDelete() const
 {
     auto lock = readLockParts();

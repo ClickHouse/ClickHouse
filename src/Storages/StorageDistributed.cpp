@@ -1,5 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -1716,7 +1718,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
-            if (joined_tables.tablesCount() == 1)
+            /// A streaming read of a `Distributed` table needs the cursor of each shard extracted from its cursor,
+            /// which the regular execution of the `SELECT` (`ClusterProxy::executeQuery`) does.
+            const auto * src_table_expression = getTableExpression(*select_query, 0);
+            const bool is_stream = src_table_expression && src_table_expression->stream_settings;
+
+            if (joined_tables.tablesCount() == 1 && !is_stream)
             {
                 src_storage = joined_tables.getLeftTableStorage();
                 src_is_table_function = joined_tables.isLeftTableFunction();
@@ -2935,6 +2942,17 @@ When querying a `Distributed` table, `SELECT` queries are sent to all shards and
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/reference/statements/in#distributed-subqueries) documentation.
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM distributed_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) sends the query with `STREAM` to every shard. The cursor of a `Distributed` table is a map from the shard number to the cursor of the table on that shard, and can be reconstructed from the `_shard_num` virtual column and the cursor virtual columns of the underlying table:
+
+```sql
+SELECT _shard_num, _partition_id, _block_number, _block_offset, * FROM distributed_table
+STREAM CURSOR {'1': {'all': {'block_number': 5, 'block_offset': 99}}, '2': {'all': {'block_number': 7, 'block_offset': 0}}}
+```
+
+A shard without an entry in the cursor is read from the beginning. The cursor of a `ReplicatedMergeTree` table does not depend on the replica, so the read can be resumed on any replica of a shard. A `Distributed` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): every shard sends the cursor of its bounded read back to the initiator, which keeps them under the shard numbers. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 

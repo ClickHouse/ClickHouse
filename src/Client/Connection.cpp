@@ -20,6 +20,7 @@
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
@@ -1657,6 +1658,10 @@ Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
+                return res;
+
+            case Protocol::Server::StreamingCursor:
+                res.streaming_cursor = buildCursorTree(readFieldBinary(*in).safeGet<Map>());
                 return res;
 
             case Protocol::Server::TimezoneUpdate:
