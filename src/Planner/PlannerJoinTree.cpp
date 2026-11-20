@@ -1760,7 +1760,6 @@ bool allowParallelReplicasForJoinTree(
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
             && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
             && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
-            && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
             && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
     }
 

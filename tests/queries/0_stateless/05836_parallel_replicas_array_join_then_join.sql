@@ -41,6 +41,11 @@ SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT count() FROM mt ARRAY JOIN [1] AS a CROSS JOIN mt2);
 SELECT count(), sum(a), sum(mt2.y) FROM mt ARRAY JOIN [1] AS a CROSS JOIN mt2;
 
+SELECT 'comma join: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT count() FROM mt, mt2 ARRAY JOIN [1] AS a);
+SELECT count(), sum(a), sum(mt2.y) FROM mt, mt2 ARRAY JOIN [1] AS a;
+
 -- A `MergeTree` table on the right is read with parallel replicas, as without the `ARRAY JOIN`.
 SELECT 'right join to MergeTree: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
