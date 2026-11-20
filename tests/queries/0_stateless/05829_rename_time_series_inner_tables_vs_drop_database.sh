@@ -4,6 +4,9 @@
 # Rename-first ordering: a DROP DATABASE that starts while RENAME TABLE of a TimeSeries table is between two
 # inner-table renames must wait for the whole RENAME and must not interrupt it halfway.
 
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
