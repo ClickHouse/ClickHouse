@@ -258,8 +258,8 @@ public:
             static constexpr size_t max_k = 100000;
 
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
-            std::vector<int> directions;            /// per-column ORDER BY directions
-            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            VectorWithMemoryTracking<int> directions;       /// per-column ORDER BY directions
+            VectorWithMemoryTracking<int> nulls_directions; /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
@@ -1193,6 +1193,22 @@ private:
         Arena & scratch_pool,
         AdaptiveAggregationProducer & adaptive,
         bool bypass_local_probe,
+        const StageMisses & stage_misses) const;
+
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
+    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
+    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
+    template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+    AdaptiveLocalProbes collectArgumentMisses(
+        LocalMethod & local_method,
+        State & local_find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe,
+        AggregateDataPtr * places_data,
+        const EmplaceNullKey & emplace_null_key,
         const StageMisses & stage_misses) const;
 
     /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects

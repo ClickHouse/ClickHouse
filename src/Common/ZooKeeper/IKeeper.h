@@ -712,7 +712,7 @@ struct ReconfigRequest : virtual Request
     String new_members;
     int32_t version{};
 
-    [[nodiscard]] String getPath() const final { return keeper_config_path; }
+    [[nodiscard]] String getPath() const final { return String(keeper_config_path); }
 
     [[nodiscard]] size_t bytesSize() const final
     {
