@@ -44,7 +44,6 @@ void addPartitionColumnsToChunk(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context);
 
-/// Appends `columns` with their values from `path` to the pipeline, for the `DEFAULT` expressions that read them.
 void addPartitionColumnsForDefaults(
     QueryPipelineBuilder & builder,
     const NamesAndTypesList & columns,
