@@ -810,7 +810,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
     /// Iceberg credentials are vended by the Iceberg REST catalog.
     if (table_metadata.getTableFormat() == DataLakeTableFormat::ICEBERG)
     {
-        return [this, table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
+        /// `self` keeps catalog alive while S3 client holds this callback.
+        return [this, self = shared_from_this(), table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
         {
             /// Resolved per call, because refreshing the token replaces `iceberg_rest_catalog`.
             return requestWithRetry([&](bool force_refresh) -> std::shared_ptr<IStorageCredentials>
@@ -847,7 +848,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigur
 
 ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
 {
-    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 

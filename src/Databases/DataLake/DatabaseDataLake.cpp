@@ -1512,7 +1512,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
             /// because this table is actually stateless like a table function.
             /* is_table_function */true,
             getFormatSettings(context_copy),
-            getCatalog());
+            catalog);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1540,7 +1540,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
-        getCatalog(),
+        catalog,
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
         distributed_processing,

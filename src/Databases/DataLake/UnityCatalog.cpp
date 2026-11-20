@@ -594,7 +594,8 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurat
 
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
 {
-    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
