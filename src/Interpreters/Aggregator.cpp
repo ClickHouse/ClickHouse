@@ -5713,6 +5713,10 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
         mergeAndDestroyRowOrDefer(dst, src, arena, deferred);
         src = nullptr;
     });
+
+    /// The merged cells are null by now, so this destroys the states of the keys missing from `table_dst`.
+    if (!all_aggregates_has_trivial_destructor)
+        destroyImpl<Method>(table_src);
     table_src.clearAndShrink();
 }
 
