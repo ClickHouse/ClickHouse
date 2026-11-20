@@ -24,10 +24,10 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <unordered_map>
 
 namespace DB
 {
@@ -51,7 +51,7 @@ namespace
 {
 
 using Node = ActionsDAG::Node;
-using DirectKeyColumns = std::unordered_map<String, DataTypePtr>;
+using DirectKeyColumns = UnorderedMapWithMemoryTracking<String, DataTypePtr>;
 
 const Node * unwrapAlias(const Node * node)
 {
@@ -422,7 +422,7 @@ bool optimizePrimaryKeyFilterElimination(
         || proof_analysis->sampling.use_sampling || !proof_analysis->split_parts.layers.empty())
         return false;
 
-    std::unordered_map<const IMergeTreeDataPart *, const RangesInDataPart *> proofs_by_part;
+    UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, const RangesInDataPart *> proofs_by_part;
     for (const auto & part : proof_analysis->parts_with_ranges)
         proofs_by_part.emplace(part.data_part.get(), &part);
 
