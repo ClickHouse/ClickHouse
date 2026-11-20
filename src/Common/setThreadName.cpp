@@ -43,7 +43,7 @@ constexpr std::string_view as_string_view(char const (&s)[N])
     return std::string_view(s, N-1); // N-1 does not include null terminator
 }
 
-const static std::unordered_map<std::string_view, ThreadName> str_to_thread_name = []{
+[[clang::no_destroy]] const static std::unordered_map<std::string_view, ThreadName> str_to_thread_name = []{
     std::unordered_map<std::string_view, ThreadName> result;
 
     #define THREAD_NAME_ACTION(NAME, STR) result[as_string_view(STR)] = ThreadName::NAME;
@@ -182,6 +182,12 @@ void setThreadName(ThreadName name)
 #if USE_JEMALLOC
     DB::Jemalloc::setValue("thread.prof.name", thread_name_str.data());
 #endif
+}
+
+const ThreadName & getThreadNameRef()
+{
+    getThreadName(); /// fills the cache
+    return thread_name;
 }
 
 ThreadName getThreadName()

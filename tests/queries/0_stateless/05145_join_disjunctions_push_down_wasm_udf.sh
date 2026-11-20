@@ -9,17 +9,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'SQL'
+${CLICKHOUSE_CLIENT} << 'SQL'
 DROP FUNCTION IF EXISTS wasm_disj_det;
 DROP FUNCTION IF EXISTS wasm_disj_nondet;
 DELETE FROM system.webassembly_modules WHERE name = 'identity_disj_test';
 SQL
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 \
+${CLICKHOUSE_CLIENT}\
     --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'identity_disj_test', code FROM input('code String') FORMAT RawBlob" \
     < "${CUR_DIR}/wasm/identity_int.wasm"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'SQL'
+${CLICKHOUSE_CLIENT} << 'SQL'
 SET webassembly_udf_max_fuel = 100000000;
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;

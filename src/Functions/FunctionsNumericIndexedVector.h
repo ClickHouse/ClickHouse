@@ -40,22 +40,22 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorBuildImpl>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * map_type = typeid_cast<const DataTypeMap *>(from_type);
@@ -67,7 +67,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
         const auto * map_column = is_column_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get())
@@ -112,27 +112,36 @@ struct NameNumericIndexedVectorBuild
 
 using FunctionNumericIndexedVectorBuild = FunctionNumericIndexedVectorBuildImpl<NameNumericIndexedVectorBuild>;
 
-template <template <class> class FuncImpl>
-class FunctionNumericIndexedVector final : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
+/// The pointwise functions differ only in the operation applied to each row, so they share one implementation.
+class FunctionNumericIndexedVectorPointwise : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorPointwise>
 {
 public:
-    /// The template parameters in BSINumericIndexedVector are randomly filled.
-    static constexpr auto name = FuncImpl<BSINumericIndexedVector<UInt8, Float64>>::name;
+    enum class Operation : UInt8
+    {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Equal,
+        NotEqual,
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+    };
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
+    explicit FunctionNumericIndexedVectorPointwise(Operation operation_) : operation(operation_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Binary ops between two NumericIndexedVector sketches or a sketch and a
     /// scalar. Both sketches must share inner index/value types, which the DSL
     /// doesn't model, so the signature is documentation-only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
                " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
@@ -141,7 +150,7 @@ public:
     /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative: `executeImpl` selects
     /// the implementation from the first argument and reinterprets the second state as the same
     /// specialization, so mismatched inner types must be rejected here.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -149,7 +158,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
@@ -182,9 +191,9 @@ public:
         return arguments[0];
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -195,7 +204,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         bool is_column_const[2];
         for (int i = 0; i < 2; ++i)
@@ -239,6 +248,27 @@ public:
     }
 
 private:
+    const Operation operation;
+
+    template <typename VectorImpl, typename Rhs>
+    void apply(const NumericIndexedVector<VectorImpl> & lhs, const Rhs & rhs, NumericIndexedVector<VectorImpl> & res) const
+    {
+        using Vector = NumericIndexedVector<VectorImpl>;
+        switch (operation)
+        {
+            case Operation::Add: Vector::pointwiseAdd(lhs, rhs, res); break;
+            case Operation::Subtract: Vector::pointwiseSubtract(lhs, rhs, res); break;
+            case Operation::Multiply: Vector::pointwiseMultiply(lhs, rhs, res); break;
+            case Operation::Divide: Vector::pointwiseDivide(lhs, rhs, res); break;
+            case Operation::Equal: Vector::pointwiseEqual(lhs, rhs, res); break;
+            case Operation::NotEqual: Vector::pointwiseNotEqual(lhs, rhs, res); break;
+            case Operation::Less: Vector::pointwiseLess(lhs, rhs, res); break;
+            case Operation::LessEqual: Vector::pointwiseLessEqual(lhs, rhs, res); break;
+            case Operation::Greater: Vector::pointwiseGreater(lhs, rhs, res); break;
+            case Operation::GreaterEqual: Vector::pointwiseGreaterEqual(lhs, rhs, res); break;
+        }
+    }
+
     template <typename VectorImpl>
     ColumnPtr executeBSIData(
         const ColumnAggregateFunction * first_column_ptr,
@@ -263,7 +293,7 @@ private:
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);
             res->init = true;
-            FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+            apply(lhs->vector, rhs->vector, res->vector);
         }
         return col_to;
     }
@@ -291,242 +321,56 @@ private:
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);
             res->init = true;
-            FuncImpl<VectorImpl>::apply(*lhs, value, *res);
+            apply(lhs->vector, value, res->vector);
         }
         return col_to;
     }
 };
 
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseAddImpl
+template <typename Name, FunctionNumericIndexedVectorPointwise::Operation op>
+class FunctionNumericIndexedVector final : public FunctionNumericIndexedVectorPointwise
 {
-    static constexpr auto name = "numericIndexedVectorPointwiseAdd";
+public:
+    static constexpr auto name = Name::name;
 
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseAdd(lhs.vector, rhs, res.vector);
-    }
+    FunctionNumericIndexedVector() : FunctionNumericIndexedVectorPointwise(op) {}
 
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseAdd(lhs.vector, rhs.vector, res.vector);
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
+
+    [[nodiscard]] String getName() const override { return name; }
 };
 
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseSubtractImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseSubtract";
+struct NameNumericIndexedVectorPointwiseAdd { static constexpr auto name = "numericIndexedVectorPointwiseAdd"; };
+struct NameNumericIndexedVectorPointwiseSubtract { static constexpr auto name = "numericIndexedVectorPointwiseSubtract"; };
+struct NameNumericIndexedVectorPointwiseMultiply { static constexpr auto name = "numericIndexedVectorPointwiseMultiply"; };
+struct NameNumericIndexedVectorPointwiseDivide { static constexpr auto name = "numericIndexedVectorPointwiseDivide"; };
+struct NameNumericIndexedVectorPointwiseEqual { static constexpr auto name = "numericIndexedVectorPointwiseEqual"; };
+struct NameNumericIndexedVectorPointwiseNotEqual { static constexpr auto name = "numericIndexedVectorPointwiseNotEqual"; };
+struct NameNumericIndexedVectorPointwiseLess { static constexpr auto name = "numericIndexedVectorPointwiseLess"; };
+struct NameNumericIndexedVectorPointwiseLessEqual { static constexpr auto name = "numericIndexedVectorPointwiseLessEqual"; };
+struct NameNumericIndexedVectorPointwiseGreater { static constexpr auto name = "numericIndexedVectorPointwiseGreater"; };
+struct NameNumericIndexedVectorPointwiseGreaterEqual { static constexpr auto name = "numericIndexedVectorPointwiseGreaterEqual"; };
 
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseSubtract(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseSubtract(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseMultiplyImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseMultiply";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseMultiply(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseMultiply(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseDivideImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseDivide";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseDivide(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseDivide(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseEqualImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseEqual";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseEqual(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseEqual(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseNotEqualImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseNotEqual";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseNotEqual(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseNotEqual(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseLessImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseLess";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseLess(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseLess(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseLessEqualImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseLessEqual";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseLessEqual(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseLessEqual(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseGreaterImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseGreater";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseGreater(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseGreater(lhs.vector, rhs.vector, res.vector);
-    }
-};
-template <typename VectorImpl>
-struct NumericIndexedVectorPointwiseGreaterEqualImpl
-{
-    static constexpr auto name = "numericIndexedVectorPointwiseGreaterEqual";
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const typename VectorImpl::ValueType & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseGreaterEqual(lhs.vector, rhs, res.vector);
-    }
-
-    static void apply(
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
-        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
-        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
-    {
-        NumericIndexedVector<VectorImpl>::pointwiseGreaterEqual(lhs.vector, rhs.vector, res.vector);
-    }
-};
-
-using FunctionNumericIndexedVectorPointwiseAdd = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseAddImpl>;
-using FunctionNumericIndexedVectorPointwiseSubtract = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseSubtractImpl>;
-using FunctionNumericIndexedVectorPointwiseMultiply = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMultiplyImpl>;
-using FunctionNumericIndexedVectorPointwiseDivide = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseDivideImpl>;
-using FunctionNumericIndexedVectorPointwiseEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseNotEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseNotEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseLess = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseLessImpl>;
-using FunctionNumericIndexedVectorPointwiseLessEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseLessEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseGreater = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterImpl>;
-using FunctionNumericIndexedVectorPointwiseGreaterEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterEqualImpl>;
+using FunctionNumericIndexedVectorPointwiseAdd
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseAdd, FunctionNumericIndexedVectorPointwise::Operation::Add>;
+using FunctionNumericIndexedVectorPointwiseSubtract
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseSubtract, FunctionNumericIndexedVectorPointwise::Operation::Subtract>;
+using FunctionNumericIndexedVectorPointwiseMultiply
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseMultiply, FunctionNumericIndexedVectorPointwise::Operation::Multiply>;
+using FunctionNumericIndexedVectorPointwiseDivide
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseDivide, FunctionNumericIndexedVectorPointwise::Operation::Divide>;
+using FunctionNumericIndexedVectorPointwiseEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseEqual, FunctionNumericIndexedVectorPointwise::Operation::Equal>;
+using FunctionNumericIndexedVectorPointwiseNotEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseNotEqual, FunctionNumericIndexedVectorPointwise::Operation::NotEqual>;
+using FunctionNumericIndexedVectorPointwiseLess
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseLess, FunctionNumericIndexedVectorPointwise::Operation::Less>;
+using FunctionNumericIndexedVectorPointwiseLessEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseLessEqual, FunctionNumericIndexedVectorPointwise::Operation::LessEqual>;
+using FunctionNumericIndexedVectorPointwiseGreater
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseGreater, FunctionNumericIndexedVectorPointwise::Operation::Greater>;
+using FunctionNumericIndexedVectorPointwiseGreaterEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseGreaterEqual, FunctionNumericIndexedVectorPointwise::Operation::GreaterEqual>;
 
 template <typename ToType, typename FuncImpl>
 class FunctionNumericIndexedVectorToNumberImpl
@@ -538,20 +382,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorToNumberImpl<ToType, FuncImpl>>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(agg_type && agg_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
@@ -563,9 +407,9 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -576,7 +420,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 
@@ -639,23 +483,23 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorGetValueImpl>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// The result type is the sketch's value type V (the second inner argument
     /// of `groupNumericIndexedVector`). The DSL captures it directly inside
     /// the matcher, so the signature is authoritative for this function.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
@@ -677,9 +521,9 @@ public:
             getName());
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -690,7 +534,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         bool is_column_const[2];
         for (int i = 0; i < 2; ++i)
@@ -742,20 +586,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorToStringImpl<FuncImpl>>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(agg_type && agg_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
@@ -767,9 +611,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -780,7 +624,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 
@@ -828,20 +672,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorToMapImpl>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(type && type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
@@ -858,9 +702,9 @@ public:
         return std::make_shared<DataTypeMap>(tmp);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -871,7 +715,7 @@ public:
     }
 
     template <typename VectorImpl>
-    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 

@@ -1,6 +1,10 @@
 #pragma once
 
-#include <rmm/cuda_stream_view.hpp>
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 
@@ -15,9 +19,9 @@ namespace DB::GPU
 /// libstdc++. RMM's resource objects are of libstdc++, so they stay on that side.
 struct GPUResources
 {
-    rmm::cuda_stream_view compute;
-    rmm::cuda_stream_view upload;
-    rmm::cuda_stream_view decompression;
+    cuda::stream_ref compute;
+    cuda::stream_ref upload;
+    cuda::stream_ref decompression;
 
     /// The device's default memory pool.
     cudaMemPool_t memory_pool = nullptr;

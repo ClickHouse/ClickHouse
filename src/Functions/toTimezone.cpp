@@ -35,9 +35,9 @@ public:
     explicit ExecutableFunctionToTimeZone(bool requires_constant_timezone_)
         : requires_constant_timezone(requires_constant_timezone_) {}
 
-    String getName() const override { return "toTimezone"; }
+    [[nodiscard]] String getName() const override { return "toTimezone"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() > 1 && requires_constant_timezone)
         {
