@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -2940,6 +2941,16 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                /// A `Field` carries no discriminator, so the set may store a `Variant` constant with
+                /// several alternatives in another alternative than the one `equals` compares.
+                const auto has_several_alternatives = [](const IDataType & type)
+                {
+                    const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
+                    return variant && variant->getVariants().size() > 1;
+                };
+                if (anyInTypeTree(*literal->getResultType(), has_several_alternatives))
                     all_constants_convert_losslessly = false;
             }
 
