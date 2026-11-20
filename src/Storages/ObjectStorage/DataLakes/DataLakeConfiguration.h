@@ -225,11 +225,6 @@ public:
         return getMetadata()->supportsParallelInsert();
     }
 
-    bool supportsWriteSessionCommit() const override
-    {
-        return getMetadata()->supportsWriteSessionCommit();
-    }
-
     void mutate(const MutationCommands & commands,
         ContextPtr context,
         StoragePtr storage_ptr,

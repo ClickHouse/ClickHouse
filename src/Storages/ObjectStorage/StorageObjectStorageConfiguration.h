@@ -216,7 +216,6 @@ public:
 
     [[nodiscard]] virtual bool supportsFileIterator() const { return false; }
     [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
-    [[nodiscard]] virtual bool supportsWriteSessionCommit() const { return false; }
     [[nodiscard]] virtual bool supportsWrites() const { return true; }
 
     [[nodiscard]] virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }

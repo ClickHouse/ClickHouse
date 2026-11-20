@@ -129,8 +129,6 @@ public:
 
     [[nodiscard]] virtual bool supportsWrites() const { return false; }
     [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
-    /// See `IStorage::supportsWriteSessionCommit`.
-    [[nodiscard]] virtual bool supportsWriteSessionCommit() const { return false; }
 
     /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.

@@ -572,9 +572,6 @@ public:
         ContextPtr context,
         bool async_insert);
 
-    /// Whether the insert is finished by `commit` of the session from `beginWrite`, not by its sinks.
-    virtual bool supportsWriteSessionCommit() const { return false; }
-
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.
       *

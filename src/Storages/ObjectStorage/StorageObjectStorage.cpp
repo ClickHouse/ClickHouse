@@ -535,14 +535,6 @@ bool StorageObjectStorage::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-bool StorageObjectStorage::supportsWriteSessionCommit() const
-{
-    /// Initialized like in `supportsParallelInsert`.
-    if (configuration->isDataLakeConfiguration())
-        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
-    return configuration->supportsWriteSessionCommit();
-}
-
 std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
@@ -1107,10 +1099,6 @@ StorageWriteSessionPtr StorageObjectStorage::createWriteSession(
     const ContextPtr & local_context)
 {
     if (!configuration->isDataLakeConfiguration())
-        return nullptr;
-
-    configuration->lazyInitializeIfNeeded(object_storage, local_context);
-    if (!configuration->supportsWriteSessionCommit())
         return nullptr;
 
     checkWriteIsPossible(*configuration);

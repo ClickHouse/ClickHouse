@@ -2199,9 +2199,10 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
-std::shared_ptr<IcebergWriteSession> IcebergMetadata::createWriteSession(
+StorageWriteSessionPtr IcebergMetadata::beginWrite(
     SharedHeader sample_block,
     const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
@@ -2220,30 +2221,6 @@ std::shared_ptr<IcebergWriteSession> IcebergMetadata::createWriteSession(
         object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
 }
 
-StorageWriteSessionPtr IcebergMetadata::beginWrite(
-    SharedHeader sample_block,
-    const StorageID & table_id,
-    ObjectStoragePtr /*object_storage*/,
-    StorageObjectStorageConfigurationPtr configuration,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog)
-{
-    return createWriteSession(sample_block, table_id, configuration, format_settings, context, catalog);
-}
-
-SinkToStoragePtr IcebergMetadata::write(
-    SharedHeader sample_block,
-    const StorageID & table_id,
-    ObjectStoragePtr /*object_storage*/,
-    StorageObjectStorageConfigurationPtr configuration,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog)
-{
-    /// A session of one sink, which commits it.
-    return createWriteSession(sample_block, table_id, configuration, format_settings, context, catalog)->createSinkWithCommit();
-}
 
 void IcebergMetadata::drop(ContextPtr context)
 {

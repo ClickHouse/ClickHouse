@@ -180,6 +180,7 @@ void MultipleFileWriter::release()
 
 void MultipleFileWriter::cancel()
 {
+    cancelled = true;
     if (output_format)
         output_format->cancel();
     if (buffer)

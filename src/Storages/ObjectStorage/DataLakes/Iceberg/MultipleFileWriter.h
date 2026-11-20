@@ -56,6 +56,8 @@ public:
     void finalize();
     void release();
     void cancel();
+    /// The files of a cancelled writer must not be committed.
+    [[nodiscard]] bool isCancelled() const { return cancelled; }
     void clearAllDataFiles() const;
 
     [[nodiscard]] UInt64 getResultBytes() const;
@@ -105,7 +107,7 @@ private:
     FileNamesGenerator & filename_generator;
     /// Owned by the sink and used only by `finalize`, which only the sink calls.
     DataFileUploads & data_file_uploads;
-    /// Shared: `clearAllDataFiles` may run after the sink is destroyed, see `IcebergPartitionFiles`.
+    /// Shared: `clearAllDataFiles` may run after the sink is destroyed, see `IcebergWriteSession`.
     std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
@@ -113,6 +115,7 @@ private:
     const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
+    bool cancelled = false;
 };
 
 #endif

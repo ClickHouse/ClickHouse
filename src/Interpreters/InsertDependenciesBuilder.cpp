@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Processors/ForkProcessor.h>
+#include <Processors/ISink.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/ShrinkColumnsTransform.h>
@@ -1135,46 +1136,60 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 namespace
 {
 
-/// The session of the target of a view. An error of its commit is an error of the view,
-/// so it is ignored with `materialized_views_ignore_errors`, like an error of its sinks.
-class ViewWriteSession final : public IStorageWriteSession
+/// Receives the output of all the streams of an `INSERT` and commits its write sessions when they have finished.
+class InsertCommitSink final : public ISink
 {
 public:
-    ViewWriteSession(StorageWriteSessionPtr session_, StorageIDMaybeEmpty view_id_, bool ignore_errors_)
-        : session(std::move(session_))
-        , view_id(std::move(view_id_))
-        , ignore_errors(ignore_errors_)
+    struct Session
+    {
+        StorageIDMaybeEmpty view_id;
+        StorageWriteSessionPtr session;
+        /// The session of the target of a view with `materialized_views_ignore_errors`:
+        /// an error of its commit is an error of the view, like an error of its sinks.
+        bool ignore_errors = false;
+    };
+
+    InsertCommitSink(SharedHeader header, std::vector<Session> sessions_)
+        : ISink(std::move(header))
+        , sessions(std::move(sessions_))
     {
     }
 
-    SinkToStoragePtr createSink() override { return session->createSink(); }
+    String getName() const override { return "InsertCommitSink"; }
 
-    void commit() override
+protected:
+    void consume(Chunk /*chunk*/) override {}
+
+    void onFinish() override
     {
-        if (!ignore_errors)
-        {
-            session->commit();
+        if (isCancelled())
             return;
-        }
 
-        try
+        for (const auto & [view_id, session, ignore_errors] : sessions)
         {
-            session->commit();
-        }
-        catch (...)
-        {
-            tryLogException(
-                addStorageToException(std::current_exception(), view_id),
-                getLogger("InsertDependenciesBuilder"),
-                "Cannot push to the storage. Error is ignored because the setting materialized_views_ignore_errors is enabled.",
-                LogsLevel::warning);
+            if (!ignore_errors)
+            {
+                session->commit();
+                continue;
+            }
+
+            try
+            {
+                session->commit();
+            }
+            catch (...)
+            {
+                tryLogException(
+                    addStorageToException(std::current_exception(), view_id),
+                    getLogger("InsertCommitSink"),
+                    "Cannot push to the storage. Error is ignored because the setting materialized_views_ignore_errors is enabled.",
+                    LogsLevel::warning);
+            }
         }
     }
 
 private:
-    const StorageWriteSessionPtr session;
-    const StorageIDMaybeEmpty view_id;
-    const bool ignore_errors;
+    std::vector<Session> sessions;
 };
 
 }
@@ -1198,9 +1213,6 @@ void InsertDependenciesBuilder::beginWriteSession(const StorageIDMaybeEmpty & vi
         throw;
     }
 
-    if (view_id != root_view)
-        session = std::make_shared<ViewWriteSession>(std::move(session), view_id, materialized_views_ignore_errors);
-
     write_sessions[view_id] = std::move(session);
     write_sessions_order.push_back(view_id);
 
@@ -1220,15 +1232,13 @@ void InsertDependenciesBuilder::beginWriteSessions()
         beginWriteSession(child_view_id);
 }
 
-std::vector<StorageWriteSessionPtr> InsertDependenciesBuilder::getWriteSessionsToCommit() const
+ProcessorPtr InsertDependenciesBuilder::createCommitSink(SharedHeader header) const
 {
-    std::vector<StorageWriteSessionPtr> sessions;
+    std::vector<InsertCommitSink::Session> sessions;
+    sessions.reserve(write_sessions_order.size());
     for (const auto & view_id : write_sessions_order)
-    {
-        if (storages.at(inner_tables.at(view_id))->supportsWriteSessionCommit())
-            sessions.push_back(write_sessions.at(view_id));
-    }
-    return sessions;
+        sessions.emplace_back(view_id, write_sessions.at(view_id), materialized_views_ignore_errors && view_id != root_view);
+    return std::make_shared<InsertCommitSink>(std::move(header), std::move(sessions));
 }
 
 namespace

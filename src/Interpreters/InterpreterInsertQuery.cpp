@@ -36,7 +36,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sinks/InsertCommitSink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -322,16 +321,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return res;
-}
-
-/// Receives the output of all the streams of the insert and commits its write sessions. nullptr if there is nothing to commit.
-static ProcessorPtr createInsertCommitSink(const InsertDependenciesBuilder & insert_dependencies, const VectorWithMemoryTracking<Chain> & sink_chains)
-{
-    auto sessions = insert_dependencies.getWriteSessionsToCommit();
-    if (sessions.empty())
-        return nullptr;
-
-    return std::make_shared<InsertCommitSink>(sink_chains.front().getOutputSharedHeader(), std::move(sessions));
 }
 
 static bool hasAggregateFunctions(const IAST * ast)
@@ -690,7 +679,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
 
     VectorWithMemoryTracking<Chain> sink_chains
         = insert_dependencies->createChainWithDependenciesForAllStreams(query.returning ? &returning_output : nullptr);
-    ProcessorPtr commit_sink = createInsertCommitSink(*insert_dependencies, sink_chains);
+    ProcessorPtr commit_sink = insert_dependencies->createCommitSink(sink_chains.front().getOutputSharedHeader());
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -726,12 +715,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
     pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
-    if (commit_sink)
-        pipeline.resize(1);
+    /// All the streams go to the commit sink.
+    pipeline.resize(1);
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (commit_sink && stream_type == QueryPipelineBuilder::StreamType::Main)
+        if (stream_type == QueryPipelineBuilder::StreamType::Main)
             return std::exchange(commit_sink, nullptr);
         return std::make_shared<EmptySink>(cur_header);
     });
@@ -1196,7 +1185,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     const Settings & settings = context_->getSettingsRef();
 
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams(returning_output);
-    auto commit_sink = createInsertCommitSink(*insert_dependencies, sink_chains);
+    auto commit_sink = insert_dependencies->createCommitSink(sink_chains.front().getOutputSharedHeader());
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
     chassert(sink_chains.size() == sink_stream_size);
     chassert(sink_stream_size >= 1);
@@ -1297,47 +1286,29 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
 
     chassert(stream_outputs.size() == sink_chains.size());
 
-    /// Connect each parallel stream to its sink chain and terminate it with an empty sink, or all of them with the commit sink.
-    std::shared_ptr<ResizeProcessor> commit_resize;
-    if (commit_sink)
-    {
-        commit_resize = std::make_shared<ResizeProcessor>(sink_chains.front().getOutputSharedHeader(), sink_chains.size(), 1);
-        connect(commit_resize->getOutputs().front(), commit_sink->getInputs().front());
-    }
+    /// Connect each parallel stream to its sink chain and terminate all of them with the commit sink.
+    auto commit_resize = std::make_shared<ResizeProcessor>(sink_chains.front().getOutputSharedHeader(), sink_chains.size(), 1);
+    connect(commit_resize->getOutputs().front(), commit_sink->getInputs().front());
 
     QueryPlanResourceHolder resources;
     size_t stream_index = 0;
-    auto commit_resize_input = commit_resize ? commit_resize->getInputs().begin() : InputPorts::iterator{};
+    auto commit_resize_input = commit_resize->getInputs().begin();
     for (auto & sink_chain : sink_chains)
     {
         connect(*stream_outputs[stream_index], sink_chain.getInputPort());
         ++stream_index;
 
-        ProcessorPtr sink;
-        if (commit_resize)
-        {
-            connect(sink_chain.getOutputPort(), *commit_resize_input);
-            ++commit_resize_input;
-        }
-        else
-        {
-            sink = std::make_shared<EmptySink>(sink_chain.getOutputSharedHeader());
-            connect(sink_chain.getOutputPort(), sink->getInputs().front());
-        }
+        connect(sink_chain.getOutputPort(), *commit_resize_input);
+        ++commit_resize_input;
 
         for (auto processor : sink_chain.getProcessors())
             processors->emplace_back(std::move(processor));
-        if (sink)
-            processors->emplace_back(std::move(sink));
 
         resources = sink_chain.detachResources();
     }
 
-    if (commit_resize)
-    {
-        processors->emplace_back(std::move(commit_resize));
-        processors->emplace_back(std::move(commit_sink));
-    }
+    processors->emplace_back(std::move(commit_resize));
+    processors->emplace_back(std::move(commit_sink));
 
     QueryPipeline pipeline(std::move(resources), std::move(processors), pipeline_input);
 

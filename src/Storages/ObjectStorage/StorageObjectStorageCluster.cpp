@@ -279,13 +279,6 @@ bool StorageObjectStorageCluster::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-bool StorageObjectStorageCluster::supportsWriteSessionCommit() const
-{
-    if (configuration->isDataLakeConfiguration())
-        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
-    return configuration->supportsWriteSessionCommit();
-}
-
 bool StorageObjectStorageCluster::supportsDelete() const
 {
     if (configuration->isDataLakeConfiguration())

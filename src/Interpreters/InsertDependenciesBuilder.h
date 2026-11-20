@@ -134,9 +134,8 @@ public:
         return sink_stream_size;
     }
 
-    /// The write sessions to commit after all the streams have finished, a table before its dependent views.
-    /// Empty if the sinks finish the insert themselves.
-    std::vector<StorageWriteSessionPtr> getWriteSessionsToCommit() const;
+    /// The sink for the output of all the chains: commits the insert when they have finished, a table before its dependent views.
+    ProcessorPtr createCommitSink(SharedHeader header) const;
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
     /// consults the deduplication block ids. For MergeTree-family engines this mirrors how

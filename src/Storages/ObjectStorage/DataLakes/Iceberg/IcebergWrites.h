@@ -1,5 +1,6 @@
 #pragma once
 
+#include <list>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -171,26 +172,6 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
-/// The data files of one partition written by one sink. Shared by the sink and `IcebergWriteSession`.
-struct IcebergPartitionFiles
-{
-    IcebergPartitionFiles(ChunkPartitioner::PartitionKey partition_key_, MultipleFileWriter writer_);
-    /// Removes the data files unless they were committed.
-    ~IcebergPartitionFiles();
-
-    /// Best-effort removal of the data files, at most once; never throws.
-    void removeDataFiles();
-
-    const ChunkPartitioner::PartitionKey partition_key;
-    MultipleFileWriter writer;
-    bool committed = false;
-
-private:
-    bool removed = false;
-};
-
-using IcebergPartitionFilesPtr = std::shared_ptr<IcebergPartitionFiles>;
-
 /// One insert into an Iceberg table: reads the table metadata at the start, and commits the files written by its sinks in one snapshot.
 class IcebergWriteSession final : public IStorageWriteSession, public std::enable_shared_from_this<IcebergWriteSession>
 {
@@ -205,28 +186,15 @@ public:
         const Iceberg::PersistentTableComponents & persistent_table_components_,
         const StorageID & table_id_);
 
-    /// Removes the manifests unless committed. The data files are removed by `IcebergPartitionFiles`.
+    /// Removes the data files and manifests which were not committed.
     ~IcebergWriteSession() override;
 
     SinkToStoragePtr createSink() override;
-    /// The only sink of the session, which commits it when finished.
-    SinkToStoragePtr createSinkWithCommit();
     void commit() override;
 
-    /// What the sinks write the files with. The partitioner and the file names generator are copied by every sink.
-    [[nodiscard]] const SharedHeader & getSampleBlock() const { return sample_block; }
-    [[nodiscard]] const ObjectStoragePtr & getObjectStorage() const { return object_storage; }
-    [[nodiscard]] const ContextPtr & getContext() const { return context; }
-    [[nodiscard]] const std::optional<FormatSettings> & getFormatSettings() const { return format_settings; }
-    [[nodiscard]] const String & getWriteFormat() const { return write_format; }
-    [[nodiscard]] const Poco::JSON::Object::Ptr & getSchema() const { return current_schema; }
-    [[nodiscard]] const std::optional<ChunkPartitioner> & getPartitioner() const { return partitioner; }
-    [[nodiscard]] const KeyDescription & getSortDescription() const { return sort_description; }
-    [[nodiscard]] const FileNamesGenerator & getFileNamesGenerator() const { return filename_generator; }
-    [[nodiscard]] const std::shared_ptr<const Iceberg::IcebergPathResolver> & getPathResolver() const { return path_resolver; }
-
-    /// Called by a sink when it has finished its files. Thread-safe.
-    void addFiles(const std::vector<IcebergPartitionFilesPtr> & new_files);
+    /// Creates a writer of the data files of a partition for a sink. Its files are committed unless the sink cancels it.
+    /// The reference is valid while the session is alive. Thread-safe.
+    MultipleFileWriter & addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads);
 
 private:
     LoggerPtr log = getLogger("IcebergWriteSession");
@@ -241,6 +209,15 @@ private:
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
 
+    struct PartitionWriter
+    {
+        ChunkPartitioner::PartitionKey partition_key;
+        MultipleFileWriter writer;
+        bool data_files_removed = false;
+    };
+
+    /// Best-effort removal of the data files of a writer, at most once; never throws.
+    void removeDataFiles(PartitionWriter & partition_writer);
     /// Best-effort removal of the data files and manifests; never throws.
     void removeDataFilesAndManifests();
     bool initializeMetadata();
@@ -255,8 +232,9 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    std::mutex files_to_commit_mutex;
-    std::vector<IcebergPartitionFilesPtr> files_to_commit;
+    /// The writers of all the sinks. A list: the sinks keep references to them.
+    std::mutex writers_mutex;
+    std::list<PartitionWriter> partition_writers;
     std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
 
     /// The manifests are written once and reused on commit retries.
@@ -282,7 +260,13 @@ private:
 class IcebergStorageSink final : public SinkToStorage
 {
 public:
-    IcebergStorageSink(std::shared_ptr<IcebergWriteSession> session_, bool commit_on_finish_);
+    IcebergStorageSink(
+        std::shared_ptr<IcebergWriteSession> session_,
+        SharedHeader sample_block_,
+        ContextPtr context_,
+        const KeyDescription & sort_description_,
+        std::optional<ChunkPartitioner> partitioner_,
+        size_t max_data_files_in_upload);
 
     ~IcebergStorageSink() override;
 
@@ -294,21 +278,17 @@ public:
     void onException(std::exception_ptr exception) override;
 
 private:
-    /// Takes the files of this sink when it finishes.
+    /// Owns the writers of this sink and commits their files.
     std::shared_ptr<IcebergWriteSession> session;
-    /// The sink is the only one of the session, so it commits the session itself.
-    const bool commit_on_finish;
     SharedHeader sample_block;
-    ObjectStoragePtr object_storage;
     ContextPtr context;
-    std::optional<FormatSettings> format_settings;
-    const String write_format;
-    /// Own copies: the sinks of a session work in parallel. Declared before the writers, which use the generator.
-    FileNamesGenerator filename_generator;
+    /// Of the session.
+    const KeyDescription & sort_description;
+    /// Own copy: the sinks of a session work in parallel.
     std::optional<ChunkPartitioner> partitioner;
-    /// The uploads of the finished data files of this sink. Declared before the writers, which add their files to it.
+    /// The uploads of the finished data files of this sink.
     DataFileUploads data_file_uploads;
-    std::unordered_map<ChunkPartitioner::PartitionKey, IcebergPartitionFilesPtr, ChunkPartitioner::PartitionKeyHasher> files_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter *, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
 
