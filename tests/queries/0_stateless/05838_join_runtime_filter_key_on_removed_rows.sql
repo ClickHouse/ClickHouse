@@ -1,0 +1,59 @@
+-- A JOIN runtime filter must not compute its key below another join on rows that join,
+-- or the filters around it, remove.
+
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0;
+
+-- No query has read these tables yet, so PREWHERE orders the two filters by column size.
+CREATE TABLE probe (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO probe SELECT number % 1000 AS a, if(a >= 500, 0, 1) FROM numbers(100000);
+CREATE TABLE r1 (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO r1 SELECT number FROM numbers(500);
+CREATE TABLE r2 (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO r2 VALUES (100000);
+SELECT count() FROM probe JOIN r1 ON probe.a = r1.k JOIN r2 ON intDiv(100000, probe.b) = r2.k SETTINGS query_plan_optimize_join_order_limit = 0;
+
+CREATE TABLE p (id UInt64, id32 UInt32, b UInt8, s String, i8 Int8, d Decimal64(2)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO p SELECT number, number, number % 2 AS b, if(b = 0, 'bad', '1.2.3.4'), if(b = 0, -128, 1), if(b = 0, 60000000000000000, 1) FROM numbers(100000);
+CREATE TABLE g (id UInt64, flag UInt8, ok Bool) ENGINE = MergeTree ORDER BY id;
+INSERT INTO g SELECT number, number % 2, number % 2 FROM numbers(100000);
+CREATE TABLE r (k Int64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO r VALUES (100), (-1), (16909060), (1);
+
+-- The filter between the joins removes the rows on which the key throws.
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON intDiv(100, p.b) = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON intDiv(p.i8, -1) = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON IPv4StringToNum(p.s) = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON toInt64(toBool(if(p.b = 1, 'true', p.s))) = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON p.d * 100 = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON IPv4StringToNum(p.s) = r.k WHERE p.b + g.flag = 2 SETTINGS query_plan_merge_filters = 0;
+SELECT count() FROM p LEFT JOIN g ON p.id = g.id JOIN r ON intDiv(100, p.b) = r.k WHERE p.b + g.flag = 2;
+SELECT count() FROM p LEFT JOIN g ON p.id = g.id JOIN r ON IPv4StringToNum(p.s) = r.k WHERE g.ok SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
+
+CREATE TABLE ra (k UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO ra VALUES (16909060);
+SELECT count() FROM p JOIN g ON p.id = g.id LEFT ANTI JOIN ra ON IPv4StringToNum(nullIf(p.s, if(p.id % 4 = 1, '1.2.3.4', ''))) = ra.k WHERE p.b + g.flag = 2;
+
+-- The filter of the lower join passes 80 % of the rows, so it switches itself off.
+CREATE TABLE w (k UInt32) ENGINE = Memory;
+INSERT INTO w SELECT number FROM numbers(800);
+CREATE TABLE d (k UInt64) ENGINE = Memory;
+INSERT INTO d VALUES (100000);
+CREATE TABLE mt (a UInt32, c UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO mt SELECT number % 1000 AS a, a < 800 FROM numbers(200000);
+SELECT count() FROM mt JOIN w ON mt.a = w.k JOIN d ON intDiv(100000, mt.c) = d.k;
+
+-- The key reads the build side of the lower join.
+CREATE TABLE gb (id UInt64, flag UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO gb SELECT number, number < 100000 FROM numbers(200000);
+SELECT count() FROM p JOIN gb ON p.id = gb.id JOIN r ON intDiv(100, gb.flag) = r.k;
+SELECT count() FROM p JOIN gb ON p.id = gb.id JOIN r ON intDiv(100, gb.flag) = r.k SETTINGS query_plan_optimize_join_order_limit = 0;
+
+-- ARRAY JOIN removes the rows with an empty array.
+CREATE TABLE t (x UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT number % 2 AS x, if(x = 0, [], [1, 2]) FROM numbers(100000);
+SELECT count() FROM (SELECT x, a FROM t ARRAY JOIN arr AS a) AS q JOIN r ON intDiv(100, q.x) = r.k;
+
+-- A key that cannot throw still reaches the scan below the lower join.
+CREATE TABLE r64 (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO r64 VALUES (5);
+SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2);
