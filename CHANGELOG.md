@@ -23,6 +23,18 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 6349b3bdc14cdf4169d99f5a3a367320656a06f6 (6349b3bdc14) FIXME as compared to v26.12.1.1-new (e3a18a72646)
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Add a test of `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` on Parquet files with an invalid physical type. [#132604](https://github.com/ClickHouse/ClickHouse/pull/132604) ([Groene AI](https://github.com/groeneai)).
+* Test IS NULL and IS NOT NULL through each Parquet filter path. [#132607](https://github.com/ClickHouse/ClickHouse/pull/132607) ([Groene AI](https://github.com/groeneai)).
+* Add thread safety annotations to the Parquet ReadManager and explain its task scheduling. [#132613](https://github.com/ClickHouse/ClickHouse/pull/132613) ([Groene AI](https://github.com/groeneai)).
+* Cleanup AllocatorWithMemoryTracking header. [#132719](https://github.com/ClickHouse/ClickHouse/pull/132719) ([Azat Khuzhin](https://github.com/azat)).
+* Pin `parallel_replicas_plan_based = 0` for the reads without the privilege in `02346_text_index_transform_access`. [#133095](https://github.com/ClickHouse/ClickHouse/pull/133095) ([Igor Nikonov](https://github.com/devcrafter)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2610"></a> ClickHouse release 26.10, 2026-10-22
 
 #### Backward Incompatible Change
