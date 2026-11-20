@@ -4,8 +4,10 @@
 #include <stack>
 #include <unordered_set>
 
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -48,13 +50,19 @@ namespace
 {
 
 /// The parser also builds an `ASTFunction` for the name of a codec, statistics or index type, engine, table function
-/// or aggregate function in a data type (`Name`). A SQL UDF replaces only a `Call`; the arguments of a `Name` are calls.
+/// or aggregate function in a data type (`Name`). A SQL UDF replaces only a `Call`; the arguments of a `Name` are calls,
+/// except the codecs of `FirstApplicable` and `Multiple`.
 enum class Slot : uint8_t
 {
     Call,
     Name,
     NameList,
 };
+
+bool isCodecCombinator(const String & name)
+{
+    return equalsCaseInsensitive(name, FIRST_APPLICABLE_CODEC_NAME) || equalsCaseInsensitive(name, "Multiple");
+}
 
 Slot getChildSlot(const IAST & parent, Slot parent_slot, const IAST * child)
 {
@@ -64,7 +72,9 @@ Slot getChildSlot(const IAST & parent, Slot parent_slot, const IAST * child)
     if (const auto * function = parent.as<ASTFunction>())
     {
         const auto kind = function->getKind();
-        if ((kind == ASTFunction::Kind::CODEC || kind == ASTFunction::Kind::STATISTICS) && child == function->arguments.get())
+        if (child == function->arguments.get()
+            && (kind == ASTFunction::Kind::CODEC || kind == ASTFunction::Kind::STATISTICS
+                || (parent_slot == Slot::Name && isCodecCombinator(function->name))))
             return Slot::NameList;
     }
     else if (const auto * statistics = parent.as<ASTStatisticsDeclaration>())

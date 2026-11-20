@@ -18,6 +18,7 @@ CREATE FUNCTION $G AS (x) -> Memory();
 
 CREATE TABLE t_stat (c Int64 STATISTICS($F(2), tdigest)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_codec (c Int64 CODEC($F(2))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
+CREATE TABLE t_codec_fa (c Int64 CODEC(firstapplicable(multiple($F(2)), LZ4))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
 CREATE TABLE t_index (c Int64, INDEX i c TYPE $F(2) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_proj (c Int64, PROJECTION p INDEX c TYPE $F(2)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_engine (c Int64) ENGINE = $G(1); -- { serverError UNKNOWN_STORAGE }
@@ -28,6 +29,7 @@ CREATE TABLE t_sagg (c SimpleAggregateFunction($F(2), UInt64)) ENGINE = MergeTre
 CREATE TABLE t (c Int64) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t ADD STATISTICS c TYPE $F(2); -- { serverError INCORRECT_QUERY }
 ALTER TABLE t MODIFY COLUMN c Int64 STATISTICS($F(2)); -- { serverError INCORRECT_QUERY }
+ALTER TABLE t MODIFY COLUMN c Int64 CODEC(FirstApplicable($F(2), LZ4)); -- { serverError UNKNOWN_CODEC }
 
 -- Expressions, lambda bodies and the arguments of a name are still substituted.
 CREATE TABLE t_ok
@@ -35,10 +37,12 @@ CREATE TABLE t_ok
     c Int64 DEFAULT $F(1) STATISTICS(tdigest),
     l Array(UInt8) DEFAULT arrayMap(x -> $F(x), [1]),
     a AggregateFunction(uniqUpTo($F(1)), UInt8),
+    z UInt64 CODEC(FirstApplicable(Multiple(Delta, ZSTD($F(1))), LZ4)),
     INDEX i c TYPE set($F(1)) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY tuple();
 SELECT name, default_expression, type FROM system.columns WHERE database = currentDatabase() AND table = 't_ok' ORDER BY position;
+SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 't_ok' AND name = 'z';
 SELECT type_full FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_ok';
 
 -- A name inside a UDF body is not substituted either.
