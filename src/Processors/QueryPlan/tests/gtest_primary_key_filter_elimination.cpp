@@ -157,7 +157,7 @@ protected:
             FunctionFactory::instance().get(function, context), {&dag.findInOutputs("k"), &constant}, function + toString(bound));
     }
 
-    QueryPlanStepPtr makeRead() const
+    [[nodiscard]] QueryPlanStepPtr makeRead() const
     {
         ActionsDAG broad_filter(NamesAndTypesList{{"k", std::make_shared<DataTypeUInt64>()}});
         const auto & predicate = compare(broad_filter, "less", 243);
@@ -173,7 +173,7 @@ protected:
             query_info, context, /*max_block_size=*/7, /*num_streams=*/1);
     }
 
-    std::unique_ptr<AggregatingStep> makeAggregate(const SharedHeader & header) const
+    [[nodiscard]] std::unique_ptr<AggregatingStep> makeAggregate(const SharedHeader & header) const
     {
         AggregateFunctionProperties properties;
         AggregateDescription sum;
@@ -184,7 +184,8 @@ protected:
         Aggregator::Params params(
             Names{}, AggregateDescriptions{sum}, /*overflow_row=*/false, /*max_threads=*/1,
             /*max_block_size=*/7, /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
-            /*serialize_string_with_zero_byte=*/false, /*enable_packed_string_keys=*/true);
+            /*serialize_string_with_zero_byte=*/false, /*enable_packed_string_keys=*/true,
+            /*enable_fixed_and_packed_string_keys=*/true);
         params.only_merge = false;
         return std::make_unique<AggregatingStep>(
             header, std::move(params), GroupingSetsParamsList{}, /*final=*/true, /*max_block_size=*/7,
