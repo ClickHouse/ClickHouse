@@ -313,7 +313,7 @@ public:
         return peer;
     }
 
-    /// Null when no connection comes within `timeout`.
+    /// Returns null when no connection comes within `timeout`.
     std::unique_ptr<FakePeer> tryAccept(std::chrono::seconds timeout)
     {
         if (!listener.poll(Poco::Timespan(timeout.count(), 0), Poco::Net::Socket::SELECT_READ))

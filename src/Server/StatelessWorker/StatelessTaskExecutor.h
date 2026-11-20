@@ -181,7 +181,7 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
-    /// Called by a task after its promise: forgets it if `forgetTasksWhenEnded` asked for that.
+    /// Forgets the task if `forgetTasksWhenEnded` asked for that; the task calls it after its promise.
     void onTaskEnded(const String & unique_task_id, const TaskStatePtr & task_state) noexcept;
     void dropControllerIfIdleLocked(std::unordered_map<String, WorkerQueryControllerPtr>::iterator controller) TSA_REQUIRES(tasks_mutex);
 

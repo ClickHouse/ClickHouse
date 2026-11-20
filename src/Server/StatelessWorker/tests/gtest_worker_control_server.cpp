@@ -141,7 +141,7 @@ ControlHello makeHello(const String & unique_query_id, const String & user = "",
     };
 }
 
-/// A batch of one task of the stage `main`, whose plan the task never reads in these tests.
+/// Returns a batch of one task of the stage `main`, whose plan the task never reads in these tests.
 StartTasks makeStartTasks(UInt64 request_id, const String & task_id)
 {
     DistributedQueryTaskBatch::Task task;
