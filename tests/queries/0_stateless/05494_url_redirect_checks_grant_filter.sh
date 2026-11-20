@@ -15,20 +15,23 @@ user_filtered="user05494_filtered_${CLICKHOUSE_DATABASE}_$RANDOM"
 user_full="user05494_full_${CLICKHOUSE_DATABASE}_$RANDOM"
 user_engine="user05494_engine_${CLICKHOUSE_DATABASE}_$RANDOM"
 user_table="user05494_table_${CLICKHOUSE_DATABASE}_$RANDOM"
+user_wide="user05494_wide_${CLICKHOUSE_DATABASE}_$RANDOM"
 redirector="http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka"
 escaped_redirector="http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka_escaped"
 head_redirector="http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka_head"
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP USER IF EXISTS $user_filtered, $user_full, $user_engine, $user_table;
+DROP USER IF EXISTS $user_filtered, $user_full, $user_engine, $user_table, $user_wide;
 CREATE USER $user_filtered;
 CREATE USER $user_full;
 CREATE USER $user_engine;
 CREATE USER $user_table;
-GRANT CREATE TEMPORARY TABLE ON *.* TO $user_filtered, $user_full;
+CREATE USER $user_wide;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user_filtered, $user_full, $user_wide;
 GRANT READ ON URL('http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka') TO $user_filtered;
 GRANT READ ON URL('http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka.*') TO $user_filtered;
 GRANT READ ON URL TO $user_full;
+GRANT READ ON URL('http://localhost:${CLICKHOUSE_PORT_HTTP}/.*') TO $user_wide;
 CREATE TABLE t_redirect (s String) ENGINE = URL('$redirector', 'LineAsString');
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_redirect TO $user_filtered;
 GRANT CREATE TABLE, DROP TABLE, SELECT ON ${CLICKHOUSE_DATABASE}.* TO $user_engine;
@@ -68,6 +71,12 @@ echo "--- a cluster read follows redirects as the cluster user"
 check_missing_grant "$user_filtered" "SELECT * FROM urlCluster('test_shard_localhost', '$redirector', 'LineAsString', 's String')" --max_http_get_redirects 1
 check_missing_grant "$user_filtered" "SELECT * FROM url('$redirector', 'LineAsString', 's String')" --max_http_get_redirects 1 --cluster_for_parallel_replicas test_shard_localhost --parallel_replicas_for_cluster_engines 1 --enable_parallel_replicas 1 --max_parallel_replicas 2
 ${CLICKHOUSE_CLIENT} --user "$user_full" --max_http_get_redirects 1 --query "SELECT * FROM urlCluster('test_shard_localhost', '$redirector', 'LineAsString', 's String')"
+# With an interserver secret the workers run as the caller and check the redirects themselves.
+parallel_replicas_with_secret=(--cluster_for_parallel_replicas test_cluster_interserver_secret --parallel_replicas_for_cluster_engines 1 --enable_parallel_replicas 1 --max_parallel_replicas 2)
+check_denied "$user_filtered" "SELECT * FROM urlCluster('test_cluster_interserver_secret', '$redirector', 'LineAsString', 's String')" --http_make_head_request 0
+check_denied "$user_filtered" "SELECT * FROM url('$redirector', 'LineAsString', 's String')" --http_make_head_request 0 "${parallel_replicas_with_secret[@]}"
+${CLICKHOUSE_CLIENT} --user "$user_wide" --max_http_get_redirects 1 --http_make_head_request 0 --query "SELECT * FROM urlCluster('test_cluster_interserver_secret', '$redirector', 'LineAsString', 's String')"
+${CLICKHOUSE_CLIENT} --user "$user_wide" --max_http_get_redirects 1 --http_make_head_request 0 "${parallel_replicas_with_secret[@]}" --query "SELECT * FROM url('$redirector', 'LineAsString', 's String')"
 
 echo "--- a filtered grant takes nothing from the caches another user filled"
 ${CLICKHOUSE_CLIENT} --user "$user_full" --max_http_get_redirects 1 --query "DESCRIBE TABLE url('$redirector', 'TSV')" > /dev/null
@@ -101,4 +110,4 @@ check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied AS url('
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_inferred"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_as_function, t_redirect_as_function_lazy"
-${CLICKHOUSE_CLIENT} --query "DROP USER $user_filtered, $user_full, $user_engine, $user_table"
+${CLICKHOUSE_CLIENT} --query "DROP USER $user_filtered, $user_full, $user_engine, $user_table, $user_wide"
