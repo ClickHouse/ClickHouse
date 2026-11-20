@@ -2496,6 +2496,20 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
     EXPECT_EQ(other_requests, 0);
 }
 
+namespace
+{
+
+/// An IMDS credentials provider with the client configuration of the other fiber tests. `S3CredentialsProviderChain`
+/// uses shorter timeouts and fewer retries for IMDS.
+std::unique_ptr<DB::S3::AWSInstanceProfileCredentialsProvider> createInstanceProfileTestProvider(const std::string & imds_url)
+{
+    auto metadata_client = std::make_shared<DB::S3::AWSEC2MetadataClient>(createFiberTestClientConfiguration(""), imds_url.c_str());
+    auto config_loader = std::make_shared<DB::S3::AWSEC2InstanceProfileConfigLoader>(metadata_client, /* use_secure_pull = */ true);
+    return std::make_unique<DB::S3::AWSInstanceProfileCredentialsProvider>(config_loader);
+}
+
+}
+
 /// EC2 IMDS in fibers: concurrent callers wait on the provider's `Silk::FiberMutex` while the first one is suspended in
 /// IMDS I/O, which is held until all fibers have started, and all of them get the credentials of one refresh.
 TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
@@ -2532,18 +2546,13 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
             sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
     });
 
-    /// The configuration of the IMDS client in `S3CredentialsProviderChain`.
-    auto client_configuration = createFiberTestClientConfiguration("");
-    const std::string imds_url = imds.getUrl();
-    auto metadata_client = std::make_shared<DB::S3::AWSEC2MetadataClient>(client_configuration, imds_url.c_str());
-    auto config_loader = std::make_shared<DB::S3::AWSEC2InstanceProfileConfigLoader>(metadata_client, /* use_secure_pull = */ true);
-    DB::S3::AWSInstanceProfileCredentialsProvider provider(config_loader);
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
 
     const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     std::vector<Aws::String> access_keys(fiber_count);
     runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
     {
-        access_keys[i] = provider.GetAWSCredentials().GetAWSAccessKeyId();
+        access_keys[i] = provider->GetAWSCredentials().GetAWSAccessKeyId();
     });
 
     for (const auto & access_key : access_keys)
@@ -2551,6 +2560,123 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
     EXPECT_EQ(token_requests, 1);
     EXPECT_EQ(credentials_requests, 1);
     EXPECT_EQ(requests_without_token, 0);
+}
+
+/// A failed IMDS load in a fiber gives no credentials instead of an error, because IMDS is a member of the credentials
+/// chain that is unavailable outside EC2, and the next load waits for the refresh interval. After an invalidation the
+/// credentials come from IMDSv1 when the token request fails.
+TEST(IOTestAwsS3Client, InstanceProfileFailedLoadAndFallbackInFiber)
+{
+    initializeFiberSchedulerForTests();
+
+    std::atomic<bool> credentials_available = false;
+    std::atomic<size_t> requests = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        ++requests;
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        /// The token request always fails, so the credentials can come only from IMDSv1.
+        if (!credentials_available || path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+        else if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
+
+    bool failed_load_is_empty = false;
+    size_t requests_after_failed_load = 0;
+    bool next_load_is_empty = false;
+    size_t requests_after_next_load = 0;
+    Aws::String access_key_after_invalidation;
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        failed_load_is_empty = provider->GetAWSCredentials().IsEmpty();
+        requests_after_failed_load = requests;
+        next_load_is_empty = provider->GetAWSCredentials().IsEmpty();
+        requests_after_next_load = requests;
+
+        credentials_available = true;
+        provider->SetNeedRefresh();
+        access_key_after_invalidation = provider->GetAWSCredentials().GetAWSAccessKeyId();
+        return 0;
+    }), 0);
+
+    EXPECT_TRUE(failed_load_is_empty);
+    EXPECT_GE(requests_after_failed_load, 1);
+    EXPECT_TRUE(next_load_is_empty);
+    EXPECT_EQ(requests_after_next_load, requests_after_failed_load);
+    EXPECT_EQ(access_key_after_invalidation, "fiber_access_key");
+}
+
+/// An invalidation that starts while an IMDS refresh waits for its token is not cleared when that refresh completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup asks IMDS again.
+TEST(IOTestAwsS3Client, InstanceProfileInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+
+    Poco::Event token_entered(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<size_t> token_requests = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        if (path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+        {
+            ++token_requests;
+            token_entered.set();
+            release.wait();
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "imds_token");
+        }
+        else if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+    auto provider = createInstanceProfileTestProvider(imds.getUrl());
+    EXPECT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "fiber_access_key");
+
+    provider->SetNeedRefresh();
+    token_entered.reset();
+    release.reset();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they are released and finish before it ends.
+        SCOPE_EXIT({
+            release.set();
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { provider->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        ASSERT_TRUE(token_entered.tryWait(60'000)) << "The refresh did not reach IMDS within 60 seconds";
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            provider->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the IMDS answer takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+    }
+
+    const size_t token_requests_before = token_requests;
+    provider->GetAWSCredentials();
+    EXPECT_EQ(token_requests, token_requests_before + 1);
 }
 
 /// An invalidation that starts while an `AssumeRole` refresh waits for STS is not cleared when that refresh completes:
