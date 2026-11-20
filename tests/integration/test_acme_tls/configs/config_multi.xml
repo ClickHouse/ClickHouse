@@ -14,6 +14,9 @@
     </acme>
     <openSSL>
         <client>
+            <!-- Pebble is reached at a pinned address, and its serving certificate names
+                 localhost, pebble and 127.0.0.1 only. -->
+            <extendedVerification>false</extendedVerification>
             <invalidCertificateHandler>
                 <name>AcceptCertificateHandler</name>
             </invalidCertificateHandler>

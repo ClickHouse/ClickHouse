@@ -75,6 +75,56 @@ Simple 및 StochasticSimple 머지 선택기에서 작동합니다.
 모든 파트가 생성된 지 이 값(초) 이상 지난 범위에서는 해당 휴리스틱을 비활성화합니다. `0`으로 설정하면 이 검사를 수행하지 않습니다.
 Simple 및 StochasticSimple 머지 선택기에 적용됩니다.
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "작은 파트 머지 제한에 대한 경과 시간 한도"}]}]} />
+
+작은 파트 제한에 적용되는 경과 시간 한도(초)입니다. 범위 내 파트 중 하나라도 이 시간을 초과하면
+`merge_selector_small_parts_min_count`에 따른 제한이 해제됩니다. 따라서 범위가
+`merge_selector_small_parts_min_count`보다 짧더라도 쌓여 있는 오래된 작은 파트들을 머지할 수 있습니다. Simple 및 StochasticSimple 병합 선택기(merge selectors)에서 동작하며,
+백그라운드 병합 대상 선택에만 적용됩니다. 적극적 선택(`FINAL` 없는 `OPTIMIZE`)에서는
+`small_parts_*` 설정이 무시됩니다.
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "작고 새로운 파트의 머지를 허용하기 위한 최소 데이터 파트 수 (0 = 비활성화됨)"}]}]} />
+
+머지 범위 내의 모든 파트가 작고(`merge_selector_small_parts_threshold` 미만)
+새로운(`merge_selector_small_parts_max_age` 미만) 경우, 파트가 최소 이 개수 이상이어야
+머지가 허용됩니다. 작은 파트가 빠르게 삽입되는 상황에서 병합 작업(merge operations) 횟수를 줄여 줍니다.
+0이면 비활성화됩니다. Simple 및 StochasticSimple 병합 선택기(merge selectors)에서 동작합니다.
+
+이 게이트는 백그라운드 병합 대상 선택에만 적용됩니다. 적극적 선택, 즉 `FINAL` 없이 실행하는 `OPTIMIZE`는
+파트가 새로운지 여부를 고려하지 않는 명시적인 사용자 요청이므로, 이
+설정을 무시하고 개수와 관계없이 작고 새로운 파트를 머지합니다.
+
+셀렉터는 `max_parts_to_merge_at_once`보다 폭이 넓은 머지 후보나
+`merge_selector_window_size`개 파트보다 더 이전까지 거슬러 올라가는 후보를 고려하지 않으므로,
+둘 중 하나라도 이 최솟값보다 낮게 설정하면 서로 모순되는 구성이 됩니다. 이 경우 작고 새로운 파트는
+`merge_selector_small_parts_max_age`가 지난 후에야 머지됩니다(또는 `min_age_to_force_merge_seconds`나
+`min_partition_age_to_force_merge_seconds`에 따라 강제 머지가 적용되면 그보다 일찍 머지됩니다). 두 설정 모두
+이 최솟값 이상으로 유지하십시오.
+(내장된 채움 정도 휴리스틱이 유효 상한을 일시적으로 이 최솟값보다 낮추더라도,
+셀렉터는 이 폭에 해당하면서 모든 파트가 작고 새로운 첫 번째 후보는 여전히 고려합니다. 오래된
+후보나 큰 후보, 그리고 `min_age_to_force_merge_seconds` 또는
+`min_partition_age_to_force_merge_seconds`에 따라 이미 강제 머지 대상이 된 후보에는
+낮춰진 상한이 그대로 적용됩니다.)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "머지 선택기의 작은 파트 배칭 휴리스틱에 사용되는 크기 임계값"}]}]} />
+
+바이트 단위의 크기 임계값입니다. 머지 범위 내의 모든 파트가 이 크기보다 작으면 해당 범위는 &quot;모두 작은 파트&quot;로 간주됩니다. `merge_selector_small_parts_min_count`와 함께 사용됩니다.
+Simple 및 StochasticSimple 병합 선택기(merge selectors)에서 동작하며, 백그라운드 병합(background merge) 선택에만 적용됩니다.
+적극적 선택(`FINAL`을 지정하지 않은 `OPTIMIZE`)에서는 `small_parts_*`
+설정이 무시됩니다.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

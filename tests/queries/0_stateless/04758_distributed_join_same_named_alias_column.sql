@@ -20,7 +20,7 @@ CREATE TABLE nb_dist AS nb_local ENGINE = Distributed('test_cluster_two_shards_l
 INSERT INTO na_local VALUES (1, 5), (2, 7);
 INSERT INTO nb_local VALUES (1, 50), (2, 70);
 
-SET enable_analyzer = 1, distributed_product_mode = 'local';
+SET distributed_product_mode = 'local';
 
 SELECT 'join_on';
 SELECT l.id FROM na_dist AS l INNER JOIN nb_dist AS r ON l.id = r.id AND l.foo > 0 AND r.foo > 0 ORDER BY l.id;

@@ -29,7 +29,7 @@ To follow this guide, you will need:
 ClickPipes for Pub/Sub supports two authentication methods:
 
 - **Service account key:** You create a Google service account and upload its [JSON key](https://cloud.google.com/iam/docs/keys-create-delete) in the ClickPipes UI or provide it through the API. ClickPipes encrypts the key at rest.
-- **GCP workload identity (Private Preview):** ClickPipes uses short-lived credentials for a ClickPipes-managed Google service account. No customer service account key is stored. See the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) for requirements.
+- **GCP workload identity (Beta):** ClickPipes uses short-lived credentials for a ClickPipes-managed Google service account. No customer service account key is stored. See the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) for requirements.
 
 With either method, the service account is used to:
 
@@ -101,7 +101,7 @@ Append `pubsub.schemas.get` to the `--permissions` list if you ingest from topic
 
 If you prefer to skip the custom role, you can grant `roles/pubsub.editor` instead.
 
-### Use GCP workload identity (Private Preview) {#use-workload-identity}
+### Use GCP workload identity (Beta) {#use-workload-identity}
 
 Retrieve the ClickPipes-managed service account from the service context by following the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity).
 
