@@ -24,6 +24,20 @@
 
     <fill_query>OPTIMIZE TABLE read_in_order_direct_io FINAL</fill_query>
 
+    <!-- Warm-up. On the ARM runners the reads of this table under `O_DIRECT` are faster during
+         the first seconds of reading (about 0.6 s instead of 0.8 s for the `DESC` query, on the
+         reference server as well, with the same rows, bytes and CPU time), then the disk latency
+         steps up to the steady state, which is the time AMD runners show from the first run. Without
+         a warm-up the step fell into the measured runs and the time grew run over run. Read the
+         table for a few seconds here so that the measured runs start at the steady state. -->
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
+    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
+
     <query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</query>
     <query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</query>
 
