@@ -1,7 +1,8 @@
 -- A JOIN runtime filter must not compute its key below another join on rows that join,
 -- or the filters around it, remove.
 
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0;
+-- A replica of plan-based parallel replicas gets the plan without knowing which filters are JOIN runtime filters.
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, parallel_replicas_plan_based = 0;
 
 -- No query has read these tables yet, so PREWHERE orders the two filters by column size.
 CREATE TABLE probe (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
@@ -34,9 +35,9 @@ INSERT INTO ra VALUES (16909060);
 SELECT count() FROM p JOIN g ON p.id = g.id LEFT ANTI JOIN ra ON IPv4StringToNum(nullIf(p.s, if(p.id % 4 = 1, '1.2.3.4', ''))) = ra.k WHERE p.b + g.flag = 2;
 
 -- The filter of the lower join passes 80 % of the rows, so it switches itself off.
-CREATE TABLE w (k UInt32) ENGINE = Memory;
+CREATE TABLE w (k UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO w SELECT number FROM numbers(800);
-CREATE TABLE d (k UInt64) ENGINE = Memory;
+CREATE TABLE d (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO d VALUES (100000);
 CREATE TABLE mt (a UInt32, c UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO mt SELECT number % 1000 AS a, a < 800 FROM numbers(200000);
@@ -52,6 +53,10 @@ SELECT count() FROM p JOIN gb ON p.id = gb.id JOIN r ON intDiv(100, gb.flag) = r
 CREATE TABLE t (x UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number % 2 AS x, if(x = 0, [], [1, 2]) FROM numbers(100000);
 SELECT count() FROM (SELECT x, a FROM t ARRAY JOIN arr AS a) AS q JOIN r ON intDiv(100, q.x) = r.k;
+-- The same, read through a `Merge` table over a view.
+CREATE VIEW v_aj AS SELECT x, a FROM t ARRAY JOIN arr AS a;
+CREATE TABLE m_aj (x UInt8, a UInt8) ENGINE = Merge(currentDatabase(), '^v_aj$');
+SELECT count() FROM m_aj JOIN r ON intDiv(100, m_aj.x) = r.k;
 
 -- A single join, with a WHERE that is not filtered atom by atom together with the runtime filter.
 CREATE TABLE p2 (id UInt64, b UInt8, s String) ENGINE = MergeTree ORDER BY id;
@@ -64,4 +69,4 @@ SELECT count() FROM p2 JOIN r32 ON IPv4StringToNum(p2.s) = r32.k WHERE p2.b SETT
 -- A key that cannot throw still reaches the scan below the lower join (`Runtime filters:` of its PREWHERE).
 CREATE TABLE r64 (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO r64 VALUES (5);
-SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2 SETTINGS optimize_move_to_prewhere = 1);
+SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2 SETTINGS optimize_move_to_prewhere = 1, enable_parallel_replicas = 0);
