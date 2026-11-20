@@ -45,6 +45,7 @@ private:
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
     std::vector<String> columns_to_apply;
+    std::vector<bool> source_is_binary;
     DataTypes result_data_types;
 
     size_t max_partitions_count;

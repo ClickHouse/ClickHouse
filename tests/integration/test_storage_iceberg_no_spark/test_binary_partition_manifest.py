@@ -127,17 +127,17 @@ SETTINGS catalog_type='rest', warehouse='demo', storage_endpoint='http://minio1:
     assert all(t == ["null", "bytes"] for t in after_optimize.values()), after_optimize
     assert scan_rows() == expected_rows
 
-    # INSERT writes a new manifest.
-    instance.query(f"INSERT INTO {table_expression} VALUES (4, 'ok')", settings=WRITE_SETTINGS)
+    # INSERT writes a new manifest; a non-UTF-8 value is accepted in a `binary` partition.
+    instance.query(f"INSERT INTO {table_expression} SELECT 4, unhex('FE')", settings=WRITE_SETTINGS)
 
     table = catalog.load_table(identifier)
     after_insert = partition_avro_types(cluster, table)
     new_manifests = {path: t for path, t in after_insert.items() if path not in after_optimize}
     assert list(new_manifests.values()) == [["null", "bytes"]], after_insert
-    assert scan_rows() == expected_rows + [(4, b"ok")]
+    assert scan_rows() == expected_rows + [(4, b"\xfe")]
     assert (
         instance.query(f"SELECT id, hex(p) FROM {table_expression} ORDER BY id").strip()
-        == "1\tFF\n2\tFF\n3\t0102\n4\t6F6B"
+        == "1\tFF\n2\tFF\n3\t0102\n4\tFE"
     )
 
     # A DELETE writes a position-delete manifest.
