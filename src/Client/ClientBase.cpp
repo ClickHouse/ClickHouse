@@ -2483,6 +2483,9 @@ void ClientBase::resetOutput()
 
     out_logs_buf.reset();
 
+    if (connection)
+        connection->onQueryOutputReleased();
+
     if (pager_cmd)
     {
         pager_cmd->in.close();

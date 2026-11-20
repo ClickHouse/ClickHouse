@@ -136,6 +136,8 @@ public:
 
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
+    void onQueryOutputReleased() override { finished_query_scope = {}; }
+
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
@@ -232,6 +234,9 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+
+    /// Keeps the thread attached to the ended query until the client releases its output, which the query allocated.
+    QueryScope finished_query_scope;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
