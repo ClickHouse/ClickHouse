@@ -1,0 +1,1 @@
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table9.r_name, 'AMERICA'_String). (NOT_IMPLEMENTED)

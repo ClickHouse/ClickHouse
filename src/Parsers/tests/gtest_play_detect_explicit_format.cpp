@@ -246,7 +246,7 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
                 /// The `EXPLAIN` kinds of `ParserExplainQuery`, spelled as individual words.
                 static const std::vector<std::string> explain_kind_words = {
                     "ast", "syntax", "query", "tree", "pipeline", "plan", "estimate", "table", "override",
-                    "current", "transaction", "analyze", "whatif"};
+                    "current", "transaction", "analyze", "whatif", "substrait"};
                 if (std::find(explain_kind_words.begin(), explain_kind_words.end(), lower) != explain_kind_words.end())
                     continue;
                 /// The optional settings list between the kind and the explained query: each entry

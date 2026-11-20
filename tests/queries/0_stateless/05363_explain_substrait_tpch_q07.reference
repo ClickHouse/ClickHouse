@@ -1,0 +1,2 @@
+  Filter (( + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table7.n_name, 'GERMANY'_String)
+  Filter (( + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table6.n_name, 'FRANCE'_String). (NOT_IMPLEMENTED)

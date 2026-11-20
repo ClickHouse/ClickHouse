@@ -1,0 +1,2 @@
+  Filter ((WHERE + Change column names to column identifiers)): function notIn is not mapped to Substrait, in notIn(__table1.ps_suppkey, __set)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in notEquals(__table2.p_brand, 'Brand#45'_String). (NOT_IMPLEMENTED)

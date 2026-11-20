@@ -1,0 +1,519 @@
+{
+ "extensions": [
+  {
+   "extensionType": {
+    "typeAnchor": 1,
+    "name": "u32",
+    "extensionUrnReference": 1
+   }
+  },
+  {
+   "extensionFunction": {
+    "functionAnchor": 5,
+    "name": "count:",
+    "extensionUrnReference": 2
+   }
+  },
+  {
+   "extensionFunction": {
+    "functionAnchor": 3,
+    "name": "and:bool",
+    "extensionUrnReference": 3
+   }
+  },
+  {
+   "extensionFunction": {
+    "functionAnchor": 1,
+    "name": "equal:any_any",
+    "extensionUrnReference": 4
+   }
+  },
+  {
+   "extensionFunction": {
+    "functionAnchor": 4,
+    "name": "gte:any_any",
+    "extensionUrnReference": 4
+   }
+  },
+  {
+   "extensionFunction": {
+    "functionAnchor": 2,
+    "name": "lt:any_any",
+    "extensionUrnReference": 4
+   }
+  }
+ ],
+ "relations": [
+  {
+   "root": {
+    "input": {
+     "sort": {
+      "common": {
+       "direct": {}
+      },
+      "input": {
+       "aggregate": {
+        "common": {
+         "direct": {}
+        },
+        "input": {
+         "project": {
+          "common": {
+           "emit": {
+            "outputMapping": [
+             2
+            ]
+           }
+          },
+          "input": {
+           "join": {
+            "common": {
+             "direct": {}
+            },
+            "left": {
+             "project": {
+              "common": {
+               "emit": {
+                "outputMapping": [
+                 3
+                ]
+               }
+              },
+              "input": {
+               "filter": {
+                "common": {
+                 "direct": {}
+                },
+                "input": {
+                 "read": {
+                  "common": {
+                   "direct": {}
+                  },
+                  "baseSchema": {
+                   "names": [
+                    "l_orderkey",
+                    "l_commitdate",
+                    "l_receiptdate"
+                   ],
+                   "struct": {
+                    "types": [
+                     {
+                      "userDefined": {
+                       "typeReference": 1,
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     },
+                     {
+                      "date": {
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     },
+                     {
+                      "date": {
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     }
+                    ],
+                    "nullability": "NULLABILITY_REQUIRED"
+                   }
+                  },
+                  "namedTable": {
+                   "names": [
+                    "tpch",
+                    "lineitem"
+                   ]
+                  }
+                 }
+                },
+                "condition": {
+                 "scalarFunction": {
+                  "functionReference": 3,
+                  "outputType": {
+                   "bool": {
+                    "nullability": "NULLABILITY_REQUIRED"
+                   }
+                  },
+                  "arguments": [
+                   {
+                    "value": {
+                     "scalarFunction": {
+                      "functionReference": 1,
+                      "outputType": {
+                       "bool": {
+                        "nullability": "NULLABILITY_REQUIRED"
+                       }
+                      },
+                      "arguments": [
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {}
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       },
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {}
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       }
+                      ]
+                     }
+                    }
+                   },
+                   {
+                    "value": {
+                     "scalarFunction": {
+                      "functionReference": 2,
+                      "outputType": {
+                       "bool": {
+                        "nullability": "NULLABILITY_REQUIRED"
+                       }
+                      },
+                      "arguments": [
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {
+                            "field": 1
+                           }
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       },
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {
+                            "field": 2
+                           }
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       }
+                      ]
+                     }
+                    }
+                   }
+                  ]
+                 }
+                }
+               }
+              },
+              "expressions": [
+               {
+                "selection": {
+                 "directReference": {
+                  "structField": {}
+                 },
+                 "rootReference": {}
+                }
+               }
+              ]
+             }
+            },
+            "right": {
+             "project": {
+              "common": {
+               "emit": {
+                "outputMapping": [
+                 3,
+                 4
+                ]
+               }
+              },
+              "input": {
+               "filter": {
+                "common": {
+                 "direct": {}
+                },
+                "input": {
+                 "read": {
+                  "common": {
+                   "direct": {}
+                  },
+                  "baseSchema": {
+                   "names": [
+                    "o_orderpriority",
+                    "o_orderdate",
+                    "o_orderkey"
+                   ],
+                   "struct": {
+                    "types": [
+                     {
+                      "fixedBinary": {
+                       "length": 15,
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     },
+                     {
+                      "date": {
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     },
+                     {
+                      "userDefined": {
+                       "typeReference": 1,
+                       "nullability": "NULLABILITY_REQUIRED"
+                      }
+                     }
+                    ],
+                    "nullability": "NULLABILITY_REQUIRED"
+                   }
+                  },
+                  "namedTable": {
+                   "names": [
+                    "tpch",
+                    "orders"
+                   ]
+                  }
+                 }
+                },
+                "condition": {
+                 "scalarFunction": {
+                  "functionReference": 3,
+                  "outputType": {
+                   "bool": {
+                    "nullability": "NULLABILITY_REQUIRED"
+                   }
+                  },
+                  "arguments": [
+                   {
+                    "value": {
+                     "scalarFunction": {
+                      "functionReference": 4,
+                      "outputType": {
+                       "bool": {
+                        "nullability": "NULLABILITY_REQUIRED"
+                       }
+                      },
+                      "arguments": [
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {
+                            "field": 1
+                           }
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       },
+                       {
+                        "value": {
+                         "literal": {
+                          "date": 8582
+                         }
+                        }
+                       }
+                      ]
+                     }
+                    }
+                   },
+                   {
+                    "value": {
+                     "scalarFunction": {
+                      "functionReference": 2,
+                      "outputType": {
+                       "bool": {
+                        "nullability": "NULLABILITY_REQUIRED"
+                       }
+                      },
+                      "arguments": [
+                       {
+                        "value": {
+                         "selection": {
+                          "directReference": {
+                           "structField": {
+                            "field": 1
+                           }
+                          },
+                          "rootReference": {}
+                         }
+                        }
+                       },
+                       {
+                        "value": {
+                         "literal": {
+                          "date": 8674
+                         }
+                        }
+                       }
+                      ]
+                     }
+                    }
+                   }
+                  ]
+                 }
+                }
+               }
+              },
+              "expressions": [
+               {
+                "selection": {
+                 "directReference": {
+                  "structField": {}
+                 },
+                 "rootReference": {}
+                }
+               },
+               {
+                "selection": {
+                 "directReference": {
+                  "structField": {
+                   "field": 2
+                  }
+                 },
+                 "rootReference": {}
+                }
+               }
+              ]
+             }
+            },
+            "expression": {
+             "scalarFunction": {
+              "functionReference": 1,
+              "outputType": {
+               "bool": {
+                "nullability": "NULLABILITY_REQUIRED"
+               }
+              },
+              "arguments": [
+               {
+                "value": {
+                 "selection": {
+                  "directReference": {
+                   "structField": {}
+                  },
+                  "rootReference": {}
+                 }
+                }
+               },
+               {
+                "value": {
+                 "selection": {
+                  "directReference": {
+                   "structField": {
+                    "field": 2
+                   }
+                  },
+                  "rootReference": {}
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "type": "JOIN_TYPE_RIGHT_SEMI"
+           }
+          },
+          "expressions": [
+           {
+            "selection": {
+             "directReference": {
+              "structField": {}
+             },
+             "rootReference": {}
+            }
+           }
+          ]
+         }
+        },
+        "groupings": [
+         {
+          "expressionReferences": [
+           0
+          ]
+         }
+        ],
+        "measures": [
+         {
+          "measure": {
+           "functionReference": 5,
+           "phase": "AGGREGATION_PHASE_INITIAL_TO_RESULT",
+           "outputType": {
+            "i64": {
+             "nullability": "NULLABILITY_REQUIRED"
+            }
+           },
+           "invocation": "AGGREGATION_INVOCATION_ALL",
+           "options": [
+            {
+             "name": "overflow",
+             "preference": [
+              "SILENT"
+             ]
+            }
+           ]
+          }
+         }
+        ],
+        "groupingExpressions": [
+         {
+          "selection": {
+           "directReference": {
+            "structField": {}
+           },
+           "rootReference": {}
+          }
+         }
+        ]
+       }
+      },
+      "sorts": [
+       {
+        "expr": {
+         "selection": {
+          "directReference": {
+           "structField": {}
+          },
+          "rootReference": {}
+         }
+        },
+        "direction": "SORT_DIRECTION_ASC_NULLS_LAST"
+       }
+      ]
+     }
+    },
+    "names": [
+     "o_orderpriority",
+     "order_count"
+    ]
+   }
+  }
+ ],
+ "version": {
+  "minorNumber": 102,
+  "producer": "ClickHouse"
+ },
+ "extensionUrns": [
+  {
+   "extensionUrnAnchor": 2,
+   "urn": "extension:io.substrait:functions_aggregate_generic"
+  },
+  {
+   "extensionUrnAnchor": 3,
+   "urn": "extension:io.substrait:functions_boolean"
+  },
+  {
+   "extensionUrnAnchor": 4,
+   "urn": "extension:io.substrait:functions_comparison"
+  },
+  {
+   "extensionUrnAnchor": 1,
+   "urn": "extension:io.substrait:unsigned_integers"
+  }
+ ]
+}

@@ -4389,7 +4389,8 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
            ASTExplainQuery::ExplainKind::QueryEstimates,
            ASTExplainQuery::ExplainKind::TableOverride,
            ASTExplainQuery::ExplainKind::CurrentTransaction,
-           ASTExplainQuery::ExplainKind::WhatIf};
+           ASTExplainQuery::ExplainKind::WhatIf,
+           ASTExplainQuery::ExplainKind::Substrait};
     return explain_kinds[fuzz_rand() % explain_kinds.size()];
 }
 
@@ -4451,7 +4452,8 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
           "fragments"}},
         {ASTExplainQuery::ExplainKind::TableOverride, {}},
         {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
-        {ASTExplainQuery::ExplainKind::WhatIf, {"empirical", "projection_scan_budget_rows", "index_scan_budget_rows"}}};
+        {ASTExplainQuery::ExplainKind::WhatIf, {"empirical", "projection_scan_budget_rows", "index_scan_budget_rows"}},
+        {ASTExplainQuery::ExplainKind::Substrait, {}}};
 
     const auto & settings = settings_by_kind.at(kind);
     if (fuzz_rand() % 50 == 0 && !changes.empty())

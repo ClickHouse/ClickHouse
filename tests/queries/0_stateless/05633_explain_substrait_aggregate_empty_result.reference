@@ -1,0 +1,4 @@
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Aggregating: aggregation without keys that returns no rows over empty input is not supported
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Aggregating: aggregation without keys that returns no rows over empty input is not supported

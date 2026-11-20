@@ -1,0 +1,2 @@
+  Filter (( + (WHERE + Change column names to column identifiers))): function in is not mapped to Substrait, in in(__table1.l_shipmode, __set_FixedString(10)_7132423581680527765_3266248149655931898)
+  Filter (( + (WHERE + Change column names to column identifiers))): constant of type String cannot be encoded as fbin, in equals(__table2.p_brand, 'Brand#12'_String). (NOT_IMPLEMENTED)

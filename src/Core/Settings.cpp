@@ -11819,6 +11819,10 @@ Enable table function `eval`.
 )", EXPERIMENTAL, allow_experimental_eval_table_function, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, enable_substrait, false, R"(
+Enable the experimental `EXPLAIN SUBSTRAIT` statement that serializes the query plan to the Substrait format.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to enable the experimental `EXPLAIN SUBSTRAIT` statement."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

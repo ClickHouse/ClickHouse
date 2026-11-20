@@ -1,0 +1,15 @@
+Two values of one type compare
+["lt:any_any"]
+["equal:any_any"]
+["equal:any_any"]
+Nullable and not Nullable values of one type compare
+["lt:any_any"]
+Decimal of different precision
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Filter ((WHERE + Change column names to column identifiers)): arguments of less have different types (Decimal(10, 2), Decimal(18, 2)), in less(__table1.d, __table1.d_wide)
+FixedString of different length
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Filter ((WHERE + Change column names to column identifiers)): arguments of equals have different types (FixedString(3), FixedString(5)), in equals(__table1.f, __table1.f_long)
+Array of different element type
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Filter ((WHERE + Change column names to column identifiers)): arguments of equals have different types (Array(Int32), Array(Int64)), in equals(__table1.a, __table1.a_wide)

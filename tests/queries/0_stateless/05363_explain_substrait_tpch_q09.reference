@@ -1,0 +1,1 @@
+  Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + ))))): function toYear is not mapped to Substrait, in toYear(__table6.o_orderdate). (NOT_IMPLEMENTED)

@@ -19654,12 +19654,12 @@ const OPENING_BRACKETS = new Set([TT.OpeningRoundBracket, TT.OpeningSquareBracke
 const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracket, TT.ClosingCurlyBrace]);
 /// The words that make up the `EXPLAIN` kinds of `ParserExplainQuery`: `AST`, `SYNTAX`,
 /// `QUERY TREE`, `PIPELINE`, `PLAN`, `ESTIMATE`, `TABLE OVERRIDE`, `CURRENT TRANSACTION`,
-/// `ANALYZE`, `WHATIF`. Used by `tokensBeforeInlineInsertPayload` to walk an `EXPLAIN` prefix up to
+/// `ANALYZE`, `WHATIF`, `SUBSTRAIT`. Used by `tokensBeforeInlineInsertPayload` to walk an `EXPLAIN` prefix up to
 /// the statement it wraps; an unlisted word only means the walk stops earlier, treating the query
 /// as one that has no inline `INSERT` payload.
 const EXPLAIN_KIND_WORDS = new Set([
     'ast', 'syntax', 'query', 'tree', 'pipeline', 'plan', 'estimate', 'table', 'override',
-    'current', 'transaction', 'analyze', 'whatif']);
+    'current', 'transaction', 'analyze', 'whatif', 'substrait']);
 /// The keywords a query-level settings list may run into: the output clauses of
 /// `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data of an `INSERT ... SETTINGS ...
 /// VALUES ...`, or the `SELECT` source of `INSERT ... SETTINGS ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a

@@ -1,0 +1,2 @@
+  Filter (((WHERE + Renaming correlated columns to equivalent expressions in subquery) + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table10.r_name, 'EUROPE'_String)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table5.r_name, 'EUROPE'_String). (NOT_IMPLEMENTED)

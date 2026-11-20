@@ -1,0 +1,127 @@
+#pragma once
+
+#include "config.h"
+
+#if USE_SUBSTRAIT
+
+#include <expected>
+#include <optional>
+#include <string_view>
+#include <base/types.h>
+#include <substrait/plan.pb.h>
+#include <substrait/type.pb.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+/// Objects shared by all layers of the Substrait serializer, and the Substrait vocabulary they are built on.
+/// * Uniform Resource Name (URN). A name that identifies one extension YAML, for example "extension:io.substrait:functions_arithmetic".
+/// * Anchor. An integer a plan assigns to one extension function or type. The plan header declares each name with its anchor and URN once.
+///   Call sites then carry the anchor only. Anchors start at 1. The spec discourages 0 because it reads as unset.
+namespace DB
+{
+
+/// Options of one function call, as (option name, value) pairs. An option names a behavior choice, for example overflow handling.
+using FunctionOptions = VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>>;
+
+template <typename FunctionMessage>
+void addFunctionOptions(const FunctionOptions & options, FunctionMessage & function)
+{
+    for (const auto & [name, preference] : options)
+    {
+        auto * option = function.add_options();
+        option->set_name(name);
+        option->add_preference(preference);
+    }
+}
+
+/// Why a plan step has no Substrait representation. Such a step blocks the branch of the plan above it.
+struct SubstraitBlockingReason
+{
+    String text;
+    String expression;
+};
+
+inline std::unexpected<SubstraitBlockingReason> blocked(String text)
+{
+    return std::unexpected(SubstraitBlockingReason{.text = std::move(text), .expression = {}});
+}
+
+namespace SubstraitExtensionURN
+{
+static constexpr std::string_view arithmetic = "extension:io.substrait:functions_arithmetic";
+static constexpr std::string_view boolean = "extension:io.substrait:functions_boolean";
+static constexpr std::string_view comparison = "extension:io.substrait:functions_comparison";
+static constexpr std::string_view string = "extension:io.substrait:functions_string";
+static constexpr std::string_view rounding = "extension:io.substrait:functions_rounding";
+static constexpr std::string_view logarithmic = "extension:io.substrait:functions_logarithmic";
+static constexpr std::string_view aggregate_generic = "extension:io.substrait:functions_aggregate_generic";
+static constexpr std::string_view unsigned_integers = "extension:io.substrait:unsigned_integers";
+}
+
+/// The extension functions and types of one plan, accumulated while the plan converts. Starts empty.
+/// Interning a function or type assigns its anchor, so call sites can embed the number.
+/// A converter may intern more than the plan ends up referencing. One instance per plan, shared by all converters.
+class SubstraitPlanExtensions
+{
+public:
+    /// `signature` identifies one implementation, for example "add:i64_i64".
+    UInt32 internFunction(std::string_view urn, std::string_view signature);
+
+    /// `type_name` as declared in the extension YAML, for example "u64".
+    UInt32 internType(std::string_view urn, std::string_view type_name);
+
+    /// Gives back the `type_name` that internType registered. An unknown anchor is our bug and throws.
+    [[nodiscard]] const String & typeNameByAnchor(UInt32 anchor) const;
+
+    /// Writes the header declarations of the functions, types that `plan` references and of their URNs.
+    void declareUsedIn(substrait::Plan & plan) const;
+
+private:
+    /// Keyed by (URN, name). Ordered so the same query always produces identical plan.
+    MapWithMemoryTracking<std::pair<String, String>, UInt32> functions;
+    MapWithMemoryTracking<std::pair<String, String>, UInt32> types;
+};
+
+struct SubstraitColumn
+{
+    String name;
+    substrait::Type type;
+};
+
+/// The columns a converted subtree produces, in order. The Substrait-side mirror of the step's output header.
+/// Parents use it to resolve names into positions. ClickHouse references columns by name, Substrait by position.
+/// A type here is what the conversion emitted, which is not always derivable from the ClickHouse type.
+struct SubstraitSchema
+{
+    VectorWithMemoryTracking<SubstraitColumn> columns;
+
+    /// On duplicate names, gives the first position.
+    [[nodiscard]] std::optional<size_t> positionByName(const String & name) const
+    {
+        if (const auto it = positions.find(name); it != positions.end())
+            return it->second;
+        return {};
+    }
+
+    [[nodiscard]] size_t size() const { return columns.size(); }
+
+    void append(String name, substrait::Type type)
+    {
+        positions.try_emplace(name, columns.size());
+        columns.push_back({std::move(name), std::move(type)});
+    }
+
+    void appendAll(const SubstraitSchema & other)
+    {
+        for (const auto & column : other.columns)
+            append(column.name, column.type);
+    }
+
+private:
+    UnorderedMapWithMemoryTracking<String, size_t> positions;
+};
+
+}
+
+#endif

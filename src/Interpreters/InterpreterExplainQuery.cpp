@@ -87,6 +87,12 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/TableFunctionNode.h>
 
+#include "config.h"
+
+#if USE_SUBSTRAIT
+#include <Processors/QueryPlan/Substrait/SubstraitSerializer.h>
+#endif
+
 
 namespace ProfileEvents
 {
@@ -99,6 +105,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_substrait;
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -115,6 +122,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -1458,6 +1466,45 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto whatif_result = estimateHypotheticalObjects(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
+        }
+        case ASTExplainQuery::Substrait:
+        {
+            #if USE_SUBSTRAIT
+            if (!query_context->getSettingsRef()[Setting::enable_substrait])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "EXPLAIN SUBSTRAIT is experimental. Set `enable_substrait` to enable it");
+
+            /// Substrait could express writes, perhaps we should support it in the future.
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN SUBSTRAIT query");
+
+            if (ast.getSettings())
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN SUBSTRAIT query");
+
+            QueryPlan plan;
+            ContextPtr context;
+
+            {
+                auto planning_context = Context::createCopy(query_context);
+                disableSubstraitIncompatiblePlanning(planning_context);
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, options);
+                interpreter.applyDistributedPlanFallbackIfNeeded();
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+
+            auto optimization_settings = makeSubstraitCompatibleOptimizationSettings(context);
+            optimization_settings.is_explain = true;
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            plan.optimize(optimization_settings);
+
+            const auto json = serializeQueryPlanToSubstraitJSON(plan);
+            buf.write(json.data(), json.size());
+            single_record = true;
+            break;
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "EXPLAIN SUBSTRAIT requires a build with Substrait support (ENABLE_SUBSTRAIT)");
+#endif
         }
         case DB::ASTExplainQuery::Analyze:
         {

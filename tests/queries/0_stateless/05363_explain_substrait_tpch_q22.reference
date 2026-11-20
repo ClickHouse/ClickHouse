@@ -1,0 +1,1 @@
+  Filter ((WHERE + Change column names to column identifiers)): function in is not mapped to Substrait, in in(substring(__table2.c_phone, 1_UInt8, 2_UInt8), __set_String_14991054678188163016_2173114288791050678). (NOT_IMPLEMENTED)

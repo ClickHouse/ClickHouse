@@ -1,0 +1,2 @@
+  Aggregating: aggregate function avg has no Substrait overload for dec, in avg(__table4.l_quantity)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table2.p_brand, 'Brand#23'_String). (NOT_IMPLEMENTED)

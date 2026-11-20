@@ -28,6 +28,7 @@ public:
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
         Analyze, /// EXPLAIN ANALYZE ...
         WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
+        Substrait, /// 'EXPLAIN SUBSTRAIT SELECT ...'
     };
 
     static String toString(ExplainKind kind)
@@ -44,6 +45,7 @@ public:
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
             case Analyze: return "EXPLAIN ANALYZE";
             case WhatIf: return "EXPLAIN WHATIF";
+            case Substrait: return "EXPLAIN SUBSTRAIT";
         }
     }
 
@@ -69,6 +71,8 @@ public:
             return Analyze;
         if (str == "EXPLAIN WHATIF")
             return WhatIf;
+        if (str == "EXPLAIN SUBSTRAIT")
+            return Substrait;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }
