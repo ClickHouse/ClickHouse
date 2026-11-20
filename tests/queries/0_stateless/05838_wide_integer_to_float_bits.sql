@@ -1,5 +1,8 @@
+-- Tags: no-darwin
+-- no-darwin: `long double` is `double` on arm64 macOS, so Float32 of a value with more than 53 significant bits is rounded twice there.
+
 -- Bit patterns of wide integer and wide Decimal conversions to Float64 and Float32 around the 64-bit boundary.
--- Every value is either below 2^64 in magnitude or exact in Float64, so all architectures agree on the result.
+-- Every value is either below 2^64 in magnitude or exact in Float64, so every platform with an x87 or binary128 `long double` agrees.
 
 SELECT 'Int128', s, reinterpretAsUInt64(toFloat64(x)), reinterpretAsUInt32(toFloat32(x))
 FROM (SELECT arrayJoin(['0', '1', '-1', '9007199254740993', '-9007199254740993', '1152921573326323712', '1152921573326323713',
