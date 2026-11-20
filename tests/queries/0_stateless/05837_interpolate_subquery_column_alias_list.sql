@@ -27,3 +27,13 @@ SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.1', numbers(4)) GROU
 SELECT * FROM (SELECT sum(number) AS x, max(number) AS y, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, y AS y + 1000)) AS s(y, x, z) ORDER BY z;
 SELECT * FROM (SELECT sum(number) AS x, x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', view(SELECT number, toUInt64(42) AS x FROM numbers(4))) GROUP BY mb, x ORDER BY mb WITH FILL INTERPOLATE (w AS w + 1000)) AS s(y1, y2, y3, z) ORDER BY z SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
 SELECT * FROM (SELECT sum(number) AS x, x, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y1, y2, z) ORDER BY z SETTINGS prefer_localhost_replica = 0;
+CREATE TABLE remote_tab (number UInt64) ENGINE = Remote('127.0.0.1', numbers(4));
+CREATE TABLE merge_tab AS remote_tab ENGINE = Merge(currentDatabase(), '^remote_tab$');
+CREATE TABLE null_tab (number UInt64) ENGINE = Null;
+CREATE MATERIALIZED VIEW mv TO remote_tab AS SELECT number FROM null_tab;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM merge_tab GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, w AS w + 1000)) AS s(w, x, z) ORDER BY z;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM mv GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, w AS w + 1000)) AS s(w, x, z) ORDER BY z;
+DROP TABLE mv;
+DROP TABLE null_tab;
+DROP TABLE merge_tab;
+DROP TABLE remote_tab;
