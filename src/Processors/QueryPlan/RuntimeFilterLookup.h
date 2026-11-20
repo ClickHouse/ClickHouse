@@ -43,6 +43,12 @@ struct RuntimeFilterStats
     std::atomic<Int64> rows_skipped = 0;
     std::atomic<Int64> blocks_processed = 0;
     std::atomic<Int64> blocks_skipped = 0;
+    /// Rows and probe time of the large blocks, of at least `min_rows_in_large_block` rows (RuntimeFilterLookup.cpp).
+    std::atomic<Int64> large_block_rows = 0;
+    std::atomic<Int64> large_block_probe_nanoseconds = 0;
+    /// Rows of the blocks in which no row passed, among all blocks and among the large ones.
+    std::atomic<Int64> rows_in_rejected_blocks = 0;
+    std::atomic<Int64> large_block_rows_in_rejected_blocks = 0;
 };
 
 struct RuntimeFilterConfig
@@ -123,10 +129,11 @@ class RuntimeFilterEvaluationState
 public:
     explicit RuntimeFilterEvaluationState(RuntimeFilterConfig config_);
 
-    void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
+    void updateStats(UInt64 rows_checked, UInt64 rows_passed, UInt64 probe_nanoseconds) const;
     const RuntimeFilterStats & getStats() const { return stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
     void markKeySetDropped() { key_set_dropped = true; }
+    bool isKeySetDropped() const { return key_set_dropped.load(); }
 
     /// Checks if a block should bypass the filter because its key set was dropped or evaluation is temporarily throttled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -166,6 +173,7 @@ public:
     void releaseExactValues();
     [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
     [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] bool cheapToProbe() const;
 
 private:
     struct Empty
@@ -257,6 +265,7 @@ public:
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
     [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] bool cheapToProbe() const;
 
     /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
@@ -339,6 +348,7 @@ public:
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
     const std::optional<Range> & getInitialKeyRange() const { return key_range; }
+    bool cheapToProbe() const { return true; }
 
 private:
     const DataTypePtr filter_column_target_type;
@@ -421,6 +431,12 @@ public:
     ColumnPtr getRecordedKeyValues() const;
     std::optional<Range> getRecordedKeyRanges() const;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
+
+    /// Whether a probe is a lookup in a fixed hash table or a small exact set, as opposed to a large exact set or a bloom filter.
+    bool cheapToProbe() const;
+
+    /// Whether the keys were dropped, so that the filter skips every block.
+    bool isKeySetDropped() const { return evaluation_state.isKeySetDropped(); }
 
     /// Usage statistics
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
@@ -505,6 +521,9 @@ inline constexpr std::string_view runtime_filter_global_row_index_node_name = "p
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
 /// can produce a range predicate even after the exact value set overflows into a bloom filter.
 bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);
+
+/// Whether the exact set of a runtime filter over a key of this type keeps only the non-NULL keys.
+bool canDropNullKeys(const DataTypePtr & type);
 
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(

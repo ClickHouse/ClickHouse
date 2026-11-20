@@ -9,6 +9,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
@@ -33,10 +34,12 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/RuntimeFilterOrder.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -64,6 +67,11 @@
 #include <snappy.h>
 #endif
 
+namespace DB::Setting
+{
+    extern const SettingsBool join_runtime_filter_adaptive_prewhere_order;
+}
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_DECOMPRESS;
@@ -90,6 +98,7 @@ namespace ProfileEvents
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
+    extern const Event RuntimeFilterPrewhereStepsReordered;
 }
 
 namespace DB::Parquet
@@ -2129,12 +2138,22 @@ void Reader::preparePrewhere()
 
         PrewhereExprInfo prewhere_expr_info;
         bool success = false;
+        bool runtime_filters_reordered = false;
 
         /// The per-condition split only registers kept prewhere outputs while filtering, so it is
         /// used only when needs_filter is true; otherwise fall through to the single step below.
         if (needs_filter)
         {
-            auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+            std::optional<ActionsDAG> reordered_dag;
+            if (auto context = format_filter_info->context.lock(); context && context->getSettingsRef()[Setting::join_runtime_filter_adaptive_prewhere_order])
+            {
+                auto query_context = CurrentThread::tryGetQueryContext();
+                if (auto lookup = query_context ? query_context->getRuntimeFilterLookup() : nullptr)
+                    reordered_dag = reorderRuntimeFilterConjuncts(dag, filter_column_name, *lookup);
+            }
+            runtime_filters_reordered = reordered_dag.has_value();
+            auto prewhere_info_patched
+                = std::make_shared<PrewhereInfo>(reordered_dag ? std::move(*reordered_dag) : dag.clone(), filter_column_name);
             prewhere_info_patched->need_filter = needs_filter;
 
             success = tryBuildPrewhereSteps(
@@ -2187,6 +2206,8 @@ void Reader::preparePrewhere()
                 auto filter = prewhere_expr_info.steps[i];
                 add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
+            if (runtime_filters_reordered)
+                ProfileEvents::increment(ProfileEvents::RuntimeFilterPrewhereStepsReordered);
         }
         else
         {

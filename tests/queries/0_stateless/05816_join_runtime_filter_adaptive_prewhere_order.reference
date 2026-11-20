@@ -1,0 +1,34 @@
+MergeTree
+3993	997688	1792300
+3993	997688	1792300
+2386	839962	1070400
+2626
+2626
+131144
+131144
+518
+7809	684711	1148800
+1574	393300	393300
+1574	393300	393300
+1574	393300	393300
+1574	393300	393300
+3993	997688	1792300
+443
+443
+Parquet
+3993	997688	1792300
+3993	997688	1792300
+reordered
+mt_on	1
+mt_off	0
+mt_shared_step_on	1
+mt_anti_on	1
+mt_anti_null_build_on	0
+mt_div_on	0
+mt_patch_on	0
+mt_default_on	0
+mt_readded_on	0
+mt_key_read_before_on	0
+mt_shared_input_on	0
+parquet_on	1
+parquet_off	0
