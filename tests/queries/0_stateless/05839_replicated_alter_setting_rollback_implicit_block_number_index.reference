@@ -1,0 +1,6 @@
+index	auto_minmax_index__block_number
+setting kept	1
+columns	['a']
+merged	2	3	2
+merged part has the index	1
+after alter	0

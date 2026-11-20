@@ -437,6 +437,7 @@ static struct InitFiu
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
+    REGULAR(rmt_alter_settings_fail_before_metadata_install) \
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(local_object_storage_network_error_during_every_remove) \

@@ -269,6 +269,7 @@ namespace FailPoints
     extern const char rmt_merge_selecting_task_no_free_threads[];
     extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
+    extern const char rmt_alter_settings_fail_before_metadata_install[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char rmt_restore_replica_pause_before_metadata_version_raise[];
@@ -7152,29 +7153,40 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
-        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         /// `changeSettings` installs the old metadata plus the new settings. When the ALTER also
         /// changed derived metadata (implicit statistics, or implicit skip indices gated by a
         /// mutable setting such as `enable_block_number_column`), the running table must get the
         /// recomputed metadata too, otherwise it only appears after `DETACH` / `ATTACH` or restart.
+        /// The comparison is done before anything is published, so that a failure in it changes nothing.
         const bool future_metadata_installed = statistics_changed || implicitIndicesChanged(*metadata_snapshot, future_metadata);
-        if (future_metadata_installed)
-        {
-            /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
-            /// into `future_metadata` so that installing it does not revert the index filename policy.
-            auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-            future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-            for (auto & index : future_metadata.secondary_indices)
-                index.escape_filenames = committed_metadata->escape_index_filenames;
 
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
-        }
-
+        /// Publishing the settings, installing the recomputed metadata and committing the definition
+        /// are one unit: if any step throws, the live settings must not stay ahead of the metadata
+        /// (e.g. a disabled `enable_block_number_column` with `auto_minmax_index__block_number` still declared).
         try
         {
+            changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
+
+            fiu_do_on(FailPoints::rmt_alter_settings_fail_before_metadata_install,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure between publishing the settings and the metadata of a settings ALTER");
+            });
+
+            if (future_metadata_installed)
+            {
+                /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
+                /// into `future_metadata` so that installing it does not revert the index filename policy.
+                auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+                future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+                for (auto & index : future_metadata.secondary_indices)
+                    index.escape_filenames = committed_metadata->escape_index_filenames;
+
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(future_metadata);
+            }
+
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
@@ -7415,31 +7427,38 @@ void StorageReplicatedMergeTree::alter(
             /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
             checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
 
-            /// Just change settings
-            if (settings_are_changed)
-                changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
-
-            /// The comment is not replicated as of today, but we can implement it later.
-            /// The recomputed implicit indices are installed now as well, before the replicated entry is replayed.
-            if (metadata_copy_installed)
-            {
-                if (settings_are_changed)
-                {
-                    /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
-                    /// into `metadata_copy` so that installing it does not revert the index filename policy.
-                    auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-                    metadata_copy.escape_index_filenames = committed_metadata->escape_index_filenames;
-                    for (auto & index : metadata_copy.secondary_indices)
-                        index.escape_filenames = committed_metadata->escape_index_filenames;
-                }
-
-                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                setInMemoryMetadata(metadata_copy);
-            }
-
+            /// Publishing the settings, installing the recomputed metadata and committing the definition
+            /// are one unit, so that a failure in any step is rolled back below.
             try
             {
+                /// Just change settings
+                if (settings_are_changed)
+                    changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
+
+                fiu_do_on(FailPoints::rmt_alter_settings_fail_before_metadata_install,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure between publishing the settings and the metadata of a settings ALTER");
+                });
+
+                /// The comment is not replicated as of today, but we can implement it later.
+                /// The recomputed implicit indices are installed now as well, before the replicated entry is replayed.
+                if (metadata_copy_installed)
+                {
+                    if (settings_are_changed)
+                    {
+                        /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
+                        /// into `metadata_copy` so that installing it does not revert the index filename policy.
+                        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+                        metadata_copy.escape_index_filenames = committed_metadata->escape_index_filenames;
+                        for (auto & index : metadata_copy.secondary_indices)
+                            index.escape_filenames = committed_metadata->escape_index_filenames;
+                    }
+
+                    /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                    setInMemoryMetadata(metadata_copy);
+                }
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
             }
             catch (...)
