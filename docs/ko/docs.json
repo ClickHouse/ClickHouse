@@ -4,95 +4,67 @@
       "pages": [
         "ko/index"
       ],
-      "tab": "홈"
+      "tab": "Home"
     },
     {
       "menu": [
         {
-          "href": "#",
-          "icon": "/images/icons/icon-clickhouse.svg",
-          "item": "ClickHouse"
-        },
-        {
           "$ref": "./get-started/navigation.json"
-        },
-        {
-          "$ref": "./guides/navigation.json"
         },
         {
           "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "데이터베이스"
+      "tab": "Database"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "배포"
+          "item": "ClickHouse Cloud"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "item": "BYOC",
-          "pages": [
-            "ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-          ]
+          "$ref": "./products/managed-postgres/navigation.json"
+        },
+        {
+          "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
+          "item": "Langfuse"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "애플리케이션"
+          "item": "Open source"
         },
         {
           "$ref": "./clickstack/navigation.json"
         },
         {
-          "href": "https://langfuse.com/docs",
-          "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI 엔지니어링"
-        },
-        {
-          "href": "https://docs.runreveal.com/",
-          "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "보안"
-        },
-        {
-          "href": "#",
-          "icon": "/images/icons/section-header.svg",
-          "item": "오픈 소스"
-        },
-        {
-          "item": "ClickStack",
-          "pages": [
-            "ko/clickstack/index"
-          ]
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "href": "https://www.librechat.ai/docs",
-          "item": "LibreChat"
         }
       ],
-      "tab": "제품"
+      "tab": "Solutions"
     },
     {
       "menu": [
         {
-          "item": "생태계",
+          "item": "Ecosystem",
           "pages": [
             "ko/integrations/home",
             "ko/integrations/data-catalogs"
@@ -108,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "통합"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -125,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "자료"
+      "tab": "Resources"
     }
   ]
 }

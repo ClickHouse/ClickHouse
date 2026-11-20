@@ -72,10 +72,6 @@ struct Memory : boost::noncopyable, Allocator
 
     void resize(size_t new_size, bool deallocate_if_empty = false);
 
-    /// Like `resize`, but when the capacity is exceeded it grows by at least 1/8, so that a sequence of small
-    /// appends takes amortized linear time instead of reallocating the whole data on every append.
-    void resizeAmortized(size_t new_size);
-
 private:
     static size_t withPadding(size_t value)
     {
@@ -137,7 +133,7 @@ protected:
         if (!Base::available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
         {
             memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
-            this->BufferBase::setPaddedStorage(memory, 0, memory.size(), 0);
+            this->BufferBase::set(memory.data(), memory.size(), 0);
         }
     }
 
@@ -151,10 +147,8 @@ public:
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
         , use_existing_memory(existing_memory != nullptr)
     {
-        if (existing_memory)
-            Base::set(existing_memory, size);
-        else
-            Base::setPaddedStorage(memory, 0, size);
+        Base::set(existing_memory ? existing_memory : memory.data(), size);
+        Base::padded = !existing_memory;
     }
 
     void resize(size_t size, bool deallocate_if_empty = false)
@@ -166,7 +160,7 @@ public:
                 "Existing memory was used for the buffer, resize is not allowed");
         }
         memory.resize(size, deallocate_if_empty);
-        Base::setPaddedStorage(memory, 0, size);
+        Base::set(memory.data(), size);
     }
 };
 
@@ -184,7 +178,8 @@ public:
     explicit BufferWithOutsideMemory(Memory<> & memory_)
         : Base(memory_.data(), memory_.size()), memory(memory_)
     {
-        Base::setPaddedStorage(memory, 0, memory.size());
+        Base::set(memory.data(), memory.size(), 0);
+        Base::padded = false;
     }
 
     size_t getActualSize()
@@ -197,7 +192,7 @@ private:
     {
         const size_t prev_size = Base::position() - memory.data();
         memory.resize(2 * prev_size + 1);
-        Base::setPaddedStorage(memory, prev_size, memory.size() - prev_size);
+        Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
     }
 
     void finalizeImpl() final

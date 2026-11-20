@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 SELECT 'Const column in grouping set, analyzer on:';
 

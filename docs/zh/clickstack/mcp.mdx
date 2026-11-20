@@ -148,7 +148,9 @@ https://mcp.clickhouse.cloud/clickstack
 
 开源和 BYOC 部署使用您的 ClickStack 实例内置的 MCP 端点，并采用 Bearer 令牌身份验证。
 
-### 前置条件 {#oss-prerequisites}
+<div id="oss-prerequisites">
+  ### 前置条件
+</div>
 
 * 一个正在运行的 ClickStack 实例 (有关设置选项，请参见 [部署](/zh/clickstack/deployment/overview))
 * 一个 **Personal API Access Key** — 您可以在 HyperDX 的 **Team Settings → API Keys → Personal API Access Key** 中找到
@@ -160,7 +162,6 @@ https://mcp.clickhouse.cloud/clickstack
 </Note>
 
 <div id="managed-endpoint">
-  <a id="oss-endpoint" />
   ### 端点
 </div>
 
@@ -173,7 +174,6 @@ https://mcp.clickhouse.cloud/clickstack
 MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证。
 
 <div id="managed-connecting-a-client">
-  <a id="oss-connecting-a-client" />
   ### 连接 MCP 客户端
 </div>
 
@@ -262,14 +262,16 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
   </Tab>
 </Tabs>
 
-## 你可以用 MCP 做什么？ {#capabilities}
+<div id="capabilities">
+  ## 你可以用 MCP 做什么？
+</div>
 
 连接后，你的 AI 助手可以访问覆盖 ClickStack 核心领域的一系列工具，包括：
 
 * **查询数据** — 使用 ClickStack 的查询构建器、搜索语法或原生 SQL，对日志、链路追踪和指标进行搜索与聚合。
 * **数据源** — 列出可用的数据源、数据库连接、列 schema 和属性键。
 * **仪表盘** — 创建、更新、删除和查看仪表盘及其卡片。
-* **告警** — 创建、更新和查看告警及其评估历史。如果已启用[异常检测](/zh/clickstack/features/anomaly-detection)，助手还可以在保存异常告警设置之前，基于近期历史数据对其进行回测。
+* **告警** — 创建、更新和查看告警及其评估历史。
 * **已保存的搜索** — 创建、更新和查看可复用的已保存搜索定义。
 * **Webhooks** — 列出可用于告警通知的 webhook 目标端。
 * **团队** — 列出当前用户所属的团队，并识别当前活动团队。

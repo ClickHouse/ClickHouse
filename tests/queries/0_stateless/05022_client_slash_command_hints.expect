@@ -44,6 +44,19 @@ proc type_and_submit {text} {
 # `Ctrl-C` redraws: a wait for a bare prompt can be satisfied by one that was printed before the
 # `Ctrl-C` was even sent - the previous command redraws it too - and the `Ctrl-D` would then be sent
 # into the same read as the `Ctrl-C` after all. The echo of the `^C` is what separates the two.
+# The line editor draws the hints of every state that is typed through, and on a loaded machine a
+# whole `send` can be consumed one character at a time, so the hints of a bare `/` may still be on
+# their way when the rest of the input is already typed. Where the absence of a hint is asserted,
+# the input is therefore typed up to its last character first and the drawing of it is drained, so
+# that the assertion sees the drawing of the final state alone.
+proc drain {} {
+    expect {
+        -timeout 1
+        -re {.+}  { exp_continue }
+        timeout   {}
+    }
+}
+
 proc interrupt {} {
     send -- "\3"
     expect {
@@ -161,36 +174,32 @@ expect "6759"
 clear_and_quit
 
 # ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
-# On a loaded machine the client can draw nothing for a while and then every state typed through at
-# once, so a state is awaited by text that no earlier state draws. The hints of the final state are
-# drawn before the `^C` of the `Ctrl-C` that abandons it.
 spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
 # In the middle of a query it is an operator (or the beginning of a `/* comment */`).
-send -- "SELECT 1 /"
-expect -ex "/"
-send -- "\3"
+send -- "SELECT 1 "
+drain
+send -- "/"
 expect {
+    -timeout 1
     "/clear"  { exit 1 }
-    -ex "^C"  {}
+    timeout   {}
 }
-expect ":) "
 
-# After the name of a command, what is being typed is its argument. The states up to `/man` offer the
-# commands; `/man ` is the first one drawn with the space, so all of them have been drawn before it.
-send -- "/man "
-expect -ex "man "
-send -- "f"
-expect -ex "man f"
-send -- "\3"
-expect {
-    "/clear"  { exit 1 }
-    -ex "^C"  {}
-}
+interrupt
 expect ":) "
-send -- "\4"
-expect eof
+# After the name of a command, what is being typed is its argument.
+send -- "/man "
+drain
+send -- "f"
+expect {
+    -timeout 1
+    "/clear"  { exit 1 }
+    timeout   {}
+}
+
+clear_and_quit
 
 # ─── 7. `clickhouse-local` reports the mistake as well ───────────────────────
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL -q '/hepl'"

@@ -6,20 +6,12 @@ import os
 import pathlib
 import re
 import shlex
-import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
-from ci.jobs.scripts.settings_history import (
-    SETTINGS_DECLARATION_FILES,
-    current_version as settings_current_version,
-    violation_message as settings_violation_message,
-    violations as settings_history_violations,
-)
-from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -185,17 +177,11 @@ def check_yamllint(file_paths):
 def check_xmllint(file_paths):
     if not isinstance(file_paths, list):
         file_paths = [file_paths]
-    # Pass the files as separate arguments, without a shell. A `sh -c` command line is a
-    # single argument, limited to 128 KiB by the kernel (`MAX_ARG_STRLEN`), and the names
-    # of all XML files under `tests/` and `programs/` are about 260 KB, so with two CPUs
-    # (two chunks) it failed with `[Errno 7] Argument list too long: '/bin/sh'`.
-    proc = subprocess.run(
-        ["xmllint", "--noout", "--nonet", *file_paths],
-        capture_output=True,
-        text=True,
-        check=False,
+    file_paths = " ".join([f"'{file}'" for file in file_paths])
+    exit_code, out, err = Shell.get_res_stdout_stderr(
+        f"xmllint --noout --nonet {file_paths}", verbose=False
     )
-    return proc.stdout.strip() or proc.stderr.strip()
+    return out or err
 
 
 def check_functional_test_cases(files):
@@ -364,23 +350,8 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
-    # False positive: truncates one part metadata file (`checksums.txt`) to zero bytes, which is
-    # the exact state the fix has to survive, and does not copy or move anything - so the blob
-    # reference-counting hazard this check guards against cannot arise. The test is already tagged
-    # no-object-storage and no-shared-merge-tree, pins `part_storage_type = 'Full'`, asserts the
-    # path is absolute, and detaches the table around the edit.
-    "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
-    # False positive: no server is involved. The test runs `clickhouse-local` with `HOME` pointed
-    # at a per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is
-    # inside that directory, and the files it corrupts are the ones `clickhouse-local` itself
-    # wrote there a few lines earlier.
-    "05227_broken_persisted_table_does_not_block_clickhouse_local.sh",
-    # False positive: no server is involved. The test runs `clickhouse-local` with `--path` set to a
-    # per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is inside
-    # that directory, and the files it corrupts are the ones `clickhouse-local` itself wrote there.
-    "05407_clickhouse_local_buffer_flush_with_broken_table_load.sh",
 }
 
 
@@ -411,19 +382,6 @@ def strip_shell_comment(line):
             return line[:i]
         i += 1
     return line
-
-
-SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-
-
-def strip_sql_comments(text):
-    """
-    Remove both comment forms of ClickHouse SQL from `text`: `/* ... */`, which may span lines, and
-    `--` to the end of its line. Quoting is not tracked, so a `--` inside a string literal is cut
-    as well; no check here reads such a literal.
-    """
-    text = SQL_BLOCK_COMMENT_RE.sub(" ", text)
-    return "\n".join(line.split("--")[0] for line in text.splitlines())
 
 
 # `clickhouse-local` is not the server: it runs against its own `--path`, so a filesystem
@@ -619,230 +577,6 @@ def check_no_server_data_manipulation(files):
                     f"Write an integration test instead."
                 )
                 break
-
-    return "\n".join(errors)
-
-
-FAILPOINT_STATEMENT_RE = re.compile(
-    r"\bSYSTEM\s+(?:(?P<disable_all>DISABLE\s+ALL\s+FAILPOINTS)"
-    r"|(?P<action>ENABLE|DISABLE)\s+FAILPOINT\s+(?P<name>[^\s;'\")]+))",
-    re.IGNORECASE,
-)
-
-# A fail point name spelled through a shell variable cannot be resolved here, so a disable of one
-# stands for a disable of any name - see `check_failpoints_are_disabled`.
-FAILPOINT_LITERAL_NAME_RE = re.compile(r"^\w+$")
-
-# Only a test that talks to the server can leave a fail point armed for the next one. A
-# `clickhouse-local` invocation keeps its fail points in its own process, which exits with the test.
-SERVER_CLIENT_RE = re.compile(
-    r"\$\{?CLICKHOUSE_(?:CLIENT|CURL|BENCHMARK)|\bclickhouse(?:-|\s+)(?:client|benchmark)\b"
-)
-
-# Where the statement that surrounds a `SYSTEM ... FAILPOINT` match begins. Only the text of that
-# statement is inspected, so a keyword from a neighbouring one cannot leak into the decision.
-FAILPOINT_STATEMENT_SEPARATORS = ";\"'`"
-
-# `SYSTEM DISABLE ALL FAILPOINTS` is server-wide in the other direction as well: it disarms the
-# fail points a concurrently running test armed, so it stands in for the per-name disables only in
-# a test that runs alone. `SYSTEM DROP` carries the same requirement, in `various_checks.sh`.
-NO_PARALLEL_TAG_RE = re.compile(r"(--|#)\s*[Tt]ags:.*\bno-parallel\b")
-
-
-def failpoint_statements(text):
-    """
-    Yield `(action, name)` for every `SYSTEM ENABLE|DISABLE FAILPOINT` statement in `text`, and
-    `("disable_all", None)` for every `SYSTEM DISABLE ALL FAILPOINTS`, which takes no name.
-
-    `EXPLAIN SYSTEM ENABLE FAILPOINT ...` is skipped: it prints the parsed statement and arms
-    nothing, so it neither needs a disable nor stands in for one.
-    """
-    for match in FAILPOINT_STATEMENT_RE.finditer(text):
-        statement_start = max(
-            text.rfind(separator, 0, match.start())
-            for separator in FAILPOINT_STATEMENT_SEPARATORS
-        )
-        if "explain" in text[statement_start + 1 : match.start()].lower():
-            continue
-        if match.group("disable_all"):
-            yield "disable_all", None
-        else:
-            yield match.group("action").lower(), match.group("name")
-
-
-def server_statements_content(test_case, file_content):
-    """
-    The text of a test with comments stripped, or `None` for a `.sh` test that never talks to the
-    server.
-    """
-    if test_case.endswith(".sh"):
-        # Drop comments, `echo` payloads and `clickhouse-local` invocations, so only the
-        # statements that reach the server are left.
-        content = executable_shell_content(file_content.splitlines())
-        if not SERVER_CLIENT_RE.search(content):
-            return None
-        return content
-    if test_case.endswith(".py"):
-        return "\n".join(strip_shell_comment(line) for line in file_content.splitlines())
-    return strip_sql_comments(file_content)
-
-
-# The first `Tags:` comment line, parsed the same way as in `tests/clickhouse-test`.
-TEST_TAGS_LINE_RE = re.compile(r"^(?:--|#)\s*Tags:(.*)$", re.MULTILINE)
-
-# Tags every test that arms a fail point on the server must have.
-FAILPOINT_TEST_REQUIRED_TAGS = ("no-parallel", "no-fasttest")
-
-
-def check_failpoint_tests_are_isolated(files):
-    """
-    A test that arms a fail point on the server must be tagged `no-parallel` and `no-fasttest`.
-
-    A fail point fires for every query on the server, not only for the test that armed it, so it
-    must not run alongside other tests. Tests that run alone are expensive in the fast test, where
-    they run one by one after the parallel ones, so they are left to the full stateless jobs.
-    """
-
-    errors = []
-    for test_case in files:
-        if "0_stateless" not in test_case:
-            continue
-        try:
-            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
-                file_content = f.read()
-        except Exception as e:
-            errors.append(f"Error checking {test_case}: {e}")
-            continue
-
-        if "FAILPOINT" not in file_content.upper():
-            continue
-
-        content = server_statements_content(test_case, file_content)
-        if content is None:
-            continue
-
-        enabled = [name for action, name in failpoint_statements(content) if action == "enable"]
-        if not enabled:
-            continue
-
-        tags_line = TEST_TAGS_LINE_RE.search(file_content)
-        tags = {tag.strip() for tag in tags_line.group(1).split(",")} if tags_line else set()
-        missing = [tag for tag in FAILPOINT_TEST_REQUIRED_TAGS if tag not in tags]
-        if not missing:
-            continue
-
-        line_number = next(
-            (
-                number
-                for number, line in enumerate(file_content.splitlines(), 1)
-                if re.search(r"ENABLE\s+FAILPOINT", line, re.IGNORECASE)
-            ),
-            1,
-        )
-        missing_str = ", ".join(f"`{tag}`" for tag in missing)
-        errors.append(
-            f"{test_case}:{line_number} enables the fail point `{enabled[0]}` but is not tagged "
-            f"{missing_str}. A fail point is server-global state and fires in every concurrently "
-            f"running query, so the test must run alone, and tests that run alone are kept out "
-            f"of the fast test."
-        )
-
-    return "\n".join(errors)
-
-
-def check_failpoints_are_disabled(files):
-    """
-    A test that arms a fail point must disarm it: every `SYSTEM ENABLE FAILPOINT <name>` needs a
-    `SYSTEM DISABLE FAILPOINT <name>` in the same test.
-
-    Fail point state lives in the server process, not in the connection or the session, so one that
-    a test leaves armed goes on firing in whatever runs next. The stateless suite runs tests in
-    parallel, so that is another test's query: it fails, or hangs on a pauseable fail point, for a
-    reason that is nowhere in its own source, and the report blames the wrong change. Disarming on
-    the way out keeps the damage inside the test that asked for it.
-
-    The disable belongs on every path out of the test, not only the successful one - in a `.sh` test
-    that means a `trap ... EXIT`, since an early `exit` or a failing command under `set -e` skips
-    the rest of the file.
-
-    `SYSTEM DISABLE ALL FAILPOINTS` disarms everything the test armed, so it stands in for the
-    per-name disables - but only in a `no-parallel` test, because it disarms what the tests running
-    alongside armed as well.
-    """
-
-    errors = []
-    for test_case in files:
-        if "0_stateless" not in test_case:
-            continue
-        try:
-            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
-                file_content = f.read()
-        except Exception as e:
-            errors.append(f"Error checking {test_case}: {e}")
-            continue
-
-        if "FAILPOINT" not in file_content.upper():
-            continue
-
-        content = server_statements_content(test_case, file_content)
-        if content is None:
-            continue
-
-        enabled = []
-        disabled = set()
-        disables_all = False
-        for action, name in failpoint_statements(content):
-            if action == "enable":
-                enabled.append(name)
-            elif action == "disable_all":
-                disables_all = True
-            else:
-                disabled.add(name)
-
-        if not enabled:
-            continue
-
-        if disables_all and NO_PARALLEL_TAG_RE.search(file_content):
-            continue
-
-        # A name that comes from a shell variable cannot be resolved by a text check, on either
-        # side: a disable of an unresolvable name therefore stands for a disable of any name, and
-        # an unresolvable enable is satisfied by any disable in the file. The test that needs this
-        # - a helper function disabling the fail point its caller armed - is already correct.
-        disables_unresolvable_name = any(
-            not FAILPOINT_LITERAL_NAME_RE.match(name) for name in disabled
-        )
-
-        for name in dict.fromkeys(enabled):
-            if name in disabled or disables_unresolvable_name:
-                continue
-            if disabled and not FAILPOINT_LITERAL_NAME_RE.match(name):
-                continue
-            line_number = next(
-                (
-                    number
-                    for number, line in enumerate(file_content.splitlines(), 1)
-                    if re.search(
-                        r"ENABLE\s+FAILPOINT\s+" + re.escape(name), line, re.IGNORECASE
-                    )
-                ),
-                1,
-            )
-            if disables_all:
-                errors.append(
-                    f"{test_case}:{line_number} enables the fail point `{name}` and clears it only "
-                    f"with `SYSTEM DISABLE ALL FAILPOINTS`, in a test that has no `no-parallel` "
-                    f"tag. That statement also disarms the fail points the tests running alongside "
-                    f"armed. Either disable `{name}` by name, or tag the test `no-parallel`."
-                )
-                continue
-            errors.append(
-                f"{test_case}:{line_number} enables the fail point `{name}` and never disables it. "
-                f"Add `SYSTEM DISABLE FAILPOINT {name}` on every path out of the test (in a `.sh` "
-                f"test, from a `trap ... EXIT`). A fail point is server-global state: one left "
-                f"armed fires in a concurrently running test and fails it for a reason that is not "
-                f"in its own source."
-            )
 
     return "\n".join(errors)
 
@@ -1145,150 +879,6 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
-# Third-party JavaScript and CSS loaded from other hosts. A compromised or hijacked host runs its code in
-# the origin of the page - for the Web UI pages of the server that is the ClickHouse HTTP origin, which
-# handles the credentials of the user.
-#
-# Three kinds of references are checked, on any host:
-# - `<script src=...>` and `<link rel="stylesheet|preload|modulepreload" href=...>` tags;
-# - ES modules imported by URL;
-# - in code (not in Markdown), any other URL of a `.js`, `.mjs` or `.css` file, e.g. for a dynamically
-#   created `<script>`, and any URL on a known CDN, which also serves files without an extension
-#   (e.g. `https://unpkg.com/tippy.js@6`).
-_CDN_HOSTS = (
-    "jsdelivr.net",
-    "unpkg.com",
-    "cdnjs.cloudflare.com",
-    "cdn.skypack.dev",
-    "esm.sh",
-    "jspm.io",
-    "esm.run",
-    "d3js.org",
-    "bootstrapcdn.com",
-    "code.jquery.com",
-    "ajax.googleapis.com",
-    "cdn.plot.ly",
-    "cdn.tailwindcss.com",
-    "rawgit.com",
-    "githack.com",
-    "statically.io",
-)
-_HOST = r"(?:[\w-]+\.)+[a-z]{2,}(?::\d+)?"
-_URL_TAIL = r"""[^\s"'`)<>\]]*"""
-_CDN_URL = re.compile(
-    r"(?:https?:)?//(?:[\w-]+\.)*(?:" + "|".join(re.escape(h) for h in _CDN_HOSTS) + r")\b" + _URL_TAIL,
-    re.IGNORECASE,
-)
-_ASSET_URL = re.compile(
-    r"(?:https?:)?//" + _HOST + r"/" + r"""[^\s"'`)<>\]?#]*\.(?:m?js|css)(?=[?#\s"'`)<>\]]|$)""" + _URL_TAIL,
-    re.IGNORECASE,
-)
-_EXTERNAL_URL = r"""["']?(?:https?:)?//[^\s"'>]+"""
-_EXTERNAL_TAG = re.compile(
-    r"<script\b[^>]*\bsrc\s*=\s*" + _EXTERNAL_URL + r"[^>]*>"
-    r"|<link\b(?=[^>]*\brel\s*=\s*[\"']?[^\"'>]*\b(?:stylesheet|preload|modulepreload)\b)[^>]*\bhref\s*=\s*" + _EXTERNAL_URL + r"[^>]*>",
-    re.IGNORECASE,
-)
-_SRI_HASH = re.compile(r"\bsha(?:256|384|512)-[A-Za-z0-9+/]{43,}={0,2}")
-_INTEGRITY_ATTRIBUTE = re.compile(r"\bintegrity\s*=\s*[\"']sha(?:256|384|512)-", re.IGNORECASE)
-# ES modules imported by URL: browsers cannot check their integrity, so they must be vendored.
-_URL_IMPORT = re.compile(
-    r"""\bimport\b(?:[^;'"`]*?\bfrom)?\s*\(?\s*["'`](?:https?:)?//[^"'`]+""", re.MULTILINE
-)
-# Hosts that may be referenced without an integrity hash, with the reasons.
-_ALLOWED_WITHOUT_INTEGRITY = (
-    # Google Fonts generates the CSS depending on the browser, so it cannot have an integrity hash.
-    # The CSS only references font files.
-    "fonts.googleapis.com",
-    # Pages for humans, and raw files served as `text/plain` with `X-Content-Type-Options: nosniff`,
-    # which browsers refuse to run as scripts or apply as stylesheets.
-    "github.com",
-    "raw.githubusercontent.com",
-    # The Kapa AI assistant widget of the documentation website (`docs/_site/customizations/kapa-init.js`).
-    # It cannot have an integrity hash: the host sends no CORS headers, the bundle is unversioned and
-    # redeployed by Kapa, and it loads captcha scripts from other hosts by itself.
-    "widget.kapa.ai",
-)
-# Copies of third-party libraries; they mention CDN URLs in their banners.
-_VENDORED_PATHS = ("/vendor/", "./programs/server/js/", "./utils/trace-visualizer/js/", "./utils/trace-visualizer/css/")
-_MARKDOWN_SUFFIXES = (".md", ".mdx")
-# Generated regions of the documentation are checked at their source of truth.
-_AUTOGENERATED_REGION = re.compile(r"AUTOGENERATED_START.*?AUTOGENERATED_END", re.DOTALL)
-
-
-def _url_host(url):
-    return url.split("//", 1)[1].split("/", 1)[0].split(":", 1)[0].lower()
-
-
-def _is_allowed_without_integrity(url):
-    host = _url_host(url)
-    return any(host == h or host.endswith("." + h) for h in _ALLOWED_WITHOUT_INTEGRITY)
-
-
-def check_external_web_assets(files) -> str:
-    """JavaScript and CSS from third-party hosts must be vendored into the repository.
-
-    Vendoring is preferred: copy the file next to the page (e.g. to a `vendor` directory) and load it by
-    a relative URL. An external `<script>` or stylesheet that remains must have subresource integrity
-    (an `integrity` attribute), and so must any other reference to an external JavaScript or CSS file
-    (e.g. a dynamically created `<script>`, with the hash following the URL). ES modules imported by URL
-    cannot be checked by the browser, so they are not allowed at all.
-    """
-    violations = []
-    for file_path in files:
-        if any(v in file_path for v in _VENDORED_PATHS):
-            continue
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        if file_path.startswith("./docs/"):
-            text = _AUTOGENERATED_REGION.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
-
-        def line_of(pos):
-            return text.count("\n", 0, pos) + 1
-
-        allowed_spans = []
-        for m in _EXTERNAL_TAG.finditer(text):
-            tag = m.group(0)
-            if _INTEGRITY_ATTRIBUTE.search(tag):
-                allowed_spans.append((m.start(), m.end()))
-            elif not _is_allowed_without_integrity(re.search(r"//[^\s\"'>]+", tag).group(0)):
-                violations.append(
-                    f"{file_path}:{line_of(m.start())}: external resource without subresource integrity: "
-                    f"{' '.join(tag.split())[:200]}. Vendor the file into the repository "
-                    "(preferred), or at least add an `integrity` attribute with its hash."
-                )
-                allowed_spans.append((m.start(), m.end()))  # Reported already.
-
-        for m in _URL_IMPORT.finditer(text):
-            violations.append(
-                f"{file_path}:{line_of(m.start())}: ES module imported by URL: {m.group(0)[:200]}. "
-                "Its integrity cannot be checked; vendor the module into the repository."
-            )
-            allowed_spans.append((m.start(), m.end()))
-
-        # In Markdown, URLs of files are mostly links and command examples; only the tags and imports above load code.
-        if file_path.endswith(_MARKDOWN_SUFFIXES):
-            continue
-
-        reported = set()
-        for pattern in (_CDN_URL, _ASSET_URL):
-            for m in pattern.finditer(text):
-                if m.start() in reported or any(begin <= m.start() < end for begin, end in allowed_spans):
-                    continue
-                if _is_allowed_without_integrity(m.group(0)) or _SRI_HASH.search(text, m.end(), m.end() + 300):
-                    continue
-                reported.add(m.start())
-                violations.append(
-                    f"{file_path}:{line_of(m.start())}: external JavaScript or CSS without subresource integrity: "
-                    f"{m.group(0)[:200]}. Vendor the file into the repository (preferred), "
-                    "or at least check its integrity hash."
-                )
-    return "\n".join(violations)
-
-
 # Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
 # taken from `DatabaseCatalog` may be the proxy rather than the engine.
 DEFERRABLE_STORAGE_CLASSES = (
@@ -1537,8 +1127,6 @@ def check_clickhouse_spelling():
 
     Every file tracked by git is checked, and so are the file names themselves, except:
     * `contrib` - third-party sources;
-    * `src/Parsers/Prometheus/grammar/generated` - the PromQL parser generated by ANTLR, whose
-      grammar is checked instead;
     * the generated locale directories of the documentation - a machine translation of the
       English pages, which are checked instead;
     * release notes - a record of what was published;
@@ -1577,8 +1165,7 @@ def check_clickhouse_spelling():
     # `-I` skips the binary files, `-z` separates the file name and the line number with a NUL
     # so that a path holding a colon cannot be mistaken for one.
     exit_code, out, err = Shell.get_res_stdout_stderr(
-        f"git grep -I -n -z -P {shlex.quote(prefilter)} -- . ':(exclude)contrib'"
-        " ':(exclude)src/Parsers/Prometheus/grammar/generated'",
+        f"git grep -I -n -z -P {shlex.quote(prefilter)} -- . ':(exclude)contrib'",
         verbose=False,
     )
     # 0 - matches found, 1 - none found, anything else is a failure of the search itself.
@@ -1603,9 +1190,7 @@ def check_clickhouse_spelling():
 
     # `-z` keeps the paths verbatim; without it git quotes the unusual ones.
     exit_code, out, err = Shell.get_res_stdout_stderr(
-        "git ls-files -z -- . ':(exclude)contrib'"
-        " ':(exclude)src/Parsers/Prometheus/grammar/generated'",
-        verbose=False,
+        "git ls-files -z -- . ':(exclude)contrib'", verbose=False
     )
     if exit_code != 0:
         return f"Failed to list the files of the repository: {err}"
@@ -1627,48 +1212,260 @@ def check_clickhouse_spelling():
     return ""
 
 
-def check_settings_changes_history():
-    """The settings-history rules of ci/jobs/scripts/settings_history.py, applied to the PR / merge-queue diff of
-    the settings declaration files as parsed by the store_data.py workflow hook. The same check runs locally with
-    `python3 -m ci.jobs.scripts.settings_history`. Returns "" on success or a non-empty error string on failure
-    (consumed by Result.from_commands_run).
+# Where the settings themselves are declared, per `SettingsChangesHistory.cpp` namespace. Used to
+# tell a setting that a change REMOVED from the code apart from one that still exists - only the
+# latter can be recorded in the history at all (see `check_settings_changes_history`). Mirrors
+# `LIST_OF_SETTINGS` in src/Core/Settings.cpp and `MERGE_TREE_SETTINGS` in
+# src/Storages/MergeTree/MergeTreeSettings.cpp.
+_SETTINGS_DECLARATION_SOURCES = {
+    "Session": ("src/Core/Settings.cpp", "src/Core/FormatFactorySettings.h"),
+    "MergeTree": ("src/Storages/MergeTree/MergeTreeSettings.cpp",),
+}
 
-    Fail-close: if a declaration file changed but the hook could not fetch the diff (e.g. in the merge queue),
-    fail rather than silently pass - a green here would defeat the purpose."""
+# `DECLARE(Type, name, default, R"(...)", tier)` and its aliasing variant.
+_SETTINGS_DECLARE_RE = re.compile(
+    r"^\s*DECLARE(?:_WITH_ALIAS)?\(\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# `MAKE_OBSOLETE(M, Type, name, default)` and friends. An obsolete or deprecated setting is still
+# a setting - it keeps its row in system.settings - so its history records are still required.
+# The longest alternative comes first: `MAKE_OBSOLETE` is a prefix of
+# `MAKE_OBSOLETE_MERGE_TREE_SETTING`.
+_SETTINGS_OBSOLETE_RE = re.compile(
+    r"^\s*MAKE_(?:OBSOLETE_MERGE_TREE_SETTING|OBSOLETE|DEPRECATED_BY_SERVER_CONFIG)\("
+    r"\s*\w+\s*,\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# The alias of a `DECLARE_WITH_ALIAS` sits on the line that closes the declaration:
+# `)", 0, insert_distributed_sync) \`. An alias is a settable name of its own - system.settings
+# has a row for it and history records may use it, `applyCompatibilitySetting` resolves aliases -
+# so it counts as declared.
+_SETTINGS_ALIAS_RE = re.compile(r'^\)"\s*,\s*[^,]+,\s*([A-Za-z0-9_]+)\)\s*\\?\s*$')
+
+
+def declared_setting_names():
+    """`({namespace: {name, ...}}, "")` for every setting declared in the checked-out tree, or
+    `(None, error)` when the declarations could not be read.
+
+    Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
+    or their files moved, and quietly returning an empty set would exempt every setting from the
+    current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
+    declaration macros."""
+    names = {}
+    for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
+        found = set()
+        for source in sources:
+            source_path = Path(source)
+            if not source_path.is_file():
+                return None, (
+                    f"Cannot validate the settings history: the {namespace} settings are "
+                    f"declared in {source}, which does not exist. If the declarations moved, "
+                    f"update _SETTINGS_DECLARATION_SOURCES in ci/jobs/check_style.py."
+                )
+            for line in source_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
+                for regexp in (
+                    _SETTINGS_DECLARE_RE,
+                    _SETTINGS_OBSOLETE_RE,
+                    _SETTINGS_ALIAS_RE,
+                ):
+                    m = regexp.match(line)
+                    if m:
+                        found.add(m.group(1))
+                        break
+        if not found:
+            return None, (
+                f"Cannot validate the settings history: no {namespace} setting declaration was "
+                f"found in {', '.join(sources)}. If the declaration macros changed, update the "
+                f"parser in ci/jobs/check_style.py."
+            )
+        names[namespace] = found
+    return names, ""
+
+
+def check_settings_changes_history():
+    """Every setting added, value-changed, removed, moved to another block, or sitting in a
+    block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
+    this change must be recorded under the CURRENT version block (in addition to any older block
+    used for backports), so the settings history stays consistent with the release version
+    (together with the 03999_stateless_settings_history functional test, which checks that
+    the recorded value matches the final Settings state).
+
+    Removals count too: the functional test only compares the current default with the NEWEST
+    recorded value, so a change that reverts a default to an older value could delete the record
+    of the original change instead of recording the revert, and both guards would stay green
+    while `compatibility` would hand out the wrong value for the release that shipped the other
+    default. Deleting a phantom record stays possible - see the gate below, it is a change that
+    touches this file alone. Moves count for the same reason: re-adding an unchanged record under
+    an older block leaves the newest recorded value intact, so the functional test passes while
+    `compatibility` attributes the default flip to the wrong release. A block header edit does
+    the same to every record of that block at once, without touching a single entry line, so
+    such a change reports the whole block.
+
+    A record RENAMED in place - removed and re-added in the same block, identical apart from the
+    setting name - is reported under the new name only (see `parse_settings_history_changes`).
+    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
+    rejects a documented name that no longer exists, so requiring it would leave no history file
+    that satisfies both guards.
+
+    A setting REMOVED from the code is exempt for the same reason: its records have to go with it.
+    A record naming a setting that is not in system.settings / system.merge_tree_settings is
+    rejected by 03999_stateless_settings_history, and `applyCompatibilitySetting` resolves every
+    recorded name, so nothing can be recorded for a setting that no longer exists - demanding an
+    entry would leave no way to drop a setting that was never released. The exemption is also safe:
+    `compatibility` only ever restores values of settings that exist, so a setting that is gone has
+    no default left for any release to disagree about - unlike the deletion of a record of a
+    setting that stays, which is what the removals paragraph above is about. A setting that is
+    merely made OBSOLETE keeps its row in system.settings, so its records stay required; only a
+    real removal is exempt.
+
+    Runs only when that file changed; the list of changed setting names is provided by the
+    store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
+    success or a non-empty error string on failure (consumed by Result.from_commands_run).
+    Pure text parsing - no C++ syntax analysis.
+
+    A change that touches no C++ source at all besides SettingsChangesHistory.cpp cannot have
+    changed any setting's compiled default, so it is a historical correction - fixing what a past
+    release recorded - not a default change made now, and it is allowed (the check skips).
+    Requiring it under the current version block would tell `compatibility` the value changed
+    again in this release. The gate deliberately keys off any src/ source file rather than the
+    declaration files alone: a default can come from a constant defined elsewhere (for example
+    `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
+    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
+    definitions are treated the same way: defaults also switch on compile definitions such as
+    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
+    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
+
+    Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
+    queue), fail rather than silently pass - a green here would defeat the purpose."""
+    path = "src/Core/SettingsChangesHistory.cpp"
     kv = Info().get_kv_data() or {}
     changed_files = kv.get("changed_files")
 
     if changed_files is None:
         # changed_files is stored fail-close by the store_data.py hook for every PR and
-        # merge-queue run; its absence means the check cannot know whether the files changed.
+        # merge-queue run; its absence means the check cannot know whether the file changed.
         return (
             "Could not determine changed files (no 'changed_files' recorded by the "
             "store_data.py workflow hook); refusing to pass the settings-history check."
         )
-    if not any(path in changed_files for path in SETTINGS_DECLARATION_FILES):
+    if path not in changed_files:
+        # The history file was not changed in this run - nothing to validate.
+        return ""
+
+    # A change that touches no default-bearing source besides this file cannot have changed any
+    # setting's compiled default, so it is a historical correction (fixing what a past release
+    # recorded), not a default change made now - it must not be forced into the current version
+    # block. Enforce the current-block rule as soon as any other source file changed: defaults
+    # are not only written in the declaration files, they can come from constants defined
+    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
+    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
+    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
+    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
+    # silent hole. The price is over-strictness for a change that corrects an old entry and
+    # edits unrelated code in the same commit - the message below says how to proceed.
+    def is_default_bearing_source(f):
+        if f == path:
+            return False
+        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
+            return True
+        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
+            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
+        )
+
+    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
+    if not other_sources_changed:
         return ""
 
     fetch_error = kv.get("settings_history_fetch_error")
-    changes = kv.get("settings_declaration_changes")
-    if fetch_error or changes is None:
+    changed = kv.get("settings_history_changed_settings")
+    if fetch_error or changed is None:
         return (
-            f"The settings declaration files changed but their diff could not be fetched to "
-            f"validate the settings history (the check must not be skipped when they changed). "
+            f"{path} changed but its diff could not be fetched to validate the settings "
+            f"history (the check must not be skipped when the file changed). "
             f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
         )
-
-    version = settings_current_version()
-    found = settings_history_violations(changes, version)
-    return settings_violation_message(found, version) if found else ""
-
-
-def check_broken_links_in_diff():
-    """The links added by the PR must be reachable. Not run outside of PRs: the merge queue and
-    master would only get flaky on unrelated sites going down, as every link was checked in its PR."""
-    info = Info()
-    if info.pr_number <= 0:
+    if not changed:
+        # The file changed but no setting record was added, value-edited, removed or moved and
+        # no block header changed (e.g. only reason-text edits, or entries reordered inside one
+        # block) - nothing to validate against the current version block.
         return ""
-    return check_pr_links(info.repo_name, info.pr_number)
+
+    declared, declared_error = declared_setting_names()
+    if declared_error:
+        return declared_error
+
+    def setting_still_exists(item):
+        """Whether the reported setting is still declared, i.e. whether the history can record it
+        at all - a setting this change removed from the code cannot be recorded anywhere (see the
+        removal paragraph in the docstring). Direction-agnostic on purpose: a record ADDED for a
+        name that is not declared is a dangling record, which 03999_stateless_settings_history
+        rejects outright, so there is nothing for this check to demand on top of that."""
+        declared_in_namespace = declared.get(item["namespace"])
+        if declared_in_namespace is None:
+            # An unrecognized namespace cannot be resolved to declarations - do not exempt it.
+            return True
+        return item["name"] in declared_in_namespace
+
+    changed = [item for item in changed if setting_still_exists(item)]
+    if not changed:
+        # Every reported setting was removed from the code by this change - nothing left to
+        # record in the current version block.
+        return ""
+
+    version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
+    current_version = "{}.{}".format(
+        re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
+        re.search(r"SET\(VERSION_MINOR (\d+)\)", version_txt).group(1),
+    )
+
+    namespace_by_map = {
+        "settings_changes_history": "Session",
+        "merge_tree_settings_changes_history": "MergeTree",
+    }
+    block_re = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
+    entry_re = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
+
+    # Names recorded under the current version block, per namespace, from the final file.
+    current_block = {"Session": set(), "MergeTree": set()}
+    namespace, version = None, None
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            mb = block_re.search(line)
+            if mb and mb.group(1) in namespace_by_map:
+                namespace, version = namespace_by_map[mb.group(1)], mb.group(2)
+                continue
+            me = entry_re.match(line)
+            if me and namespace and version == current_version:
+                current_block[namespace].add(me.group(1))
+
+    # `changed` is a list of {"namespace", "name"} records produced by the hook, where the
+    # namespace is taken from the block the added line sits in - so an overlapping name
+    # changed only in one namespace is not spuriously required in the other.
+    violations = []
+    for item in changed:
+        namespace, name = item["namespace"], item["name"]
+        if name not in current_block.get(namespace, set()):
+            violations.append(
+                f"  {namespace} setting '{name}' must be recorded in the '{current_version}' block"
+            )
+
+    if violations:
+        return (
+            f"These settings were added, value-changed, removed, moved to another block, or "
+            f"sit in a block whose `addSettingsChanges` header changed, in {path}, "
+            f"but are not recorded "
+            f"under the current version ('{current_version}') block of "
+            f"SettingsChangesHistory.cpp. Add "
+            f"an entry for each under the '{current_version}' block (older blocks may keep their "
+            f"entries for backports). If this is a correction of what an older release recorded "
+            f"and not a default change made here, split it into a change that touches only "
+            f"{path}. If you REMOVED a setting from the code, remove its declaration in this "
+            f"same change - a record is only demanded for a setting that is still declared. "
+            f"If you RENAMED a setting, keep its record in the same block and change "
+            f"only the name in it - the values and the reason text must stay identical for the "
+            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
+        )
+    return ""
 
 
 def parse_args():
@@ -1688,7 +1485,6 @@ if __name__ == "__main__":
             "./base/glibc-compatibility",
             "./contrib/consistent-hashing",
             "./base/widechar_width",
-            "./src/Parsers/Prometheus/grammar/generated",
         ],
         file_suffixes=[".h", ".cpp"],
     )
@@ -1716,18 +1512,6 @@ if __name__ == "__main__":
         exclude_paths=[],
         file_suffixes=[".yml", ".yaml"],
     )
-
-    # The translations of the documentation are generated from the English sources, which are checked.
-    with open("./docs/gt.config.json", encoding="utf-8") as fh:
-        docs_config = json.load(fh)
-    docs_locales = [l for l in docs_config["locales"] if l != docs_config["defaultLocale"]]
-    web_files = Utils.traverse_paths(
-        include_paths=["./programs", "./src", "./utils", "./ci", "./tests", "./base", "./.claude", "./docs"],
-        exclude_paths=[f"./docs/{l}/" for l in docs_locales] + [f"./docs/snippets/{l}/" for l in docs_locales],
-        file_suffixes=[".html", ".htm", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".css", ".vue", ".svelte", ".md", ".mdx"],
-    )
-    # Markdown is checked only in the documentation (elsewhere it does not load into a browser).
-    web_files = [f for f in web_files if f.startswith("./docs/") or not f.endswith((".md", ".mdx"))]
 
     testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
@@ -1771,24 +1555,6 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_no_server_data_manipulation,
-                files=functional_test_files,
-            )
-        )
-    testname = "failpoints_disabled_in_tests"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_failpoints_are_disabled,
-                files=functional_test_files,
-            )
-        )
-    testname = "failpoint_tests_are_isolated"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_failpoint_tests_are_isolated,
                 files=functional_test_files,
             )
         )
@@ -1839,15 +1605,6 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
-    testname = "external_web_assets"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_external_web_assets,
-                files=web_files,
-            )
-        )
     testname = "compose_images_from_dockerhub"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1871,14 +1628,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_settings_changes_history,
-            )
-        )
-    testname = "broken_links"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_broken_links_in_diff,
             )
         )
     testname = "cpp"
