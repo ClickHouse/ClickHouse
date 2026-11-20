@@ -39,6 +39,17 @@ Expression (Project names)
          I/O: rows 0 → 40 · 0 B → 640 B
            time 0.00 ns (0.00%) · parallelism Unknown
 
+Output: k
+
+BuildRuntimeFilter
+│  Runtime filter (exact set, replaced bloom filter, 123456 unique keys, size 32.77 KB)
+│  Probe: checked 200.00 · passed 50.00 · pass rate 25.00% · skipped 0.00 · before ready 0.00
+│  I/O: rows 100 → 100
+└──BuildRuntimeFilter
+      Runtime filter (disabled: bloom filter saturated, size 524.29 KB, set bits 0.07%)
+      Probe: checked 0.00 · passed 0.00 · skipped 1.00 thousand · before ready 10.00
+      I/O: rows 100 → 100
+
 Output: x
 
 Expression
@@ -50,4 +61,6 @@ ReadFromSystemOne
    I/O: rows 0 → 1 · 0 B → 1 B
 
 \N			
+Error: The query plan is too large
+
 1	1	1	1

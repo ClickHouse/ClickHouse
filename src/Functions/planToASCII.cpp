@@ -8,7 +8,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/QueryPlanToJSON.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -43,11 +43,11 @@ using JSONArrayPtr = Poco::JSON::Array::Ptr;
 /// as `EXPLAIN ANALYZE` does.
 constexpr std::string_view unknown_value_text = "Unknown";
 
-/// The keys under which `StepStatisticsJSONPrinter` writes the groups, in the order `EXPLAIN ANALYZE`
+/// The keys under which `FlatJSONPlanRenderer` writes the groups, in the order `EXPLAIN ANALYZE`
 /// prints them. `system.query_log` stores the plan in a `JSON` column, which sorts the keys of every
 /// object, so the order of the document cannot be relied on. `IO`, `Time` and `Concurrency` are
 /// printed by `EXPLAIN ANALYZE` after every other group and have layouts of their own.
-constexpr std::array<std::pair<std::string_view, MetricGroupKey>, 13> group_keys = {{
+constexpr std::array<std::pair<std::string_view, MetricGroupKey>, 14> group_keys = {{
     {"Cost", MetricGroupKey::Cost},
     {"Selectivity", MetricGroupKey::Selectivity},
     {"Output", MetricGroupKey::Output},
@@ -57,6 +57,7 @@ constexpr std::array<std::pair<std::string_view, MetricGroupKey>, 13> group_keys
     {"Buffer", MetricGroupKey::Buffer},
     {"Spill", MetricGroupKey::Spill},
     {"Build", MetricGroupKey::Build},
+    {"RuntimeFilter", MetricGroupKey::RuntimeFilter},
     {"Probe", MetricGroupKey::Probe},
     {"Memory", MetricGroupKey::Memory},
     {"InputLeft", MetricGroupKey::InputLeft},
@@ -64,7 +65,7 @@ constexpr std::array<std::pair<std::string_view, MetricGroupKey>, 13> group_keys
 }};
 
 /// The keys under which the metrics of a group are written, in the order the steps report them.
-constexpr std::array<std::pair<std::string_view, MetricKey>, 32> metric_keys = {{
+constexpr std::array<std::pair<std::string_view, MetricKey>, 41> metric_keys = {{
     {"Value", MetricKey::Unnamed},
     {"Estimated", MetricKey::Estimated},
     {"Actual", MetricKey::Actual},
@@ -76,6 +77,9 @@ constexpr std::array<std::pair<std::string_view, MetricKey>, 32> metric_keys = {
     {"Matched", MetricKey::Matched},
     {"MatchRate", MetricKey::MatchRate},
     {"Fanout", MetricKey::Fanout},
+    {"Type", MetricKey::FilterType},
+    {"Reason", MetricKey::Reason},
+    {"Replaced", MetricKey::ReplacedFilterType},
     {"UniqueKeys", MetricKey::UniqueKeys},
     {"Memory", MetricKey::Memory},
     {"Bytes", MetricKey::Bytes},
@@ -86,6 +90,12 @@ constexpr std::array<std::pair<std::string_view, MetricKey>, 32> metric_keys = {
     {"RightSpilled", MetricKey::RightSpilled},
     {"Spilled", MetricKey::Spilled},
     {"Size", MetricKey::Size},
+    {"SetBits", MetricKey::SetBits},
+    {"RowsChecked", MetricKey::RowsChecked},
+    {"RowsPassed", MetricKey::RowsPassed},
+    {"PassRate", MetricKey::PassRate},
+    {"RowsSkipped", MetricKey::RowsSkipped},
+    {"RowsBeforeReady", MetricKey::RowsBeforeReady},
     {"Blocks", MetricKey::Blocks},
     {"Storage", MetricKey::Storage},
     {"SortTime", MetricKey::SortTime},
@@ -227,7 +237,7 @@ public:
             JSONObjectPtr node = nodes->getObject(static_cast<unsigned>(i));
             if (!node)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {} of `Nodes` of the query plan is not an object", i);
-            const String id = stringOrEmpty(*node, "Node Id");
+            const String id = stringOrEmpty(*node, "NodeId");
             if (!nodes_by_id.emplace(id, node).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query plan has more than one node with id '{}'", id);
         }
@@ -291,7 +301,7 @@ private:
         String header_prefix = is_root ? parent_prefix : parent_prefix + (is_last ? "└──" : "├──");
         String detail_prefix = (is_root ? parent_prefix : parent_prefix + continuation) + (children.empty() ? "   " : "│  ");
 
-        out << header_prefix << stringOrEmpty(node, "Node Type");
+        out << header_prefix << stringOrEmpty(node, "NodeType");
         if (String description = stringOrEmpty(node, "Description"); !description.empty())
             out << " (" << description << ")";
         out << "\n";
@@ -405,7 +415,12 @@ private:
         {
             known.insert(json_key);
             if (JSONObjectPtr group = statistics.getObject(std::string(json_key)))
-                renderGroup(toString(key), *group, prefix);
+            {
+                if (key == MetricGroupKey::RuntimeFilter)
+                    renderRuntimeFilter(*group, prefix);
+                else
+                    renderGroup(toString(key), *group, prefix);
+            }
         }
 
         /// A group added after this function was written: print it under its key rather than drop it.
@@ -434,6 +449,38 @@ private:
         out << prefix << name << ": ";
         writeJoined(out, parts);
         out << "\n";
+    }
+
+    /// Mirrors `printRuntimeFilterGroup`: the type, then the reason if the filter is disabled, then the
+    /// optional details, e.g. `Runtime filter (disabled: bloom filter saturated, size 524.29 KB, set bits 0.07%)`.
+    void renderRuntimeFilter(const Poco::JSON::Object & group, const String & prefix)
+    {
+        if (!group.has("Type"))
+            return;
+
+        out << prefix << toString(MetricGroupKey::RuntimeFilter) << " (" << formatMetricValue(MetricKey::FilterType, group, "Type");
+        if (group.has("Reason"))
+            out << ": " << formatMetricValue(MetricKey::Reason, group, "Reason");
+        if (group.has("Replaced"))
+            out << ", replaced " << formatMetricValue(MetricKey::ReplacedFilterType, group, "Replaced");
+        /// Not rounded, to compare it with `join_runtime_filter_exact_values_limit`.
+        if (group.has("UniqueKeys") && !group.isNull("UniqueKeys"))
+            out << ", " << toUInt64(group.get("UniqueKeys")) << " " << toString(MetricKey::UniqueKeys);
+
+        UnorderedSetWithMemoryTracking<std::string_view> known = {"Type", "Reason", "Replaced", "UniqueKeys"};
+        for (const auto & [json_key, key] : metric_keys)
+        {
+            known.insert(json_key);
+            const std::string key_string(json_key);
+            if (key == MetricKey::FilterType || key == MetricKey::Reason || key == MetricKey::ReplacedFilterType
+                || key == MetricKey::UniqueKeys || !group.has(key_string))
+                continue;
+            out << ", " << toString(key) << " " << formatMetricValue(key, group, key_string);
+        }
+        for (const auto & [json_key, value] : group)
+            if (!known.contains(json_key))
+                out << ", " << json_key << " " << (value.isEmpty() ? "null" : value.toString());
+        out << ")\n";
     }
 
     /// Mirrors `printIOGroup`.
@@ -548,6 +595,13 @@ private:
 
 void renderDocument(const Poco::JSON::Object & document, WriteBuffer & out)
 {
+    /// Written by `FlatJSONPlanRenderer::renderError` in place of a plan that could not be logged.
+    if (document.has("Error") && !document.has("Version"))
+    {
+        out << "Error: " << stringOrEmpty(document, "Error") << "\n";
+        return;
+    }
+
     if (!document.has("Version"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query plan has no `Version`");
 

@@ -14,13 +14,13 @@ SELECT planToASCII('{
     "MaxThreads": 4,
     "Output": ["k", "c"],
     "Nodes": [
-        {"Node Type": "Expression", "Node Id": "Expression_3", "Description": "Project names", "Details": [], "Children": ["Join_2"],
+        {"NodeType": "Expression", "NodeId": "Expression_3", "Description": "Project names", "Details": [], "Children": ["Join_2"],
          "Statistics": {
             "IO": {"InputRows": 10, "OutputRows": 10, "InputBytes": 0, "OutputBytes": 0},
             "Time": {"StepTimeNs": 1000, "StepTimeShare": 0.05, "BranchTimeNs": 1500000, "BranchTimeShare": 75},
             "Concurrency": {"Step": {"Numerator": 1, "Denominator": 4}, "Branch": null},
             "Stages": [{"Name": "", "GroupId": 0, "WallClockTimeNs": 1200, "Processors": 1, "ProcessorTimeNs": {"Min": 1000, "Median": 1000, "Max": 1000, "Sum": 1000}}]}},
-        {"Node Type": "Join", "Node Id": "Join_2", "Description": "JOIN FillRightFirst",
+        {"NodeType": "Join", "NodeId": "Join_2", "Description": "JOIN FillRightFirst",
          "Details": ["t1 ⋈ t2", "Type: inner", "Cost: estimated 100", "Left: rows estimated 50", "Join conditions: k = k"],
          "Children": ["ReadFromMergeTree_0", "ReadFromSystemNumbers_1"],
          "Statistics": {
@@ -34,30 +34,55 @@ SELECT planToASCII('{
                 {"Name": "build", "GroupId": 1, "WallClockTimeNs": 300000, "Processors": 1, "ProcessorTimeNs": {"Sum": 290000}},
                 {"Name": "probe", "GroupId": 2, "WallClockTimeNs": 500000, "Processors": 8, "ProcessorTimeNs": {"Sum": 1500000},
                  "Metrics": {"SortShare": 12.5, "SortTime": 62500}}]}},
-        {"Node Type": "ReadFromMergeTree", "Node Id": "ReadFromMergeTree_0", "Description": "default.t", "Details": ["Read type: Default"], "Children": [],
+        {"NodeType": "ReadFromMergeTree", "NodeId": "ReadFromMergeTree_0", "Description": "default.t", "Details": ["Read type: Default"], "Children": [],
          "Indexes": [
             {"Type": "MinMax", "Keys": ["d"], "Condition": "true", "Selected Parts": 2, "Selected Granules": 10},
             {"Type": "PrimaryKey", "Keys": ["k", "d"], "Condition": "(k in [1, +Inf))", "Initial Parts": 2, "Selected Parts": 1,
              "Initial Granules": 10, "Selected Granules": 3, "Search Algorithm": "binary search"}],
          "Statistics": {"IO": {"InputRows": 0, "OutputRows": 5000, "InputBytes": 0, "OutputBytes": 80000}, "Stages": []}},
-        {"Node Type": "ReadFromSystemNumbers", "Node Id": "ReadFromSystemNumbers_1", "Details": [], "Children": [],
+        {"NodeType": "ReadFromSystemNumbers", "NodeId": "ReadFromSystemNumbers_1", "Details": [], "Children": [],
          "Statistics": {"IO": {"InputRows": 0, "OutputRows": 40, "InputBytes": 0, "OutputBytes": 640},
             "Stages": [{"Name": "", "GroupId": 0, "WallClockTimeNs": 0, "Processors": 1}]}}
     ]
 }') FORMAT TSVRaw;
 
+-- Runtime filters: the `RuntimeFilter` group is printed on one line, as `EXPLAIN ANALYZE` does,
+-- with the reason of a disabled filter after its type and the unique keys not rounded.
+SELECT planToASCII('{
+    "Version": 1,
+    "Root": "BuildRuntimeFilter_1",
+    "Output": ["k"],
+    "Nodes": [
+        {"NodeType": "BuildRuntimeFilter", "NodeId": "BuildRuntimeFilter_1", "Details": [], "Children": ["BuildRuntimeFilter_0"],
+         "Statistics": {
+            "RuntimeFilter": {"UniqueKeys": 123456, "Type": "exact set", "Size": 32768, "Replaced": "bloom filter"},
+            "Probe": {"RowsSkipped": 0, "RowsPassed": 50, "RowsChecked": 200, "PassRate": 25, "RowsBeforeReady": 0},
+            "IO": {"InputRows": 100, "OutputRows": 100, "InputBytes": 0, "OutputBytes": 0},
+            "Stages": []}},
+        {"NodeType": "BuildRuntimeFilter", "NodeId": "BuildRuntimeFilter_0", "Details": [], "Children": [],
+         "Statistics": {
+            "RuntimeFilter": {"SetBits": 0.07, "Size": 524288, "Reason": "bloom filter saturated", "Type": "disabled"},
+            "Probe": {"RowsSkipped": 1000, "RowsPassed": 0, "RowsChecked": 0, "RowsBeforeReady": 10},
+            "IO": {"InputRows": 100, "OutputRows": 100, "InputBytes": 0, "OutputBytes": 0},
+            "Stages": []}}
+    ]
+}') FORMAT TSVRaw;
+
 -- The plan of a query that threw has no statistics: only the tree is printed.
 SELECT planToASCII('{"Version": 1, "Root": "Expression_1", "Output": ["x"], "Nodes": [
-    {"Node Type": "Expression", "Node Id": "Expression_1", "Details": [], "Children": ["ReadFromSystemOne_0"]},
-    {"Node Type": "ReadFromSystemOne", "Node Id": "ReadFromSystemOne_0", "Details": [], "Children": []}]}') FORMAT TSVRaw;
+    {"NodeType": "Expression", "NodeId": "Expression_1", "Details": [], "Children": ["ReadFromSystemOne_0"]},
+    {"NodeType": "ReadFromSystemOne", "NodeId": "ReadFromSystemOne_0", "Details": [], "Children": []}]}') FORMAT TSVRaw;
 
 -- The argument can be the `JSON` column itself, not only its text.
 SELECT planToASCII('{"Version": 1, "Root": "ReadFromSystemOne_0", "Output": ["dummy"], "Nodes": [
-    {"Node Type": "ReadFromSystemOne", "Node Id": "ReadFromSystemOne_0", "Details": [], "Children": [],
+    {"NodeType": "ReadFromSystemOne", "NodeId": "ReadFromSystemOne_0", "Details": [], "Children": [],
      "Statistics": {"IO": {"InputRows": 0, "OutputRows": 1, "InputBytes": 0, "OutputBytes": 1}, "Stages": []}}]}'::JSON) FORMAT TSVRaw;
 
 -- No plan: `NULL`, an empty string, and the default of the column, an empty object.
 SELECT planToASCII(NULL), planToASCII(''), planToASCII('{}'), planToASCII('{}'::JSON);
+
+-- A plan that could not be logged is replaced by its reason.
+SELECT planToASCII('{"Error": "The query plan is too large"}') FORMAT TSVRaw;
 
 SELECT planToASCII('not json'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('[1, 2]'); -- { serverError BAD_ARGUMENTS }
@@ -65,8 +90,8 @@ SELECT planToASCII('{"Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS
 SELECT planToASCII('{"Version": 99, "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII('{"Version": 1, "Root": "A"}'); -- { serverError BAD_ARGUMENTS }
-SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"Node Type": "T", "Node Id": "A", "Children": ["B"]}]}'); -- { serverError BAD_ARGUMENTS }
-SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"Node Type": "T", "Node Id": "A", "Children": ["A"]}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Children": ["B"]}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Children": ["A"]}]}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- A plan logged by a real query renders its tree.
