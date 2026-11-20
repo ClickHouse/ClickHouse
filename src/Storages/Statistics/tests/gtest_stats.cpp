@@ -44,7 +44,6 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-extern const int CANNOT_READ_ALL_DATA;
 extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
 }
@@ -1350,39 +1349,6 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     /// ...and the reverted `NullCount` payload was skipped, not misread as a `Basic` payload.
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
-}
-
-TEST(Statistics, DeserializeJSONPathsWithTruncatedPayload)
-{
-    auto data_type = DataTypeFactory::instance().get("JSON");
-
-    /// The `JSONPaths` entry declares far more bytes than the file holds.
-    String file;
-    {
-        WriteBufferFromString buf(file);
-        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
-        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::JSONPaths)), buf);
-        writeStringBinary(data_type->getName(), buf);
-        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
-        writeIntBinary(std::numeric_limits<UInt64>::max(), buf); /// stat_size
-        writeIntBinary(static_cast<UInt64>(0), buf);
-        buf.finalize();
-    }
-
-    ReadBufferFromString rb(file);
-    try
-    {
-        auto restored = ColumnStatistics::deserialize(rb, data_type);
-        ADD_FAILURE() << "expected CANNOT_READ_ALL_DATA";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_READ_ALL_DATA) << e.message();
-    }
-    catch (const std::exception & e)
-    {
-        ADD_FAILURE() << "expected DB::Exception, got std::exception: " << e.what();
-    }
 }
 
 #if USE_DATASKETCHES

@@ -1,11 +1,11 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnObject.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -19,13 +19,13 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
-#include <Storages/Statistics/StatisticsJSONPaths.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
@@ -58,23 +58,6 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
     return true;
 }
 
-void StatisticsUtils::addNonNullValues(const IAggregateFunction & collector, AggregateDataPtr place, const IColumn & column)
-{
-    const IColumn * columns[] = {&column, nullptr};
-    if (!typeid_cast<const ColumnDynamic *>(&column))
-    {
-        collector.addBatchSinglePlace(0, column.size(), place, columns, nullptr);
-        return;
-    }
-
-    auto is_not_null = ColumnUInt8::create(column.size());
-    auto & is_not_null_data = is_not_null->getData();
-    for (size_t i = 0; i < column.size(); ++i)
-        is_not_null_data[i] = !column.isNullAt(i);
-    columns[1] = is_not_null.get();
-    collector.addBatchSinglePlace(0, column.size(), place, columns, nullptr, /*if_argument_pos=*/1);
-}
-
 void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
 {
     if (value.isNull())
@@ -95,6 +78,40 @@ void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
         accumulator = value;
     else if (!isNaNField(value) && accumulator < value)
         accumulator = value;
+}
+
+DataTypePtr StatisticsUtils::getJSONPathType(const IDataType & json_type, const String & path)
+{
+    const auto & object_type = assert_cast<const DataTypeObject &>(json_type);
+    if (auto it = object_type.getTypedPaths().find(path); it != object_type.getTypedPaths().end())
+        return it->second;
+    return object_type.getDynamicType();
+}
+
+void StatisticsUtils::forEachJSONPath(
+    const IColumn & column, const IDataType & json_type, const std::function<void(const String &, const DataTypePtr &, const ColumnPtr &)> & callback)
+{
+    const auto full_column = column.convertToFullColumnIfConst();
+    const auto & object_column = assert_cast<const ColumnObject &>(*full_column);
+
+    for (const auto & [path, path_column] : object_column.getTypedPaths())
+        if (auto path_type = getJSONPathType(json_type, path); !isObject(path_type))
+            callback(path, path_type, path_column);
+    for (const auto & [path, path_column] : object_column.getDynamicPaths())
+        callback(path, getJSONPathType(json_type, path), path_column);
+
+    const auto dynamic_type = assert_cast<const DataTypeObject &>(json_type).getDynamicType();
+    std::map<std::string_view, MutableColumnPtr> shared_data_paths;
+    const auto [shared_data_path_names, shared_data_values] = object_column.getSharedDataPathsAndValues();
+    for (size_t i = 0; i < shared_data_path_names->size(); ++i)
+    {
+        auto & path_column = shared_data_paths[shared_data_path_names->getDataAt(i)];
+        if (!path_column)
+            path_column = dynamic_type->createColumn();
+        ColumnObject::deserializeValueFromSharedData(shared_data_values, i, *path_column);
+    }
+    for (auto & [path, path_column] : shared_data_paths)
+        callback(String(path), dynamic_type, std::move(path_column));
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -272,13 +289,6 @@ void ColumnStatistics::build(const ColumnPtr & column)
         stat.second->build(column);
 }
 
-void ColumnStatistics::addNullRows(UInt64 count)
-{
-    rows += count;
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-        assert_cast<StatisticsBasic &>(*it->second).addNullRows(count);
-}
-
 void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 {
     rows += other->rows;
@@ -342,10 +352,26 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
     return result;
 }
 
-std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneWith(StatisticsType type, StatisticsPtr statistics) const
+std::map<String, std::shared_ptr<ColumnStatistics>> ColumnStatistics::getSubcolumnStatistics() const
 {
-    auto result = std::make_shared<ColumnStatistics>(*this);
-    result->stats[type] = std::move(statistics);
+    std::map<String, std::shared_ptr<ColumnStatistics>> result;
+    for (const auto & [type, single_stats] : stats)
+    {
+        for (auto & [subcolumn, subcolumn_stats] : single_stats->getSubcolumnStatistics())
+        {
+            auto it = result.find(subcolumn);
+            if (it == result.end())
+            {
+                ColumnStatisticsDescription subcolumn_desc;
+                subcolumn_desc.data_type = stats_desc.data_type->tryGetSubcolumnType(subcolumn);
+                if (!subcolumn_desc.data_type)
+                    continue;
+                it = result.emplace(subcolumn, std::make_shared<ColumnStatistics>(subcolumn_desc)).first;
+                it->second->rows = rows;
+            }
+            it->second->stats.emplace(type, std::move(subcolumn_stats));
+        }
+    }
     return result;
 }
 
@@ -945,9 +971,6 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::UniqV2, uniqV2StatisticsValidator);
     registerCreator(StatisticsType::UniqV2, uniqV2StatisticsCreator);
 
-    registerValidator(StatisticsType::JSONPaths, jsonPathsStatisticsValidator);
-    registerCreator(StatisticsType::JSONPaths, jsonPathsStatisticsCreator);
-
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
     registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
@@ -973,10 +996,6 @@ void MergeTreeStatisticsFactory::validate(
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
-
-        /// Statistics declared on a `JSON` column are built for the paths whose type supports them.
-        if (isObject(data_type))
-            continue;
 
         if (!it->second(desc, data_type))
             throw Exception(
@@ -1005,14 +1024,7 @@ MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsD
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    auto column_stat = get(column_desc.statistics);
-    if (auto path_stats = createJSONPathsStatistics(column_desc.statistics))
-    {
-        auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(StatisticsType::JSONPaths));
-        column_stat->stats_desc.types_to_desc.emplace(StatisticsType::JSONPaths, SingleStatisticsDescription(StatisticsType::JSONPaths, ast, false));
-        column_stat->stats.emplace(StatisticsType::JSONPaths, std::move(path_stats));
-    }
-    return column_stat;
+    return get(column_desc.statistics);
 }
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc) const
@@ -1027,10 +1039,6 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
                 ErrorCodes::INCORRECT_QUERY,
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
-
-        /// A `JSON` column itself has only the declared statistics that its type supports, see `validate`.
-        if (isObject(stats_desc.data_type) && !validators.at(type)(desc, stats_desc.data_type))
-            continue;
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;

@@ -1,4 +1,4 @@
--- Statistics declared on a `JSON` column are built for every path: typed, dynamic and in shared data.
+-- `basic` and `uniq_v2` declared on a `JSON` column are built for every path: typed, dynamic and in shared data.
 -- Reproducer of https://github.com/ClickHouse/ClickHouse/issues/122437 (scaled down), where every filter is on a JSON path.
 
 SET explain_query_plan_default = 'legacy';
@@ -15,11 +15,11 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 
-CREATE TABLE t1 (r String, j JSON(k Array(String), sd Bool, ui Bool, rs Array(String), `a.t` String, `a.n` String, `a.ty` String, tid String) MATERIALIZED r STATISTICS(uniq_v2), Id String, INDEX i1 j.k TYPE set(100) GRANULARITY 1)
+CREATE TABLE t1 (r String, j JSON(k Array(String), sd Bool, ui Bool, rs Array(String), `a.t` String, `a.n` String, `a.ty` String, tid String) MATERIALIZED r STATISTICS(basic, uniq_v2), Id String, INDEX i1 j.k TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY (j.sd, j.ui, j.a.ty, j.tid, Id) SETTINGS auto_statistics_types = 'minmax, uniq';
-CREATE TABLE t2 (r String, j JSON(dn String, f1 Nullable(DateTime64(3)), f2 Nullable(DateTime64(3)), s Array(String), tid String, k Array(String)) MATERIALIZED r STATISTICS(uniq_v2), Id String, INDEX i2 j.k TYPE set(100) GRANULARITY 1)
+CREATE TABLE t2 (r String, j JSON(dn String, f1 Nullable(DateTime64(3)), f2 Nullable(DateTime64(3)), s Array(String), tid String, k Array(String)) MATERIALIZED r STATISTICS(basic, uniq_v2), Id String, INDEX i2 j.k TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY (j.dn, Id) SETTINGS auto_statistics_types = 'minmax, uniq';
-CREATE TABLE t3 (r String, j JSON(k Array(String)) MATERIALIZED r STATISTICS(uniq_v2), Id String, INDEX i3 j.k TYPE set(100) GRANULARITY 1)
+CREATE TABLE t3 (r String, j JSON(k Array(String)) MATERIALIZED r STATISTICS(basic, uniq_v2), Id String, INDEX i3 j.k TYPE set(100) GRANULARITY 1)
 ENGINE = ReplacingMergeTree ORDER BY Id SETTINGS auto_statistics_types = 'minmax, uniq';
 
 INSERT INTO t1 (r, Id) SELECT concat('{"k":', if(number % 20 = 0, '["A","B"]', '["B"]'), ',"sd":false,"ui":true,"rs":["s1"],"a":{"t":"x', toString(number % 7), '","n":"n', toString(number % 1000), '","ty":"', if(number % 20 = 0, 'y0', 'y1'), '"},"tid":"z"}'), concat('e', toString(number)) FROM numbers(3000);
@@ -57,8 +57,8 @@ DROP TABLE t3;
 
 -- A path in shared data, and a dynamic path that one part does not have, before and after a merge.
 -- `j.p = 'x'` holds in 500 rows of `ts` and of the first part of `tm`; the second part of `tm` has no `p`.
-CREATE TABLE ts (k UInt64, j JSON(max_dynamic_paths = 0) STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1;
-CREATE TABLE tm (k UInt64 STATISTICS(basic), j JSON STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+CREATE TABLE ts (k UInt64, j JSON(max_dynamic_paths = 0) STATISTICS(basic, uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1;
+CREATE TABLE tm (k UInt64, j JSON STATISTICS(basic, uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1;
 CREATE TABLE u (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO u SELECT number FROM numbers(100) SETTINGS materialize_statistics_on_insert = 1;
 -- Statistics are built on insert here: stopped merges would block the mutation of `MATERIALIZE STATISTICS`.
@@ -72,9 +72,6 @@ SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN kee
 SYSTEM START MERGES tm;
 OPTIMIZE TABLE tm FINAL;
 SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
--- A mutation of another column of a wide part writes the statistics of `j` as they were read.
-ALTER TABLE tm MATERIALIZE STATISTICS k SETTINGS mutations_sync = 2;
-SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
 
 -- Literals of two types on one `Dynamic` path.
 CREATE TABLE td (k UInt64, j JSON STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k;
@@ -84,20 +81,6 @@ SELECT sum(k) FROM td WHERE j.d >= toDateTime64('2024-01-01 00:00:00', 3) AND j.
 SELECT count() FROM td AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.d >= toDateTime64('2024-01-01 00:00:00', 3) AND a.j.d < '2024-01-15 00:00:00' SETTINGS min_marks_per_part_to_load_statistics = 0;
 SELECT count() FROM td AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.d = toDateTime64('2024-01-15 10:00:00', 3) OR a.j.d = '2024-01-16 10:00:00' SETTINGS min_marks_per_part_to_load_statistics = 0;
 DROP TABLE td;
-
--- `uniq` on a `Dynamic` column does not count `NULL` as a value.
-CREATE TABLE tdn (k UInt64, d Dynamic STATISTICS(basic, uniq)) ENGINE = MergeTree ORDER BY k;
-INSERT INTO tdn SELECT number, if(number % 2 = 0, 'x', NULL) FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1;
-SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tdn AS a INNER JOIN u AS b ON a.k = b.k WHERE a.d = 'x') WHERE explain LIKE '%Join:%';
-DROP TABLE tdn;
-
--- `IS NULL` on a typed path, rewritten to the subcolumn `j.n.null`.
-CREATE TABLE tn (k UInt64, j JSON(n Nullable(UInt64)) STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k;
-INSERT INTO tn SELECT number, if(number % 4 = 0, '{"n":1}', '{}') FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1;
-SET optimize_functions_to_subcolumns = 1;
-SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tn AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.n IS NULL) WHERE explain LIKE '%Join:%';
-SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tn AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.n IS NOT NULL) WHERE explain LIKE '%Join:%';
-DROP TABLE tn;
 
 DROP TABLE ts;
 DROP TABLE tm;

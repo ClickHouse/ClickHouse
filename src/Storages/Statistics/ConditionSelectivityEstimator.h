@@ -134,8 +134,6 @@ private:
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     /// The type of a column, or of a subcolumn that has statistics (a path of a `JSON` column).
     [[nodiscard]] DataTypePtr tryGetColumnType(const StorageMetadataPtr & metadata, const String & name) const;
-    /// `<col>.null` names the NULL map of a `Nullable` `<col>`: returns `<col>` if `tryGetColumnType` finds it `Nullable`.
-    [[nodiscard]] std::optional<String> tryGetNullMapParentColumn(const StorageMetadataPtr & metadata, const String & column_name) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
     /// the share of rows inside the set's bounding range, capped by the share of distinct values the set

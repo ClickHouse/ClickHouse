@@ -81,8 +81,6 @@ String statisticsTypeToString(StatisticsType type)
             return "basic";
         case StatisticsType::UniqV2:
             return "uniq_v2";
-        case StatisticsType::JSONPaths:
-            return "json_paths";
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
     }

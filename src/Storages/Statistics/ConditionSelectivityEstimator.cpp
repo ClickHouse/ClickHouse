@@ -20,7 +20,6 @@
 #include <Interpreters/Set.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/StatisticsJSONPaths.h>
 #include <Formats/ParseError.h>
 #include <Functions/IFunction.h>
 
@@ -293,6 +292,22 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, getContext()));
 }
 
+/// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
+/// that shape and the parent column is Nullable in storage.
+static std::optional<String> tryGetNullMapParentColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    auto dot_pos = column_name.rfind('.');
+    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
+        return {};
+
+    String parent_name = column_name.substr(0, dot_pos);
+    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
+    if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
+        return {};
+
+    return parent_name;
+}
+
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"
@@ -509,7 +524,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata && const_is_zero && (func_name == "equals" || func_name == "notEquals"))
             {
-                if (auto parent_name = tryGetNullMapParentColumn(metadata, column_name))
+                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
                 {
                     if (func_name == "notEquals")
                     {
@@ -681,7 +696,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        if (auto parent_name = tryGetNullMapParentColumn(metadata, node.getColumnName()))
+        if (auto parent_name = tryGetNullMapParentColumn(node.getColumnName(), *metadata))
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
             out.null_check_columns.insert(*parent_name);
@@ -744,16 +759,12 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
     if (!has_data)
         return nullptr;
 
-    /// The statistics of the paths of a `JSON` column estimate the conditions on its path subcolumns.
-    std::vector<std::pair<String, ColumnStatisticsPtr>> path_estimators;
+    /// The statistics of a subcolumn, a path of a `JSON` column, estimate the conditions on it.
+    std::vector<std::pair<String, ColumnStatisticsPtr>> subcolumn_estimators;
     for (const auto & [column_name, column_estimator] : estimator->column_estimators)
-    {
-        const auto & stats = column_estimator.stats->getStats();
-        if (auto it = stats.find(StatisticsType::JSONPaths); it != stats.end())
-            for (const auto & [path, path_stats] : assert_cast<const StatisticsJSONPaths &>(*it->second).getPathStatistics())
-                path_estimators.emplace_back(column_name + "." + path, path_stats);
-    }
-    for (auto & [name, stats] : path_estimators)
+        for (auto & [subcolumn, stats] : column_estimator.stats->getSubcolumnStatistics())
+            subcolumn_estimators.emplace_back(column_name + "." + subcolumn, std::move(stats));
+    for (auto & [name, stats] : subcolumn_estimators)
         estimator->column_estimators.emplace(std::move(name), ConditionSelectivityEstimator::ColumnEstimator{std::move(stats)});
 
     return estimator;
@@ -768,20 +779,6 @@ DataTypePtr ConditionSelectivityEstimator::tryGetColumnType(const StorageMetadat
         if (auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return subcolumn->type;
     return nullptr;
-}
-
-std::optional<String> ConditionSelectivityEstimator::tryGetNullMapParentColumn(const StorageMetadataPtr & metadata, const String & column_name) const
-{
-    auto dot_pos = column_name.rfind('.');
-    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
-        return {};
-
-    String parent_name = column_name.substr(0, dot_pos);
-    auto parent_type = tryGetColumnType(metadata, parent_name);
-    if (!parent_type || !isNullableOrLowCardinalityNullable(parent_type))
-        return {};
-
-    return parent_name;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
