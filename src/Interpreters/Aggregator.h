@@ -1749,6 +1749,11 @@ private:
     /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
     UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
 
+    /// The rank of the group with the aggregate states at `mapped` when `Params::bucket_top_k` is set: its
+    /// count, kept in the cell for a lone `count`, or the distinct count of its `uniqExact` or `uniqExactIf`
+    /// rank, finalized into `scratch`.
+    UInt64 bucketTopKRank(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
+
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
@@ -2019,6 +2024,19 @@ private:
         AggregateDataPtr place,
         Arena * arena);
 };
+
+inline ALWAYS_INLINE UInt64 Aggregator::bucketTopKRank(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const
+{
+    switch (bucket_top_k_rank)
+    {
+        case BucketTopKRank::InlineCount:
+            return getInlineCountState(mapped);
+        case BucketTopKRank::CountState:
+            return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
+        case BucketTopKRank::FinalizedResult:
+            return finalizeBucketTopKRank(mapped, *scratch, arena);
+    }
+}
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

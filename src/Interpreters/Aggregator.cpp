@@ -3329,6 +3329,21 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
         }
     };
 
+    /// The NULL key of a method that keeps it in a slot of its own is a group outside the cells, held by the
+    /// table of bucket 0 (see `AggregationDataWithNullKeyTwoLevel`). It competes for the top by its rank like
+    /// a cell, and it is offered first, so it stays on boundary ties.
+    AggregateDataPtr * null_key_place = nullptr;
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (data.hasNullKeyData())
+        {
+            null_key_place = &data.getNullKeyData();
+            if (key_bytes_meter)
+                key_bytes_meter->addDefaultKey();
+            offer(bucketTopKRank(*null_key_place, ColumnUInt64::create().get(), arena), TableKey{}, null_key_place);
+        }
+    }
+
     if (inline_count)
     {
         /// The count is the cell's own mapped value, so unless the key bytes are metered the scan reads no key bytes.
@@ -3396,6 +3411,14 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
 
     const size_t keep = top.size();
     auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
+
+    /// A kept NULL key becomes the first row, and the adaptive merge relies on that order to find its rank in
+    /// the chunk. Its states go to `insertResultsIntoColumns` with those of the cells. A NULL key that lost
+    /// leaves its states to the destruction of the losers.
+    if (null_key_place)
+        if (const auto null_key = std::ranges::find(top, null_key_place, &Candidate::mapped); null_key != top.end())
+            std::iter_swap(top.begin(), null_key);
+
     auto shuffled_key_sizes = method.shuffleKeyColumns(out_cols.raw_key_columns, key_sizes);
     const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
     IColumn::SerializationSettings serialization_settings{
@@ -3405,7 +3428,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     places.reserve(keep);
     for (const auto & candidate : top)
     {
-        method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+        if (candidate.mapped == null_key_place)
+            out_cols.key_columns[0]->insertDefault();
+        else
+            method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
         if (inline_count)
             assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
         else
@@ -3429,12 +3455,16 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
         if constexpr (!finalized_rank)
         {
             if (!nontrivial_destructors.empty())
+            {
                 data.forEachValue(
                     [&](const auto &, auto & mapped)
                     {
                         if (mapped)
                             discard(&mapped);
                     });
+                if (null_key_place && *null_key_place)
+                    discard(null_key_place);
+            }
         }
 
         bool use_compiled_functions = false;
