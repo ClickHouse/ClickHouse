@@ -161,4 +161,19 @@ echo "case-insensitive names with a dictionary of dates read as decimals"
 $CLICKHOUSE_LOCAL -q "SELECT toLowCardinality(toDate32('2024-01-02')) AS t FORMAT ArrowStream SETTINGS output_format_arrow_low_cardinality_as_dictionary = 1" > "$file"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Decimal64(0), t Decimal32(0)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
 
+echo "case-insensitive names with a date inside structs"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(d) AS Tuple(d Date32)) AS t FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(d String), t Tuple(d Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(d Int32), t Tuple(d String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
+echo "array of maps without the requested key"
+$CLICKHOUSE_LOCAL -q "SELECT [map(toUInt8(number + 1), 'abcdefghijklmnop')] AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Array(Map(UInt8, IPv6)), \`t.key_1\` Array(IPv6)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_1\` Array(IPv6), t Array(Map(UInt8, IPv6))')"
+
+echo "map lookup of a raw-byte key"
+$CLICKHOUSE_LOCAL -q "SELECT map('abcdefghijklmnop', toUInt8(7)) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(IPv6, UInt8), \`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8, t Map(IPv6, UInt8)')"
+
 rm -f "$file"

@@ -403,12 +403,12 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
 namespace
 {
 
-/// How much decoding a field depends on a requested type, to choose the one type kept for a normalized name
-/// that several header columns with different types share (see `ArrowIPC::RequestedType::shared`). A `Tuple`
-/// keeps the null map of a struct and the hints of its fields, another composite the hints of its elements,
-/// a date or time type and a number decide how a `date32` is read, and `Nullable` keeps the null map of a
-/// struct. The remaining types (`String`, `IPv6`) only ask for raw-byte conversions, which are deferred for a
-/// shared name anyway.
+/// How much decoding a field depends on a requested type, to choose the type kept for a normalized name that
+/// several header columns with different types share (see `ArrowIPC::RequestedType::shared`), where
+/// `mergeDecodingRequirements` cannot merge the types. A `Tuple` keeps the null map of a struct and the hints
+/// of its fields, another composite the hints of its elements, a date or time type and a number decide how a
+/// `date32` is read, and `Nullable` keeps the null map of a struct. The remaining types (`String`, `IPv6`) only
+/// ask for raw-byte conversions, which are deferred for a shared name anyway.
 int decodingRequirementRank(const DataTypePtr & type)
 {
     const DataTypePtr stripped = ArrowIPC::stripHint(type);
@@ -422,6 +422,74 @@ int decodingRequirementRank(const DataTypePtr & type)
     else if (isNumber(stripped) || isDecimal(stripped))
         rank = 1;
     return rank * 2 + (type->isNullable() || type->isLowCardinalityNullable() ? 1 : 0);
+}
+
+/// The type kept for a normalized name requested with the types `kept` and `other` (see `prepareReader`). The
+/// requirements of both are retained recursively: the elements of two named tuples are merged by name (the
+/// elements only one of them has are kept as well), those of two unnamed tuples of the same size by position,
+/// and the elements of two arrays and the keys and values of two maps likewise. So `Tuple(d String)` and
+/// `Tuple(d Int32)` keep `Tuple(d Int32)`, which reads a `date32` as the day number. Elsewhere, the type that
+/// decoding depends on more is kept (see `decodingRequirementRank`).
+DataTypePtr mergeDecodingRequirements(const DataTypePtr & kept, const DataTypePtr & other, bool case_insensitive)
+{
+    if (kept->equals(*other))
+        return kept;
+
+    const DataTypePtr kept_stripped = ArrowIPC::stripHint(kept);
+    const DataTypePtr other_stripped = ArrowIPC::stripHint(other);
+    DataTypePtr merged;
+    if (const auto * kept_array = typeid_cast<const DataTypeArray *>(kept_stripped.get()))
+    {
+        if (const auto * other_array = typeid_cast<const DataTypeArray *>(other_stripped.get()))
+            merged = std::make_shared<DataTypeArray>(
+                mergeDecodingRequirements(kept_array->getNestedType(), other_array->getNestedType(), case_insensitive));
+    }
+    else if (const auto * kept_map = typeid_cast<const DataTypeMap *>(kept_stripped.get()))
+    {
+        if (const auto * other_map = typeid_cast<const DataTypeMap *>(other_stripped.get()))
+            merged = std::make_shared<DataTypeMap>(
+                mergeDecodingRequirements(kept_map->getKeyType(), other_map->getKeyType(), case_insensitive),
+                mergeDecodingRequirements(kept_map->getValueType(), other_map->getValueType(), case_insensitive));
+    }
+    else if (const auto * kept_tuple = typeid_cast<const DataTypeTuple *>(kept_stripped.get()))
+    {
+        const auto * other_tuple = typeid_cast<const DataTypeTuple *>(other_stripped.get());
+        if (other_tuple && kept_tuple->hasExplicitNames() && other_tuple->hasExplicitNames())
+        {
+            DataTypes elements = kept_tuple->getElements();
+            Strings names = kept_tuple->getElementNames();
+            for (size_t i = 0; i < other_tuple->getElements().size(); ++i)
+            {
+                const auto & other_element = other_tuple->getElement(i);
+                const auto & other_name = other_tuple->getElementNames()[i];
+                if (const auto position = kept_tuple->tryGetPositionByName(other_name, case_insensitive))
+                {
+                    elements[*position] = mergeDecodingRequirements(elements[*position], other_element, case_insensitive);
+                }
+                else
+                {
+                    elements.push_back(other_element);
+                    names.push_back(other_name);
+                }
+            }
+            merged = std::make_shared<DataTypeTuple>(std::move(elements), std::move(names));
+        }
+        else if (other_tuple && !kept_tuple->hasExplicitNames() && !other_tuple->hasExplicitNames()
+            && kept_tuple->getElements().size() == other_tuple->getElements().size())
+        {
+            DataTypes elements(kept_tuple->getElements().size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                elements[i] = mergeDecodingRequirements(kept_tuple->getElement(i), other_tuple->getElement(i), case_insensitive);
+            merged = std::make_shared<DataTypeTuple>(std::move(elements));
+        }
+        /// A `Nullable` tuple keeps the null map of the struct.
+        if (merged && (kept->isNullable() || other->isNullable()))
+            merged = std::make_shared<DataTypeNullable>(merged);
+    }
+
+    if (merged)
+        return merged;
+    return decodingRequirementRank(other) > decodingRequirementRank(kept) ? other : kept;
 }
 
 }
@@ -451,14 +519,14 @@ void ArrowIPCBlockInputFormat::prepareReader()
         /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its raw bytes must not follow
         /// any one of them: the name is marked as shared, and each column is converted by its own type after
         /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
-        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too).
+        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
+        /// for the elements of composites (see `mergeDecodingRequirements`).
         auto [it, inserted] = requested_field_target_types.try_emplace(
             normalize(header_column.name), ArrowIPC::RequestedType{.type = header_column.type});
         if (!inserted && !it->second.type->equals(*header_column.type))
         {
             it->second.shared = true;
-            if (decodingRequirementRank(header_column.type) > decodingRequirementRank(it->second.type))
-                it->second.type = header_column.type;
+            it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
         }
     }
 
@@ -967,27 +1035,51 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 /// decoded values: when they keep their raw bytes (see `RecordBatchDecoder::rawByteTarget`), it is an empty
 /// string, which cannot be reinterpreted after the extraction. So the values are converted before it, and
 /// the defaults are then created in the requested type, as when the values are converted while decoding.
-DataTypePtr keyLookupSourceHint(const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type, bool case_insensitive)
+/// `requested` (may be null) is the type requested for the whole column at this level, when the column is
+/// requested too: the keys of a map are converted to its key type, so that the lookup parses the key in the
+/// representation the map is requested with (`t Map(IPv6, UInt8)` and `t.key_6162:...:6f70`).
+/// Arrays are transparent: a key lookup below an array (`t Array(Map(UInt8, IPv6))` and `t.key_1`) has the
+/// type `Array(IPv6)`, and is converted element-wise.
+DataTypePtr keyLookupSourceHint(
+    const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type,
+    const DataTypePtr & requested, bool case_insensitive)
 {
     const DataTypePtr stripped = removeNullable(type);
+    const DataTypePtr requested_stripped = ArrowIPC::stripHint(requested);
     const size_t dot = subcolumn.find('.');
     const std::string_view component = subcolumn.substr(0, dot);
     const std::string_view rest = dot == std::string_view::npos ? std::string_view{} : subcolumn.substr(dot + 1);
     if (component.empty())
         return nullptr;
 
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+    {
+        const auto * subcolumn_array = typeid_cast<const DataTypeArray *>(removeNullable(subcolumn_type).get());
+        if (!subcolumn_array)
+            return nullptr;
+        DataTypePtr element_hint = keyLookupSourceHint(
+            array->getNestedType(), subcolumn, subcolumn_array->getNestedType(), ArrowIPC::arrayElementHint(requested_stripped),
+            case_insensitive);
+        if (!element_hint)
+            return nullptr;
+        return std::make_shared<DataTypeArray>(element_hint);
+    }
+
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
     {
         if (!tuple->hasExplicitNames() || rest.empty())
             return nullptr;
-        const auto position = tuple->tryGetPositionByName(String(component), case_insensitive);
+        const auto position = tuple->tryGetPositionByName(component, case_insensitive);
         if (!position)
             return nullptr;
-        DataTypePtr element_hint = keyLookupSourceHint(tuple->getElement(*position), rest, subcolumn_type, case_insensitive);
+        const String & element_name = tuple->getElementNames()[*position];
+        DataTypePtr element_hint = keyLookupSourceHint(
+            tuple->getElement(*position), rest, subcolumn_type,
+            ArrowIPC::tupleElementHint(requested_stripped, element_name, *position, case_insensitive), case_insensitive);
         if (!element_hint)
             return nullptr;
         /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as decoded.
-        return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{tuple->getElementNames()[*position]});
+        return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{element_name});
     }
 
     if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
@@ -999,14 +1091,17 @@ DataTypePtr keyLookupSourceHint(const DataTypePtr & type, std::string_view subco
         {
             /// A subcolumn of the looked-up value (`key_1.s`): the struct the value is.
             const auto * value_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(map->getValueType()).get());
-            if (!value_tuple || !value_tuple->hasExplicitNames() || rest.find('.') != std::string_view::npos)
+            if (!value_tuple || !value_tuple->hasExplicitNames() || rest.contains('.'))
                 return nullptr;
-            const auto position = value_tuple->tryGetPositionByName(String(rest), case_insensitive);
+            const auto position = value_tuple->tryGetPositionByName(rest, case_insensitive);
             if (!position)
                 return nullptr;
             value_hint = std::make_shared<DataTypeTuple>(DataTypes{subcolumn_type}, Strings{value_tuple->getElementNames()[*position]});
         }
-        return std::make_shared<DataTypeMap>(map->getKeyType(), value_hint);
+        DataTypePtr key_hint = map->getKeyType();
+        if (const auto * requested_map = typeid_cast<const DataTypeMap *>(requested_stripped.get()))
+            key_hint = requested_map->getKeyType();
+        return std::make_shared<DataTypeMap>(key_hint, value_hint);
     }
 
     return nullptr;
@@ -1119,9 +1214,15 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
             auto nested_it = name_to_index.find(search_nested);
             DataTypePtr key_lookup_hint;
             if (nested_it != name_to_index.end() && header_column.name.size() > nested_table_name.size() + 1)
+            {
+                /// The type requested for the whole column, when it is requested too (see `keyLookupSourceHint`).
+                DataTypePtr requested_parent;
+                if (auto requested_it = requested_field_target_types.find(search_nested); requested_it != requested_field_target_types.end())
+                    requested_parent = requested_it->second.type;
                 key_lookup_hint = keyLookupSourceHint(
                     decoded[nested_it->second].type, std::string_view(header_column.name).substr(nested_table_name.size() + 1),
-                    header_column.type, case_insensitive);
+                    header_column.type, requested_parent, case_insensitive);
+            }
             if (key_lookup_hint)
             {
                 /// Convert the map values for this column before the key lookup (see `keyLookupSourceHint`).

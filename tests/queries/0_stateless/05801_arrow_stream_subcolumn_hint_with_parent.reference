@@ -111,3 +111,14 @@ map row without the requested key
 {2:'abcdefghijklmnop'}	::
 case-insensitive names with a dictionary of dates read as decimals
 19724	19724
+case-insensitive names with a date inside structs
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')
+array of maps without the requested key
+[{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+[{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]	['::']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	[{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]
+['::']	[{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]
+map lookup of a raw-byte key
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+7	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}
