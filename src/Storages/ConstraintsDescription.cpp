@@ -335,6 +335,10 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (arguments.size() == 2 && comparesStringConstantWithOtherType(arguments[0], arguments[1]))
                 continue;
 
+            /// `CHECK s = f` holds for the `String` 'a\0' and the `FixedString(2)` 'a', but `CAST(f, 'String')` is 'a'.
+            if (arguments.size() == 2 && comparesPaddedStrings(arguments[0], arguments[1]))
+                continue;
+
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);

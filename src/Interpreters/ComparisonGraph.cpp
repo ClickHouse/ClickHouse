@@ -10,6 +10,7 @@
 #include <Analyzer/ConstantNode.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -253,6 +254,17 @@ bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const Qu
     return (is_string_constant(left) && !is_string(right)) || (is_string_constant(right) && !is_string(left));
 }
 
+bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_fixed_string = [](const DataTypePtr & type)
+    {
+        return anyInTypeTree(*type, [](const IDataType & nested) { return isFixedString(nested); });
+    };
+    const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
+    const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
+    return (has_fixed_string(left_type) || has_fixed_string(right_type)) && !left_type->equals(*right_type);
+}
+
 template <ComparisonGraphNodeType Node>
 ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context)
 {
@@ -399,9 +411,11 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array. The graph has no
     /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
     /// A string constant compared with another type is a value of that type, which the bounds do not know.
+    /// A `FixedString` compared with another string type is padded with zero bytes.
     if constexpr (!with_ast)
     {
-        if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right))
+        if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
+            || comparesPaddedStrings(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 

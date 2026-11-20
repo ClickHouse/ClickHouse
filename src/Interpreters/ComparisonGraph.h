@@ -207,6 +207,10 @@ private:
 /// The comparison reads the string as a value of the other type, but the graph orders two strings by their bytes.
 bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
+/// Returns true if an argument has a `FixedString` and the other argument has another type, like `s = toFixedString('a', 2)` for a `String` `s`.
+/// The comparison pads the shorter string with zero bytes, but the graph compares the bytes, and `CAST` to `String` drops the zero bytes.
+bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
+
 extern template struct GraphComponent<ASTPtr>;
 extern template struct GraphComponent<QueryTreeNodePtr>;
 extern template class ComparisonGraph<ASTPtr>;
