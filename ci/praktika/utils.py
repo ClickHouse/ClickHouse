@@ -18,7 +18,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from shlex import quote
 from threading import Event, Thread
 from types import SimpleNamespace
@@ -756,14 +756,38 @@ class Utils:
     ) -> List["str"]:
         included_files_ = set()
         for path in include_paths:
-            included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
+            included_files_.update(
+                cls.traverse_path(
+                    path, file_suffixes=file_suffixes, not_exists_ok=not_exists_ok
+                )
+            )
 
-        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
-        res = [
-            f
-            for f in included_files_
-            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
-        ]
+        def is_excluded(file):
+            # Matching follows the digest-config semantics used by
+            # Job.CacheDigestConfig.is_excluded and Job.Config.is_affected_by:
+            # an exclude is an exact path, a directory prefix on a path
+            # boundary, or a glob. A plain startswith check silently ignores
+            # glob entries (an include may be a glob, so an exclude written the
+            # same way must work too) and also swallows sibling paths that
+            # merely share a name prefix.
+            #
+            # full_match (Python 3.13+, the interpreter CI runs on) is the only
+            # matcher with correct glob semantics: `**` spans any number of
+            # directories while a plain `*` stays within a single path segment,
+            # so patterns like `./**/*.pyc` (ci/praktika/cache.py) and
+            # `./inc/**/generated/*.py` match exactly the files they name.
+            file = os.path.normpath(file)
+            for exclude_path in exclude_paths:
+                exclude_path = os.path.normpath(exclude_path)
+                if file == exclude_path or file.startswith(exclude_path + os.sep):
+                    return True
+                if any(c in exclude_path for c in "*?[") and PurePosixPath(
+                    file
+                ).full_match(exclude_path):
+                    return True
+            return False
+
+        res = [f for f in included_files_ if not is_excluded(f)]
         if sorted:
             res.sort(reverse=True)
         return res
@@ -812,7 +836,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
+                    f"cd {parent} && tar -cf - {name} | zstd -c -T0 > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -830,7 +854,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {quote(path_out)} && zstd -c -T0 {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -840,10 +864,12 @@ class Utils:
     def fix_ownership_after_docker(path, docker_image: str) -> None:
         uid = os.getuid()
         gid = os.getgid()
-        Shell.run(
+        if Shell.run(
             f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
             verbose=True,
-        )
+        ) != 0:
+            # The docker daemon can go away together with the job container.
+            Shell.run(f"sudo -n chown -R {uid}:{gid} {quote(str(path))}", verbose=True)
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:

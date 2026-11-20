@@ -1,4 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Identifier.h>
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
@@ -196,6 +197,9 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = isSentQualified(*this) ? storage_id.getFullNameNotQuoted() : table_function_name;
+    /// The analyzer reads a two-part parameterized view name as `db.view`.
+    if (isParameterizedView() && Identifier{table_function_ast->name}.getPartsSize() == 2)
+        table_function_ast->setIsCompoundName(true);
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));

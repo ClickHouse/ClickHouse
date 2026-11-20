@@ -39,6 +39,8 @@ public:
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
+
+        [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectStorageQueueObjectInfo>(*this); }
     };
 
     class FileIterator : public IObjectIterator, private WithContext
@@ -69,10 +71,13 @@ public:
         /// we might later want to return it back for retrying.
         void returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
 
-        /// Release hold buckets of the given processors.
+        /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
+        /// Only the holders of the given `processors` are released: with `parallel_inserts`
+        /// each streaming task has its own processors and commits independently, so a task
+        /// must not release the buckets of another task whose insert may still be running.
         void releaseFinishedBuckets(const std::vector<size_t> & processors);
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
@@ -166,7 +171,11 @@ public:
 
     struct ProcessingProgress
     {
+        /// Counted only when `max_processed_files_before_commit` is set, to enforce that limit.
         std::atomic<size_t> processed_files = 0;
+        /// The number of files taken for processing (including the ones which failed to read),
+        /// counted regardless of the commit limits.
+        std::atomic<size_t> acquired_files = 0;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
@@ -222,8 +231,6 @@ public:
     static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
         const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
-
-    bool hasProcessedFiles() const { return !processed_files.empty(); }
 
     /// Mark all processed files' metadata so that their destructors check ownership
     /// before removing the processing node (rather than asserting).
