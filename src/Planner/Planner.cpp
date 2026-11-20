@@ -624,14 +624,24 @@ static void addStreamInQueryResultCacheStepIfNeeded(
 /// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
 /// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
 /// or of a generated query can change it.
-static bool shouldReadFromQueryCacheForSubquery(
+///
+/// The same rule disables the cap on the groups of a trivial `GROUP BY ... LIMIT` (see `buildPlanForQueryNode`).
+static bool mayBeInDistributedPlan(
     const Settings & settings,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & query_context)
 {
     if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
-        return false;
-    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+        return true;
+    return query_context->hasQueryContext() && query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+}
+
+static bool shouldReadFromQueryCacheForSubquery(
+    const Settings & settings,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
+{
+    return !mayBeInDistributedPlan(settings, select_query_options, query_context);
 }
 
 void Planner::buildPlanForUnionNode()
@@ -1171,7 +1181,9 @@ void Planner::buildPlanForQueryNode()
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
             ///
-            /// `make_distributed_plan` cannot split an aggregation with a cap, so the cap is not used with it.
+            /// `make_distributed_plan` cannot split an aggregation with a cap, so the cap is not used in a plan
+            /// that it may split. That is the case also when only an enclosing query enables the setting, and this
+            /// query disables it in its SETTINGS clause (see `mayBeInDistributedPlan`).
             ///
             /// `settings` holds this node's SETTINGS clause as constrained and clamped. A nested change equal to the inherited
             /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
@@ -1181,7 +1193,8 @@ void Planner::buildPlanForQueryNode()
 
             const bool has_aggregates = !aggregation_analysis_result.aggregate_descriptions.empty();
             const bool can_cap_aggregation
-                = !query_settings[Setting::make_distributed_plan] && (!has_aggregates || query_processing_info.isSecondStage());
+                = !mayBeInDistributedPlan(query_settings, select_query_options, query_context)
+                && (!has_aggregates || query_processing_info.isSecondStage());
 
             std::optional<UInt64> trivial_group_by_limit;
             if (can_cap_aggregation)
