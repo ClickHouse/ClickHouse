@@ -24,12 +24,23 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
+    /// A ROWS WHERE rule only deletes rows matching its predicate, so rows it can never touch must
+    /// not widen the recorded min/max and leave the part looking due for a TTL merge that would
+    /// find nothing to drop. The other fields apply to the whole part and take every row.
+    ColumnPtr where_column;
+    if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
+        where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+
     const size_t rows = block.rows();
     PaddedPODArray<Int64> timestamps;
     extractTimestamps(ttl_column.get(), timestamps);
 
     for (size_t i = 0; i < rows; ++i)
+    {
+        if (where_column && !where_column->getBool(i))
+            continue;
         new_ttl_info.update(timestamps[i]);
+    }
 }
 
 void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const
@@ -49,7 +60,9 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
     }
     else if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
     {
-        data_part->ttl_infos.rows_where_ttl[ttl_update_key] = new_ttl_info;
+        /// Rules sharing a time expression share this slot (mirrors TTLDeleteAlgorithm); the
+        /// callers wipe ttl_infos before finalize, so the first update lands on an empty slot.
+        data_part->ttl_infos.rows_where_ttl[ttl_update_key].update(new_ttl_info);
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     }
     else if (ttl_update_field == TTLUpdateField::TABLE_TTL)
