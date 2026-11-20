@@ -7,8 +7,6 @@
 #include <base/range.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <algorithm>
-#include <ranges>
 #include <utility>
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
@@ -661,90 +659,6 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     }
 
     return {max_range_bytes, sum_range_bytes};
-}
-
-void MergeTreeReaderStream::addRangeOfMark(size_t mark, bool shared_with_next_granules, CompressedBlockRanges & ranges)
-{
-    /// All marks of an empty file point to its beginning, so don't load them.
-    if (file_size == 0)
-        return;
-
-    loadMarks();
-    const auto mark_in_file = marks_getter->getMark(mark, 0);
-    const size_t begin = mark_in_file.offset_in_compressed_file;
-    size_t end = file_size;
-    if (mark + 1 < marks_count)
-    {
-        const auto next_mark = marks_getter->getMark(mark + 1, 0);
-        /// The granule wrote nothing to the stream, like empty arrays or strings.
-        if (next_mark == mark_in_file && !shared_with_next_granules)
-            return;
-
-        end = next_mark.offset_in_compressed_file;
-        /// Unlike `MergeTreeReaderStreamSingleColumn::getRightOffset`, which bounds what reading may need, the dictionary
-        /// after the next mark is not counted: a granule written in one call needs none. Only a merge may write a granule
-        /// in several calls and start the next dictionary in the middle of it, which the marks don't show.
-        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
-        {
-            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
-            const auto marks = std::views::iota(mark + 1, marks_count);
-            const auto it = std::ranges::partition_point(marks, [&](size_t i)
-            {
-                return marks_getter->getMark(i, 0).offset_in_compressed_file <= next_mark.offset_in_compressed_file;
-            });
-            end = it == marks.end() ? file_size : marks_getter->getMark(*it, 0).offset_in_compressed_file;
-        }
-    }
-    ranges.emplace_back(begin, end);
-}
-
-void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
-{
-    loadMarks();
-    const size_t num_positions = marks_getter->getNumColumns();
-    const size_t begin = marks_getter->getMark(mark, position).offset_in_compressed_file;
-
-    /// A stripe of several granules holds them column by column: then take the bound that reading the column uses.
-    auto same_stripe = [&](size_t granule)
-    {
-        return marks_getter->getMark(granule + 1, 0) < marks_getter->getMark(granule, num_positions - 1);
-    };
-    if ((mark + 1 < marks_count && same_stripe(mark)) || (mark > 0 && same_stripe(mark - 1)))
-    {
-        ranges.emplace_back(begin, getRightOffsetOneColumn(mark + 1, position));
-        return;
-    }
-
-    /// Otherwise the granules are written one after another, and the positions of a granule in their order.
-    auto next = [&](size_t & current_mark, size_t & current_position)
-    {
-        if (++current_position == num_positions)
-        {
-            current_position = 0;
-            ++current_mark;
-        }
-    };
-
-    size_t end = file_size;
-    next(mark, position);
-    if (mark < marks_count)
-    {
-        const auto next_mark = marks_getter->getMark(mark, position);
-        end = next_mark.offset_in_compressed_file;
-        if (next_mark.offset_in_decompressed_block != 0)
-        {
-            /// The block goes on to the next later offset. Many marks can share it, so search instead of scanning them: the
-            /// offsets don't decrease up to the next stripe of several granules, which starts a block after this one.
-            const auto positions = std::views::iota(mark * num_positions + position, marks_count * num_positions);
-            const auto it = std::ranges::partition_point(positions, [&](size_t i)
-            {
-                return marks_getter->getMark(i / num_positions, i % num_positions).offset_in_compressed_file
-                    <= next_mark.offset_in_compressed_file;
-            });
-            end = it == positions.end() ? file_size : marks_getter->getMark(*it / num_positions, *it % num_positions).offset_in_compressed_file;
-        }
-    }
-    ranges.emplace_back(begin, end);
 }
 
 MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)

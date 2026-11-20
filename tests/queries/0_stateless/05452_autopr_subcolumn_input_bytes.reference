@@ -7,20 +7,10 @@
 05452_wide_single_stream_full_and_size	1
 1
 1
-05452_unknown_streams_dynamic_1	1
-05452_unknown_streams_dynamic_2	1
-05452_unknown_streams_quantized_1	1
-05452_unknown_streams_quantized_2	1
-05452_unknown_streams_quantized_codebook_1	1
-05452_unknown_streams_quantized_codebook_2	1
-05452_unknown_streams_sparse_1	1
-05452_unknown_streams_sparse_2	1
-compact	1
-empty_array	1
-empty_string	1
-lowcardinality	1
-lowcardinality_next_dictionary	1
-wide	1
+05452_cache_compact_1	1
+05452_cache_compact_2	1
+05452_cache_wide_1	1
+05452_cache_wide_2	1
 05452_skew_compact_prewhere	1
 05452_skew_compact_primary_key	1
 05452_skew_wide_prewhere	1

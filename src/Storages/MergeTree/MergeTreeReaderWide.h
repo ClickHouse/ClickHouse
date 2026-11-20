@@ -135,9 +135,9 @@ private:
     /// Called on the reading thread only, see the body.
     double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
 
-    /// The ranges in the files of the compressed blocks read, and of those that hold the granules served from the columns
-    /// cache, by stream, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`. Only
-    /// after `countCompressedBytesRead`. The buffers of the streams append to the ranges of their own stream, the map is guarded.
+    /// The ranges in the files of the compressed blocks read, by stream, since `takeCompressedBytesRead` was called, see
+    /// `CompressedReadBufferBase::setBlocksReadSink`. Only after `countCompressedBytesRead`. The buffers of the streams append
+    /// to the ranges of their own stream, the map is guarded.
     struct StreamRangesRead
     {
         CompressedBlockRanges ranges;
@@ -147,10 +147,6 @@ private:
     std::mutex ranges_read_mutex;
     std::unordered_map<String, StreamRangesRead> ranges_read;
     CompressedBlockRanges & getRangesRead(const String & stream_name);
-    void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
-    /// A granule served from the cache is priced by the blocks of its streams, which are not all known for some columns:
-    /// then the bytes read are not measured, and the ranges are not kept.
-    bool served_from_cache_without_known_streams = false;
 
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.

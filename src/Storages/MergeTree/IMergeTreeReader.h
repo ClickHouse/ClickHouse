@@ -109,9 +109,8 @@ public:
     /// `CountedCompressedBlocks` of `countCompressedBytesRead` has not counted yet. `nullopt` if the reader cannot tell.
     virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
 
-    /// Enables `takeCompressedBytesRead`, which then also prices the granules served from the columns cache as the blocks
-    /// reading them from the part would load (this loads their marks). The readers of a read share `counted`, so a block
-    /// several of them load is counted once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
+    /// Enables `takeCompressedBytesRead`. The readers of a read share `counted`, so a block several of them load is counted
+    /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
     virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted)
     {
         chassert(!counted_compressed_blocks || counted_compressed_blocks == counted);
@@ -181,6 +180,8 @@ protected:
 
     /// See `countCompressedBytesRead`.
     CountedCompressedBlocksPtr counted_compressed_blocks;
+    /// Granules served from the columns cache load nothing from the part, so the bytes read are not measured then.
+    bool served_from_columns_cache = false;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

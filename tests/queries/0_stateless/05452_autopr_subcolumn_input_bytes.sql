@@ -159,60 +159,12 @@ SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, c
 INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(2e5);
 INSERT INTO t_skew_compact SELECT * FROM t_skew_wide;
 
-DROP TABLE IF EXISTS t_cache_sparse;
-DROP TABLE IF EXISTS t_cache_dynamic;
-
-CREATE TABLE t_cache_sparse (key UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.5,
-    nullable_serialization_version = 'allow_sparse', serialization_info_version = 'with_types';
-CREATE TABLE t_cache_dynamic (key UInt64, d Dynamic) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-
-INSERT INTO t_cache_sparse SELECT number, if(number % 100 = 0, number, NULL) FROM numbers(2e5);
-INSERT INTO t_cache_dynamic SELECT number, if(number % 2, number::Dynamic, toString(number)::Dynamic) FROM numbers(2e5);
-
-DROP TABLE IF EXISTS t_cache_quantized;
-SET enable_quantized_codec = 1;
-CREATE TABLE t_cache_quantized (key UInt64, vec Array(Float32) CODEC(Quantized('product', 8, 4, 2))) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-INSERT INTO t_cache_quantized SELECT number, arrayMap(j -> toFloat32((number * 7 + j) % 13), range(8)) FROM numbers(2e5);
-
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2;
 
 SELECT s FROM t_skew_wide PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_wide_prewhere';
 SELECT s FROM t_skew_wide WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_wide_primary_key';
 SELECT s FROM t_skew_compact PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_compact_prewhere';
 SELECT s FROM t_skew_compact WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_compact_primary_key';
-
--- A part with a single `LowCardinality` dictionary of long values, flushed in its own block: the marks of the granules that
--- share it are all the same, at the start of the block.
-DROP TABLE IF EXISTS t_cache_lowcardinality;
-CREATE TABLE t_cache_lowcardinality (key UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 1, index_granularity = 8192,
-    index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
-INSERT INTO t_cache_lowcardinality SELECT number, hex(sipHash128(number % 5000)) || hex(sipHash128(number % 5000 + 5000)) FROM numbers(2e5);
-
--- Each granule of an insert fills a dictionary of its own, written after the granule: the next mark points to the
--- dictionary of the next granule, which reading the granule does not load. Merges would write granules in several calls.
-DROP TABLE IF EXISTS t_cache_lowcardinality_next_dictionary;
-CREATE TABLE t_cache_lowcardinality_next_dictionary (key UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
-    ratio_of_defaults_for_sparse_serialization = 1;
-SYSTEM STOP MERGES t_cache_lowcardinality_next_dictionary;
-INSERT INTO t_cache_lowcardinality_next_dictionary SELECT number, hex(sipHash128(number)) || hex(sipHash128(number + 1)) FROM numbers(65536);
-
--- Empty values, which write nothing to the stream of the elements or of the string data, before the values of the last
--- granule: their marks are all the same, and the granules read below need no block of that stream.
-DROP TABLE IF EXISTS t_cache_empty_array;
-CREATE TABLE t_cache_empty_array (key UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1000, index_granularity_bytes = '10Mi',
-    ratio_of_defaults_for_sparse_serialization = 1;
-INSERT INTO t_cache_empty_array SELECT number, if(number < 19000, [], arrayMap(i -> cityHash64(number, i), range(64))) FROM numbers(20000);
-DROP TABLE IF EXISTS t_cache_empty_string;
-CREATE TABLE t_cache_empty_string (key UInt64, s String) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1000, index_granularity_bytes = '10Mi',
-    ratio_of_defaults_for_sparse_serialization = 1, string_serialization_version = 'with_size_stream', serialization_info_version = 'with_types';
-INSERT INTO t_cache_empty_string SELECT number, if(number < 19000, '', repeat(hex(cityHash64(number)), 32)) FROM numbers(20000);
 
 -- Each column in a single compressed block, which every stream of the read below loads for its own granules: it is still
 -- the part's to read once.
@@ -234,37 +186,14 @@ SELECT key, sum(value) FROM t_one_block_compact GROUP BY key FORMAT Null
 SETTINGS max_threads = 4, max_block_size = 128, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
     merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 1, log_comment = '05452_one_block_compact';
 
+-- Rows served from the columns cache are read from no file, so no statistics are collected for a read the cache serves.
 -- The first read must not serve itself from the cache: the ranges are not split into overlapping ones.
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
     use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
-
--- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_1';
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_2';
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_compact_1';
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_compact_2';
-SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_1';
-SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_2';
-SELECT lc FROM t_cache_lowcardinality_next_dictionary WHERE key < 8192 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_next_dictionary_1';
-SELECT lc FROM t_cache_lowcardinality_next_dictionary WHERE key < 8192 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_next_dictionary_2';
-
-SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_array_1';
-SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_array_2';
-SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_string_1';
-SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_string_2';
-
--- The streams of the null map of a sparse `Nullable`, of a `Dynamic` and of a `Quantized` column are not all known without reading the column,
--- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
-SELECT sum(n.null) FROM t_cache_sparse FORMAT Null SETTINGS log_comment = '05452_unknown_streams_sparse_1';
-SELECT sum(n.null) FROM t_cache_sparse FORMAT Null SETTINGS log_comment = '05452_unknown_streams_sparse_2';
-SELECT d FROM t_cache_dynamic FORMAT Null SETTINGS log_comment = '05452_unknown_streams_dynamic_1';
-SELECT d FROM t_cache_dynamic FORMAT Null SETTINGS log_comment = '05452_unknown_streams_dynamic_2';
--- A `Quantized` column lists its codes and codebook, which reading the vectors skips, and the codebook of the part is
--- one value, read from the beginning of its file for any granule.
-SELECT vec FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_1';
-SELECT vec FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_2';
-SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_codebook_1';
-SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_codebook_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, use_columns_cache = 0;
 
@@ -274,22 +203,11 @@ SYSTEM FLUSH LOGS query_log;
 -- entries before the second read.
 SELECT log_comment, if(ProfileEvents['ColumnsCacheHits'] = 0,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
-    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_when_streams_known
+    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_without_cache_hits
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment LIKE '05452\\_unknown\\_streams\\_%' AND type = 'QueryFinish'
+    AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
-
-SELECT part_type, min(input_bytes) > 0 AND max(input_bytes) <= min(input_bytes) * 1.25 AS cache_priced_as_part
-FROM
-(
-    SELECT extract(log_comment, '05452_cache_(\\w+)_\\d') AS part_type, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-        AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
-)
-GROUP BY part_type
-ORDER BY part_type;
 
 WITH
     (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
@@ -314,12 +232,5 @@ ORDER BY log_comment;
 
 DROP TABLE t_skew_wide;
 DROP TABLE t_skew_compact;
-DROP TABLE t_cache_sparse;
-DROP TABLE t_cache_dynamic;
-DROP TABLE t_cache_quantized;
-DROP TABLE t_cache_lowcardinality;
-DROP TABLE t_cache_lowcardinality_next_dictionary;
-DROP TABLE t_cache_empty_array;
-DROP TABLE t_cache_empty_string;
 DROP TABLE t_one_block_wide;
 DROP TABLE t_one_block_compact;
