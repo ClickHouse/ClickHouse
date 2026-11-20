@@ -1,13 +1,18 @@
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <string_view>
+
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -307,20 +312,115 @@ ASTPtr parseMutationCommandsList(const String & commands_str)
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
+/// Legacy mutation files store an unparenthesized list (`CLEAR COLUMN n`). The exact-column mark
+/// exists only inside the parentheses of the current format, so a parenthesis of an expression
+/// such as `toIntervalMonth(3)` is not a command boundary.
+bool mutationCommandsAreParenthesized(const String & commands_str)
+{
+    Tokens tokens(commands_str.data(), commands_str.data() + commands_str.size(), 0, false);
+    for (size_t index = 0;; ++index)
+    {
+        const Token & token = tokens[index];
+        if (token.isEnd())
+            return false;
+        if (token.type == TokenType::Whitespace || token.type == TokenType::Comment)
+            continue;
+        return token.type == TokenType::OpeningRoundBracket;
+    }
+}
+
+/// `/*exact*/` is the first token of an exact command. A parenthesis inside a literal is not a command boundary.
+std::vector<char> exactColumnMarks(const String & commands_str)
+{
+    std::vector<char> marks;
+    Tokens tokens(commands_str.data(), commands_str.data() + commands_str.size(), 0, false);
+
+    int depth = 0;
+    bool in_command = false;
+    bool saw_exact = false;
+    bool decided = false;
+
+    for (size_t index = 0;; ++index)
+    {
+        const Token & token = tokens[index];
+        if (token.isEnd())
+            break;
+
+        if (token.type == TokenType::OpeningRoundBracket)
+        {
+            if (depth == 0)
+            {
+                in_command = true;
+                saw_exact = false;
+                decided = false;
+            }
+            ++depth;
+            continue;
+        }
+
+        if (token.type == TokenType::ClosingRoundBracket)
+        {
+            if (depth == 0)
+                continue;
+            --depth;
+            if (depth == 0 && in_command)
+            {
+                marks.push_back(saw_exact);
+                in_command = false;
+            }
+            continue;
+        }
+
+        if (depth != 1 || !in_command || decided || token.type == TokenType::Whitespace)
+            continue;
+
+        if (token.type == TokenType::Comment && std::string_view(token.begin, token.size()) == "/*exact*/")
+            saw_exact = true;
+        decided = true;
+    }
+
+    return marks;
+}
+
 }
 
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    String commands_str = ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
+    WriteBufferFromOwnString commands;
+    std::vector<char> expected_marks;
+    expected_marks.reserve(size());
+    bool first = true;
+    for (const auto & command : *this)
+    {
+        if (command.isPureMetadataCommand() && !with_pure_metadata_commands)
+            continue;
 
-    /// Check that the serialized commands can be parsed back the same way `readText` will parse
-    /// them. If they cannot (i.e. some AST is formatted in a way the parser does not accept),
-    /// it is much better to fail the query that creates the mutation than to persist an entry
-    /// that would fail to load - and prevent the whole table from loading - on every server
-    /// that reads it.
+        auto parsed = command.ast();
+        if (!parsed)
+            continue;
+
+        if (!first)
+            commands << ", ";
+        first = false;
+
+        String formatted = parsed->formatWithSecretsOneLine();
+        if (command.targets_exact_column)
+        {
+            if (formatted.empty() || formatted.front() != '(')
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot mark an exact column mutation command: {}", formatted);
+            formatted.insert(1, "/*exact*/ ");
+        }
+        commands << formatted;
+        expected_marks.push_back(command.targets_exact_column);
+    }
+
+    String commands_str = commands.str();
+
+    /// Refuse to persist commands `readText` could not parse back with the same exact-column marks.
+    ASTPtr parsed;
     try
     {
-        parseMutationCommandsList(commands_str);
+        parsed = parseMutationCommandsList(commands_str);
     }
     catch (Exception & e)
     {
@@ -329,6 +429,13 @@ void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_comm
             "and the parser; it's a bug); refusing to write them out: {}", commands_str);
         throw;
     }
+
+    const auto marks = exactColumnMarks(commands_str);
+    if (!parsed || marks.size() != parsed->children.size() || marks != expected_marks)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot recover exact-column marks from serialized mutation commands: {}",
+            commands_str);
 
     writeEscapedString(commands_str, out);
 }
@@ -339,6 +446,10 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
     readEscapedString(commands_str, in);
 
     auto commands_ast = parseMutationCommandsList(commands_str);
+    /// Unparenthesized text predates exact-column marks. Expression parentheses must not be read as marks.
+    const bool parenthesized = mutationCommandsAreParenthesized(commands_str);
+    const auto marks = parenthesized ? exactColumnMarks(commands_str) : std::vector<char>{};
+    size_t index = 0;
 
     for (const auto & child : commands_ast->children)
     {
@@ -346,8 +457,22 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
         auto command = MutationCommand::parse(*command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
+        if (parenthesized)
+        {
+            if (index >= marks.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
+            command->targets_exact_column = marks[index];
+        }
+        else
+        {
+            command->targets_exact_column = false;
+        }
+        ++index;
         push_back(std::move(*command));
     }
+
+    if (parenthesized && index != marks.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
 }
 
 std::string MutationCommands::toString(bool with_pure_metadata_commands) const
