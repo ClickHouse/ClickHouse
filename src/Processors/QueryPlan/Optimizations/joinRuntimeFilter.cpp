@@ -1,9 +1,10 @@
 #include <algorithm>
 #include <memory>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -296,9 +297,9 @@ static size_t countHashTableKeys(const JoinStepLogical & join_step)
 }
 
 /// Build steps on a join input, ignoring intervening expression and filter steps.
-static std::vector<BuildRuntimeFilterStep *> getBuildStepChain(QueryPlan::Node * input)
+static VectorWithMemoryTracking<BuildRuntimeFilterStep *> getBuildStepChain(QueryPlan::Node * input)
 {
-    std::vector<BuildRuntimeFilterStep *> chain;
+    VectorWithMemoryTracking<BuildRuntimeFilterStep *> chain;
     for (auto * node = input; node && node->children.size() == 1; node = node->children.front())
     {
         if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
@@ -783,7 +784,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
 }
 
 /// Collect every `__applyFilter` rendezvous key in the DAG.
-static void collectRuntimeFilterKeys(const ActionsDAG & dag, std::unordered_set<String> & keys)
+static void collectRuntimeFilterKeys(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<String> & keys)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -799,7 +800,7 @@ static void collectRuntimeFilterKeys(const ActionsDAG & dag, std::unordered_set<
     }
 }
 
-static void collectRuntimeFilterKeys(const IQueryPlanStep & step, std::unordered_set<String> & keys)
+static void collectRuntimeFilterKeys(const IQueryPlanStep & step, UnorderedSetWithMemoryTracking<String> & keys)
 {
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
         collectRuntimeFilterKeys(expression_step->getExpression(), keys);
@@ -817,10 +818,10 @@ bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool tra
     /// Keep a local build only beside an optimized join whose probe subtree uses the same unique key.
     /// Make all other deserialized local builds inert so normal optimization can rebuild them if needed.
     /// Exchange builds are never paired, but count toward key uniqueness.
-    std::vector<QueryPlan::Node *> join_nodes;
-    std::vector<BuildRuntimeFilterStep *> steps_to_pair;
-    std::unordered_map<String, size_t> build_steps_per_key;
-    for (std::vector<QueryPlan::Node *> stack{&root}; !stack.empty();)
+    VectorWithMemoryTracking<QueryPlan::Node *> join_nodes;
+    VectorWithMemoryTracking<BuildRuntimeFilterStep *> steps_to_pair;
+    UnorderedMapWithMemoryTracking<String, size_t> build_steps_per_key;
+    for (VectorWithMemoryTracking<QueryPlan::Node *> stack{&root}; !stack.empty();)
     {
         auto * node = stack.back();
         stack.pop_back();
@@ -847,8 +848,8 @@ bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool tra
         if (candidates.empty())
             continue;
 
-        std::unordered_set<String> probe_keys;
-        for (std::vector<const QueryPlan::Node *> stack{node->children[0]}; !stack.empty();)
+        UnorderedSetWithMemoryTracking<String> probe_keys;
+        for (VectorWithMemoryTracking<const QueryPlan::Node *> stack{node->children[0]}; !stack.empty();)
         {
             const auto * probe_node = stack.back();
             stack.pop_back();
