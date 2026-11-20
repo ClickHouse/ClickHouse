@@ -255,6 +255,11 @@ NameSet injectRequiredColumns(
             }
         }
 
+        if (available_columns.empty())
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Cannot read part {} because none of its stored columns exist in the current table schema",
+                data_part_info_for_reader.getPartName());
+
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(current_name(minimum_size_column_name));
         /// correctly report added column
