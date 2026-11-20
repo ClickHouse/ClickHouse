@@ -48,7 +48,10 @@ for table in uk_ignore uk_overwrite; do
     "
 done
 
+# Plan-based parallel replicas fails a read of a UNIQUE KEY table:
+# https://github.com/ClickHouse/ClickHouse/issues/128534
 $CLICKHOUSE_CLIENT --multiquery -q "
+    SET parallel_replicas_plan_based = 0;
     SELECT count(), countIf(v != k) FROM uk_ignore;
     SELECT count(), countIf(v != 9000 + k) FROM uk_overwrite;
     DROP TABLE uk_ignore;
