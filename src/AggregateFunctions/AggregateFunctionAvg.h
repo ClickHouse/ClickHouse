@@ -486,6 +486,12 @@ public:
         ++this->data(place).denominator;
     }
 
+    /// The same as for `sum`, whose `addMany` is used.
+    constexpr static size_t minArraySizeForAddBatchSinglePlace()
+    {
+        return is_floating_point<T> ? 32 : IAggregateFunction::never_add_batch_single_place_for_arrays;
+    }
+
     void addManyDefaults(
         AggregateDataPtr __restrict place,
         const IColumn ** /*columns*/,
