@@ -71,16 +71,8 @@ SELECT hex(timeSeriesAvgOverGroupState(k, v)) FROM values('k UInt8, v Array(Floa
 SELECT finalizeAggregation(CAST(unhex('02000105'), 'AggregateFunction(timeSeriesAvgOverGroup, UInt8, Array(Float64))')); -- { serverError INCORRECT_DATA }
 -- A key without bytes does not limit the number of rows by the size of the state.
 SELECT finalizeAggregation(CAST(unhex('0100FFFFFFFFFFFFFFFFFF0100'), 'AggregateFunction(timeSeriesAvgOverGroup, Tuple(), Array(Float64))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
-
--- A state cannot get more rows than a reader accepts, neither by adding rows nor by merging states.
-SELECT timeSeriesAvgOverGroup(tuple(), CAST([], 'Array(Float64)')) FROM numbers(16777215) SETTINGS max_threads = 1;
-SELECT timeSeriesAvgOverGroup(tuple(), CAST([], 'Array(Float64)')) FROM numbers(16777216) SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
-SELECT timeSeriesAvgOverGroupMerge(s) FROM
-(
-    SELECT timeSeriesAvgOverGroupState(tuple(), CAST([], 'Array(Float64)')) AS s FROM numbers(8388607)
-    UNION ALL
-    SELECT timeSeriesAvgOverGroupState(tuple(), CAST([], 'Array(Float64)')) FROM numbers(8388609)
-) SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
+-- A state cannot have more than 16777215 rows. Adding rows and merging states is checked in `05836_timeseries_avg_over_group_row_limit`.
+SELECT finalizeAggregation(CAST(unhex('01008080800800'), 'AggregateFunction(timeSeriesAvgOverGroup, Tuple(), Array(Float64))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 SELECT '-- PromQL avg';
 
