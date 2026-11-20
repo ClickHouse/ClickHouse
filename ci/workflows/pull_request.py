@@ -11,6 +11,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import (
     PR_SINGLE_ARCH_SKIPPED_BUILDS,
     PR_SINGLE_ARCH_SKIPPED_JOBS,
+    configure_amd_release_thinlto,
     configure_performance_shards,
     configure_toolchain_builds,
     should_skip_job,
@@ -100,14 +101,17 @@ workflow = Workflow.Config(
         JobConfigs.fast_test,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_jobs_with_examples
+        ],
         *[
             job.set_run_after(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.extra_validation_build_jobs
         ],
         *[
             job.set_run_after(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.release_build_jobs_with_examples
+            for job in JobConfigs.release_build_jobs
         ],
         # The other cross-compiled builds run in the merge queue, see `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
         *[
@@ -312,6 +316,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         configure_performance_shards,
+        configure_amd_release_thinlto,
         configure_toolchain_builds,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
