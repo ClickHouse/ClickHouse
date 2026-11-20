@@ -75,7 +75,7 @@ private:
     /// The rank of a piece, or `no_rank` when the piece is not a token of the vocabulary.
     static constexpr UInt32 no_rank = std::numeric_limits<UInt32>::max();
 
-    UInt32 rankOf(std::string_view piece) const;
+    [[nodiscard]] UInt32 rankOf(std::string_view piece) const;
 
     /// The rank of merging the adjacent parts `left` and `right`, or `no_rank` when they do not merge.
     UInt32 pairRank(std::string_view left, std::string_view right) const;
