@@ -141,10 +141,10 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_name: " << function_name;
 
     std::string function_type = "ordinary";
-    if (hasWindow())
-        function_type = "window";
-    else if (isAggregateFunction())
+    if (isAggregationCall())
         function_type = "aggregate";
+    else if (isWindowCall())
+        function_type = "window";
 
     buffer << ", function_type: " << function_type;
 
@@ -156,7 +156,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (function)
     {
         buffer << ", result_type: " + getResultType()->getName();
-        if (!isAggregateFunction() && !hasWindow() && getFunction()->isSpatialPredicate())
+        if (!isAggregationCall() && !isWindowCall() && getFunction()->isSpatialPredicate())
             buffer << ", is_spatial_predicate: true";
     }
 
@@ -184,9 +184,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
-        || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
-        || nulls_action != rhs_typed.nulls_action)
+    if (function_name != rhs_typed.function_name || kind != rhs_typed.kind || nulls_action != rhs_typed.nulls_action)
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
@@ -217,9 +215,9 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
-    hash_state.update(isOrdinaryFunction());
-    hash_state.update(isAggregateFunction());
-    hash_state.update(isWindowFunction());
+    hash_state.update(kind == FunctionKind::ORDINARY);
+    hash_state.update(kind == FunctionKind::AGGREGATE);
+    hash_state.update(kind == FunctionKind::WINDOW);
     hash_state.update(nulls_action);
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
@@ -259,7 +257,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
     function_ast->setIsOperator(is_operator || function_name == "not");
 
-    if (hasWindow())
+    if (isWindowCall())
     {
         function_ast->setIsWindowFunction(true);
         function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);

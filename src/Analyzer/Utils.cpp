@@ -1083,7 +1083,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
 
     const auto & name = function_node->getFunctionName();
-    if (function_node->isOrdinaryFunction())
+    if (function_node->isOrdinaryCall())
     {
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
@@ -1098,7 +1098,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     }
-    else if (function_node->isAggregateFunction())
+    else if (function_node->getFunctionKind() == FunctionKind::AGGREGATE)
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
@@ -1108,7 +1108,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         else
             function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
-    else if (function_node->isWindowFunction())
+    else if (function_node->getFunctionKind() == FunctionKind::WINDOW)
     {
         function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name, context));
     }

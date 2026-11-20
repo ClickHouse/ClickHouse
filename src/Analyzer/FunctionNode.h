@@ -108,6 +108,9 @@ public:
     /// Returns true if function node has window, false otherwise
     [[nodiscard]] bool hasWindow() const { return children[window_child_index] != nullptr; }
 
+    /// Get function kind: which function object the node holds
+    [[nodiscard]] FunctionKind getFunctionKind() const { return kind; }
+
     /** Get window node.
       * Valid only for window function node.
       * Result window node can be identifier node or window node.
@@ -156,17 +159,12 @@ public:
       */
     [[nodiscard]] GeneralWindowFunctionPtr getWindowFunction() const;
 
-    /// Is function node resolved
+    /** A resolved node represents window, an aggregation or an ordinary calls.
+      */
     [[nodiscard]] bool isResolved() const { return function != nullptr; }
-
-    /// Is function node window function
-    [[nodiscard]] bool isWindowFunction() const { return kind == FunctionKind::WINDOW; }
-
-    /// Is function node aggregate function
-    [[nodiscard]] bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
-
-    /// Is function node ordinary function
-    [[nodiscard]] bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
+    [[nodiscard]] bool isWindowCall() const { return hasWindow(); }
+    [[nodiscard]] bool isAggregationCall() const { return kind == FunctionKind::AGGREGATE && !hasWindow(); }
+    [[nodiscard]] bool isOrdinaryCall() const { return kind == FunctionKind::ORDINARY; }
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.

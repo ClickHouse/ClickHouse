@@ -1238,7 +1238,7 @@ bool canOptimizeDistinctJSONPaths(
     const QueryTreeNodePtr & column_source,
     const ContextPtr & context)
 {
-    if (!function_node.isAggregateFunction() || function_node.hasWindow())
+    if (!function_node.isAggregationCall())
         return false;
 
     const auto & query = query_node->as<const QueryNode &>();

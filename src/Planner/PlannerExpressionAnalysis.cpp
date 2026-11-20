@@ -125,7 +125,7 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
-            if (!function_node->isOrdinaryFunction())
+            if (!function_node->isOrdinaryCall())
             {
                 /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
                 /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()

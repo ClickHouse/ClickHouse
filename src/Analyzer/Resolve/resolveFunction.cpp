@@ -159,7 +159,7 @@ bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, cons
     const auto & function_name = function_node.getFunctionName();
     auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
     return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
-        && (function_node.hasWindow()
+        && (function_node.isWindowCall()
             || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
                 && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
 }
@@ -267,7 +267,7 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
         || function_node->getFunctionName() != function_name_to_fold
         || !function_node->getParameters().getNodes().empty()
         || function_node->getNullsAction() != NullsAction::EMPTY
-        || function_node->hasWindow())
+        || function_node->isWindowCall())
         return {};
 
     const bool decisive_value = function_name_to_fold == "or";
@@ -1500,7 +1500,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
     if (function_name == "arrayElement"
         && function_node_ptr->isOperator()
-        && !function_node_ptr->hasWindow()
+        && !function_node_ptr->isWindowCall()
         && function_node_ptr->getParameters().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().size() == 2)
     {
@@ -1539,7 +1539,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->hasWindow())
+    if (!function_node_ptr->isWindowCall())
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
@@ -1548,7 +1548,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
     /// with this name keeps its arguments.
     if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
-        && (function_node_ptr->hasWindow() || !lambda_expression_untyped))
+        && (function_node_ptr->isWindowCall() || !lambda_expression_untyped))
     {
         auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
         const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
@@ -1605,7 +1605,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
-        && !function_node_ptr->hasWindow()
+        && !function_node_ptr->isWindowCall()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
         && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
@@ -3131,7 +3131,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       *
       * TODO: Provide better error hints.
       */
-    if (!function_node.hasWindow())
+    if (!function_node.isWindowCall())
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
@@ -3282,7 +3282,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    if (function_node.hasWindow())
+    if (function_node.isWindowCall())
     {
         const auto & window_function_factory = WindowFunctionFactory::instance();
         const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
