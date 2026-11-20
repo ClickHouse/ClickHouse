@@ -8955,7 +8955,7 @@ Use userspace page cache when reading from local disks. Used for testing, unlike
     DECLARE(Bool, use_page_cache_for_object_storage, true, R"(
 Use userspace page cache when reading from object storage table functions (s3, azure, hdfs, Iceberg, Delta Lake, etc.) and table engines (S3, Azure, HDFS, Iceberg, Delta Lake, etc.). It has an effect only if the userspace page cache is configured on the server (`page_cache_max_size`), and only for objects with a strong ETag or with an immutable identity taken from the table records (data files of Iceberg and Delta Lake). It is not used together with the filesystem cache. Together with the distributed cache, it is used only if `use_page_cache_with_distributed_cache` is also enabled.
 )", 0, \
-        {"26.11", false, true, "Use the userspace page cache for object storage table engines and table functions by default, if the page cache is configured on the server."}, \
+        {"26.12", false, true, "Use the userspace page cache for object storage table engines and table functions by default, if the page cache is configured on the server."}, \
         {"26.2", false, false, "New setting to use userspace page cache for object storage table functions"}) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
@@ -9379,7 +9379,7 @@ Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is 
     DECLARE(BoolAuto, table_engine_read_through_distributed_cache, Field("auto"), R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, Iceberg, Delta Lake, etc). `auto` (the default) means to read through the distributed cache when it is used for other reads, as decided by the server setting `enable_read_through_distributed_cache` and the setting `force_read_through_distributed_cache`. The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale, or on the immutable identity of a data file taken from the table records (Iceberg, Delta Lake), so that no `HEAD` request is needed. An object without a strong ETag or such an identity is read from the object storage directly, as are reads that the cache server cannot repeat: `url` tables, `s3` reads with `NOSIGN` or with `headers`, data files with a fully qualified path (a Delta Lake shallow clone), and, unless the setting is `1`, `azure` reads.
 )", 0, \
-        {"26.11", false, "auto", "Read object storage table engines and table functions through the distributed cache when it is used for other reads."}, \
+        {"26.12", false, "auto", "Read object storage table engines and table functions through the distributed cache when it is used for other reads."}, \
         {"25.7", false, false, "New setting"}) \
     DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
 Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
