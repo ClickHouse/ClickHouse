@@ -317,6 +317,15 @@ bool isTableNameArgument(std::string_view argument)
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
+String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
+{
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
+        return parsed_query->formatForErrorMessage();
+    return String(query);
+}
+
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
@@ -2054,12 +2063,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+            e.addMessage("(in query: {})", queryTextForErrorMessage(full_query, parsed_query));
         throw;
     }
 
     if (have_error)
-        processError(full_query);
+        processError(queryTextForErrorMessage(full_query, parsed_query));
     return !have_error;
 }
 
@@ -3105,8 +3114,9 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
 
 
 /// Receive the block that serves as an example of the structure of table where data will be inserted.
-bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query)
+bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update)
 {
+    bool received_sample = false;
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -3115,7 +3125,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
         {
             case Protocol::Server::Data:
                 out = packet.block;
-                return true;
+                if (!wait_for_timezone_update)
+                    return true;
+                received_sample = true;
+                break;
 
             case Protocol::Server::Exception:
                 onReceiveExceptionFromServer(std::move(packet.exception));
@@ -3127,10 +3140,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.columns_description);
-                return receiveSampleBlock(out, columns_description, parsed_query);
+                return receiveSampleBlock(out, columns_description, parsed_query, wait_for_timezone_update);
 
             case Protocol::Server::TimezoneUpdate:
                 onTimezoneUpdate(packet.server_timezone);
+                if (received_sample)
+                    return true;
+                wait_for_timezone_update = false;
                 break;
 
             /// A subquery executed while the server is still analysing the query reports progress and
@@ -3281,10 +3297,19 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         startKeystrokeInterceptorIfExists();
         SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
+        /// The server sends its `session_timezone` with the structure of the data it reads through `input`
+        /// (also for RETURNING); it must be applied before the data is parsed in other threads.
+        ASTPtr input_function;
+        if (parsed_insert_query.select)
+            parsed_insert_query.tryFindInputFunction(input_function);
+        const bool wait_for_timezone_update = (input_function || parsed_insert_query.returning)
+            && connection->getConnectionType() != IServerConnection::Type::LOCAL
+            && connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES;
+
         /// Receive description of table structure.
         Block sample;
         ColumnsDescription columns_description;
-        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        if (receiveSampleBlock(sample, columns_description, parsed_query, wait_for_timezone_update))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
@@ -4887,7 +4912,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
-                    processError(full_query);
+                    processError(queryTextForErrorMessage(full_query, parsed_query));
 
                 // Stop processing queries if needed.
                 if (have_error && stdout_is_broken)
@@ -4908,7 +4933,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.contains(trimmed_input))
+    if (isExitString(trimmed_input))
         return false;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
@@ -5713,6 +5738,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+        ("vim", "Use emulated vim editing mode.")
     ;
 }
 
@@ -5770,6 +5796,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
+    if (options.contains("vim"))
+        getClientConfiguration().setBool("vim", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
@@ -6158,6 +6186,7 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,
+        .vim = getClientConfiguration().getBool("vim", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
