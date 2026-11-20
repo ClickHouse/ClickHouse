@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: pauses every INSERT with inline data on a server-wide failpoint.
+# no-fasttest: tests that run alone are kept out of the fast test.
 
 # An INSERT with inline data parses the columns with the types of its metadata snapshot.
 # A concurrent ALTER may change the types before the INSERT reads the serialization hints of the table,
