@@ -40,12 +40,12 @@ CREATE TABLE d (k UInt64) ENGINE = Memory;
 INSERT INTO d VALUES (100000);
 CREATE TABLE mt (a UInt32, c UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO mt SELECT number % 1000 AS a, a < 800 FROM numbers(200000);
-SELECT count() FROM mt JOIN w ON mt.a = w.k JOIN d ON intDiv(100000, mt.c) = d.k;
+SELECT count() FROM mt JOIN w ON mt.a = w.k JOIN d ON intDiv(100000, mt.c) = d.k SETTINGS query_plan_optimize_join_order_limit = 0;
 
--- The key reads the build side of the lower join.
+-- The key reads the probe side, then the build side, of the lower join.
 CREATE TABLE gb (id UInt64, flag UInt8) ENGINE = MergeTree ORDER BY id;
 INSERT INTO gb SELECT number, number < 100000 FROM numbers(200000);
-SELECT count() FROM p JOIN gb ON p.id = gb.id JOIN r ON intDiv(100, gb.flag) = r.k;
+SELECT count() FROM gb JOIN p ON gb.id = p.id JOIN r ON intDiv(100, gb.flag) = r.k SETTINGS query_plan_optimize_join_order_limit = 0;
 SELECT count() FROM p JOIN gb ON p.id = gb.id JOIN r ON intDiv(100, gb.flag) = r.k SETTINGS query_plan_optimize_join_order_limit = 0;
 
 -- ARRAY JOIN removes the rows with an empty array.
