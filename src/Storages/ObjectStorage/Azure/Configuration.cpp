@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Poco/URI.h>
+#include <Disks/IDisk.h>
 
 
 #if USE_AZURE_BLOB_STORAGE
@@ -37,6 +38,7 @@ namespace Setting
     extern const SettingsBool azure_ignore_file_doesnt_exist;
     extern const SettingsUInt64 azure_list_object_keys_size;
     extern const SettingsBool azure_skip_empty_files;
+    extern const SettingsBool azure_skip_hidden_files;
     extern const SettingsBool azure_throw_on_zero_files_match;
     extern const SettingsBool azure_truncate_on_insert;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
@@ -54,12 +56,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-const std::unordered_set<std::string_view> required_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> required_configuration_keys = {
     "blob_path",
     "container",
 };
 
-const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "structure",
@@ -93,6 +95,7 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
         .list_object_keys_size = settings[Setting::azure_list_object_keys_size],
         .throw_on_zero_files_match = settings[Setting::azure_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::azure_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::azure_skip_hidden_files],
     };
 }
 
@@ -151,6 +154,8 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
         options.ClientId = *client_id;
         options.TenantId = *tenant_id;
         connection_params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(options);
+        connection_params.workload_identity_client_id = *client_id;
+        connection_params.workload_identity_tenant_id = *tenant_id;
     }
 
     if (account_name || account_key)
@@ -205,7 +210,8 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
 
     /// Added for Unity Catalog on top of AzureBlobStorage
     // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
-    if (connection_url.starts_with("abfss"))
+    /// `abfs` and `abfss` name the same ADLS Gen2 storage; both carry `://` so a near-prefix scheme like `abfsx://` is not matched.
+    if (connection_url.starts_with("abfss://") || connection_url.starts_with("abfs://"))
     {
         auto pos_slash = connection_url.find("://");
         auto pos_at = connection_url.find('@');
@@ -215,7 +221,7 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
         if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
             || pos_at <= pos_slash + 3 || pos_dot <= pos_at + 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for a abfss url {}", connection_url);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for an abfs/abfss url {}", connection_url);
         }
         auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
         auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
@@ -1045,7 +1051,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
                 onelake_tenant_id,
                 onelake_client_id,
-                onelake_client_secret
+                std::string(onelake_client_secret)
             );
         }
     }

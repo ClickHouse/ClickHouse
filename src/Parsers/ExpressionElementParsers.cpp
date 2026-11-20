@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <Poco/String.h>
 
@@ -215,15 +216,48 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
     return result_select_query;
 }
 
+struct FailedSubqueryReadings
+{
+    /// The value of `starts_with_valid_select_or_explain` of each failed reading.
+    std::unordered_map<const char *, bool> starts_with_valid_select_or_explain;
+};
+
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     starts_with_valid_select_or_explain = false;
 
-    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
-    ParserExplainQuery explain;
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
+    const char * const opening_bracket = pos->begin;
+
+    /// The reading of a subquery depends only on where it starts, but a failed one is retried at the same
+    /// position by every enclosing alternative (a parenthesized expression, a tuple, a function argument,
+    /// a quantified comparison, a union element), and these alternatives nest. Without remembering the
+    /// failures, the parse time is exponential in the nesting depth of such brackets.
+    if (expected.failed_subquery_readings)
+    {
+        const auto & failed = expected.failed_subquery_readings->starts_with_valid_select_or_explain;
+        if (auto it = failed.find(opening_bracket); it != failed.end())
+        {
+            starts_with_valid_select_or_explain = it->second;
+            return false;
+        }
+    }
+
+    bool parsed = parseSubquery(pos, node, expected);
+    if (!parsed)
+    {
+        if (!expected.failed_subquery_readings)
+            expected.failed_subquery_readings = std::make_shared<FailedSubqueryReadings>();
+        expected.failed_subquery_readings->starts_with_valid_select_or_explain[opening_bracket] = starts_with_valid_select_or_explain;
+    }
+    return parsed;
+}
+
+bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
+    ParserExplainQuery explain;
 
     /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
     /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
@@ -464,7 +498,7 @@ namespace
 class ParserArrayOfJSONIdentifierAddition : public IParserBase
 {
 public:
-    String getLastArrayOfJSONSubcolumnIdentifier() const
+    [[nodiscard]] String getLastArrayOfJSONSubcolumnIdentifier() const
     {
         String subcolumn = ":`";
         for (size_t i = 0; i != last_array_level; ++i)
@@ -476,7 +510,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
+    [[nodiscard]] const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -1947,6 +1981,8 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
         return false;
 
     ++pos;
+    /// Nested collections do not go through `IParserBase::parse`, so their depth is counted here.
+    pos.increaseDepth();
     return true;
 }
 
@@ -2048,7 +2084,10 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
             return false;
 
         if (node)
+        {
             collections.pop_back();
+            pos.decreaseDepth();
+        }
     }
 
     return true;
@@ -2115,6 +2154,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SHUFFLE",
     "SIMILAR",
     "STREAM",
     "UNION",
@@ -2155,6 +2195,32 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// `LOCAL` before a join clause is the join-locality qualifier, not an alias: the join grammar
+        /// admits only these keywords between the qualifier and `JOIN`, so one of them following proves
+        /// the token belongs to the join. `GLOBAL` needs no check, it is a restricted keyword above.
+        if (0 == strcasecmp(name.data(), "LOCAL"))
+        {
+            static constexpr Keyword join_continuations[]
+                = {Keyword::NATURAL, Keyword::ANY,   Keyword::ALL,   Keyword::ASOF,  Keyword::SEMI,
+                   Keyword::ANTI,    Keyword::ONLY,  Keyword::INNER, Keyword::LEFT,  Keyword::RIGHT,
+                   Keyword::FULL,    Keyword::CROSS, Keyword::PASTE, Keyword::JOIN};
+
+            Expected peek_expected;
+
+            /// `LEFT` and `INNER` also introduce `ARRAY JOIN`, which is a sibling of the join clause
+            /// and carries no locality, so the alias stands in front of it.
+            Pos after_inner = pos;
+            ParserKeyword(Keyword::INNER).ignore(after_inner, peek_expected);
+            const bool array_join_follows
+                = ParserKeyword(Keyword::LEFT_ARRAY_JOIN).checkWithoutMoving(pos, peek_expected)
+                || ParserKeyword(Keyword::ARRAY_JOIN).checkWithoutMoving(after_inner, peek_expected);
+
+            if (!array_join_follows)
+                for (Keyword keyword : join_continuations)
+                    if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
+                        return false;
+        }
 
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the
