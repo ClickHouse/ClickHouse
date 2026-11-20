@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -122,8 +123,8 @@ bool filterReachesJoinInputAbove(
     const std::array<bool, 2> gets_equal_keys{kind != JoinKind::Right || is_semi, can_push_to_right && (kind != JoinKind::Left || is_semi)};
 
     /// Per input, its keys mapped to the equal keys of the other input. Only same-typed column keys are followed here.
-    /// A key equal to several same-typed columns or expressions is not followed: which of them the push-down substitutes is not
-    /// known here.
+    /// A key equal to several same-typed columns or expressions, directly or through the equivalence classes the push-down
+    /// builds, is not followed: which of them the push-down substitutes is not known here.
     std::array<NameToNameMap, 2> equal_keys;
     if (join.typeChangingSides().empty())
     {
@@ -136,6 +137,17 @@ bool filterReachesJoinInputAbove(
                 ambiguous_keys[side].insert(key);
         };
 
+        auto add_equal_keys = [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+        {
+            add_partner(0, lhs.getColumnName(), rhs.getColumnName());
+            add_partner(1, rhs.getColumnName(), lhs.getColumnName());
+            if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT)
+                return;
+            equal_keys[0].emplace(lhs.getColumnName(), rhs.getColumnName());
+            equal_keys[1].emplace(rhs.getColumnName(), lhs.getColumnName());
+        };
+
+        size_t equalities = 0;
         for (const auto & condition : join_operator.expression)
         {
             auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
@@ -147,13 +159,15 @@ bool filterReachesJoinInputAbove(
                 continue;
             if (!lhs.getType()->equals(*rhs.getType()))
                 continue;
-            add_partner(0, lhs.getColumnName(), rhs.getColumnName());
-            add_partner(1, rhs.getColumnName(), lhs.getColumnName());
-            if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT)
-                continue;
-            equal_keys[0].emplace(lhs.getColumnName(), rhs.getColumnName());
-            equal_keys[1].emplace(rhs.getColumnName(), lhs.getColumnName());
+            add_equal_keys(lhs, rhs);
+            ++equalities;
         }
+
+        /// With one equality, the other keys of its equivalence class are equal through the inner joins below, which pass a
+        /// filter to the same inputs whichever of them it reads.
+        if (equalities > 1)
+            for (const auto & [lhs, rhs] : getEquivalentJoinKeys(node))
+                add_equal_keys(lhs, rhs);
 
         for (const size_t side : {0, 1})
             for (const auto & key : ambiguous_keys[side])

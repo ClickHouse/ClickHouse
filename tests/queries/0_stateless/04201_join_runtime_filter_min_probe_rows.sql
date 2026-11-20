@@ -140,6 +140,19 @@ FROM (EXPLAIN SELECT count() FROM key_path_s a
       JOIN key_path_s c ON a.y = c.y
       SETTINGS query_plan_optimize_join_order_limit = 2);
 
+-- Keys equal through the equivalence classes the push-down builds, of the join's keys and of the inner joins below, count too.
+SELECT 'key equal to two keys of an input below through another key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_s a
+      JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND a.z = r.py AND a.z = r.bz
+      JOIN key_path_s c ON a.y = c.y
+      SETTINGS query_plan_optimize_join_order_limit = 2);
+
+SELECT 'key equal to two keys of an input below through a join below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_s a JOIN key_path_s c ON a.y = c.y
+      JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND c.y = r.bz
+      JOIN key_path_s d ON a.y = d.y
+      SETTINGS query_plan_optimize_join_order_limit = 2);
+
 -- An outer, SEMI or ANTI join below passes the filter to the input whose rows it keeps, and a SEMI join also to the other input.
 SELECT 'LEFT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p LEFT SEMI JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y);
@@ -149,6 +162,9 @@ FROM (EXPLAIN SELECT count() FROM key_path_p p LEFT SEMI JOIN key_path_b b ON p.
 
 SELECT 'RIGHT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_b b RIGHT SEMI JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);
+
+SELECT 'LEFT ANTI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p LEFT ANTI JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y);
 
 SELECT 'key from the input a LEFT JOIN below adds rows to' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_b b LEFT JOIN key_path_p p ON b.x = p.x JOIN key_path_s s ON p.y = s.y);

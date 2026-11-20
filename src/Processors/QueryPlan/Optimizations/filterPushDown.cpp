@@ -459,6 +459,38 @@ static VectorWithMemoryTracking<JoinActionRefPair> buildEquialentSetsForJoinStep
     return joining_keys;
 }
 
+VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> getEquivalentJoinKeys(const QueryPlan::Node & join_node)
+{
+    const auto & logical_join = assert_cast<const JoinStepLogical &>(*join_node.step);
+    EquivalentJoinKeySet equivalent_sets;
+    auto equivalent_expressions = buildEquialentSetsForJoinStepLogical(equivalent_sets, &logical_join, join_node.children);
+    UnorderedSetWithMemoryTracking<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
+    VectorWithMemoryTracking<JoinActionRefPair> extra_equivalent_expressions;
+    for (const auto & [lhs, rhs] : equivalent_expressions)
+    {
+        for (const auto & eq_expr : equivalent_sets.getClass(lhs))
+        {
+            if (!eq_expr.isFromSameActions(lhs) || !eq_expr.fromRight())
+                continue;
+            if (equivalent_expressions_set.contains({lhs, eq_expr}))
+                continue;
+            equivalent_expressions_set.emplace(lhs, eq_expr);
+            extra_equivalent_expressions.emplace_back(lhs, eq_expr);
+        }
+        for (const auto & eq_expr : equivalent_sets.getClass(rhs))
+        {
+            if (!eq_expr.isFromSameActions(rhs) || !eq_expr.fromLeft())
+                continue;
+            if (equivalent_expressions_set.contains({eq_expr, rhs}))
+                continue;
+            equivalent_expressions_set.emplace(eq_expr, rhs);
+            extra_equivalent_expressions.emplace_back(eq_expr, rhs);
+        }
+    }
+    equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
+    return equivalent_expressions;
+}
+
 static void projectDagInputs(ActionsDAG & actions_dag)
 {
     auto & outputs = actions_dag.getOutputs();
@@ -559,32 +591,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join)
     {
-        EquivalentJoinKeySet equivalent_sets;
-        equivalent_expressions = buildEquialentSetsForJoinStepLogical(equivalent_sets, logical_join, child_node->children);
-        UnorderedSetWithMemoryTracking<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
-        VectorWithMemoryTracking<JoinActionRefPair> extra_equivalent_expressions;
-        for (const auto & [lhs, rhs] : equivalent_expressions)
-        {
-            for (const auto & eq_expr : equivalent_sets.getClass(lhs))
-            {
-                if (!eq_expr.isFromSameActions(lhs) || !eq_expr.fromRight())
-                    continue;
-                if (equivalent_expressions_set.contains({lhs, eq_expr}))
-                    continue;
-                equivalent_expressions_set.emplace(lhs, eq_expr);
-                extra_equivalent_expressions.emplace_back(lhs, eq_expr);
-            }
-            for (const auto & eq_expr : equivalent_sets.getClass(rhs))
-            {
-                if (!eq_expr.isFromSameActions(rhs) || !eq_expr.fromLeft())
-                    continue;
-                if (equivalent_expressions_set.contains({eq_expr, rhs}))
-                    continue;
-                equivalent_expressions_set.emplace(eq_expr, rhs);
-                extra_equivalent_expressions.emplace_back(eq_expr, rhs);
-            }
-        }
-        equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
+        equivalent_expressions = getEquivalentJoinKeys(*child_node);
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)

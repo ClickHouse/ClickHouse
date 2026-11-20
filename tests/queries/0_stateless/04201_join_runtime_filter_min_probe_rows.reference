@@ -20,9 +20,12 @@ key of a smaller input below	1
 key equal to two keys of an input below	1
 key equal to a key and an expression of an input below	1
 key equal to a key and an expression of another type	2
+key equal to two keys of an input below through another key	1
+key equal to two keys of an input below through a join below	1
 LEFT SEMI JOIN below	2
 right key of a LEFT SEMI JOIN below	2
 RIGHT SEMI JOIN below	1
+LEFT ANTI JOIN below	2
 key from the input a LEFT JOIN below adds rows to	0
 aggregation key	2
 aggregate	1
