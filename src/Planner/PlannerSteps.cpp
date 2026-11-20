@@ -611,8 +611,8 @@ void applyTopKPushdownToPartialAggregation(
     const auto * before_order_by_dag
         = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
+    VectorWithMemoryTracking<int> directions;
+    VectorWithMemoryTracking<int> nulls_directions;
     directions.reserve(sort_description.size());
     nulls_directions.reserve(sort_description.size());
 
@@ -1851,6 +1851,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 
