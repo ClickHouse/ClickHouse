@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -335,6 +336,15 @@ void insertDefaults(IColumn & column, UInt64 count)
         column.insertManyDefaults(count);
 }
 
+/// The default value of `type`, which is not the default of its column for a type like `Enum`.
+void insertTypeDefault(IColumn & column, const IDataType & type)
+{
+    if (type.isDefaultInsertTrivial())
+        column.insertDefault();
+    else
+        type.insertDefaultInto(column);
+}
+
 }
 
 struct Plan::Impl
@@ -408,6 +418,10 @@ struct Plan::Impl
     /// Sizes of the `missing` vectors of the destination when the current call started: the rows of the call start there.
     /// Only for the columns with `may_miss`.
     VectorWithMemoryTracking<size_t> missing_bases;
+    /// Columns that no field of the file is read into.
+    const NameSet absent_columns;
+    /// The Iceberg `initial-default` of the absent columns that have one, by column position. Empty if there is none.
+    VectorWithMemoryTracking<std::optional<Field>> absent_column_defaults;
     UnorderedSetWithMemoryTracking<UInt32> path;
     Action action;
     UInt64 committed_rows = 0;
@@ -418,12 +432,26 @@ struct Plan::Impl
     size_t validation_depth = 0;
 
     Impl(const Block & header, const Schema & schema, bool allow_missing_fields, bool null_as_default_,
-         const FormatSettings & settings_, const NameSet & absent_columns, ValueValidator value_validator_)
+         const FormatSettings & settings_, const NameSet & absent_columns_, ValueValidator value_validator_,
+         const NameSet & absent_columns_without_default, const ColumnMapper * column_mapper)
         : found(header.columns()), may_miss(header.columns()), read_columns(header.columns()), initial_sizes(header.columns()),
-          missing_bases(header.columns()), null_as_default(null_as_default_), settings(settings_), value_validator(std::move(value_validator_))
+          missing_bases(header.columns()), absent_columns(absent_columns_), null_as_default(null_as_default_), settings(settings_),
+          value_validator(std::move(value_validator_))
     {
         if (schema.root().kind() != AVRO_KIND_RECORD)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
+        if (column_mapper && column_mapper->hasIcebergInitialDefaults())
+        {
+            absent_column_defaults.resize(header.columns());
+            for (size_t i = 0; i < header.columns(); ++i)
+            {
+                const auto & column = header.getByPosition(i);
+                if (!absent_columns.contains(column.name) || absent_columns_without_default.contains(column.name))
+                    continue;
+                if (auto value = column_mapper->getIcebergInitialDefault(column_mapper->getIcebergFieldPath(column.name), column.name, column.type))
+                    absent_column_defaults[i] = std::move(*value);
+            }
+        }
         action = createAction(header, schema.root(), "", true);
         if (!allow_missing_fields)
         {
@@ -1131,7 +1159,7 @@ Plan::Impl::Reader Plan::Impl::createVariantReader(Node node, const DataTypePtr 
         blobs[i] = addSink(AVRO_SINK_BYTES);
         addNode(node.child(i), AVRO_ACTION_VALUE, blobs[i]);
     }
-    return [this, blobs, metadata_position, decoder = Parquet::VariantValueDecoder(type, String(current_column), settings)](IColumn & column)
+    return [this, blobs, metadata_position, decoder = Parquet::VariantValueDecoder(type, String(current_column), Parquet::VariantSettings(settings))](IColumn & column)
     {
         const auto first = nextBytes(blobs[0]);
         const auto second = nextBytes(blobs[1]);
@@ -1373,11 +1401,11 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                             skip(node.child(i));
                     }
                     /// A null is the default value, which is a variant null for `Dynamic` and an empty object for `JSON`.
-                    return [this, null_map, nested = std::move(variant_reader)](IColumn & column)
+                    return [this, null_map, type, nested = std::move(variant_reader)](IColumn & column)
                     {
                         if (next<UInt8>(null_map))
                         {
-                            column.insertDefault();
+                            insertTypeDefault(column, *type);
                             return true;
                         }
                         return nested(column);
@@ -1401,12 +1429,12 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                     else
                         skip(node.child(i));
                 }
-                return [this, null_map, nullable = target.isNullable(), nested = std::move(nested_reader)](IColumn & column)
+                return [this, null_map, type, nullable = target.isNullable(), nested = std::move(nested_reader)](IColumn & column)
                 {
                     const bool is_null = next<UInt8>(null_map);
                     if (is_null)
                     {
-                        column.insertDefault();
+                        insertTypeDefault(column, *type);
                         return nullable;
                     }
                     if (nullable)
@@ -1483,12 +1511,14 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
             if (!target.isNullable())
                 reader_may_miss = true;
             skip(node);
-            Reader reader = [nullable = target.isNullable()](IColumn & column)
+            Reader reader = [type, nullable = target.isNullable()](IColumn & column)
             {
-                column.insertDefault();
+                insertTypeDefault(column, *type);
                 return nullable;
             };
-            reader.defaults_only = target.isNullable();
+            /// `insertDefaults` appends the default of the column, which is not the default of every type.
+            if (type->isDefaultInsertTrivial())
+                reader.defaults_only = target.isNullable();
             return reader;
         }
         case AVRO_KIND_ENUM:
@@ -1652,7 +1682,7 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
 Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, const std::string & current_path, bool direct)
 {
     checkStackSize();
-    if (header.has(current_path))
+    if (header.has(current_path) && !absent_columns.contains(current_path))
     {
         const size_t index = header.getPositionByName(current_path);
         const auto & column = header.getByPosition(index);
@@ -1728,7 +1758,8 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
     }
     if (node.kind() == AVRO_KIND_ARRAY)
     {
-        const auto names = Nested::getAllNestedColumnsForTable(header, current_path);
+        auto names = Nested::getAllNestedColumnsForTable(header, current_path);
+        std::erase_if(names, [&](const String & name) { return absent_columns.contains(name); });
         const auto items = node.child(0);
         if (!names.empty() && items.kind() == AVRO_KIND_RECORD)
         {
@@ -2068,7 +2099,15 @@ Plan::Impl::Outcome Plan::Impl::decode(
                 for (const size_t i : miss_columns)
                 {
                     if (columns[i]->size() < initial_sizes[i] + row + 1)
-                        columns[i]->insertDefault();
+                    {
+                        if (i < absent_column_defaults.size() && absent_column_defaults[i])
+                        {
+                            columns[i]->insert(*absent_column_defaults[i]);
+                            read_columns[i] = 1;
+                        }
+                        else
+                            columns[i]->insertDefault();
+                    }
                     missing[i][missing_bases[i] + row] = !read_columns[i];
                 }
                 ++committed_rows;
@@ -2104,8 +2143,11 @@ Plan::Impl::Outcome Plan::Impl::decode(
 
 Plan::Plan(
     const Block & header, const Schema & schema, bool allow_missing_fields, bool null_as_default,
-    const FormatSettings & settings, const NameSet & absent_columns, ValueValidator value_validator)
-    : impl(std::make_unique<Impl>(header, schema, allow_missing_fields, null_as_default, settings, absent_columns, std::move(value_validator)))
+    const FormatSettings & settings, const NameSet & absent_columns, ValueValidator value_validator,
+    const NameSet & absent_columns_without_default, const ColumnMapper * column_mapper)
+    : impl(std::make_unique<Impl>(
+          header, schema, allow_missing_fields, null_as_default, settings, absent_columns, std::move(value_validator),
+          absent_columns_without_default, column_mapper))
 {
 }
 

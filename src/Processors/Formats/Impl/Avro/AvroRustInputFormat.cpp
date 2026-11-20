@@ -35,46 +35,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Attribute introspection retains the Iceberg ids that the C++ schema compiler discarded.
-NameSet columnsAbsentFromFile(const Block & header, const ColumnMapper & mapper, const AvroRust::Schema & schema)
-{
-    auto root = schema.root();
-    if (root.kind() != AVRO_KIND_RECORD || !root.childCount())
-        return {};
-    for (UInt32 i = 0; i < root.childCount(); ++i)
-    {
-        auto id = root.attr("field-id", i);
-        if (!id || id->kind != AVRO_ATTR_INT)
-            return {};
-    }
-
-    UnorderedSetWithMemoryTracking<Int64> file_ids;
-    for (UInt32 i = 0; i < schema.nodeCount(); ++i)
-    {
-        auto node = schema.node(i);
-        for (std::string_view key : {"field-id", "element-id", "key-id", "value-id"})
-        {
-            if (auto value = node.attr(key); value && value->kind == AVRO_ATTR_INT)
-                file_ids.insert(value->int_value);
-        }
-        if (node.kind() == AVRO_KIND_RECORD)
-        {
-            for (UInt32 field = 0; field < node.childCount(); ++field)
-                if (auto value = node.attr("field-id", field); value && value->kind == AVRO_ATTR_INT)
-                    file_ids.insert(value->int_value);
-        }
-    }
-    NameSet result;
-    const auto & encoding = mapper.getStorageColumnEncoding();
-    for (const auto & column : header)
-    {
-        auto id = encoding.find(column.name);
-        if (id != encoding.end() && !file_ids.contains(id->second))
-            result.insert(column.name);
-    }
-    return result;
-}
-
 /// Iceberg row lineage columns are stored only by a rewritten data file: a file without them reads them as NULL.
 void addRowLineageColumnsAbsentFromFile(NameSet & absent, const Block & header, const ColumnMapper & mapper, const AvroRust::Schema & schema)
 {
@@ -134,9 +94,11 @@ void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<AvroRust::OcfReader>(*in);
     NameSet absent;
+    NameSet absent_without_default;
     if (column_mapper)
     {
-        absent = columnsAbsentFromFile(output.getHeader(), *column_mapper, file_reader_ptr->schema());
+        absent = getColumnsAbsentFromIcebergAvroFile(
+            output.getHeader(), *column_mapper, file_reader_ptr->schema().source(), absent_without_default);
         addRowLineageColumnsAbsentFromFile(absent, output.getHeader(), *column_mapper, file_reader_ptr->schema());
     }
     if (need_only_count)
@@ -144,7 +106,7 @@ void AvroRowInputFormat::readPrefix()
         /// Preserve schema/header validation even though the count program has no output sinks.
         AvroRust::Plan validation(
             output.getHeader(), file_reader_ptr->schema(), format_settings.avro.allow_missing_fields,
-            format_settings.null_as_default, format_settings, absent);
+            format_settings.null_as_default, format_settings, absent, AvroRust::ValueValidator{}, absent_without_default, column_mapper.get());
         /// The all-skip plan is used when compressed blocks still require payload validation.
         deserializer_ptr = std::make_unique<AvroRust::Plan>(
             Block{}, file_reader_ptr->schema(), true, format_settings.null_as_default, format_settings, absent);
@@ -153,7 +115,7 @@ void AvroRowInputFormat::readPrefix()
     {
         deserializer_ptr = std::make_unique<AvroRust::Plan>(
             output.getHeader(), file_reader_ptr->schema(), format_settings.avro.allow_missing_fields,
-            format_settings.null_as_default, format_settings, absent);
+            format_settings.null_as_default, format_settings, absent, AvroRust::ValueValidator{}, absent_without_default, column_mapper.get());
     }
 }
 

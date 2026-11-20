@@ -35,15 +35,39 @@ keywords: ['Windows']
 
 * مثال على بيئة AD وبنية UO:
 
-<Image img={ad_env} size="md" alt="مثال على بيئة AD وبنية UO" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على بيئة AD وبنية UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+
+</Frame>
+
+</div>
 
 * مثال على تهيئة مجموعة أمان AD:
 
-<Image img={ad_group} size="md" alt="مثال على تهيئة مجموعة أمان AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على تهيئة مجموعة أمان AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+
+</Frame>
+
+</div>
 
 * مثال على تهيئة مستخدم AD:
 
-<Image img={ad_user} size="md" alt="مثال على تهيئة مستخدم AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على تهيئة مستخدم AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+
+</Frame>
+
+</div>
 
 1. في Windows AD Users and Groups، أضف كل مستخدم إلى مجموعته المناسبة (أو مجموعاته المناسبة)، وسيتم ربطه بأدوار ClickHouse (كما في المثال في الخطوة التالية).
 
@@ -56,7 +80,15 @@ keywords: ['Windows']
 
 * مثال على عضوية مجموعات المستخدمين:
 
-<Image img={ad_user_group} size="md" alt="مثال على عضوية مجموعات المستخدمين" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على عضوية مجموعات المستخدمين](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+
+</Frame>
+
+</div>
 
 2. في `config.xml` الخاص بـ ClickHouse، أضف تهيئة `ldap_servers` إلى كل عقدة من عُقد ClickHouse.
 

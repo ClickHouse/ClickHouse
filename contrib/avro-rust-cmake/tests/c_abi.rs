@@ -1,5 +1,5 @@
 //! Compiles `tests/c_abi/smoke.c` as C and as C++ against `include/avro_rust.h`,
-//! links it with the static library this package builds, and runs it. Skipped
+//! links it with a static library of this package, and runs it. Skipped
 //! (loudly) when no C compiler is available, unless AVRO_REQUIRE_FIXTURES is set.
 
 use std::io::{BufRead, BufReader};
@@ -28,7 +28,9 @@ fn find_compiler(env: &str, names: &[&str]) -> Option<String> {
 /// from the selected target directory (CMake below `build/.../out/`, cargo elsewhere).
 fn static_lib() -> Option<PathBuf> {
     let mut cmd = Command::new(std::env::var_os("CARGO")?);
-    cmd.args(["build", "--lib", "--offline", "--message-format=json", "--manifest-path"])
+    // The manifest declares a plain library: as a member of the workspace, the crate is linked into the one static
+    // library of the root package. The static library of this crate alone is requested here.
+    cmd.args(["rustc", "--lib", "--crate-type", "staticlib", "--offline", "--message-format=json", "--manifest-path"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
     if !cfg!(debug_assertions) {
         cmd.arg("--release");

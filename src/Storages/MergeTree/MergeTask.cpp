@@ -78,6 +78,7 @@
 #endif
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -227,7 +228,7 @@ public:
         output_header = input_headers.front();
     }
 
-    String getName() const override { return "BuildStatistics"; }
+    [[nodiscard]] String getName() const override { return "BuildStatistics"; }
 
 private:
     static Traits getTraits()
@@ -932,7 +933,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
-    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(*global_ctx->metadata_snapshot, global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     extractMergingAndGatheringColumns(exclude_index_names);
 
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
@@ -1374,9 +1375,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         createMergedStream();
     }
 
+    /// Sized by the data a read of the source parts decompresses rather than by their files, which may hold
+    /// a second representation of the same data, such as the copy of the shared data of Object. A fully expired
+    /// TTLDrop merge writes no rows and skips the read pipeline, so it keeps the cheap on-disk size and does not
+    /// read the source prefixes for a granularity its empty output will not use.
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
-        ctx->sum_uncompressed_bytes_upper_bound,
+        [&]
+        {
+            size_t bytes = 0;
+            for (const auto & part : global_ctx->future_part->parts)
+                bytes += global_ctx->ttl_drop_short_circuit
+                    ? part->getBytesUncompressedOnDisk()
+                    : part->getTotalColumnsReadSize().data_uncompressed;
+            return bytes;
+        },
         *merge_tree_settings,
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
@@ -2196,7 +2209,7 @@ public:
         , is_result_sparse(is_result_sparse_)
     {}
 
-    String getName() const override { return "ColumnGatherer"; }
+    [[nodiscard]] String getName() const override { return "ColumnGatherer"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
@@ -2253,7 +2266,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     size_t part_starting_offset = 0;
     /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
     bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
@@ -3169,7 +3182,7 @@ public:
         , time_of_merge(time_of_merge_)
     {}
 
-    String getName() const override { return "MergeParts"; }
+    [[nodiscard]] String getName() const override { return "MergeParts"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
@@ -3263,7 +3276,7 @@ public:
 #endif
     }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<MergePartsStep>(
             input_headers.front(),
@@ -3347,7 +3360,7 @@ public:
             subquery->buildSetInplace(context_);
     }
 
-    String getName() const override { return "TTLDeleteFilter"; }
+    [[nodiscard]] String getName() const override { return "TTLDeleteFilter"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -3408,7 +3421,7 @@ public:
             subquery->buildSetInplace(context_);
     }
 
-    String getName() const override { return "TTL"; }
+    [[nodiscard]] String getName() const override { return "TTL"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -3481,7 +3494,7 @@ public:
         output_header = original_output_header;
     }
 
-    String getName() const override { return "BuildTextIndex"; }
+    [[nodiscard]] String getName() const override { return "BuildTextIndex"; }
 
 private:
     static Traits getTraits()
@@ -3715,7 +3728,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
 
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     size_t part_starting_offset = 0;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {
@@ -3850,7 +3863,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         const auto sorting_queue_strategy
             = !global_ctx->merge_may_reduce_rows
-                && !global_ctx->projection
                 && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
             ? SortingQueueStrategy::Batch
             : SortingQueueStrategy::Default;

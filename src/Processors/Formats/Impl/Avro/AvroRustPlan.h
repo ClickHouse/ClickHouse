@@ -17,6 +17,11 @@
 #include <string_view>
 #include <vector>
 
+namespace DB
+{
+class ColumnMapper;
+}
+
 namespace DB::AvroRust
 {
 
@@ -32,6 +37,9 @@ using ValueValidator = std::function<std::optional<String>(std::string_view colu
 class Plan
 {
 public:
+    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false:
+    /// their `initial-default` from `column_mapper` if any (not for `absent_columns_without_default`), else the type default.
+    /// No field of the file is read into them.
     Plan(
         const Block & header,
         const Schema & schema,
@@ -39,7 +47,9 @@ public:
         bool null_as_default,
         const FormatSettings & settings,
         const NameSet & absent_columns = {},
-        ValueValidator value_validator = {});
+        ValueValidator value_validator = {},
+        const NameSet & absent_columns_without_default = {},
+        const ColumnMapper * column_mapper = nullptr);
     ~Plan();
 
     Plan(const Plan &) = delete;

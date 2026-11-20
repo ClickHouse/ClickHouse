@@ -1,6 +1,6 @@
 """Runs the Rust regression suite of the Avro decoder (`contrib/avro-rust-cmake`).
 
-The server build links only the `staticlib` of the crate and the unit test job runs only
+The server build only links the crate into the Rust workspace library and the unit test job runs only
 `unit_tests_dbms`, so nothing else executes the crate's own tests: the input-cut and continuation
 checks (`streaming_input.rs`), the reservation-work bounds (`need_space_work.rs`), the
 uninitialized-output checks (`uninit_output.rs`), the container-file corpus (`corpus.rs`), the
@@ -41,6 +41,7 @@ cargo_target_dir = f"{temp_dir}/avro_cargo_target"
 # `safe.directory` also guards every submodule worktree. A no-op when the working tree is already
 # there (a local run).
 GIT = "git -c safe.directory='*'"
+SUBMODULES = "contrib/rust_vendor contrib/pcodec contrib/wasmtime contrib/delta-kernel-rs contrib/chdig"
 
 # The cargo configuration that `contrib/corrosion-cmake/config.toml.in` writes for the server
 # build, reduced to what resolving the workspace needs: the vendored crates in place of crates.io.
@@ -51,6 +52,17 @@ CARGO_CONFIG = f"""\
 directory = "{current_directory}/contrib/rust_vendor"
 
 [source.crates-io]
+replace-with = "vendored-sources"
+
+# The git dependencies of `chdig`, another member of the workspace.
+[source."git+https://github.com/azat-rust/clickhouse-rs?branch=next"]
+git = "https://github.com/azat-rust/clickhouse-rs"
+branch = "next"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/azat-rust/flamelens?branch=chdig"]
+git = "https://github.com/azat-rust/flamelens"
+branch = "chdig"
 replace-with = "vendored-sources"
 """
 
@@ -95,9 +107,9 @@ def main():
             name="Checkout Vendored Crates",
             command=[
                 # Cargo loads every member of `contrib/rust-contrib-workspace`, so the submodules behind the path
-                # dependencies of the other members (`pco`, `wasmtime`) must be present as well.
-                f"{GIT} submodule sync -- contrib/rust_vendor contrib/pcodec contrib/wasmtime",
-                f"{GIT} submodule update --init --depth 1 --single-branch -- contrib/rust_vendor contrib/pcodec contrib/wasmtime",
+                # dependencies of the other members (`pco`, `wasmtime`, `delta_kernel_ffi`, `chdig`) must be present as well.
+                f"{GIT} submodule sync -- {SUBMODULES}",
+                f"{GIT} submodule update --init --depth 1 --single-branch -- {SUBMODULES}",
             ],
             with_log=True,
             retries=3,

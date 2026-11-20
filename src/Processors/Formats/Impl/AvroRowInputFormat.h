@@ -45,7 +45,7 @@ public:
 
     void skip(size_t len) override;
 
-    size_t byteCount() const override;
+    [[nodiscard]] size_t byteCount() const override;
 
 private:
     ReadBuffer & in;
@@ -54,8 +54,18 @@ private:
 class AvroDeserializer
 {
 public:
-    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
+    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false:
+    /// their `initial-default` from `column_mapper` if any (not for `absent_columns_without_default`), else the type default.
+    /// No field of the file is read into them.
+    AvroDeserializer(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default_,
+        const FormatSettings & settings_,
+        const NameSet & absent_columns_ = {},
+        const NameSet & absent_columns_without_default = {},
+        const ColumnMapper * column_mapper = nullptr);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -153,6 +163,9 @@ private:
 
     /// Bitmap of columns found in Avro schema
     VectorWithMemoryTracking<bool> column_found;
+    NameSet absent_columns;
+    /// By column position.
+    VectorWithMemoryTracking<std::optional<Field>> absent_column_defaults;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
@@ -170,6 +183,14 @@ private:
 
     const FormatSettings & settings;
 };
+
+/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose field (the field that has
+/// it, for a subcolumn) is proven absent from the file with the Avro schema `schema_json`: the record that would have it
+/// identifies all its fields by id and none of them has its id, or the struct, list or map that would have it is absent itself.
+/// Those of them in a struct that is absent too and has no struct default are NULL whatever their `initial-default`: they are
+/// also added to `columns_without_default`.
+NameSet getColumnsAbsentFromIcebergAvroFile(
+    const Block & header, const ColumnMapper & column_mapper, std::string_view schema_json, NameSet & columns_without_default);
 
 /// The Rust OCF path builds chunks directly so leaf sinks can bind to C++ column storage.
 /// Confluent retains `IRowInputFormat` for its per-message error recovery.
@@ -212,6 +233,8 @@ private:
 #else
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
+    /// The `Avro` segmentation engine prepends the OCF header to every segment.
+    bool everySegmentHasPrefix() const override { return true; }
 
     bool supportsCountRows() const override;
     size_t countRows(size_t max_block_size) override;
