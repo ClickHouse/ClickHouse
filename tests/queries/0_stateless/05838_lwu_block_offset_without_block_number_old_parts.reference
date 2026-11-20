@@ -71,9 +71,10 @@ X
 b
 c
 replicated
-0	0	a
-0	1	b
-0	2	c
+0	a
+1	b
+2	c
+1
 X
 b
 c

@@ -231,7 +231,9 @@ INSERT INTO t_lwu_old_replicated VALUES (0, 'b');
 OPTIMIZE TABLE t_lwu_old_replicated FINAL;
 
 ALTER TABLE t_lwu_old_replicated MODIFY SETTING use_block_offset_only_with_block_number = 1, enable_block_number_column = 1;
-SELECT _block_number, _block_offset, v FROM t_lwu_old_replicated ORDER BY v;
+-- The first block number of `ReplicatedMergeTree` depends on the environment, so it is not printed.
+SELECT _block_offset, v FROM t_lwu_old_replicated ORDER BY v;
+SELECT uniqExact(_block_number) FROM t_lwu_old_replicated;
 
 UPDATE t_lwu_old_replicated SET v = 'X' WHERE v = 'a';
 SELECT v FROM t_lwu_old_replicated ORDER BY v;
