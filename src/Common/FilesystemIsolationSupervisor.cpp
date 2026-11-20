@@ -205,10 +205,10 @@ NotifySocket openNotifySocket()
 {
     NotifySocket result;
     const char * path = std::getenv("NOTIFY_SOCKET"); // NOLINT(concurrency-mt-unsafe)
-    if (!path || (*path != '/' && *path != '@'))
+    if (!path)
         return result;
     const size_t length = std::strlen(path);
-    if (length < 2 || length >= sizeof(result.address.sun_path))
+    if (length < 2 || length >= sizeof(result.address.sun_path) || (*path != '/' && *path != '@'))
         throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
     result.address.sun_family = AF_UNIX;
     std::memcpy(result.address.sun_path, path, length);
