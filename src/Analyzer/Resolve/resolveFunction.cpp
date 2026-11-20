@@ -1468,8 +1468,9 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
 ProjectionName QueryAnalyzer::calculateInlinedCallProjectionName(
     const QueryTreeNodePtr & call_node, ProjectionNames arguments_projection_names, const IdentifierResolveScope & scope)
 {
-    /// A lambda argument is resolved only inside the body. Its text names it unless hiding secrets changes that text:
-    /// `hasSecretParts` misses parts the formatter hides, such as the body of an `APPLY` lambda.
+    /// A lambda argument is resolved only inside the body, so unlike a lambda of a built-in higher-order function it has no
+    /// query tree name. Its text names it: the AST column name drops aliases, which can change the result, as in `x -> tuple(x AS a)`.
+    /// The text is not used when hiding secrets changes it: `hasSecretParts` misses parts the formatter hides, like an `APPLY` lambda.
     const auto & arguments = call_node->as<FunctionNode &>().getArguments().getNodes();
     for (size_t i = 0; i < arguments.size(); ++i)
     {
@@ -3166,6 +3167,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+            /// Only a call written in the query has an AST. A call without one is built during analysis from a function passed
+            /// by name (a bare name in a higher-order function, an operand of `f | g`, `APPLY(f)`), which `CREATE` keeps as written.
             inlines_sql_udf_by_name = lambda_expression_untyped && !function_node.hasOriginalAST();
             inlines_sql_udf = lambda_expression_untyped && !inlines_sql_udf_by_name;
             for (auto * current_scope = &scope; inlines_sql_udf && current_scope; current_scope = current_scope->parent_scope)
