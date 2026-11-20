@@ -54,7 +54,7 @@ public:
 private:
     const ReadFromMergeTree & reading;
     const bool has_data_changes;
-    std::unordered_map<const IMergeTreeDataPart *, NameSet> changed_columns_by_part;
+    UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, NameSet> changed_columns_by_part;
     /// Built on the first part with data changes.
     std::unique_ptr<MaterializedColumnDependencies> materialized_column_dependencies;
 };
