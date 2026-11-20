@@ -125,8 +125,10 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
         /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data. The
         /// storage created with the stored columns also reads those of them that it has from the path.
         const NamesAndTypesList * partition_columns = nullptr;
+        /// NOLINT(storage-cast): the storage `getStorage` has just built, never a proxy.
         if (const auto * storage_file = dynamic_cast<const StorageFile *>(storage.get()))
             partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
+        /// NOLINT(storage-cast): the same storage.
         else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
             partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
         const auto is_partition_column = [&](const String & name)
