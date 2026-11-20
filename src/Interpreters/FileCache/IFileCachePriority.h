@@ -5,8 +5,6 @@
 #include <Core/Types.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
-#include <Interpreters/FileCache/FileSegmentInfo.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
 
 #include <atomic>
 #include <chrono>
@@ -22,6 +20,8 @@ struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileSegment;
 struct FileSegmentInfo;
+struct FileSegmentSummaryInfo;
+struct FileSegmentSummaryInfos;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsage;
@@ -45,6 +45,15 @@ public:
         Query, /// Per-query queue
     };
 
+    enum class QueueEntryType : uint8_t
+    {
+        None,
+        LRU,
+        SLRU_Protected,
+        SLRU_Probationary,
+        SplitCache_Data,
+        SplitCache_System,
+    };
     using OriginInfo = FileCacheOriginInfo;
     using UserID = OriginInfo::UserID;
 
@@ -269,7 +278,7 @@ public:
     /// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
     /// `query_order`: Defines the order on returned rows
     /// `cancellation_flag`: if not `nullptr`, the walk stops once it is set, and the result is incomplete.
-    FileSegmentSummaryInfoList observeFilesystemCache(
+    std::vector<FileSegmentSummaryInfo> observeFilesystemCache(
         UInt64 query_max_elements,
         UInt64 query_max_total_size,
         IterationOrder query_order,

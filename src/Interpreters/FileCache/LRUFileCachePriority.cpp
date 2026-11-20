@@ -1,8 +1,9 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
+#include <base/EnumReflection.h>
 #include <base/types.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
@@ -304,7 +305,7 @@ namespace
 /// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
 /// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
 std::optional<FileSegmentSummaryInfo>
-tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, QueueEntryType queue_entry_type)
+tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, IFileCachePriority::QueueEntryType queue_entry_type)
 {
     auto key_metadata = entry.key_metadata.lock();
     if (!key_metadata)
@@ -345,7 +346,7 @@ tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::E
         .offset = entry.offset,
         .size = size,
         .state = FileSegment::stateToString(file_segment->state()),
-        .queue_entry_type = toString(queue_entry_type),
+        .queue_entry_type = String(magic_enum::enum_name(queue_entry_type)),
         .user_id = key_metadata->origin->user_id,
     };
 }

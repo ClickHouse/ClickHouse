@@ -196,10 +196,10 @@ public:
 
     /// Get the original queue type of a candidate saved during removeQueueEntries.
     /// Returns None if not found (e.g., if removeQueueEntries was not called).
-    QueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
+    IFileCachePriority::QueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
     {
         auto it = original_queue_types.find(candidate);
-        return it != original_queue_types.end() ? it->second : QueueEntryType::None;
+        return it != original_queue_types.end() ? it->second : IFileCachePriority::QueueEntryType::None;
     }
 
 private:
@@ -235,7 +235,7 @@ private:
     /// to restore the state in case of logical error.
     FailedCandidates failed_candidates;
     /// Saved original queue type per candidate, populated in `removeQueueEntries`.
-    std::unordered_map<const FileSegmentMetadata *, QueueEntryType> original_queue_types;
+    std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
     /// Set by `removeQueueEntries`: the candidates' queue entries are already removed. Only
     /// dynamic resize does this before evicting the files; ordinary eviction keeps the entries
     /// until the files are gone and invalidates them afterwards.

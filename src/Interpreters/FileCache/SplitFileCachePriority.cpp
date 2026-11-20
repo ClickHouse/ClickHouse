@@ -5,7 +5,6 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
 #include <Interpreters/FileCache/SplitFileCachePriority.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>

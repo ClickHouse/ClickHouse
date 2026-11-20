@@ -62,6 +62,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -260,7 +261,7 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
         for (const auto & f : file_segments)
         {
             auto range = FileSegment::Range(f.range_left, f.range_right);
-            bool is_protected = (f.queue_entry_type == QueueEntryType::SLRU_Protected);
+            bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
             got += fmt::format("{} (protected: {}), ", range.toString(), is_protected);
         }
         String expected_str;
@@ -273,8 +274,8 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
     for (const auto & f : file_segments)
     {
         auto range = FileSegment::Range(f.range_left, f.range_right);
-        bool is_protected = (f.queue_entry_type == QueueEntryType::SLRU_Protected);
-        bool is_probationary = (f.queue_entry_type == QueueEntryType::SLRU_Probationary);
+        bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
+        bool is_probationary = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Probationary);
         ASSERT_TRUE(is_probationary || is_protected);
 
         if ((is_protected && assert_protected) || (!is_protected && !assert_protected))
@@ -2423,7 +2424,7 @@ TEST_F(FileCacheTest, SLRUPromotePartiallyDownloadedConcurrent)
     auto queue_type = [](const FileSegment & segment)
     {
         auto iterator = segment.getQueueIterator();
-        return iterator ? iterator->getNestedOrThis()->getType() : QueueEntryType::None;
+        return iterator ? iterator->getNestedOrThis()->getType() : IFileCachePriority::QueueEntryType::None;
     };
 
     auto promoter = [&](pcg64 & local_rng)
@@ -2434,8 +2435,8 @@ TEST_F(FileCacheTest, SLRUPromotePartiallyDownloadedConcurrent)
         const auto queue_type_before = queue_type(*segment);
         segment->increasePriority();
         if (state_before == State::PARTIALLY_DOWNLOADED
-            && queue_type_before == QueueEntryType::SLRU_Probationary
-            && queue_type(*segment) == QueueEntryType::SLRU_Protected)
+            && queue_type_before == IFileCachePriority::QueueEntryType::SLRU_Probationary
+            && queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected)
             promoted_partial.fetch_add(1, std::memory_order_relaxed);
     };
 
@@ -2448,7 +2449,7 @@ TEST_F(FileCacheTest, SLRUPromotePartiallyDownloadedConcurrent)
         {
             while (segment->getDownloadedSize() < segment_size)
             {
-                const bool is_protected = queue_type(*segment) == QueueEntryType::SLRU_Protected;
+                const bool is_protected = queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected;
                 if (!reserve_and_write(*segment, std::min<size_t>(4, segment_size - segment->getDownloadedSize())))
                     break;
                 if (is_protected)
@@ -2560,13 +2561,13 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
         auto state_lock = state_guard.lock();
         auto lock = priority.getPriorityGuardForTests().writeLock();
         priority.addForRestore(key_metadata, /* offset */0, /* size */5,
-                               QueueEntryType::SLRU_Protected,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
                                lock, &state_lock);
         priority.addForRestore(key_metadata, /* offset */5, /* size */5,
-                               QueueEntryType::SLRU_Protected,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
                                lock, &state_lock);
         priority.addForRestore(key_metadata, /* offset */10, /* size */5,
-                               QueueEntryType::SLRU_Protected,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
                                lock, &state_lock);
     }
 
@@ -3143,7 +3144,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             auto infos = cache->getFileSegmentInfos(key, user.user_id);
             ASSERT_EQ(infos.size(), 2u);
             for (const auto & info : infos)
-                ASSERT_NE(info.queue_entry_type, QueueEntryType::None);
+                ASSERT_NE(info.queue_entry_type, IFileCachePriority::QueueEntryType::None);
         }
     }
 
@@ -3534,9 +3535,9 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
         auto state_lock = state_guard.lock();
         auto lock = priority.getPriorityGuardForTests().writeLock();
         priority.addForRestore(key_metadata, 0, 5,
-            QueueEntryType::SLRU_Protected, lock, &state_lock);
+            IFileCachePriority::QueueEntryType::SLRU_Protected, lock, &state_lock);
         priority.addForRestore(key_metadata, 100, 5,
-            QueueEntryType::SLRU_Probationary, lock, &state_lock);
+            IFileCachePriority::QueueEntryType::SLRU_Probationary, lock, &state_lock);
     }
     ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 5);
     ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 5);
@@ -3755,7 +3756,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
             auto state_lock = state_guard.lock();
             auto lock = priority.getPriorityGuardForTests().writeLock();
             it = priority.addForRestore(key_metadata, offset, size,
-                QueueEntryType::SLRU_Protected, lock, &state_lock);
+                IFileCachePriority::QueueEntryType::SLRU_Protected, lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
         if (std::filesystem::exists(path))
@@ -3831,7 +3832,7 @@ TEST_F(FileCacheTest, SLRUCollectForProtectedQueueWithoutReservee)
 
     CacheStateGuard state_guard;
 
-    auto add_segment = [&](size_t offset, size_t size, QueueEntryType queue_type)
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType queue_type)
     {
         IFileCachePriority::IteratorPtr it;
         {
@@ -3854,16 +3855,16 @@ TEST_F(FileCacheTest, SLRUCollectForProtectedQueueWithoutReservee)
     };
 
     /// Protected is full (5 + 5 bytes), probationary has room (3 of 10 bytes).
-    add_segment(0, 5, QueueEntryType::SLRU_Protected);
-    add_segment(5, 5, QueueEntryType::SLRU_Protected);
-    add_segment(10, 3, QueueEntryType::SLRU_Probationary);
+    add_segment(0, 5, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    add_segment(5, 5, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    add_segment(10, 3, IFileCachePriority::QueueEntryType::SLRU_Probationary);
     ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 10);
     ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 3);
 
     EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
         /* size */ 2, /* elements */ 0, /* reservee */ nullptr,
         /* is_total_space_cleanup */ false, origin, state_guard.lock(),
-        QueueEntryType::SLRU_Protected);
+        IFileCachePriority::QueueEntryType::SLRU_Protected);
     ASSERT_TRUE(eviction_info->requiresEviction());
 
     FileCacheReserveStat stat;
@@ -3872,7 +3873,7 @@ TEST_F(FileCacheTest, SLRUCollectForProtectedQueueWithoutReservee)
         *eviction_info, stat, evicted, /* reservee */ nullptr,
         IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
         /* is_total_space_cleanup */ false, origin, state_guard,
-        QueueEntryType::SLRU_Protected));
+        IFileCachePriority::QueueEntryType::SLRU_Protected));
 
     evicted.evict();
     evicted.afterEvictWrite();
@@ -4013,7 +4014,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     CacheStateGuard state_guard;
 
-    auto add_segment = [&](size_t offset, size_t size, QueueEntryType qtype)
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
     {
         IFileCachePriority::IteratorPtr it;
         {
@@ -4037,8 +4038,8 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
         return it;
     };
 
-    add_segment(0, 10, QueueEntryType::SLRU_Protected);   /// fills protected
-    auto prob_it = add_segment(10, 10, QueueEntryType::SLRU_Probationary);
+    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
+    auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
     auto & events = CurrentThread::getProfileEvents();
     const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
@@ -4572,6 +4573,7 @@ try
     auto query_scope_holder = DB::QueryScope::create(query_context);
 
     using Order = IFileCachePriority::IterationOrder;
+    using QueueEntryType = IFileCachePriority::QueueEntryType;
     const size_t file_size = -1; /// the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
     const auto & user = FileCache::getCommonOrigin();
@@ -4632,7 +4634,7 @@ try
             ASSERT_EQ(info.state, "DOWNLOADED");
             ASSERT_EQ(info.user_id, user.user_id);
             if (segment.queue)
-                ASSERT_EQ(info.queue_entry_type, toString(*segment.queue));
+                ASSERT_EQ(info.queue_entry_type, String(magic_enum::enum_name(*segment.queue)));
             ASSERT_TRUE(info.path.ends_with(fmt::format("/{}_{}", segment.range.left, segment.range.size())));
             /// For the split cache, checks that the segment is in the directory of its queue (`Data` or `System`).
             ASSERT_TRUE(segment.path_part.empty() || info.path.contains(segment.path_part));
@@ -4667,7 +4669,7 @@ try
             ASSERT_EQ(info.offset, segment.range.left);
             ASSERT_EQ(info.size, segment.range.size());
             if (segment.queue)
-                ASSERT_EQ(info.queue_entry_type, toString(*segment.queue));
+                ASSERT_EQ(info.queue_entry_type, String(magic_enum::enum_name(*segment.queue)));
             total_size += info.size;
         }
         ASSERT_LE(total_size, query_max_total_size);

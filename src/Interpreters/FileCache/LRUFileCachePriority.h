@@ -8,7 +8,6 @@
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
 
 class FileCacheTest_MoveEvictionPos_Test;
 
