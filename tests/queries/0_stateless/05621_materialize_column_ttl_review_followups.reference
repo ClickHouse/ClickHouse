@@ -1,0 +1,6 @@
+subcolumn key before	0
+subcolumn key after	(1,9)
+subcolumn key after	0
+recompress	1	2000000000	100	2000000000
+default alias wide	1	7	1000000000	18
+default alias compact	1	7	1000000000	18
