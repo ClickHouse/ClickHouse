@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- Reads of one granule of LZ4 data, so every read ends exactly at the end of a compressed block. -->
 
     <create_query>
