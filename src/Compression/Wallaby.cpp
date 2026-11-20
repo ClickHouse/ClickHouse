@@ -1564,10 +1564,17 @@ struct StreamEncoder
                     UInt32 j = i + 1;
                     while (j < stop && r[j] == 0)
                         ++j;
-                    UInt32 len = j - i;
-                    zeros += len;
-                    ++zero_runs;
-                    ++run_hist[31 - std::countl_zero(len)];
+                    zeros += j - i;
+                    /// A run is counted where it begins, with its whole length: it can begin before the stripe and
+                    /// continue after it, and a long run cut by the stripes would look like many short ones.
+                    if (i == 0 || r[i - 1] != 0)
+                    {
+                        UInt32 end = j;
+                        while (end < n && r[end] == 0)
+                            ++end;
+                        ++zero_runs;
+                        ++run_hist[31 - std::countl_zero(end - i)];
+                    }
                     i = j;
                     continue;
                 }
@@ -1602,6 +1609,7 @@ struct StreamEncoder
         struct Choice
         {
             double bits = 1e300;
+            double key = 1e300;      /// what the choices are compared by
             bool fixed = false;
             UInt32 split = 0;
             UInt32 msb = 0;
@@ -1609,6 +1617,7 @@ struct StreamEncoder
             bool runs = false;
         };
         Choice best;
+        const bool long_runs = zeros >= 256 * std::max<UInt32>(zero_runs, 1);
         /// `zero_bin_extra` is the number of non-zero values in the bin that the zeros would join when they are
         /// ordinary tokens (~0u when they get a bin of their own); `zero_raw` is the raw bits per such zero.
         auto consider = [&](double sum_xlx, double raw_bits, UInt32 used, UInt32 zero_bin_extra, double zero_raw, Choice c)
@@ -1628,10 +1637,11 @@ struct StreamEncoder
                     }
                 }
                 double bits = (total * std::log2(total) - s + raw_bits + zero_raw * zeros) * scale + HEADER_BITS_PER_SYMBOL * symbols;
-                if (bits < best.bits)
+                if (bits < best.key)
                 {
                     best = c;
                     best.bits = bits;
+                    best.key = bits;
                     best.runs = false;
                 }
             }
@@ -1640,10 +1650,14 @@ struct StreamEncoder
                 double total = double(nonzero) + zero_runs;
                 double bits = (total * std::log2(total) - sum_xlx - run_sum_xlx + raw_bits + run_raw) * scale
                     + HEADER_BITS_PER_SYMBOL * (used + run_symbols);
-                if (bits < best.bits)
+                /// Very long runs make few tokens, which are much faster to code in both directions than a token
+                /// per zero, and need a smaller table: they are preferred when the size is about the same.
+                double key = long_runs ? bits - 64 - 2.0 * zero_runs * scale : bits;
+                if (key < best.key)
                 {
                     best = c;
                     best.bits = bits;
+                    best.key = key;
                     best.runs = true;
                 }
             }
@@ -3530,13 +3544,19 @@ struct Encoder
         bool all_equal = true;
         constexpr UInt32 BITMAP_BITS = 1u << 16;
         bitmap.assign(BITMAP_BITS / 64, 0);
+        U previous = ~first;
         for (UInt32 i = 0; i < n; ++i)
         {
             U b = loadBits<F>(src + size_t(i) * sizeof(F));
             all_equal &= b == first;
             orall |= b;
-            UInt32 h = UInt32((UInt64(b) * 0x9E3779B97F4A7C15ull) >> 48);
-            bitmap[h >> 6] |= UInt64(1) << (h & 63);
+            /// A repeated value would update the same word of the bitmap again, one update waiting for another.
+            if (b != previous)
+            {
+                UInt32 h = UInt32((UInt64(b) * 0x9E3779B97F4A7C15ull) >> 48);
+                bitmap[h >> 6] |= UInt64(1) << (h & 63);
+                previous = b;
+            }
         }
         if (all_equal)
         {
