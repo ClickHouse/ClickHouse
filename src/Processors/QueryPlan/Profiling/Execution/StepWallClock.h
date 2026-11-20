@@ -58,7 +58,7 @@ public:
         }
     }
 
-    UInt64 getStepWallTime() const { return wall_clock_time.load(std::memory_order_acquire); }
+    [[nodiscard]] UInt64 getStepWallTime() const { return wall_clock_time.load(std::memory_order_acquire); }
 
 private:
 

@@ -1,0 +1,88 @@
+{
+    "format-version": 2,
+    "table-uuid": "9c64caac-ea05-410f-a48a-cedb052f2a49",
+    "location": "s3://test-partition-evolution/conflict_truncate",
+    "last-sequence-number": 1,
+    "last-updated-ms": 1763627799985,
+    "last-column-id": 1,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "a",
+                    "required": false,
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": [
+                {
+                    "name": "a_trunc",
+                    "transform": "truncate[1]",
+                    "source-id": 1,
+                    "field-id": 1000
+                }
+            ]
+        }
+    ],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET"
+    },
+    "current-snapshot-id": 5198076397284604308,
+    "refs": {
+        "main": {
+            "snapshot-id": 5198076397284604308,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 5198076397284604308,
+            "timestamp-ms": 1763627799985,
+            "summary": {
+                "operation": "append",
+                "trino_query_id": "20251120_083639_00009_gjr7f",
+                "trino_user": "vikash.kumar",
+                "changed-partition-count": "0",
+                "total-records": "0",
+                "total-files-size": "0",
+                "total-data-files": "0",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "engine-version": "testversion",
+                "engine-name": "trino",
+                "iceberg-version": "Apache Iceberg 1.10.0 (commit 2114bf631e49af532d66e2ce148ee49dd1dd1f1f)"
+            },
+            "manifest-list": "s3://test-partition-evolution/conflict_truncate/metadata/snap-5198076397284604308-1-1c10bc70-f2be-4948-8795-3f3db146597c.avro",
+            "schema-id": 0
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1763627799985,
+            "snapshot-id": 5198076397284604308
+        }
+    ],
+    "metadata-log": []
+}

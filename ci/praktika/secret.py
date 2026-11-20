@@ -4,6 +4,16 @@ import os
 from typing import List, Union
 
 
+class SecretFetchFailed(RuntimeError):
+    """The request for a secret's value did not complete, so the value is unknown. A
+    caller that can run without the secret may treat this as a transient lapse."""
+
+
+class SecretMisconfigured(RuntimeError):
+    """A secret's value is absent, empty or unusable: the request reached the store and
+    was answered, so retrying or tolerating it would hide a real misconfiguration."""
+
+
 class Secret:
 
     class Type:
@@ -81,12 +91,20 @@ class Secret:
             """
             Request multiple parameters at once to avoid rate limiting
             """
+            from botocore.exceptions import BotoCoreError, ClientError
+
             assert isinstance(self.name, list)
-            client = self._boto3_client("ssm")
-            res = client.get_parameters(
-                Names=self.name,
-                WithDecryption=True,
-            )
+            try:
+                # Client creation fetches credentials, an infra failure; a missing region is a config error (`RuntimeError`), kept fatal.
+                client = self._boto3_client("ssm")
+                res = client.get_parameters(
+                    Names=self.name,
+                    WithDecryption=True,
+                )
+            except (BotoCoreError, ClientError) as e:
+                raise SecretFetchFailed(
+                    f"Failed to fetch parameters {self.name}: {e}"
+                ) from e
             name_to_value = {
                 parameter.get("Name", ""): parameter.get("Value", "")
                 for parameter in res.get("Parameters", [])
@@ -94,9 +112,9 @@ class Secret:
 
             for n in self.name:
                 if n not in name_to_value:
-                    raise RuntimeError(f"Failed to get value for parameter [{n}]")
+                    raise SecretMisconfigured(f"Failed to get value for parameter [{n}]")
                 if not name_to_value[n]:
-                    raise RuntimeError(f"Empty value for parameter [{n}]")
+                    raise SecretMisconfigured(f"Empty value for parameter [{n}]")
 
             return [name_to_value[name] for name in self.name]
 

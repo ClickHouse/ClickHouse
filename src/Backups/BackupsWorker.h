@@ -28,7 +28,9 @@ class IBackup;
 using BackupMutablePtr = std::shared_ptr<IBackup>;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupFileInfosAndEntries;
 class BackupConcurrencyCounters;
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
@@ -112,11 +114,13 @@ private:
 
     enum class ThreadPoolId : uint8_t;
 
-    /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
+    /// Builds file infos for specified backup entries. They are returned rather than published to the
+    /// coordination, so that the caller can inspect them before other hosts can see them. Consumes
+    /// `backup_entries`: the entries come back without their names, which are now in the file infos.
+    BackupFileInfosAndEntries buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
-    /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
+    /// Write backup entries to an opened backup. They are named by the file infos in the coordination.
+    void writeBackupEntries(BackupMutablePtr backup, std::vector<BackupEntryPtr> && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     std::pair<BackupOperationID, BackupStatus> startRestoring(const ASTPtr & query, ContextMutablePtr context);
     struct RestoreStarter;
