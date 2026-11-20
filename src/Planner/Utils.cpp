@@ -958,8 +958,8 @@ bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
             if (has_set_without_keys && !params.empty_result_for_aggregation_by_empty_set)
             {
                 /// Subquery will always produce at least one row. Decorrelation loses the row of an empty input
-                /// of this aggregate, so for a correlated subquery the steps above it are ignored.
-                if (!changes_number_of_rows || is_correlated)
+                /// of an aggregate without keys, so for a correlated subquery the steps above it are ignored.
+                if (!changes_number_of_rows || (is_correlated && params.keys_size == 0))
                     return true;
                 break;
             }

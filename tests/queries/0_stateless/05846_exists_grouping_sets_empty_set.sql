@@ -18,5 +18,6 @@ SELECT 'correlated, NOT EXISTS', count() FROM numbers(3) AS l WHERE NOT EXISTS (
 SELECT 'correlated, projection', l.number, EXISTS (SELECT tab.k FROM tab WHERE tab.k = l.number GROUP BY GROUPING SETS ((tab.k), ())) FROM numbers(3) AS l ORDER BY l.number;
 SELECT 'correlated, keyed sets', count() FROM numbers(3) AS l WHERE EXISTS (SELECT tab.k FROM tab WHERE tab.k = l.number GROUP BY GROUPING SETS ((tab.k), (tab.k, tab.k + 1)));
 SELECT 'correlated, suppressed', count() FROM numbers(3) AS l WHERE EXISTS (SELECT tab.k FROM tab WHERE tab.k = l.number GROUP BY GROUPING SETS ((tab.k), ())) SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+SELECT 'correlated, arrayJoin above', count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(l.number = 1, CAST([], 'Array(UInt8)'), [1])) FROM (SELECT k FROM tab WHERE k = 5 GROUP BY GROUPING SETS ((k), ())));
 
 DROP TABLE tab;
