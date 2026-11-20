@@ -72,8 +72,10 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
             /// Only claim monotonic if the range provably excludes the type minimum.
             if (type->isValueRepresentedByInteger())
             {
-                /// -Inf means the range starts from the very minimum, which is TYPE_MIN.
-                if (left.isNegativeInfinity())
+                /// -Inf means the range starts from the very minimum, which is TYPE_MIN. A null left bound
+                /// means the range is not known (as when a sort order is propagated through the function),
+                /// so it may include TYPE_MIN as well.
+                if (left.isNegativeInfinity() || left.isNull())
                     return {};
 
                 /// Check if the left bound equals the type's minimum value.

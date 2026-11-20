@@ -526,6 +526,18 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
     return {node, std::move(chain)};
 }
 
+/// NULL and NaN are sorted at one end of the stream (see `nulls_direction`), and they stay there only if
+/// the function keeps them NULL and NaN. A function whose result cannot be NULL or NaN while its argument
+/// can (for example `sign`, which returns 1 for NaN, or `toInt64`) turns them into ordinary values at that
+/// end of the stream, so its result is not sorted even if the function is monotonic.
+static bool keepsNullAndNaN(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    return !isFloat(removeLowCardinalityAndNullable(argument_type)) || isFloat(removeLowCardinalityAndNullable(result_type));
+}
+
 /// Check whether all the function in chain are monotonic
 static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
@@ -542,6 +554,9 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         ++it;
 
         const auto & type = node->children[pos]->result_type;
+        if (!keepsNullAndNaN(type, node->result_type))
+            break;
+
         const Field field{};
         auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
         if (!monotonicity.is_monotonic)

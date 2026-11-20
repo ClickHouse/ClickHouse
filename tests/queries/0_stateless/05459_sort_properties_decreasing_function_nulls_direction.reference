@@ -29,3 +29,28 @@ NULL through a division by a negative constant
 \N
 -0.5
 -1
+negate of a signed integer that may be the minimum
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+a decreasing chain with a function that turns NaN into an ordinary value
+1
+1
+-1
+1
+1
+-1
+1
+1
+1
+1
+the same for an increasing function of a descending subquery
+1
+1
+1
+1
