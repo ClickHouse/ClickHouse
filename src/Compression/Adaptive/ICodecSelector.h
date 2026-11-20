@@ -20,7 +20,7 @@ public:
     virtual void record(const CompressionCodecPtr & codec, UInt32 size) = 0;
 
     /// The codec with the smallest output so far, nullptr while the raw block is smaller.
-    virtual CompressionCodecPtr codecToUse() const = 0;
+    [[nodiscard]] virtual CompressionCodecPtr codecToUse() const = 0;
 };
 
 }
