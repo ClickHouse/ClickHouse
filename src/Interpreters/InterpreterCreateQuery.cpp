@@ -2421,9 +2421,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Check type compatible for materialized dest table and select columns.
-    /// A full-definition `ATTACH` by a user is validated like `CREATE`, unlike a definition replayed from stored metadata.
+    /// A full-definition `ATTACH` by a user is validated like `CREATE`, unlike a replayed one: a follower replica
+    /// gets `ATTACH` (not `SECONDARY_CREATE`), and the initiator has already validated it before enqueueing.
     const bool is_user_full_attach = !internal && mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax
-        && !getContext()->isRecoveryFromStoredMetadata();
+        && !is_secondary_query && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
     if (create.select && create.is_materialized_view && (mode <= LoadingStrictnessLevel::CREATE || is_user_full_attach))
     {
         // An MV with a flattened nested column in an inner table can never be filled
