@@ -9,9 +9,6 @@ inner USING JOIN below the aliased outermost USING key
 2	2	7
 three JOINs: inner keys from the left tables, the outermost key from the alias
 110	120	2	2	7
-WITH alias follows the same rule
-3
-2
 comma JOIN counts as a level
 2	3
 ARRAY JOIN above the JOIN is not a level: the JOIN stays outermost

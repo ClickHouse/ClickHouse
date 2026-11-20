@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -34,7 +36,9 @@ Los tipos de consulta disponibles son:
 La configuración *Tipo de consulta* cambiará el diseño del constructor de consultas para ajustarlo al tipo de consulta que se esté creando.
 El tipo de consulta también determina qué panel se utiliza al visualizar los datos.
 
-### Tabla {#table}
+<div id="table">
+  ### Tabla
+</div>
 
 El tipo de consulta más flexible es la consulta de tabla. Sirve como opción general para los demás constructores de consultas, diseñados para manejar consultas simples y de agregación.
 
@@ -48,19 +52,13 @@ El tipo de consulta más flexible es la consulta de tabla. Sirve como opción ge
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá. Algunas visualizaciones pueden requerir que se establezca en `0` para mostrar todos los datos. |
 | Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                  |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Ejemplo de consulta de tabla con agregación](/images/integrations/data-visualization/grafana/demo_table_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Ejemplo de consulta de tabla con agregación" border />
 
 Este tipo de consulta mostrará los datos en forma de tabla.
 
-### Logs {#logs}
+<div id="logs">
+  ### Logs
+</div>
 
 El tipo de consulta de logs ofrece un constructor de consultas centrado en consultar datos de logs.
 Los valores predeterminados pueden configurarse en la [configuración de logs](/es/integrations/connectors/data-visualization/grafana/config#logs) de la fuente de datos para que el constructor de consultas se cargue previamente con una base de datos/tabla y columnas predeterminadas.
@@ -84,15 +82,7 @@ El tipo de consulta de logs admite [enlaces de datos](#data-links).
 | Filtros           | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                             |
 | Filtro de mensaje | Un campo de texto para filtrar logs cómodamente mediante `LIKE %value%`. Se excluye cuando el campo está vacío.                                                                                           |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Ejemplo de consulta de logs de OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Ejemplo de consulta de logs de OTel" border />
 
 <br />
 
@@ -100,17 +90,11 @@ Este tipo de consulta mostrará los datos en el panel de logs, junto con un pane
 
 Las columnas adicionales seleccionadas en la consulta pueden verse en la fila de log expandida:
 
-<div className="ch-image-md">
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Ejemplo de campos adicionales en la consulta de logs" border />
 
-<Frame>
-
-![Ejemplo de campos adicionales en la consulta de logs](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
-
-</Frame>
-
+<div id="time-series">
+  ### Series temporales
 </div>
-
-### Series temporales {#time-series}
 
 El tipo de consulta de series temporales es similar a [tabla](#table), pero se centra en datos de series temporales.
 
@@ -140,19 +124,13 @@ Ambas vistas son prácticamente iguales, con estas diferencias principales:
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá; esto se recomienda para algunos conjuntos de datos de series temporales a fin de mostrar la visualización completa. |
 | Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                                       |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Consulta de series temporales de ejemplo](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Consulta de series temporales de ejemplo" border />
 
 Este tipo de consulta mostrará los datos en el panel de series temporales.
 
-### Trazas {#traces}
+<div id="traces">
+  ### Trazas
+</div>
 
 El tipo de consulta de trazas ofrece un constructor de consultas para buscar y ver trazas fácilmente.
 Está diseñado para datos de OpenTelemetry, pero se pueden seleccionar columnas para mostrar trazas a partir de un esquema distinto.
@@ -185,19 +163,13 @@ El tipo de consulta de trazas admite [enlaces de datos](#data-links).
 | Filtros                   | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                            |
 | Trace ID                  | El Trace ID por el que filtrar. Solo se usa en el modo Trace ID y al abrir un [enlace de datos](#data-links) de Trace ID.                                                                                |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Consulta de trazas OTel de ejemplo](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Consulta de trazas OTel de ejemplo" border />
 
 Este tipo de consulta mostrará los datos con la vista de tabla para el modo Búsqueda de trazas y con el panel de trazas para el modo Trace ID.
 
-## Editor SQL {#sql-editor}
+<div id="sql-editor">
+  ## Editor SQL
+</div>
 
 Para las consultas demasiado complejas para el constructor de consultas, puede usar el SQL Editor.
 Esto le da control total sobre la consulta, ya que le permite escribir y ejecutar ClickHouse SQL directamente.
@@ -209,17 +181,11 @@ Las [funciones macro](#macros) también se pueden usar en este modo.
 Puede alternar entre tipos de consulta para obtener la visualización que mejor se adapte a su consulta.
 Este cambio también surte efecto en la vista de dashboard, especialmente con datos de series temporales.
 
-<div className="ch-image-md">
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Ejemplo de consulta SQL sin formato" border />
 
-<Frame>
-
-![Ejemplo de consulta SQL sin formato](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
-
-</Frame>
-
+<div id="data-links">
+  ## Enlaces de datos
 </div>
-
-## Enlaces de datos {#data-links}
 
 Los [enlaces de datos](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 de Grafana pueden usarse para enlazar a nuevas consultas.
@@ -228,29 +194,13 @@ Esta función se ha habilitado en el plugin de ClickHouse para enlazar una traza
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Ejemplo de enlaces de trazas en una tabla
 
-  <div className="ch-image-sm">
-
-  <Frame>
-
-  ![Enlaces de trazas en una tabla](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Enlaces de trazas en una tabla" border />
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Ejemplo de enlaces de trazas en logs
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![Enlaces de trazas en logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Enlaces de trazas en logs" border />
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -261,11 +211,11 @@ Puedes crear un enlace de datos seleccionando una columna llamada `traceID` en t
 
 Si OpenTelemetry está habilitado en una consulta de [logs](#logs) o [traza](#traces), se incluirá automáticamente una columna de ID de traza.
 
-Cuando hay una columna de ID de traza, el plugin puede añadir enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; a los datos.
+Al incluir una columna de ID de traza, los enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; se añadirán a los datos.
 
-Los interruptores están habilitados de forma predeterminada. Un enlace para el tipo de consulta actual no requiere valores predeterminados configurados, mientras que un enlace entre señales aparece solo cuando la fuente de datos tiene valores predeterminados configurados para la señal de destino. Puedes ocultarlos con los interruptores **Mostrar enlaces de &quot;Ver traza&quot;** y **Mostrar enlaces de &quot;Ver logs&quot;** en las secciones de configuración de [traza](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) y [logs](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) de la fuente de datos.
-
-### Funciones de enlace {#linking-abilities}
+<div id="linking-abilities">
+  ### Funciones de enlace
+</div>
 
 Con los enlaces de datos disponibles, puedes abrir trazas y logs con el ID de traza proporcionado.
 
@@ -277,15 +227,7 @@ Es necesario tener valores predeterminados configurados tanto para [logs](/es/in
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Ejemplo de visualización de una traza (panel derecho) desde una consulta de logs (panel izquierdo)
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![Ejemplo de enlaces de datos](/images/integrations/data-visualization/grafana/demo_data_links.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Ejemplo de enlaces de datos" border />
 </div>
 
 <div id="macros">

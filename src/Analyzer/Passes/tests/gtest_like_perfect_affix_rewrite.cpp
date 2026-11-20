@@ -40,8 +40,8 @@ TEST(LikePerfectAffixRewrite, rewrite)
     test_f("col LIKE '%\xFF'", "endsWith(col, '\xFF')");
 
     /// Perfect affix NOT LIKE
-    test_f("col NOT LIKE 'Test%'", "NOT startsWith(col, 'Test')");
-    test_f("col NOT LIKE '%Test'", "NOT endsWith(col, 'Test')");
+    test_f("col NOT LIKE 'Test%'", "not(startsWith(col, 'Test'))");
+    test_f("col NOT LIKE '%Test'", "not(endsWith(col, 'Test'))");
 
     /// Imperfect affix (I)LIKE should not be rewritten
     test_f("col LIKE 'hello_world%'", "col LIKE 'hello_world%'");

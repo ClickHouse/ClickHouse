@@ -39,59 +39,36 @@ public:
         return std::make_shared<FunctionNested>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return false;
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {0};
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Documentation-only — given a const-array of N names and N parallel
-    /// Array values, returns `Array(Tuple(<name_i> T_i))`. The output's
-    /// named-tuple shape comes from the const names, so the DSL can't
-    /// produce the exact type.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(const Array(String), Array, ...) -> Array";
-    }
-
-    /// The declarative signature above is documentation-only — the exact result type isn't
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never evaluates the bare container return type (which would yield a wrong type or
-    /// an internal error).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         // Validation is not exhaustive.
         FunctionArgumentDescriptors mandatory_args{{"column_names", &isArray, &isColumnConst, "const Array(String)"}};
@@ -107,7 +84,7 @@ public:
             getName(), arguments[0].type->getName());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
         size_t arguments_size = arguments.size();
         Columns columns;
@@ -133,7 +110,7 @@ private:
         return type;
     }
 
-    [[nodiscard]] DataTypePtr getTupleType(size_t array_depth, const ColumnString & column, const ColumnsWithTypeAndName & arguments) const
+    DataTypePtr getTupleType(size_t array_depth, const ColumnString & column, const ColumnsWithTypeAndName & arguments) const
     {
         if (column.size() + 1 != arguments.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -167,7 +144,7 @@ private:
         return std::make_shared<DataTypeTuple>(types, names);
     }
 
-    [[nodiscard]] DataTypePtr getType(size_t array_depth, const IColumn & column, const ColumnsWithTypeAndName & arguments) const
+    DataTypePtr getType(size_t array_depth, const IColumn & column, const ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_string = typeid_cast<const ColumnString *>(&column);
         if (col_string)
