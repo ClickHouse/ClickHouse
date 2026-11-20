@@ -472,6 +472,50 @@ bool isTupleNode(const ASTPtr & node)
     return false;
 }
 
+/// The arguments of `node` if it is a `tuple(...)` call, otherwise nullptr.
+const ASTs * getTupleArguments(const IAST & node)
+{
+    const auto * function = node.as<ASTFunction>();
+    if (!function || function->name != "tuple" || !function->arguments)
+        return nullptr;
+    return &function->arguments->children;
+}
+
+/// Whether `value` can be one row of the `IN` key `key`: not if a `tuple(...)` position of the key holds a scalar other than
+/// `NULL` or a tuple of another size. Any other key position, e.g. a column or `row(...)`, can hold a tuple itself.
+bool canBeRowOfINKey(const Field & value, const IAST & key)
+{
+    const auto * key_elements = getTupleArguments(key);
+    if (!key_elements || value.isNull())
+        return true;
+    if (value.getType() != Field::Types::Tuple || value.safeGet<Tuple>().size() != key_elements->size())
+        return false;
+
+    const auto & row = value.safeGet<Tuple>();
+    for (size_t i = 0; i < row.size(); ++i)
+        if (!canBeRowOfINKey(row[i], *(*key_elements)[i]))
+            return false;
+    return true;
+}
+
+/// The same for a `value` in either tuple carrier. Any other expression, e.g. a function call, can be a tuple.
+bool canBeRowOfINKey(const IAST & value, const IAST & key)
+{
+    if (const auto * literal = value.as<ASTLiteral>())
+        return canBeRowOfINKey(literal->value, key);
+
+    const auto * key_elements = getTupleArguments(key);
+    const auto * row = getTupleArguments(value);
+    if (!key_elements || !row)
+        return true;
+    if (row->size() != key_elements->size())
+        return false;
+    for (size_t i = 0; i < row->size(); ++i)
+        if (!canBeRowOfINKey(*(*row)[i], *(*key_elements)[i]))
+            return false;
+    return true;
+}
+
 /// A single-row multi-column IN set (e.g. `(id, name) IN ((1, 'a'))`) must keep its outer
 /// parentheses when re-serialized for the external database: without them the IN clause becomes
 /// `IN (1, 'a')` — which external databases misinterpret as two separate scalar values instead of
@@ -485,7 +529,7 @@ bool isTupleNode(const ASTPtr & node)
 /// We only do this when:
 /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`). For scalar IN like
 ///    `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must NOT be wrapped.
-/// 2. The tuple represents a single row (its elements are plain values, not nested tuples).
+/// 2. The tuple represents a single row (its first element is not a tuple, or cannot be a row of the key).
 ///    For multi-row sets like `(id, name) IN ((1, 'a'), (2, 'b'))` the set is a tuple of tuples
 ///    which already formats with the correct nested parentheses.
 void wrapSingleRowTupleSetForINNode(ASTFunction & function)
@@ -506,7 +550,7 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
             return;
 
         const auto & tup = rhs_literal->value.safeGet<Tuple>();
-        if (!tup.empty() && tup[0].getType() != Field::Types::Tuple)
+        if (!tup.empty() && (tup[0].getType() != Field::Types::Tuple || !canBeRowOfINKey(tup[0], *lhs_func)))
             rhs = makeASTFunction("", rhs);
         return;
     }
@@ -520,7 +564,7 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
         rhs->setParenthesized(false);
 
         const auto & elements = rhs_func->arguments->children;
-        if (!elements.empty() && !isTupleNode(elements[0]))
+        if (!elements.empty() && (!isTupleNode(elements[0]) || !canBeRowOfINKey(*elements[0], *lhs_func)))
             rhs = makeASTFunction("", rhs);
     }
 }
