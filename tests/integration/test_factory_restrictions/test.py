@@ -47,16 +47,11 @@ def set_config(content):
 
 
 def test_hot_reload(started_cluster):
-    node.query("DROP TABLE IF EXISTS t_log")
-    node.query("CREATE TABLE t_log (x UInt8) ENGINE = Log")
-    assert node.query("SELECT 1 FORMAT CSV") == "1\n"
-
-    set_config(RESTRICTIONS)
-
+    # The server starts with the restrictions from its initial config.
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
     assert node.query("SELECT 1 FORMAT TSV") == "1\n"
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
-        "CREATE TABLE t_log2 (x UInt8) ENGINE = Log"
+        "CREATE TABLE t_log (x UInt8) ENGINE = Log"
     )
     node.query("CREATE TABLE t_memory (x UInt8) ENGINE = Memory")
     node.query("DROP TABLE t_memory")
@@ -68,9 +63,17 @@ def test_hot_reload(started_cluster):
     )
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
 
-    # Without the section everything is allowed again.
+    # Without the section everything is allowed.
     set_config("<clickhouse></clickhouse>")
     assert node.query("SELECT 1 FORMAT CSV") == "1\n"
-    node.query("CREATE TABLE t_log2 (x UInt8) ENGINE = Log")
-    node.query("DROP TABLE t_log2")
+    node.query("CREATE TABLE t_log (x UInt8) ENGINE = Log")
+
+    # The restrictions are applied again on reload.
+    set_config(RESTRICTIONS)
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "CREATE TABLE t_log2 (x UInt8) ENGINE = Log"
+    )
+
+    set_config("<clickhouse></clickhouse>")
     node.query("DROP TABLE t_log")

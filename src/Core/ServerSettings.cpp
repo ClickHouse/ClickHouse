@@ -2462,6 +2462,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "http_server_default_response",
         "http_forbid_headers",
         "remote_url_allow_hosts",
+        "factory_restrictions",
         "http_handlers",
         "arrowflight",
         "iceberg_rest_catalog",

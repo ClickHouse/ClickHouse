@@ -1749,7 +1749,7 @@ A subsection contains exactly one of the following:
 - `<allow>`: only the listed objects are allowed. An empty `<allow/>` disables every object of the kind.
 - `<deny>`: the listed objects are disallowed, and the rest are allowed.
 
-Each object is an empty element named after it, for example `<URL/>`. Names are case-insensitive. An object matches a list if either the name used in the query or the name it is an alias of is listed. For example, denying `lower` also denies its alias `lcase`.
+Each object is an empty element named after it, for example `<URL/>`. Names are case-insensitive. An object matches a list if either the name used in the query or the name it is an alias of is listed. For example, denying `lower` also denies its alias `lcase`. An aggregate function with combinators is checked by its parts: `sumIf` is allowed if both the `sum` function and the `If` combinator are allowed.
 
 Supported subsections:
 

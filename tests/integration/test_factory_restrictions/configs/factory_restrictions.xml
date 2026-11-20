@@ -1,2 +1,10 @@
 <clickhouse>
+    <factory_restrictions>
+        <formats>
+            <deny><CSV/></deny>
+        </formats>
+        <table_engines>
+            <allow><MergeTree/><Memory/></allow>
+        </table_engines>
+    </factory_restrictions>
 </clickhouse>
