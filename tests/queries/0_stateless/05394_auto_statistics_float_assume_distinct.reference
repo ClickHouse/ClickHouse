@@ -10,12 +10,12 @@ s	basic(auto),uniq_v2(auto)
 f64_explicit	basic(auto),uniq_v2
 system.parts_columns
 bf16	['Basic','UniqV2']	10	\N	100
-f32	['Basic']	\N	\N	1
-f64	['Basic']	\N	\N	400
-f64_const	['Basic']	\N	\N	0
+f32	['Basic']	1000	\N	1
+f64	['Basic']	601	\N	400
+f64_const	['Basic']	1	\N	0
 f64_explicit	['Basic','UniqV2']	10	\N	100
 lcf64	['Basic','UniqV2']	3	\N	334
-nf64	['Basic']	\N	250	250
+nf64	['Basic']	750	250	250
 s	['Basic','UniqV2']	5	\N	0
 u64	['Basic','UniqV2']	7	\N	143
 setting off
@@ -29,8 +29,8 @@ nf64	basic(auto)
 f64	['Basic','UniqV2']	10
 nf64	['Basic','UniqV2']	10
 setting on, after merge
-f64	['Basic']	\N
-nf64	['Basic']	\N
+f64	['Basic']	901
+nf64	['Basic']	750
 setting off again
 f64	basic(auto),uniq_v2(auto)
 nf64	basic(auto),uniq_v2(auto)
@@ -40,7 +40,7 @@ setting off again, after merge
 f64	['Basic','UniqV2']	10
 nf64	['Basic','UniqV2']	10
 explicit uniq
-x	['Basic']	\N
+x	['Basic']	901
 explicit uniq, added
 x	basic(auto),uniq_v2
 x	['Basic']	\N
@@ -48,12 +48,20 @@ explicit uniq, materialized
 x	['Basic','UniqV2']	10
 explicit uniq, dropped
 x	basic(auto)
-x	['Basic']	\N
+x	['Basic']	901
 basic only
 f64	['Basic']	\N
 u64	['Basic']	\N
 uniq only
 f64	
 u64	uniq_v2(auto)
-f64	[]	\N
+f64	[]	1000
 u64	['UniqV2']	10
+prewhere, assumed
+Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
+prewhere, not assumed
+Prewhere filter column: and(equals(i, 10_UInt8), equals(f, 100.5_Float64)) (removed)
+prewhere, uniq only
+Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
+prewhere, only Float columns
+Prewhere filter column: and(equals(f, 100.5_Float64), less(g, 5000_UInt16)) (removed)

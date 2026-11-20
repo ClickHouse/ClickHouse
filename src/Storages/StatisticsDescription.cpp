@@ -152,7 +152,7 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
     if (!other.data_type)
         return false;
 
-    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
+    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type) && assume_all_distinct == other.assume_all_distinct;
 }
 
 bool ColumnStatisticsDescription::empty() const
