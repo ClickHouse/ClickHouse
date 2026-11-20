@@ -672,7 +672,7 @@ try
     RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
-    const char * pos = analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals);
+    const char * pos = analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals); // NOLINT
     /// The scan stops before the end only at a `)` that closes no group, which re2 rejects.
     if (pos != regexp_.data() + regexp_.size())
         return {};
