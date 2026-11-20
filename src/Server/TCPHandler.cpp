@@ -47,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -1702,7 +1703,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select)
+    if (insert_queue && async_insert_enabled && !insert_query.select
+        && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
     {
         auto result = processAsyncInsertQuery(state, *insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1905,7 +1907,7 @@ void TCPHandler::processTablesStatusRequest()
             /// the hash validates below.
             request.read(*in, client_tcp_protocol_version);
 
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2419,7 +2421,7 @@ void TCPHandler::receiveHello()
         /// the exception back to the unauthenticated peer (see the handshake catch block).
         try
         {
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2863,7 +2865,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
 
-        String cluster_secret;
+        SecretString cluster_secret;
         try
         {
             cluster_secret = server.context()->getCluster(cluster)->getSecret();
