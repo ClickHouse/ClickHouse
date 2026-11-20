@@ -3435,7 +3435,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
         if (inline_count)
             assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
         else
-            places.push_back(*candidate.mapped);
+            places.push_back(*candidate.mapped); // NOLINT(clang-analyzer-core.NonNullParamChecker): `mapped` points into the table
     }
 
     Chunk chunk;
