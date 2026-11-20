@@ -10,6 +10,7 @@ SET max_threads = 4, max_block_size = 9;
 
 SELECT 'key only';
 SELECT k FROM l INNER ANY JOIN r USING (k) ORDER BY k;
+SELECT k FROM l INNER ANY JOIN r USING (k) ORDER BY k SETTINGS hash_join_layout = 'parallel';
 SELECT k FROM l INNER ANY JOIN r USING (k) ORDER BY k SETTINGS enable_join_key_only_hash_tables = 0;
 
 SELECT 'right column selected';

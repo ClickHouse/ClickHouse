@@ -20,11 +20,16 @@ SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FR
 SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left INTERSECT DISTINCT SELECT * FROM t_right)
 SETTINGS query_plan_join_swap_table = 'true';
 
+SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left INTERSECT DISTINCT SELECT * FROM t_right)
+SETTINGS hash_join_layout = 'parallel';
+
 SELECT countIf(explain LIKE '%Type: inner | Strictness: any%'), countIf(explain LIKE '%Skip deduplication: 1%')
 FROM (EXPLAIN actions = 1 SELECT * FROM t_left INTERSECT DISTINCT SELECT * FROM t_right);
 
 SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
 SETTINGS query_plan_join_swap_table = 'false';
+SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
+SETTINGS query_plan_join_swap_table = 'false', hash_join_layout = 'parallel';
 
 SELECT countIf(explain LIKE '%Type: left | Strictness: anti%'), countIf(explain LIKE '%Skip deduplication: 1%')
 FROM (EXPLAIN actions = 1 SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
@@ -32,6 +37,8 @@ SETTINGS query_plan_join_swap_table = 'false';
 
 SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
 SETTINGS query_plan_join_swap_table = 'true';
+SELECT count(), sum(a), countIf(a IS NULL), countIf(b IS NULL) FROM (SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
+SETTINGS query_plan_join_swap_table = 'true', hash_join_layout = 'parallel';
 
 SELECT countIf(explain LIKE '%Type: right | Strictness: anti%'), countIf(explain LIKE '%Skip deduplication: 1%')
 FROM (EXPLAIN actions = 1 SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right)
@@ -59,28 +66,51 @@ SELECT count() FROM (SELECT number FROM numbers(0) EXCEPT DISTINCT SELECT number
 SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', query_plan_join_swap_table = 'false';
 
 SELECT '-- A join that spills gives the same result.';
+-- Keys repeat across blocks on the left and within a block on the right.
 -- The left side is a single stream, so the other probe streams are empty while the spilled buckets are joined.
-SELECT count() FROM (SELECT number FROM numbers(10000) INTERSECT DISTINCT SELECT number FROM numbers(2000, 6000))
-SETTINGS max_bytes_before_external_join = 400000;
-SELECT count() FROM (SELECT number FROM numbers(10000) EXCEPT DISTINCT SELECT number FROM numbers(2000, 6000))
-SETTINGS max_bytes_before_external_join = 400000;
+SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) INTERSECT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
+SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_intersect';
+SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) INTERSECT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
+SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_intersect_parallel';
+
+SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
+SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_except';
+SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
+SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_except_parallel';
+
+SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
+SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'true', log_comment = '05443_spill_except_swapped';
+
+SELECT '-- The joins that spill switched to grace hash join.';
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin']
+FROM system.query_log
+WHERE log_comment LIKE '05443\_spill\_%' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+ORDER BY log_comment;
 
 SELECT '-- limits of DISTINCT';
 SELECT count() FROM (SELECT number FROM numbers(10) INTERSECT DISTINCT SELECT number FROM numbers(10))
 SETTINGS max_rows_in_distinct = 3; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 -- No `DISTINCT` set is built when the join emits each row once, so `max_bytes_in_distinct` is not enforced.
-SELECT count() FROM (SELECT number FROM numbers(10) INTERSECT DISTINCT SELECT number FROM numbers(5))
-SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
+SELECT count() FROM (SELECT number % 10 FROM numbers(30) INTERSECT DISTINCT SELECT number FROM numbers(5))
+SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_workers_num = 2, distributed_plan_fallback_to_local_execution = 0;
-SELECT count() FROM (SELECT number FROM numbers(10) EXCEPT DISTINCT SELECT number FROM numbers(5))
-SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_workers_num = 2, distributed_plan_fallback_to_local_execution = 0, query_plan_join_swap_table = 'false';
+SELECT count() FROM (SELECT number % 10 FROM numbers(30) EXCEPT DISTINCT SELECT number FROM numbers(5))
+SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_workers_num = 2, distributed_plan_fallback_to_local_execution = 0, query_plan_join_swap_table = 'true';
+-- The outer query reads the output of `EXPLAIN`, which cannot be distributed, so it falls back to local execution.
+-- The query inside `EXPLAIN` is still planned as a distributed plan.
+SELECT countIf(explain LIKE '%Type: RIGHT'), countIf(explain LIKE '%Strictness: ANTI')
+FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT number % 10 FROM numbers(30) EXCEPT DISTINCT SELECT number FROM numbers(5)))
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_workers_num = 2,
+    distributed_plan_fallback_to_local_execution = 1, query_plan_join_swap_table = 'true';
+
+SELECT '-- Arms that can produce totals run without a join.';
+SELECT countIf(explain LIKE '%IntersectOrExcept%'), countIf(explain LIKE '%Join%')
+FROM (EXPLAIN SELECT number % 3 AS k FROM numbers(9) GROUP BY k WITH TOTALS INTERSECT DISTINCT SELECT number FROM numbers(5));
 
 SELECT '-- The totals of the first branch win.';
-SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(100000) GROUP BY k WITH TOTALS INTERSECT DISTINCT SELECT number % 3 AS k, count() AS c FROM numbers(0) GROUP BY k WITH TOTALS) ORDER BY k
-SETTINGS query_plan_join_swap_table = 'false';
-SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(100000) GROUP BY k WITH TOTALS INTERSECT DISTINCT SELECT number % 3 AS k, count() AS c FROM numbers(0) GROUP BY k WITH TOTALS) ORDER BY k
-SETTINGS query_plan_join_swap_table = 'true';
+SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(100000) GROUP BY k WITH TOTALS INTERSECT DISTINCT SELECT number % 3 AS k, count() AS c FROM numbers(0) GROUP BY k WITH TOTALS) ORDER BY k;
 
 SELECT '-- Only the second branch has totals.';
 SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(9) GROUP BY k EXCEPT DISTINCT SELECT number % 2 AS k2, toUInt64(count() - 1) AS c2 FROM numbers(8) GROUP BY k2 WITH TOTALS) ORDER BY k;
