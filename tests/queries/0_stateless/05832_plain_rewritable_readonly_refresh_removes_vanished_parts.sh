@@ -132,3 +132,65 @@ ${CLICKHOUSE_CLIENT} --query "$filtered_count"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader2 SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE writer2 SYNC"
+
+# The parts a merge replaced are still listed at the first refresh, so the reader keeps them `Deleting`, and they are gone
+# at the next one. They must not hide the new parts that reuse their names.
+disk_path_3="${CLICKHOUSE_DISKS_FILES}/05832/${CLICKHOUSE_DATABASE}_3/"
+writer3_ddl="
+CREATE TABLE writer3 (x UInt64) ORDER BY tuple()
+SETTINGS table_disk = true, old_parts_lifetime = 3600,
+  disk = disk(
+      name = 05832_writer3_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      metadata_snapshot_write_delay_ms = 0,
+      path = '${disk_path_3}')"
+
+${CLICKHOUSE_CLIENT} --query "$writer3_ddl"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES writer3"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer3 VALUES (1)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer3 VALUES (2)"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE reader3 (x UInt64) ORDER BY tuple()
+SETTINGS table_disk = true,
+  disk = disk(
+      readonly = true,
+      name = 05832_reader3_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = '${disk_path_3}')
+"
+
+reader3_parts="
+SELECT groupArray((name, _state)) FROM (
+    SELECT name, _state FROM system.parts WHERE database = currentDatabase() AND table = 'reader3' ORDER BY name)"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES writer3"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE writer3 FINAL"
+# `grabOldParts` skips a part while a query holds it, as in 04089_merge_tree_refresh_after_merge.
+for _ in {1..50}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 05832_reader3_${CLICKHOUSE_DATABASE}"
+    [[ $(${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'reader3' AND _state = 'Outdated'") == 0 ]] && break
+    sleep 0.1
+done
+${CLICKHOUSE_CLIENT} --query "$reader3_parts"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer3 SYNC"
+for _ in {1..50}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 05832_reader3_${CLICKHOUSE_DATABASE}"
+    [[ $(${CLICKHOUSE_CLIENT} --query "$reader3_parts") == "[]" ]] && break
+    sleep 0.1
+done
+${CLICKHOUSE_CLIENT} --query "$reader3_parts"
+
+${CLICKHOUSE_CLIENT} --query "$writer3_ddl"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer3 SELECT 1 FROM numbers(5)"
+${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 05832_reader3_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM reader3 SETTINGS use_uncompressed_cache = 0"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE reader3 SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer3 SYNC"

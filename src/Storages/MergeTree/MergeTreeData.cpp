@@ -4016,10 +4016,11 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         {
             auto part_lock = lockParts();
             DataPartsVector unlisted_parts;
-            for (auto state : {DataPartState::Active, DataPartState::Outdated})
+            /// A `Deleting` part that nobody holds was left by `grabOldParts` below: nothing removes it on read-only disks.
+            for (auto state : {DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting})
                 for (const auto & part : getDataPartsStateRange(state))
                     if (scanned_disks.contains(part->getDataPartStorage().getDiskName()) && !listed_parts.contains(part->info)
-                        && should_forget(part->info))
+                        && should_forget(part->info) && (state != DataPartState::Deleting || isSharedPtrUnique(part)))
                         unlisted_parts.push_back(part);
 
             outdateRemovedPartsLocally(unlisted_parts, part_lock);
