@@ -2215,7 +2215,7 @@ TEST(IOTestAwsS3Client, WebIdentityRefreshInFiber)
         client_configuration,
         expiration_window_seconds,
         "arn:aws:iam::123456789012:role/clickhouse_web_identity_fiber_role",
-        token_file.c_str(),
+        Aws::String(token_file.data(), token_file.size()),
         "session",
         "eu-west-1");
 
