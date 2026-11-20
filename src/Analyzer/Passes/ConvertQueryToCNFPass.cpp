@@ -12,6 +12,8 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/Utils.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -283,6 +285,13 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
     return UNKNOWN;
 }
 
+bool comparesEnumWithString(const QueryTreeNodes & arguments)
+{
+    const auto left_type = arguments[0]->getResultType();
+    const auto right_type = arguments[1]->getResultType();
+    return comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type);
+}
+
 /// Create OR-group for 'indexHint'.
 /// Consider we have expression like A <op1> C, where C is constant.
 /// Consider we have a constraint I <op2> A, where I depends only on columns from primary key.
@@ -310,6 +319,10 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
         if (arguments.size() != 2)
             continue;
 
+        /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`: '9' is a name for `e`, a number for `n`.
+        if (comparesEnumWithString(arguments))
+            return {};
+
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
         {
             if (!onlyConstants(arguments[1 - index]))
@@ -328,6 +341,11 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     auto helper_node = function_node->clone();
                     auto & helper_function_node = helper_node->as<FunctionNode &>();
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
+
+                    /// `CHECK e <= n` must not turn `n <= '9'` into `e <= '9'`: '9' is a number for `n`, a name for `e`.
+                    if (comparesEnumWithString(helper_function_node.getArguments().getNodes()))
+                        continue;
+
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
                     result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});

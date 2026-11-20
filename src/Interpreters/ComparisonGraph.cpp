@@ -9,6 +9,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 
+#include <DataTypes/Utils.h>
+
 #include <Functions/FunctionFactory.h>
 
 #include <algorithm>
@@ -381,6 +383,16 @@ std::optional<typename ComparisonGraph<Node>::Path> ComparisonGraph<Node>::findP
 template <ComparisonGraphNodeType Node>
 ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, const Node & right) const
 {
+    /// An `Enum` compared with a string orders by the `Enum` value. The graph has no relations in this order,
+    /// and it compares the constant bounds of the two sides by their `Field`s directly.
+    if constexpr (!with_ast)
+    {
+        const auto left_type = left->getResultType();
+        const auto right_type = right->getResultType();
+        if (comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type))
+            return ComparisonGraphCompareResult::UNKNOWN;
+    }
+
     size_t start = 0;
     size_t finish = 0;
 
