@@ -197,7 +197,7 @@ public:
     void recordInputBytesRead(std::optional<size_t> compressed_bytes_read);
 
     /// Shared by the readers of the updater's reads, see `IMergeTreeReader::countCompressedBytesRead`.
-    const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
+    [[nodiscard]] const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

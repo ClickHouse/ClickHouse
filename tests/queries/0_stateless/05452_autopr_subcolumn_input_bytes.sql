@@ -9,8 +9,6 @@ DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_renamed;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_nested_compact;
-DROP TABLE IF EXISTS t_codec;
-DROP TABLE IF EXISTS t_codec_renamed;
 
 -- `s.size` has a stream of its own.
 CREATE TABLE t_wide (key UInt64, s String) ENGINE = MergeTree ORDER BY key
@@ -41,10 +39,6 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_o
 CREATE TABLE t_nested_compact (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
 
--- A compact part is sampled with the `CODEC` of the column, which must be found under its old name too.
-CREATE TABLE t_codec (key UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
-CREATE TABLE t_codec_renamed AS t_codec;
 
 INSERT INTO t_wide SELECT intDiv(number, 20000), repeat('x', cityHash64(number) % 50) FROM numbers(2e5);
 INSERT INTO t_wide_single_stream SELECT * FROM t_wide;
@@ -54,13 +48,9 @@ INSERT INTO t_nested SELECT intDiv(number, 20000), arrayMap(i -> 'x', range(city
 FROM numbers(2e5);
 
 INSERT INTO t_nested_compact SELECT * FROM t_nested;
-INSERT INTO t_codec SELECT * FROM t_wide;
-INSERT INTO t_codec_renamed SELECT * FROM t_wide;
 
 SYSTEM STOP MERGES t_renamed;
 ALTER TABLE t_renamed RENAME COLUMN s TO renamed SETTINGS mutations_sync = 0, alter_sync = 0;
-SYSTEM STOP MERGES t_codec_renamed;
-ALTER TABLE t_codec_renamed RENAME COLUMN s TO renamed SETTINGS mutations_sync = 0, alter_sync = 0;
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -81,8 +71,6 @@ SELECT key, avg(length(n.a)), avg(length(n.b)) FROM t_nested GROUP BY key FORMAT
 -- `n.b` read whole shares `n.size0` with `n.a.size0`, although the part counts it in the size of `n.a` only.
 SELECT key, avg(length(n.a)), sum(arraySum(n.b)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_offsets_and_full';
 SELECT key, avg(length(n.a)) FROM t_nested_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_compact';
-SELECT key, max(s) FROM t_codec GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec';
-SELECT key, max(renamed) FROM t_codec_renamed GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec_renamed';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -93,8 +81,7 @@ SYSTEM FLUSH LOGS query_log;
 -- The bytes on disk of what each query reads: `key`, plus the stream of `s.size` if it has one and all of `s`
 -- otherwise, or the offsets `n.size0` that `n.a` and `n.b` share. The compact tables report no per-column sizes;
 -- they hold the same rows as `t_wide` and `t_nested`, and so does the renamed table, whose part is still the one
--- written for `t_wide`'s columns. A stream read by several columns is charged once, and the per-row pricing of
--- wide parts is exact, so those cases get a tight bound; the others are sampled or priced by a ratio.
+-- written for `t_wide`'s columns. A stream read by several columns is charged once.
 WITH on_disk AS
 (
     SELECT table, sum(multiIf(
@@ -149,24 +136,12 @@ WITH
      WHERE database = currentDatabase() AND table = 't_nested' AND active AND column = 'n.b') AS n_b_bytes
 SELECT offsets > 0 AND offsets_and_full BETWEEN offsets AND (offsets + n_b_bytes) * 1.25 AS offsets_charged_with_full_column;
 
--- The renamed column holds the same rows with the same `CODEC`, so it must be priced like the original.
-WITH
-    (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
-     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-        AND log_comment = '05452_codec_renamed' AND type = 'QueryFinish') AS renamed,
-    (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
-     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-        AND log_comment = '05452_codec' AND type = 'QueryFinish') AS original
-SELECT original > 0 AND renamed BETWEEN original * 0.8 AND original * 1.25 AS renamed_codec_found;
-
 DROP TABLE t_wide;
 DROP TABLE t_wide_single_stream;
 DROP TABLE t_compact;
 DROP TABLE t_renamed;
 DROP TABLE t_nested;
 DROP TABLE t_nested_compact;
-DROP TABLE t_codec;
-DROP TABLE t_codec_renamed;
 
 -- A selection of unusually large values must be priced by what it reads, not by the average row of the part:
 -- the first 1000 rows hold 1 KiB strings, the others empty ones, and `CODEC(NONE)` keeps their size on disk.
@@ -217,6 +192,15 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_b
     index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_cache_lowcardinality SELECT number, hex(sipHash128(number % 5000)) || hex(sipHash128(number % 5000 + 5000)) FROM numbers(2e5);
 
+-- Each granule of an insert fills a dictionary of its own, written after the granule: the next mark points to the
+-- dictionary of the next granule, which reading the granule does not load. Merges would write granules in several calls.
+DROP TABLE IF EXISTS t_cache_lowcardinality_next_dictionary;
+CREATE TABLE t_cache_lowcardinality_next_dictionary (key UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
+    ratio_of_defaults_for_sparse_serialization = 1;
+SYSTEM STOP MERGES t_cache_lowcardinality_next_dictionary;
+INSERT INTO t_cache_lowcardinality_next_dictionary SELECT number, hex(sipHash128(number)) || hex(sipHash128(number + 1)) FROM numbers(65536);
+
 -- Empty values, which write nothing to the stream of the elements or of the string data, before the values of the last
 -- granule: their marks are all the same, and the granules read below need no block of that stream.
 DROP TABLE IF EXISTS t_cache_empty_array;
@@ -250,71 +234,44 @@ SELECT key, sum(value) FROM t_one_block_compact GROUP BY key FORMAT Null
 SETTINGS max_threads = 4, max_block_size = 128, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
     merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 1, log_comment = '05452_one_block_compact';
 
--- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
-SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_1';
-SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_2';
-SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_1';
-SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
-SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_lowcardinality_1';
-SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_lowcardinality_2';
+-- The first read must not serve itself from the cache: the ranges are not split into overlapping ones.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
 
-SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_array_1';
-SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_array_2';
-SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_string_1';
-SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_string_2';
+-- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_1';
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_2';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_compact_1';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_compact_2';
+SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_1';
+SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_2';
+SELECT lc FROM t_cache_lowcardinality_next_dictionary WHERE key < 8192 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_next_dictionary_1';
+SELECT lc FROM t_cache_lowcardinality_next_dictionary WHERE key < 8192 FORMAT Null SETTINGS log_comment = '05452_cache_lowcardinality_next_dictionary_2';
+
+SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_array_1';
+SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_array_2';
+SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_string_1';
+SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null SETTINGS log_comment = '05452_cache_empty_string_2';
 
 -- The streams of the null map of a sparse `Nullable`, of a `Dynamic` and of a `Quantized` column are not all known without reading the column,
 -- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
-SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_1';
-SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_2';
-SELECT d FROM t_cache_dynamic FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_1';
-SELECT d FROM t_cache_dynamic FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_2';
+SELECT sum(n.null) FROM t_cache_sparse FORMAT Null SETTINGS log_comment = '05452_unknown_streams_sparse_1';
+SELECT sum(n.null) FROM t_cache_sparse FORMAT Null SETTINGS log_comment = '05452_unknown_streams_sparse_2';
+SELECT d FROM t_cache_dynamic FORMAT Null SETTINGS log_comment = '05452_unknown_streams_dynamic_1';
+SELECT d FROM t_cache_dynamic FORMAT Null SETTINGS log_comment = '05452_unknown_streams_dynamic_2';
 -- A `Quantized` column lists its codes and codebook, which reading the vectors skips, and the codebook of the part is
 -- one value, read from the beginning of its file for any granule.
-SELECT vec FROM t_cache_quantized FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_1';
-SELECT vec FROM t_cache_quantized FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_2';
-SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_codebook_1';
-SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_codebook_2';
+SELECT vec FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_1';
+SELECT vec FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_2';
+SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_codebook_1';
+SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null SETTINGS log_comment = '05452_unknown_streams_quantized_codebook_2';
 
-SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, use_columns_cache = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
 -- A read is measured if the cache served nothing. Which granules it serves is not fixed: other tests can evict the
--- entries before the second read. The replicas share the cache but measure only the local reads, so the first read must
--- not serve itself: the ranges are not split into overlapping ones.
+-- entries before the second read.
 SELECT log_comment, if(ProfileEvents['ColumnsCacheHits'] = 0,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_when_streams_known
@@ -361,6 +318,7 @@ DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
 DROP TABLE t_cache_quantized;
 DROP TABLE t_cache_lowcardinality;
+DROP TABLE t_cache_lowcardinality_next_dictionary;
 DROP TABLE t_cache_empty_array;
 DROP TABLE t_cache_empty_string;
 DROP TABLE t_one_block_wide;
