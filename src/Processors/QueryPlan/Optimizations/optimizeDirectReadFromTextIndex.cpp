@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -442,7 +443,12 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMem
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
 
-            return make_intrusive<ASTLiteral>((*node.column)[0]);
+            /// A literal keeps the value, not the type: a `Float32` constant would be read back as `Float64`.
+            auto literal = make_intrusive<ASTLiteral>((*node.column)[0]);
+            if (WhichDataType(node.result_type).isFunction()
+                || applyVisitor(FieldToDataType<LeastSupertypeOnError::String>(), literal->value)->equals(*node.result_type))
+                return literal;
+            return makeASTFunction("_CAST", std::move(literal), make_intrusive<ASTLiteral>(node.result_type->getName()));
         }
 
         case ActionsDAG::ActionType::ALIAS:

@@ -169,3 +169,19 @@ SELECT 'Bool constant hasTokenPrefix', count() FROM tab_folded_constant WHERE ha
 SELECT 'Bool constant hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(toString(if(c, 1, 0)), '1', 'array') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;
+
+-- A `Float32` constant is named by its number, so the index is found, and the expression evaluated for a part
+-- without the index must keep the `Float32` type: as `Float64`, `0.1` is formatted as `0.10000000149011612`.
+CREATE TABLE tab_folded_constant (id UInt64, tag String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, 'env' FROM numbers(64);
+ALTER TABLE tab_folded_constant ADD INDEX idx(formatRowNoNewline('CSV', tag, toFloat32(0.1))) TYPE text(tokenizer = array);
+INSERT INTO tab_folded_constant SELECT number + 64, 'env' FROM numbers(64);
+
+SELECT 'Float32 constant hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(formatRowNoNewline('CSV', tag, toFloat32(0.1)), ',0.1$', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'Float32 constant hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(formatRowNoNewline('CSV', tag, toFloat32(0.1)), ',0.1$', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'Float32 constant LIKE', count() FROM tab_folded_constant WHERE formatRowNoNewline('CSV', tag, toFloat32(0.1)) LIKE '%,0.1' SETTINGS use_skip_indexes = 1;
+SELECT 'Float32 constant LIKE, no index', count() FROM tab_folded_constant WHERE formatRowNoNewline('CSV', tag, toFloat32(0.1)) LIKE '%,0.1' SETTINGS use_skip_indexes = 0;
+SELECT 'Float32 constant hasAnyTokens', count() FROM tab_folded_constant WHERE hasAnyTokens(formatRowNoNewline('CSV', tag, toFloat32(0.1)), ['"env",0.1'], 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'Float32 constant hasAnyTokens, no index', count() FROM tab_folded_constant WHERE hasAnyTokens(formatRowNoNewline('CSV', tag, toFloat32(0.1)), ['"env",0.1'], 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;

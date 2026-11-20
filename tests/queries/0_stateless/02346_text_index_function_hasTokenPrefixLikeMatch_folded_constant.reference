@@ -73,3 +73,9 @@ Bool constant hasAnyTokens	64
 Bool constant hasAnyTokens, no index	64
 Bool constant hasTokenPrefix	64
 Bool constant hasTokenPrefix, no index	64
+Float32 constant hasTokenMatch	128
+Float32 constant hasTokenMatch, no index	128
+Float32 constant LIKE	128
+Float32 constant LIKE, no index	128
+Float32 constant hasAnyTokens	128
+Float32 constant hasAnyTokens, no index	128
