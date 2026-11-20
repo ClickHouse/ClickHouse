@@ -19,6 +19,7 @@ class BlocksMarshallingStep : public ITransformingStep
 public:
     explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "BlocksMarshalling"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

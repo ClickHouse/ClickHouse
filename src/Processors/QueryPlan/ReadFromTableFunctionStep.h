@@ -10,6 +10,7 @@ class ReadFromTableFunctionStep : public ISourceStep
 public:
     ReadFromTableFunctionStep(SharedHeader header, std::string serialized_ast_, TableExpressionModifiers table_expression_modifiers_);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "ReadFromTableFunction"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

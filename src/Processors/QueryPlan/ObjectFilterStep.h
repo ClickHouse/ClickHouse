@@ -19,6 +19,7 @@ public:
         ActionsDAG actions_dag_,
         String filter_column_name_);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "ObjectFilter"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 

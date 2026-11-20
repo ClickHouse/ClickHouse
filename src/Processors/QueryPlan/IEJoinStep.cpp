@@ -131,6 +131,11 @@ static SharedHeader concatHeaders(const SharedHeaders & headers)
     return std::make_shared<const Block>(std::move(result));
 }
 
+QueryPlanStepPtr IEJoinStep::clone() const
+{
+    return std::make_unique<IEJoinStep>(*this);
+}
+
 QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
