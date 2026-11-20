@@ -2299,7 +2299,6 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
 
 void MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
 {
-    /// Pairs of a key or a skip index and the name of its element.
     using Violations = std::vector<std::pair<String, String>>;
     auto get_violations = [](const StorageInMemoryMetadata & metadata)
     {
@@ -7416,7 +7415,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
-    /// The query setting replaces the table setting here, as for the duplicate expressions in `checkProperties`.
     if (!is_secondary_replay && !settings[Setting::allow_suspicious_indexes])
         checkKeyExpressionsNotNamedLikeColumns(new_metadata, &old_metadata);
 
