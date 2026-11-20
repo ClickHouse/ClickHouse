@@ -647,11 +647,12 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
             return std::nullopt;
 
         /// `CHECK e = 1.0` gives `e` a `Float64` constant, which has no exact conversion to the `Enum` of `e`.
-        Field constant = tryConvertFieldToTypeExact(getConstantValue(equal_constant), *node->getResultType(), equal_constant->getResultType().get());
+        const auto type = node->getResultType();
+        Field constant = tryConvertFieldToTypeExact(getConstantValue(equal_constant), *type, equal_constant->getResultType().get());
         if (constant.isNull())
             return std::nullopt;
 
-        return std::make_shared<ConstantNode>(std::move(constant), node->getResultType());
+        return std::make_shared<ConstantNode>(std::move(constant), type);
     }
 }
 
