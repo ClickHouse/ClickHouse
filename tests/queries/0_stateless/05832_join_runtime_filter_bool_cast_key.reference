@@ -6,6 +6,7 @@ bool_skip_set	4080
 bool_skip_bloom_filter	4080
 bool_nullable	4076
 bool_simple_aggregate_function	4080
+tuple_bool_simple_aggregate_function	4080
 bool_u8_build	4080
 u16_bool_u8_build	4095
 u16_u8_bool_build	16

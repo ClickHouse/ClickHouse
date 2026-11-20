@@ -12,11 +12,13 @@ DROP TABLE IF EXISTS probe_u8_null;
 DROP TABLE IF EXISTS probe_u16;
 DROP TABLE IF EXISTS probe_time;
 DROP TABLE IF EXISTS probe_dec;
+DROP TABLE IF EXISTS probe_tuple;
 DROP TABLE IF EXISTS build_true;
 DROP TABLE IF EXISTS build_false;
 DROP TABLE IF EXISTS build_u8;
 DROP TABLE IF EXISTS build_tokyo;
 DROP TABLE IF EXISTS build_dec;
+DROP TABLE IF EXISTS build_tuple;
 
 CREATE TABLE probe_u8 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 8;
 INSERT INTO probe_u8 SELECT intDiv(number, 16) FROM numbers(4096);
@@ -42,6 +44,9 @@ INSERT INTO probe_time SELECT toDate('2026-01-01') + intDiv(number, 16) AS d, to
 CREATE TABLE probe_dec (d Decimal(12, 2)) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8;
 INSERT INTO probe_dec SELECT intDiv(number, 16) FROM numbers(4096);
 
+CREATE TABLE probe_tuple (t Tuple(UInt8)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 8;
+INSERT INTO probe_tuple SELECT tuple(intDiv(number, 16)) FROM numbers(4096);
+
 CREATE TABLE build_true (flag Bool) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_true VALUES (true);
 
@@ -56,6 +61,9 @@ INSERT INTO build_tokyo SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + toInte
 
 CREATE TABLE build_dec (d Decimal(18, 2)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_dec VALUES (5);
+
+CREATE TABLE build_tuple (t Tuple(Bool)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_tuple VALUES (tuple(true));
 
 -- Primary key, read-time pruning.
 SELECT 'bool_read', count() FROM probe_u8 AS p JOIN build_true AS b ON CAST(p.x AS Bool) = b.flag
@@ -83,9 +91,12 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, u
 SELECT 'bool_nullable', count() FROM probe_u8_null AS p JOIN build_true AS b ON CAST(p.x AS Nullable(Bool)) = b.flag
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
 
--- A cast to `SimpleAggregateFunction(any, Bool)` converts 2 to 1 as well.
+-- Casts to `SimpleAggregateFunction` of `Bool` or of `Tuple(Bool)` convert 2 to 1 as well.
 SELECT 'bool_simple_aggregate_function', count() FROM probe_u8 AS p JOIN build_true AS b
     ON CAST(p.x AS SimpleAggregateFunction(any, Bool)) = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
+SELECT 'tuple_bool_simple_aggregate_function', count() FROM probe_tuple AS p JOIN build_tuple AS b
+    ON CAST(p.t AS SimpleAggregateFunction(any, Tuple(Bool))) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
 
 -- A `UInt8` build key: the filter type is `UInt8`, the probe key is still cast to `Bool`.
@@ -126,8 +137,10 @@ DROP TABLE probe_u8_null;
 DROP TABLE probe_u16;
 DROP TABLE probe_time;
 DROP TABLE probe_dec;
+DROP TABLE probe_tuple;
 DROP TABLE build_true;
 DROP TABLE build_false;
 DROP TABLE build_u8;
 DROP TABLE build_tokyo;
 DROP TABLE build_dec;
+DROP TABLE build_tuple;

@@ -1285,6 +1285,20 @@ static const ActionsDAG::Node & findOrAddInput(ActionsDAG & dag, const String & 
     return dag.addInput(name, type);
 }
 
+/// Whether `CAST` returns the values unchanged, as `FunctionCast::prepareImpl` decides: the types are `equals` and have the
+/// same custom name, and it is not a cast from `UInt8` to `Bool`, which converts 2 to 1.
+static bool isIdentityCast(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto from_nested = removeLowCardinalityAndNullable(from);
+    const auto to_nested = removeLowCardinalityAndNullable(to);
+    if (isUInt8(from_nested) && (isBool(to_nested) || isSimpleAggregateFunctionOfBool(*to_nested)))
+        return false;
+    const auto * from_name = from_nested->getCustomName();
+    const auto * to_name = to_nested->getCustomName();
+    const bool same_custom_name = from_name ? to_name && from_name->getName() == to_name->getName() : !to_name;
+    return same_custom_name && from->equals(*to);
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const RuntimeFilter & filter,
     const RuntimeFilterIndexAnalysisDescriptor & descriptor,
@@ -1316,15 +1330,8 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
-    /// A cast to a type that `equals` the key's keeps the values (e.g. a `DateTime` time zone) and is left out, so the indexes
-    /// can use the key. Except a cast to `Bool`, which converts 2 to 1.
-    bool apply_cast = false;
-    if (const auto & cast_type = descriptor.key_cast_type)
-    {
-        const auto nested_cast_type = removeLowCardinalityAndNullable(cast_type);
-        apply_cast = !key_node.result_type->equals(*cast_type) || isBool(nested_cast_type)
-            || isSimpleAggregateFunctionOfBool(*nested_cast_type);
-    }
+    /// A cast that keeps the values (e.g. a `DateTime` time zone change) is left out, so the indexes can use the key.
+    const bool apply_cast = descriptor.key_cast_type && !isIdentityCast(key_node.result_type, descriptor.key_cast_type);
     const auto & key_casted = apply_cast ? dag.addCast(key_node, descriptor.key_cast_type, {}, context) : key_node;
     chassert(key_casted.result_type->equals(*target_type));
 
