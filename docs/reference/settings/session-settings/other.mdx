@@ -1446,7 +1446,7 @@ Min bytes required for remote read (url, s3) to do seek, instead of read with ig
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
 
-Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`, and is refused in readonly mode (`readonly` above 0, which every HTTP GET request implies). `DESCRIBE` does not build the data-reading pipeline that renames, so neither of these two restrictions applies to it.
 
 ### Placeholders
 
