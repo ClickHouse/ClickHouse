@@ -414,7 +414,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             AggregateDataPtr place;
             UInt64 value;
             /// The group of the NULL key, which has no key in the table (see `process_null_key`).
-            bool null_key = false;
+            bool null_key;
         };
 
         std::vector<Candidate> candidates;
