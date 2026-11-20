@@ -7,6 +7,9 @@
 #if defined(OS_DARWIN)
 #include <strings.h>
 #endif
+#if defined(OS_LINUX)
+#include <sys/auxv.h>
+#endif
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
@@ -60,6 +63,45 @@ namespace
 /// Use within any block that calls into LLVM, so heap allocations made by LLVM (which uses global
 /// `operator new`) don't pollute the default arena. Frees auto-route via jemalloc's per-extent
 /// metadata, so only allocation-side blocks need scoping.
+/// The binary is built with branch protection (`ENABLE_BRANCH_PROTECTION`): generate the JIT code the same
+/// way, and guard its pages with BTI, as `ld.so` does for the binary.
+void setBranchProtectionAttributes([[maybe_unused]] llvm::Module & module)
+{
+#if defined(__aarch64__) && (defined(__ARM_FEATURE_BTI_DEFAULT) || defined(__ARM_FEATURE_PAC_DEFAULT))
+    for (auto & function : module)
+    {
+        if (function.isDeclaration())
+            continue;
+#    if defined(__ARM_FEATURE_BTI_DEFAULT)
+        function.addFnAttr("branch-target-enforcement");
+#    endif
+#    if defined(__ARM_FEATURE_PAC_DEFAULT)
+#        if __ARM_FEATURE_PAC_DEFAULT & 4
+        function.addFnAttr("sign-return-address", "all");
+#        else
+        function.addFnAttr("sign-return-address", "non-leaf");
+#        endif
+#        if __ARM_FEATURE_PAC_DEFAULT & 2
+        function.addFnAttr("sign-return-address-key", "b_key");
+#        else
+        function.addFnAttr("sign-return-address-key", "a_key");
+#        endif
+#    endif
+    }
+#endif
+}
+
+int getExecutableCodeProtection()
+{
+#if defined(__aarch64__) && defined(__ARM_FEATURE_BTI_DEFAULT) && defined(OS_LINUX)
+    /// `HWCAP2_BTI` and `PROT_BTI`, missing in the headers of the sysroot. Without kernel support `mprotect` rejects `PROT_BTI`.
+    static const int bti = (getauxval(AT_HWCAP2) & (1UL << 17)) ? 0x10 : 0;
+    return PROT_READ | PROT_EXEC | bti;
+#else
+    return PROT_READ | PROT_EXEC;
+#endif
+}
+
 class JITAllocationScope : private DB::ScopedJemallocThreadArena
 {
 public:
@@ -360,7 +402,7 @@ public:
     bool finalizeMemory(std::string *) override
     {
         ro_page_arena.protect(PROT_READ);
-        ex_page_arena.protect(PROT_READ | PROT_EXEC);
+        ex_page_arena.protect(getExecutableCodeProtection());
         return true;
     }
 
@@ -536,6 +578,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
     auto object = JITAllocationScope::run([&]
     {
         runOptimizationPassesOnModule(*module);
+        setBranchProtectionAttributes(*module);
 
 #ifdef PRINT_ASSEMBLY
         AssemblyPrinter assembly_printer(*machine);

@@ -491,6 +491,19 @@ endif ()
 # https://unicode-org.github.io/icu/userguide/icu_data/#sharing-icu-data-between-platforms, 'Sharing ICU Data Between Platforms')
 # (and as an experiment, try re-generating the data files on x86 vs. ARM, ... you'll get exactly the same files)
 
+if (ARCH_AARCH64 AND USE_BRANCH_PROTECTION)
+    # The data file has no code, but without the BTI property the linker disables BTI for the whole executable.
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icudata_bti.S" CONTENT
+"#include \"${ICUDATA_SOURCE_FILE}\"
+.section .note.gnu.property,\"a\"
+.p2align 3
+.word 4, 16, 5
+.asciz \"GNU\"
+.word 0xc0000000, 4, 3, 0
+")
+    set(ICUDATA_SOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/icudata_bti.S")
+endif ()
+
 set(ICUDATA_SOURCES
     "${ICUDATA_SOURCE_FILE}"
     "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
