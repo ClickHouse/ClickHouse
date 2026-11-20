@@ -157,6 +157,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int READONLY;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -1782,6 +1783,8 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , map_columns_read_by_keys(info.map_columns_read_by_keys)
+    , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -2419,6 +2422,7 @@ Chunk StorageFileSource::generate()
 
             input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setMapColumnsReadByOneSide(map_columns_read_by_keys, map_columns_read_by_values);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -2814,6 +2818,12 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
+}
+
 bool ReadFromFile::supportsMinMaxFromStatistics() const
 {
     if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)
@@ -2943,6 +2953,23 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
     return lazy_step;
 }
 
+void StorageFile::checkAccessForRenamingFiles(const ContextPtr & context)
+{
+    const auto access = context->getAccess();
+    access->checkAccessWithFilter(AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
+    /// The readonly gate does not refuse `WRITE` on a source, which also authorizes `BACKUP` destinations.
+    const auto & params = access->getParams();
+    if (!params.readonly || params.full_access)
+        return;
+    if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        throw Exception(ErrorCodes::READONLY,
+            "{}: Cannot execute query in readonly mode. "
+            "For queries over HTTP, method GET implies readonly. "
+            "You should use method POST for modifying queries", access->getUserName());
+    throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", access->getUserName());
+}
+
 void StorageFile::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -2957,8 +2984,7 @@ void StorageFile::read(
     /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
     /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        checkAccessForRenamingFiles(context);
 
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -3483,6 +3509,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
