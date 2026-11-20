@@ -153,9 +153,11 @@ The `partial_merge` algorithm is a variant of the sort-merge JOIN in which only 
 
 **Limitations.** `RIGHT` and `FULL` JOINs are supported only with `ALL` strictness. `ANTI` and `ASOF` strictness, multiple JOIN keys combined with `OR`, and conditions that compare columns of both tables are not supported.
 
+<a id="ie-join"></a>
+
 ## `inequality` {#inequality}
 
-The `inequality` algorithm implements the sort-based [inequality join](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm, also known as IEJoin, for a JOIN whose `ON` clause contains two inequality comparisons, `<`, `<=`, `>`, or `>=`, between expressions of the joined tables. ClickHouse sorts both inputs by the expressions of the two comparisons and finds the matching pairs without comparing every pair of rows. The algorithm is available since 26.8. Before 26.11, it was named `ie_join`, and this name is still accepted.
+The `inequality` algorithm implements the sort-based [inequality join](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm, also known as IEJoin, for a JOIN whose `ON` clause contains two inequality comparisons, `<`, `<=`, `>`, or `>=`, between expressions of the joined tables. ClickHouse sorts both inputs by the expressions of the two comparisons and finds the matching pairs without comparing every pair of rows. The algorithm is available since 26.8. Before 26.12, it was named `ie_join`, and this name is still accepted.
 
 **When it is used.** Its position in `join_algorithm` sets its priority:
 

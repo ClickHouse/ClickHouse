@@ -1,4 +1,4 @@
--- The `inequality` value of `join_algorithm` was named `ie_join` before 26.11. The former name is still accepted
+-- The `inequality` value of `join_algorithm` was named `ie_join` before 26.12. The former name is still accepted
 -- and is shown as `inequality`.
 
 SET enable_analyzer = 1;
