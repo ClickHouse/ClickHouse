@@ -3,8 +3,8 @@
 # Tag no-replicated-database: ON CLUSTER is not allowed
 
 # A legacy `toTime` hidden in a SQL UDF body must be inlined and canonicalized before the standalone
-# UPDATE / DELETE query text is enqueued, so a replaying host without this session's settings (the
-# oldest DDL entry format carries none) resolves the same expression. The UDF name includes the test
+# UPDATE / DELETE query text is enqueued, so a replaying host without this session's settings
+# resolves the same expression. The UDF name includes the test
 # database because SQL UDFs are server-global and this test runs concurrently with itself.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 UDF="totime_05051_${CLICKHOUSE_DATABASE}"
 
-${CLICKHOUSE_CLIENT} --use_legacy_to_time 1 --distributed_ddl_entry_format_version 1 \
+${CLICKHOUSE_CLIENT} --use_legacy_to_time 1 \
     --distributed_ddl_output_mode none --enable_lightweight_update 1 \
     --lightweight_delete_mode lightweight_update_force -q "
 CREATE FUNCTION ${UDF} AS x -> toUInt32(toTime(x));

@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
 #include <numeric>
+#include <set>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <fmt/ranges.h>
@@ -1180,24 +1181,48 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::unordered_map<std::string, FileTerminalState> & terminal_states,
     LoggerPtr log_)
 {
+    if (paths.empty())
+        return;
+
     const bool use_buckets_for_processing = buckets_num > 1;
     buckets_num = std::max<size_t>(buckets_num, 1);
+
+    /// Read watermarks only for buckets represented in this listing. Keep reads separate
+    /// per bucket so their size does not grow with the number of relevant buckets.
+    std::vector<Bucket> file_buckets;
+    std::set<Bucket> relevant_buckets;
+    if (use_buckets_for_processing)
+    {
+        file_buckets.reserve(paths.size());
+        for (const auto & path : paths)
+        {
+            const Bucket bucket = getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser);
+            file_buckets.push_back(bucket);
+            relevant_buckets.insert(bucket);
+        }
+    }
+    else
+    {
+        /// Without buckets all files belong to bucket 0.
+        file_buckets.assign(paths.size(), 0);
+        relevant_buckets.insert(0);
+    }
 
     /// When partitioning is not used, consider PartitionKey an empty string.
     using PartitionKey = std::string;
     std::map<Bucket, std::unordered_map<PartitionKey, std::string>> last_processed_file_map;
 
-    for (size_t i = 0; i < buckets_num; ++i)
+    for (const auto bucket : relevant_buckets)
     {
         auto processed_node_path = use_buckets_for_processing
-            ? getProcessedPathWithBucket(zk_path_, i)
+            ? getProcessedPathWithBucket(zk_path_, bucket)
             : getProcessedPathWithoutBucket(zk_path_);
 
         if (hasPartitioningMode(partitioning_mode))
         {
             std::unordered_map<PartitionKey, std::string> max_processed_files;
             if (getMaxProcessedFilesByPartition(max_processed_files, processed_node_path, log_, zookeeper_name_))
-                last_processed_file_map[i] = std::move(max_processed_files);
+                last_processed_file_map[bucket] = std::move(max_processed_files);
         }
         else
         {
@@ -1209,7 +1234,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 log_,
                 zookeeper_name_);
             if (state.last_processed_path.has_value())
-                last_processed_file_map[i][""] = *state.last_processed_path;
+                last_processed_file_map[bucket][""] = *state.last_processed_path;
         }
     }
 
@@ -1219,9 +1244,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
-        const auto bucket = use_buckets_for_processing
-            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
-            : 0;
+        const auto bucket = file_buckets[i];
         bool is_processed_by_pointer = false;
         if (!last_processed_file_map.empty())
         {

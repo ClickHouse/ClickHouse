@@ -1747,11 +1747,15 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(const std::vector<size_t> & processors)
 {
     std::lock_guard lock(mutex);
-    for (auto & [processor, holders] : bucket_holders)
+    for (const size_t processor : processors)
     {
+        auto holders_it = bucket_holders.find(processor);
+        if (holders_it == bucket_holders.end())
+            continue;
+        auto & holders = holders_it->second;
         std::string buckets_str;
         size_t released_holders = 0;
         for (auto it = holders->begin(); it != holders->end();)
@@ -2334,6 +2338,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
+            ++progress->acquired_files;
 
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
                 object_metadata && object_metadata->is_last_modified_known)

@@ -6,6 +6,7 @@
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/SecretString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
@@ -73,7 +74,7 @@ protected:
 
 private:
     String metadata_path;
-    ASTPtr database_engine_define;
+    SecretString database_engine_define;
     StoragePostgreSQL::Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
