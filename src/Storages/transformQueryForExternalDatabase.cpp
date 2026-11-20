@@ -1,6 +1,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Formats/FormatSettings.h>
 #include <Common/checkStackSize.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Access/Common/RowPolicyDefs.h>
@@ -461,57 +462,40 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
-/// Returns true if the AST node is a tuple: either an `ASTLiteral` holding a `Tuple` field
-/// (the parser's fast-path literal conversion) or an explicit `tuple(...)` function call.
-bool isTupleNode(const ASTPtr & node)
+/// The tuple structure of `node`: a `tuple(...)` call, or the external database's row constructor `row(...)`, as a `Tuple`
+/// of its arguments, a literal as its value, and `NULL` for any other expression, e.g. a column, which can be a tuple of any size.
+Field getTupleShape(const IAST & node)
 {
-    if (const auto * literal = node->as<ASTLiteral>())
-        return literal->value.getType() == Field::Types::Tuple;
-    if (const auto * function = node->as<ASTFunction>())
-        return function->name == "tuple";
-    return false;
-}
-
-/// The arguments of `node` if it is a `tuple(...)` call, otherwise nullptr.
-const ASTs * getTupleArguments(const IAST & node)
-{
+    if (const auto * literal = node.as<ASTLiteral>())
+        return literal->value;
     const auto * function = node.as<ASTFunction>();
-    if (!function || function->name != "tuple" || !function->arguments)
-        return nullptr;
-    return &function->arguments->children;
+    if (!function || !function->arguments)
+        return {};
+    const auto & arguments = function->arguments->children;
+    /// A constant of a query passed as a table argument arrives as `_CAST(<literal>, '<type>')`.
+    if (function->name == "_CAST" && arguments.size() == 2 && arguments[0]->as<ASTLiteral>())
+        return getTupleShape(*arguments[0]);
+    if (function->name != "tuple" && !equalsCaseInsensitive(function->name, "row"))
+        return {};
+    Tuple elements;
+    for (const auto & argument : arguments)
+        elements.push_back(getTupleShape(*argument));
+    return Field(std::move(elements));
 }
 
-/// Whether `value` can be one row of the `IN` key `key`: not if a `tuple(...)` position of the key holds a scalar other than
-/// `NULL` or a tuple of another size. Any other key position, e.g. a column or `row(...)`, can hold a tuple itself.
-bool canBeRowOfINKey(const Field & value, const IAST & key)
+/// Whether `value` can be one row of an `IN` key of the shape `key`: not if a tuple position of the key holds a scalar other
+/// than `NULL` or a tuple of another size.
+bool canBeRowOfINKey(const Field & value, const Field & key)
 {
-    const auto * key_elements = getTupleArguments(key);
-    if (!key_elements || value.isNull())
+    if (key.getType() != Field::Types::Tuple || value.isNull())
         return true;
-    if (value.getType() != Field::Types::Tuple || value.safeGet<Tuple>().size() != key_elements->size())
+    if (value.getType() != Field::Types::Tuple || value.safeGet<Tuple>().size() != key.safeGet<Tuple>().size())
         return false;
 
     const auto & row = value.safeGet<Tuple>();
+    const auto & key_elements = key.safeGet<Tuple>();
     for (size_t i = 0; i < row.size(); ++i)
-        if (!canBeRowOfINKey(row[i], *(*key_elements)[i]))
-            return false;
-    return true;
-}
-
-/// The same for a `value` in either tuple carrier. Any other expression, e.g. a function call, can be a tuple.
-bool canBeRowOfINKey(const IAST & value, const IAST & key)
-{
-    if (const auto * literal = value.as<ASTLiteral>())
-        return canBeRowOfINKey(literal->value, key);
-
-    const auto * key_elements = getTupleArguments(key);
-    const auto * row = getTupleArguments(value);
-    if (!key_elements || !row)
-        return true;
-    if (row->size() != key_elements->size())
-        return false;
-    for (size_t i = 0; i < row->size(); ++i)
-        if (!canBeRowOfINKey(*(*row)[i], *(*key_elements)[i]))
+        if (!canBeRowOfINKey(row[i], key_elements[i]))
             return false;
     return true;
 }
@@ -527,7 +511,7 @@ bool canBeRowOfINKey(const IAST & value, const IAST & key)
 ///   to the operator form and also formats as `(1, 'a')`.
 ///
 /// We only do this when:
-/// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`). For scalar IN like
+/// 1. The LHS of IN is a multi-column tuple (a `tuple(...)` or `row(...)` call, or a tuple constant). For scalar IN like
 ///    `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must NOT be wrapped.
 /// 2. The tuple represents a single row (its first element is not a tuple, or cannot be a row of the key).
 ///    For multi-row sets like `(id, name) IN ((1, 'a'), (2, 'b'))` the set is a tuple of tuples
@@ -538,8 +522,8 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
         || !function.arguments || function.arguments->children.size() != 2)
         return;
 
-    const auto * lhs_func = function.arguments->children[0]->as<ASTFunction>();
-    if (!lhs_func || lhs_func->name != "tuple")
+    const Field key = getTupleShape(*function.arguments->children[0]);
+    if (key.getType() != Field::Types::Tuple)
         return;
 
     auto & rhs = function.arguments->children[1];
@@ -550,7 +534,7 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
             return;
 
         const auto & tup = rhs_literal->value.safeGet<Tuple>();
-        if (!tup.empty() && (tup[0].getType() != Field::Types::Tuple || !canBeRowOfINKey(tup[0], *lhs_func)))
+        if (!tup.empty() && (tup[0].getType() != Field::Types::Tuple || !canBeRowOfINKey(tup[0], key)))
             rhs = makeASTFunction("", rhs);
         return;
     }
@@ -564,7 +548,10 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
         rhs->setParenthesized(false);
 
         const auto & elements = rhs_func->arguments->children;
-        if (!elements.empty() && (!isTupleNode(elements[0]) || !canBeRowOfINKey(*elements[0], *lhs_func)))
+        if (elements.empty())
+            return;
+        const Field first_element = getTupleShape(*elements[0]);
+        if (first_element.getType() != Field::Types::Tuple || !canBeRowOfINKey(first_element, key))
             rhs = makeASTFunction("", rhs);
     }
 }

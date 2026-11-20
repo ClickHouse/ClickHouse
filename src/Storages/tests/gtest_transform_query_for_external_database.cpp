@@ -467,6 +467,10 @@ TEST(TransformQueryForExternalDatabase, DateTimeConstantInColumnTimeZone)
         "SELECT a FROM test.table WHERE ((a, apply_type), create_time) IN (((1, 2), toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')), ((300, 2), toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo')))",
         R"(SELECT "a", "apply_type", "create_time" FROM "test"."table" WHERE (("a", "apply_type"), "create_time") IN (((1, 2), '2019-01-01 01:02:03')))",
         LiteralEscapingStyle::PostgreSQL);
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE ((1, 2), create_time) IN (((1, 2), toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')))",
+        R"(SELECT "create_time" FROM "test"."table" WHERE ((1, 2), "create_time") IN (((1, 2), '2019-01-01 01:02:03')))",
+        LiteralEscapingStyle::PostgreSQL);
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
@@ -1156,8 +1160,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
             "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
             IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
-    /// With a nested key the single row starts with a tuple, in either carrier. A position that is not a `tuple` on
-    /// either side, here `row(...)`, can hold a tuple in each row of a longer set.
+    /// With a nested key the single row starts with a tuple, in either carrier. `row(...)` is a tuple on either side.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT a FROM test.table WHERE ((a, b), c) IN (((1, 2), 3)))",
@@ -1175,9 +1178,35 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
         R"(SELECT a FROM test."table" WHERE (row(a, b), c) IN (((1, 2), 3), ((4, 5), 6)))");
     EXPECT_EQ(
         formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (ROW(a, b), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (ROW(a, b), c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (a, b) IN (row(1, 2), row(3, 4)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (a, b) IN (row(1, 2), row(3, 4)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
             "(SELECT a FROM test.table WHERE ((a, b), c) IN ((row(1, 2), 3), (row(4, 5), 6)))",
             IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT a FROM test."table" WHERE ((a, b), c) IN ((row(1, 2), 3), (row(4, 5), 6)))");
+    /// A constant tuple key or position of the key, as a literal or wrapped in the analyzer's `_CAST`.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((1, 2), 3) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), 3) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((1, 2), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (_CAST((1, 2), 'Tuple(UInt8, UInt8)'), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), c) IN (((1, 2), 3)))");
     /// A row value is also valid as an operand of a comparison.
     EXPECT_EQ(
         formatQueryTableArgument(state,
