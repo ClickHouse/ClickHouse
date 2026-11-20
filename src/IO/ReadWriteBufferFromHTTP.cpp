@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
+#include <Common/Base64.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -76,7 +77,7 @@ Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
 {
     Poco::Net::HTTPRequest request;
     for (const auto & [header, value] : entries)
-        request.set(header, value);
+        request.set(header, String(value));
     return requestCredentialSecrets(request);
 }
 
@@ -137,7 +138,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setContentLength(0);    /// No callback - no body
 
     for (const auto & [header, value] : http_header_entries)
-        request.set(header, value);
+        request.set(header, String(value));
 
     if (range)
     {
@@ -430,6 +431,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             callable();
             return;
         }
+        catch (Poco::Net::MalformedMessageException & e)
+        {
+            /// The server has sent a response that violates the protocol, e.g. a bare CR inside a
+            /// header field. It will send the same response again. A response cut short is
+            /// `MessageException` and is retried. A header that exceeds a limit is reported as
+            /// `LIMIT_EXCEEDED` by `receiveHTTPResponse` and is not retried either.
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
         catch (Poco::Net::NetException & e)
         {
             error_message = e.displayText();
@@ -450,6 +462,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (Exception & e)
         {
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
+        catch (Poco::SyntaxException & e)
+        {
+            /// E.g. a status code that is not a number, or a malformed redirect location.
             is_retriable = false;
 
             error_message = e.displayText();
@@ -506,16 +526,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (on_retry)
                 on_retry();
 
-            if (!mute_logging)
-                LOG_TRACE(log,
-                         "Failed to make request to '{}'{}. "
-                         "Error: {}. "
-                         "Failed at try {}/{}. "
-                         "Will retry with current backoff wait is {}/{} ms.",
-                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
-                         error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+            /// The retries are logged even for a request whose final error is muted: they can take
+            /// minutes, and the user must see what the query is waiting for.
+            LOG_TRACE(log,
+                     "Failed to make request to '{}'{}. "
+                     "Error: {}. "
+                     "Failed at try {}/{}. "
+                     "Will retry with current backoff wait is {}/{} ms.",
+                     maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
+                     error_message,
+                     attempt, read_settings.http_settings.max_tries,
+                     milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
             const bool cancelled = waitBeforeRetry(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
@@ -1079,7 +1100,17 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
 }
 
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBasicCredentials(std::string_view user_, std::string_view password_)
+{
+    if (user_.empty())
+        return createWithBearerToken(/*bearer_token_=*/ "");
+
+    BuilderRWBufferFromHTTP builder = *this;
+    builder.http_header_entries.emplace_back("Authorization", "Basic " + base64Encode(fmt::format("{}:{}", user_, password_)));
+    return builder.createWithBearerToken(/*bearer_token_=*/ "");
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(std::string_view bearer_token_)
 {
     /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
     static const Poco::Net::HTTPBasicCredentials no_credentials;
@@ -1087,7 +1118,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const 
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
+    std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -1106,7 +1137,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     /// the same builder can be reused without carrying over a stale `Authorization` header.
     HTTPHeaderEntries header_entries = http_header_entries;
     if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
+        header_entries.emplace_back("Authorization", fmt::format("Bearer {}", bearer_token_));
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
