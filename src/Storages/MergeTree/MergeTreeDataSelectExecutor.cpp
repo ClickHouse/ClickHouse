@@ -2881,7 +2881,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 reader.read(index_mark, current_granule_num, granules);
                 ++current_granule_num;
                 /// Evaluate the condition once at least DEFAULT_BLOCK_SIZE values are read, so a killed query stops between batches.
-                if (granules->size() >= DEFAULT_BLOCK_SIZE)
+                if (granules->numValues() >= DEFAULT_BLOCK_SIZE)
                     filter_granules();
             }
         }

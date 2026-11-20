@@ -134,7 +134,7 @@ struct IMergeTreeIndexBulkGranules
     virtual ~IMergeTreeIndexBulkGranules() = default;
     virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
     /// Number of values read so far, i.e. rows an index condition is evaluated over.
-    virtual size_t size() const = 0;
+    virtual size_t numValues() const = 0;
 };
 
 using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
