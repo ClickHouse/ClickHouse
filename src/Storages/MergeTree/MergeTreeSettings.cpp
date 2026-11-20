@@ -25,7 +25,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <Interpreters/DatabaseCatalog.h>
+
 #include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -64,6 +69,8 @@ setting). The value specified when the table is created overrides the global
 value for this setting.
 
 For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
@@ -861,10 +868,11 @@ ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
 ```
 )", 0, \
         {"25.10", "", "", "New setting."}) \
-    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 8192, R"(
 Default dictionary block size for text indexes.
 Can be overridden by explicit `dictionary_block_size` index argument.
 )", 0, \
+        {"26.11", 512, 8192, "Increase the default dictionary block size of text indexes"}, \
         {"26.6", 512, 512, "New setting"}) \
     DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
 Default front-coding compression for text index dictionary blocks.
@@ -2549,8 +2557,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -3411,6 +3419,16 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
             res.emplace_back(String{setting.getName()}, value);
     }
     return res;
+}
+
+bool MergeTreeSettings::isSystemDatabaseForDisks(const String & database_name)
+{
+#if CLICKHOUSE_CLOUD
+    /// The tables of the former local `system` database keep its exemption.
+    if (SharedSystemDatabase::isLocalDatabase(database_name))
+        return true;
+#endif
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE;
 }
 
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
