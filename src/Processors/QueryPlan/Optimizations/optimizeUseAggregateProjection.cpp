@@ -1221,8 +1221,8 @@ static Block makeBlockFromStatistics(
 
         auto column = ColumnAggregateFunction::create(function);
         Arena & arena = column->createOrGetArena();
-        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
-        function->create(place);
+        column->insertDefault();
+        auto * place = column->getData().back();
 
         if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
         {
@@ -1244,7 +1244,6 @@ static Block makeBlockFromStatistics(
             function->add(place, &value_column_ptr, 0, &arena);
         }
 
-        column->insertFrom(place);
         block.insert(ColumnWithTypeAndName(
             std::move(column),
             std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
@@ -1328,6 +1327,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
         return reject_all(can_use.error());
+
+    /// The rows of an aggregate projection are not rows of the table, which a lazy read could read more columns of.
+    if (reading->hasLazilyReadColumns())
+        return reject_all("some columns of the read are read lazily by their part offsets");
 
     /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
     /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
@@ -1669,8 +1672,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
-    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
-        && !optimization_settings.is_parallel_replicas_initiator_with_projection_support;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -1787,7 +1790,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             short_circuited_with_prepared_source = true;
         }
 
-        if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+        if (has_parent_parts && is_local_plan_for_initiator)
             fallbackToLocalProjectionReading(projection_reading);
     }
 
