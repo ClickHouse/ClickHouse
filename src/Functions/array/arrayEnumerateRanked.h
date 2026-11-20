@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -326,6 +327,11 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     VectorWithMemoryTracking<size_t> columns_indices(columns.size());
 
+    /// When every argument has the depth we look at, the row of an element in every column is the element itself.
+    std::optional<ColumnsHashing::Hash128InOrder> element_hashes;
+    if (std::ranges::all_of(arrays_depths.depths, [&](DepthType depth) { return depth == depth_to_look; }))
+        element_hashes.emplace(columns, offsets.empty() ? 0 : offsets.back());
+
     /// For each array at the depth we want to look.
     ColumnArray::Offset prev_off = 0;
     for (size_t off : offsets)
@@ -368,7 +374,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
             for (size_t col_n = 0; col_n < columns.size(); ++col_n)
                 columns_indices[col_n] = indices_by_depth[arrays_depths.depths[col_n] - 1];
 
-            auto hash = hash128depths(columns_indices, columns);
+            auto hash = element_hashes ? element_hashes->get(j) : hash128depths(columns_indices, columns);
 
             if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
             {

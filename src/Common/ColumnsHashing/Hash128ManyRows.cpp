@@ -1,4 +1,4 @@
-#include <Interpreters/HashJoin/KeyGetter.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -15,7 +15,7 @@
 #include <typeinfo>
 
 
-namespace DB
+namespace DB::ColumnsHashing
 {
 
 namespace
@@ -113,7 +113,7 @@ void copyValues(UInt8 * __restrict dst, size_t row_size, const UInt8 * __restric
 
 }
 
-bool HashedJoinKey::addParts(const IColumn & column, std::vector<Part> & parts)
+bool Hash128ManyRows::addParts(const IColumn & column, std::vector<Part> & parts)
 {
     /// `ColumnTuple::updateHashWithValue` hashes its elements one after another.
     if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
@@ -151,7 +151,7 @@ bool HashedJoinKey::addParts(const IColumn & column, std::vector<Part> & parts)
     return false;
 }
 
-HashedJoinKey::HashedJoinKey(const ColumnRawPtrs & key_columns_)
+Hash128ManyRows::Hash128ManyRows(const ColumnRawPtrs & key_columns_)
     : key_columns(key_columns_)
 {
     bool can_copy = hashes_many_rows;
@@ -182,12 +182,12 @@ HashedJoinKey::HashedJoinKey(const ColumnRawPtrs & key_columns_)
         layout = Layout::FixedRows;
 }
 
-void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip)
+void Hash128ManyRows::buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip)
 {
     if (layout == Layout::PerRow)
     {
         for (size_t row = begin; row < end; ++row)
-            if (!skip[row])
+            if (!skip || !skip[row])
                 keys[row - begin] = build(row);
     }
     else
@@ -200,8 +200,9 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
             UInt128 * chunk_keys = keys + (chunk_begin - begin);
             /// 16 bits, so that the counting loop adds 16-bit lanes.
             UInt16 num_skipped = 0;
-            for (size_t row = chunk_begin; row < chunk_end; ++row)
-                num_skipped += skip[row] != 0;
+            if (skip)
+                for (size_t row = chunk_begin; row < chunk_end; ++row)
+                    num_skipped += skip[row] != 0;
 
             /// The kernel hashes every row it is given. When few rows are skipped, hashing them too costs less than
             /// listing the other rows.
@@ -239,12 +240,12 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     for (size_t row = begin; row < end; ++row)
-        chassert(skip[row] || keys[row - begin] == build(row));
+        chassert((skip && skip[row]) || keys[row - begin] == build(row));
 #endif
 }
 
 template <typename RowAt>
-void HashedJoinKey::buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
+void Hash128ManyRows::buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
 {
     buffer.resize(num_rows * fixed_size);
     size_t part_offset = 0;
@@ -257,7 +258,7 @@ void HashedJoinKey::buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __re
 }
 
 template <typename RowAt>
-void HashedJoinKey::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
+void Hash128ManyRows::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
 {
     /// `fixed_size` has the fixed-width parts that are not `Nullable`.
     auto row_size = [&](size_t row)
@@ -339,6 +340,25 @@ void HashedJoinKey::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restric
         sipHash128PaddedStrings(reinterpret_cast<const char *>(buffer.data()), offsets, count, keys + first);
         first += count;
     }
+}
+
+Hash128InOrder::Hash128InOrder(const ColumnRawPtrs & key_columns, size_t end_, const UInt8 * skip_)
+    : key(key_columns)
+    , skip(skip_)
+    , end(end_)
+{
+    if (key.buildsManyRowsAtOnce())
+        hashes = std::make_unique<UInt128[]>(chunk_rows);
+}
+
+UInt128 Hash128InOrder::hashNext(size_t row)
+{
+    if (row < ready_begin + ready_size || row >= end)
+        return key.build(row);
+    ready_begin = row;
+    ready_size = std::min(chunk_rows, end - row);
+    key.buildRange(row, row + ready_size, hashes.get(), skip);
+    return hashes[0];
 }
 
 }

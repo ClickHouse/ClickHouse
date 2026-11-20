@@ -8,6 +8,7 @@
     <query disabled="1">SELECT count() FROM json_values WHERE NOT ignore(sipHash64(j)) SETTINGS max_threads = 1</query>
     <!-- Aggregate states are hashed by serializing each state. -->
     <query>SELECT uniqExact(st) FROM states SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM numbers(20000000) WHERE NOT ignore(sipHash128(number::Variant(UInt64, String)))</query>
 
     <drop_query>DROP TABLE IF EXISTS states</drop_query>
 </test>

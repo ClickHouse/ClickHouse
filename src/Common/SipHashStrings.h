@@ -17,3 +17,19 @@ void sipHash128PaddedStringRows(const char * chars, const UInt64 * offsets, cons
 
 /// The same for strings of `n` bytes, string `r` at `chars + r * n`.
 void sipHash128PaddedFixedStringRows(const char * chars, size_t n, const UInt32 * rows, size_t num_rows, UInt128 * hashes);
+
+/// The same two with `sipHash64`.
+void sipHash64PaddedStrings(const char * chars, const UInt64 * offsets, size_t num_rows, UInt64 * hashes);
+void sipHash64PaddedFixedStrings(const char * chars, size_t n, size_t num_rows, UInt64 * hashes);
+
+/// Sets `hashes[i]` to `sipHash128` of the 32 bytes of `hashes[i]` and `rhs[i]`, each stored little-endian, for `i` in
+/// [0, num_rows): how `sipHash128` combines the hashes of several values.
+void sipHash128Combine(UInt128 * hashes, const UInt128 * rhs, size_t num_rows);
+void sipHash128CombineWith(UInt128 * hashes, UInt128 rhs, size_t num_rows);
+
+/// The same with `sipHash64` of the 16 bytes of two 64-bit hashes.
+void sipHash64Combine(UInt64 * hashes, const UInt64 * rhs, size_t num_rows);
+void sipHash64CombineWith(UInt64 * hashes, UInt64 rhs, size_t num_rows);
+
+/// Whether the functions above hash several rows at a time. Where they do not, collecting rows for them gains nothing.
+bool sipHashManyRowsIsVectorized();
