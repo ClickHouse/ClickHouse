@@ -465,6 +465,8 @@ SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read
         return blocked("reading from a projection is not supported");
     if (read.isQueryWithFinal())
         return blocked("FINAL is not supported");
+    if (read.getQueryInfo().isStream())
+        return blocked("STREAM is not supported");
     if (read.isQueryWithSampling())
         return blocked("SAMPLE is not supported");
     if (!read.getReaderSettings().apply_deleted_mask)
