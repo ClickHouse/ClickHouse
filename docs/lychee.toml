@@ -14,7 +14,6 @@ exclude_path = [
   "^\\./changelogs/",
   "^\\./_templates/",
   "^\\./_includes/",
-  "^\\./_migration/",
   # Site source assets (redirects.json, favicon, logos, customization JS) that
   # are referenced by docs.json, not doc pages to link-check.
   "^\\./_site/",
