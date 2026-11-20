@@ -357,6 +357,7 @@ public:
             std::shared_ptr<AWSAssumeRoleClient> client_);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -381,6 +382,7 @@ private:
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;
     LoggerPtr logger;
+    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(

@@ -103,7 +103,7 @@ std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopK
         /*explicit_sorting_required_for_aggregation_in_order=*/false);
 }
 
-Aggregator::Params::TopKParams makeTopK(size_t key_columns, std::vector<int> directions, std::vector<int> nulls_directions)
+Aggregator::Params::TopKParams makeTopK(size_t key_columns, VectorWithMemoryTracking<int> directions, VectorWithMemoryTracking<int> nulls_directions)
 {
     Aggregator::Params::TopKParams top_k;
     top_k.k = 7;

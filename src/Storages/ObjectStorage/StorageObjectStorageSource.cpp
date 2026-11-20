@@ -66,6 +66,7 @@
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
@@ -194,10 +195,7 @@ namespace
 
     String getPathComponentForGlobMatching(const String & path)
     {
-        const auto position = path.find_first_of("?#");
-        if (position == String::npos)
-            return path;
-        return path.substr(0, position);
+        return String(stripQueryAndFragment(path));
     }
 
     /// Whether the path contains a hidden segment that starts at or past the given offset.
@@ -803,7 +801,7 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
         const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
         /// NUL cannot occur in a path, so it separates the two unambiguously.
         const String hashed = sipHash128String(identifier + '\0' + qualified_path);
-        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+        identifier = String(stripQueryAndFragment(identifier)) + "#storage=" + hashed;
     }
     return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
 }
@@ -2241,6 +2239,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
+        /// The header of a file with another schema has the names of that schema.
+        if (!schema_changed)
+            input_format->setMapColumnsReadByOneSide(
+                read_from_format_info.map_columns_read_by_keys, read_from_format_info.map_columns_read_by_values);
 
         if (need_only_count)
             input_format->needOnlyCount();
