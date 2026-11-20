@@ -2294,11 +2294,27 @@ to apply it to existing parts. `Compact` parts always use adaptive granularity.
 Compress in memory values of index granularity if it is possible
 )", 0) \
     DECLARE(Int64, merge_with_ttl_timeout, 3600 * 4, R"(
-Minimum delay in seconds before repeating a merge with delete TTL.
+Minimum delay in seconds before repeating a merge with delete TTL in the same partition.
+With `persist_ttl_merge_times`, the delay is kept after a server restart too.
 )", 0) \
     DECLARE(Int64, merge_with_recompression_ttl_timeout, 3600 * 4, R"(
-Minimum delay in seconds before repeating a merge with recompression TTL.
+Minimum delay in seconds before repeating a merge with recompression TTL in the same partition.
+With `persist_ttl_merge_times`, the delay is kept after a server restart too.
 )", 0) \
+    DECLARE(Bool, persist_ttl_merge_times, false, R"(
+Store the time of the last merge with delete TTL and of the last merge with recompression TTL in the
+`ttl.txt` file of the parts, and count `merge_with_ttl_timeout` and `merge_with_recompression_ttl_timeout`
+from it. Without it, the time is kept only in memory: after a server restart every partition with expired
+rows gets a TTL merge at once, and every replica of a `ReplicatedMergeTree` table counts the timeout
+from the TTL merges it assigned itself.
+
+When disabled, the stored times are ignored, and the merges do not carry them over to the new parts.
+
+Enable it only after all replicas are upgraded to a version that knows this setting: the older versions
+write `ttl.txt` without the time, so a TTL merge executed by them is not byte-identical to the same merge
+executed with this setting, and the replica that commits it later has to fetch the merged part.
+)", 0, \
+        {"26.12", false, false, "New setting to store the time of the last TTL merge in the parts, so that `merge_with_ttl_timeout` survives a restart."}) \
     DECLARE(Bool, ttl_only_drop_parts, false, R"(
 Controls whether data parts are fully dropped in MergeTree tables when all
 rows in that part have expired according to their `TTL` settings.

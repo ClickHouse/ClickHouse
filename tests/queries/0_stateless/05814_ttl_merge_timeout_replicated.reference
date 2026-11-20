@@ -1,0 +1,8 @@
+TTL merge assigned by r1	t_ttl_merge_timeout_r1	1	0
+TTL merge assigned by r1	t_ttl_merge_timeout_r2	1	0
+merge assigned by r2	t_ttl_merge_timeout_r1	1	0
+merge assigned by r2	t_ttl_merge_timeout_r2	1	0
+2
+11
+2
+11

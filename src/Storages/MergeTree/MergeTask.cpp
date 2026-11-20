@@ -145,6 +145,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
+    extern const MergeTreeSettingsBool persist_ttl_merge_times;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool share_nested_offsets;
@@ -681,6 +682,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
     }
+
+    /// `time_of_merge` is the same on all replicas; without the setting, drop the times to match older versions byte by byte.
+    auto & new_part_ttl_infos = global_ctx->new_data_part->ttl_infos;
+    if (!(*global_ctx->data_settings)[MergeTreeSetting::persist_ttl_merge_times])
+    {
+        new_part_ttl_infos.last_delete_ttl_merge_time = 0;
+        new_part_ttl_infos.last_recompression_ttl_merge_time = 0;
+    }
+    else if (global_ctx->future_part->merge_type == MergeType::TTLDelete && ctx->need_remove_expired_values)
+        new_part_ttl_infos.last_delete_ttl_merge_time = std::max(new_part_ttl_infos.last_delete_ttl_merge_time, global_ctx->time_of_merge);
+    else if (global_ctx->future_part->merge_type == MergeType::TTLRecompress)
+        new_part_ttl_infos.last_recompression_ttl_merge_time = std::max(new_part_ttl_infos.last_recompression_ttl_merge_time, global_ctx->time_of_merge);
 
     global_ctx->merge_list_element_ptr->is_removing_expired_values.store(
         ctx->need_remove_expired_values, std::memory_order_relaxed);
@@ -1312,9 +1325,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// Reset all ttl_infos and mark table TTL as finished, matching what
         /// TTLTransform::finalize produces in the normal all_data_dropped path:
-        /// it clears everything with `data_part->ttl_infos = {}`, then
+        /// it clears the bounds with `data_part->ttl_infos.resetBounds()`, then
         /// TTLDeleteAlgorithm::finalize sets table_ttl = {0, 0, finished}.
-        global_ctx->new_data_part->ttl_infos = {};
+        global_ctx->new_data_part->ttl_infos.resetBounds();
         global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
         /// No rows means no projection data to merge or rebuild, and the bookkeeping that would

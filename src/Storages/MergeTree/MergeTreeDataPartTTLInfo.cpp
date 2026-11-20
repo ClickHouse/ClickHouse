@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 void MergeTreeDataPartTTLInfo::update(time_t time)
 {
     if (time && (!min || time < min))
@@ -63,6 +68,17 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl);
+
+    last_delete_ttl_merge_time = std::max(last_delete_ttl_merge_time, other_infos.last_delete_ttl_merge_time);
+    last_recompression_ttl_merge_time = std::max(last_recompression_ttl_merge_time, other_infos.last_recompression_ttl_merge_time);
+}
+
+void MergeTreeDataPartTTLInfos::resetBounds()
+{
+    MergeTreeDataPartTTLInfos reset;
+    reset.last_delete_ttl_merge_time = last_delete_ttl_merge_time;
+    reset.last_recompression_ttl_merge_time = last_recompression_ttl_merge_time;
+    *this = std::move(reset);
 }
 
 
@@ -142,6 +158,21 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         const JSON & rows_where = json["rows_where"];
         fill_ttl_info_map(rows_where, rows_where_ttl, true);
     }
+
+    /// The versions that do not know these keys skip them; a time out of the `DateTime` range is malformed metadata.
+    auto read_merge_time = [&json](const char * key) -> time_t
+    {
+        if (!json.has(key))
+            return 0;
+
+        const UInt64 time = json[key].getUInt();
+        if (time > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value {} of `{}` in ttl.txt", time, key);
+        return static_cast<time_t>(time);
+    };
+
+    last_delete_ttl_merge_time = read_merge_time("last_delete_ttl_merge");
+    last_recompression_ttl_merge_time = read_merge_time("last_recompression_ttl_merge");
 }
 
 
@@ -227,7 +258,28 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
     }
 
     if (!rows_where_ttl.empty())
+    {
         write_infos(rows_where_ttl, "rows_where", is_first);
+        is_first = false;
+    }
+
+    /// Written only when set, so that the file of a part that no TTL merge produced stays the same as before.
+    auto write_time = [&out, &is_first](time_t time, const String & key)
+    {
+        if (!time)
+            return;
+
+        if (!is_first)
+            writeString(",", out);
+        is_first = false;
+
+        writeDoubleQuotedString(key, out);
+        writeString(":", out);
+        writeIntText(time, out);
+    };
+
+    write_time(last_delete_ttl_merge_time, "last_delete_ttl_merge");
+    write_time(last_recompression_ttl_merge_time, "last_recompression_ttl_merge");
 
     writeString("}", out);
 }

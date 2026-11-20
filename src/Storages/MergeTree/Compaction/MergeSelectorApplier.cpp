@@ -18,11 +18,14 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_parts_to_merge_at_once;
+    extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
+    extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
     extern const MergeTreeSettingsUInt64 merge_selector_blurry_base_scale_factor;
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_partition_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsBool persist_ttl_merge_times;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
@@ -75,8 +78,61 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
     return choices;
 }
 
+/// Delete and recompression due times of the partitions of `ctx.ranges`: the in-memory ones, postponed by the stored times.
+std::pair<PartitionIdToTTLs, PartitionIdToTTLs> getTTLMergeDueTimes(const ChooseContext & ctx)
+{
+    const Int64 delete_timeout = ctx.merge_tree_settings[MergeTreeSetting::merge_with_ttl_timeout];
+    const Int64 recompress_timeout = ctx.merge_tree_settings[MergeTreeSetting::merge_with_recompression_ttl_timeout];
+
+    std::pair<PartitionIdToTTLs, PartitionIdToTTLs> due_times;
+
+    auto postpone = [](PartitionIdToTTLs & result, const PartitionIdToTTLs & in_memory, const String & partition_id,
+                       time_t last_merge_time, Int64 timeout)
+    {
+        time_t due_time = 0;
+        if (auto it = in_memory.find(partition_id); it != in_memory.end())
+            due_time = it->second;
+
+        if (last_merge_time)
+            due_time = std::max(due_time, static_cast<time_t>(last_merge_time + timeout));
+
+        if (due_time)
+            result[partition_id] = due_time;
+    };
+
+    /// Only the partitions of the ranges: `getPartitionsThatMayBeMerged` calls this once per partition.
+    for (const auto & range : ctx.ranges)
+    {
+        chassert(!range.empty());
+        const String & partition_id = range.front().info.getPartitionId();
+
+        time_t last_delete_merge_time = 0;
+        time_t last_recompression_merge_time = 0;
+        if (auto it = ctx.partitions_stats.find(partition_id); it != ctx.partitions_stats.end())
+        {
+            last_delete_merge_time = it->second.last_delete_ttl_merge_time;
+            last_recompression_merge_time = it->second.last_recompression_ttl_merge_time;
+        }
+
+        postpone(due_times.first, ctx.next_delete_times, partition_id, last_delete_merge_time, delete_timeout);
+        postpone(due_times.second, ctx.next_recompress_times, partition_id, last_recompression_merge_time, recompress_timeout);
+    }
+
+    return due_times;
+}
+
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
+    /// Without `persist_ttl_merge_times`, only the due times kept in memory postpone the TTL merges.
+    std::pair<PartitionIdToTTLs, PartitionIdToTTLs> persisted_times;
+    const bool persist_ttl_merge_times = ctx.merge_tree_settings[MergeTreeSetting::persist_ttl_merge_times];
+    if (persist_ttl_merge_times)
+        persisted_times = getTTLMergeDueTimes(ctx);
+
+    const auto & [persisted_delete_times, persisted_recompress_times] = persisted_times;
+    const PartitionIdToTTLs & next_delete_times = persist_ttl_merge_times ? persisted_delete_times : ctx.next_delete_times;
+    const PartitionIdToTTLs & next_recompress_times = persist_ttl_merge_times ? persisted_recompress_times : ctx.next_recompress_times;
+
     /// Drop parts - 1 priority
     if (!ctx.merge_constraints.empty())
     {
@@ -91,7 +147,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Delete rows - 2 priority
     if (!ctx.merge_constraints.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
@@ -104,7 +160,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// expired column is to rewrite the part - so this selector runs regardless of that setting.
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
     {
-        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLColumnDeleteMergeSelector delete_ttl_selector(next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
@@ -113,7 +169,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Recompression - 4 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
-        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
+        TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, ctx.current_time);
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
