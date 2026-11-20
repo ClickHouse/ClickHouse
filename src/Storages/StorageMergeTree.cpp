@@ -250,11 +250,6 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
-            getStorageID().getNameForLogs());
-
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -460,16 +455,6 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
-    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
-    if (hasUniqueKey())
-    {
-        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-        UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
-            res += uk_read_snapshot->liveRows(*part);
-        return res;
-    }
-
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -490,15 +475,8 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    /// Guarded, so a plain count on a table without a unique key does not start a transaction
-    /// as a side effect.
-    DeleteBitmapSnapshotPtr uk_read_snapshot;
-    if (hasUniqueKey())
-        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-    auto parts = uk_read_snapshot
-        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
-        : getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
+    auto parts = getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -523,11 +501,6 @@ SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     assertNotReadonly();
-
-    if (metadata_snapshot->hasUniqueKey() && !support_transaction)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
-            getStorageID().getNameForLogs());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
@@ -2666,11 +2639,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
             mutation_ids.push_back(it->second.file_name);
             last_mutation_to_apply = it;
-
-            /// `MutateTask` removes a dropped (or cleared) column, index or projection from the result part after all
-            /// other commands, so a later mutation that writes it again must not be squashed into the same task.
-            if (std::ranges::any_of(*single_mutation_commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
-                break;
         }
 
         chassert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
@@ -3498,30 +3466,6 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     return part;
 }
 
-void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
-{
-    /// Merges and mutations select the parts under this mutex, so the part cannot be selected while it is detached.
-    std::lock_guard lock(currently_processing_in_background_mutex);
-
-    /// A merge or a mutation that is already running has read the data of the part, and the resulting part
-    /// replaces it. The in-memory record of the failed files still fails the inserts that rely on them.
-    if (part->getState() != DataPartState::Active || currently_merging_mutating_parts.contains(part))
-    {
-        LOG_WARNING(log, "The fsync of part {} failed, but it is not detached, because it is {}",
-            part->name, currently_merging_mutating_parts.contains(part) ? "being merged or mutated" : part->stateString());
-        return;
-    }
-
-    /// The deduplication record is removed first: if detaching fails afterwards, a retry of the insert duplicates the data,
-    /// but if it were the other way around, a retry would be acknowledged without the data.
-    /// The removal is synced before detaching for the same reason: otherwise, after a power loss, the detach could be durable
-    /// while the old deduplication record is restored. If the sync fails, the part is not detached.
-    if (deduplication_log)
-        deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
-
-    forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
-}
-
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
@@ -3667,22 +3611,22 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
         if (!not_removed_parts.empty())
         {
             /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
-            auto warning = PreformattedMessage::create("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
                 " parts after a restart, which can make the table fail to load. Detach them manually.",
                 fmt::join(not_removed_parts, ", "));
-            LOG_ERROR(log, warning);
+            LOG_ERROR(log, "{}", warning);
             try
             {
                 throw;
             }
             catch (Exception & e)
             {
-                e.addMessage(warning.text);
+                e.addMessage(warning);
                 throw;
             }
             catch (...)
             {
-                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning.text);
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
             }
         }
     }
@@ -4244,7 +4188,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         {
             .txn = local_context->getCurrentTransaction(),
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
         if (replace)
         {
@@ -4460,7 +4403,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
@@ -4750,7 +4692,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
+    if (!hasDataMutations() && !hasAlterMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)

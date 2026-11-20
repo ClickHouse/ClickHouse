@@ -108,20 +108,12 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
-    /// If the codec is selected by the data type, which was not known when it was created (`FirstApplicable` made
-    /// without a data type, or a chain of codecs with it). Such a codec is created again from `getFullCodecDescription`
-    /// once the data type is known.
-    virtual bool dependsOnDataType() const { return false; }
-
     // Returns a string with a high level codec description.
     virtual String getDescription() const = 0;
 
 protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
-    /// Delegates every operation to the codec it selected.
-    friend class CompressionCodecFirstApplicable;
 
     /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
     /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.

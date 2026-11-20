@@ -96,9 +96,6 @@ bool isInitiatorOnlySettingName(std::string_view name);
 /// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 
-/// Like `stripInitiatorOnlySettingsFromQuery`, for the text of a distributed DDL query.
-void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query);
-
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
@@ -170,7 +167,8 @@ struct LocalPlanParallelReplicasInfo
 /// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
 /// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator.
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan);
+/// Returns nothing and leaves the plan intact unless the plan has both a local part and a remote reading step.
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query

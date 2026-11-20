@@ -9,6 +9,7 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
@@ -35,6 +36,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 class Exception;
 
 /// Helper functions for formatted and binary output.
@@ -60,8 +66,8 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 /// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
 inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
 {
-    /// Unlike `WriteBuffer::write`, it does not check that the buffer is neither finalized nor canceled, which
-    /// saves a load per value in loops that write many small values of a size known at compile time.
+    /// WriteBuffer::write is defined out of line and copies a run-time size, while __builtin_memcpy
+    /// of a size the caller knows at compile time lowers to a couple of stores.
     if (size <= buf.available()) [[likely]]
     {
         __builtin_memcpy(buf.position(), input, size);
@@ -363,48 +369,49 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             pos = next_pos;
-            /// One `write` of a constant size per escape sequence keeps this function small enough to be inlined.
-            char escaped[2] = {'\\', 0};
-            size_t escaped_size = 2;
             switch (*pos)
             {
                 case quote_character:
+                {
                     if constexpr (escape_quote_with_quote)
-                        escaped[0] = quote_character;
-                    escaped[1] = quote_character;
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 case '\b':
-                    escaped[1] = 'b';
+                    writeChar('\\', buf);
+                    writeChar('b', buf);
                     break;
                 case '\f':
-                    escaped[1] = 'f';
+                    writeChar('\\', buf);
+                    writeChar('f', buf);
                     break;
                 case '\n':
-                    escaped[1] = 'n';
+                    writeChar('\\', buf);
+                    writeChar('n', buf);
                     break;
                 case '\r':
-                    escaped[1] = 'r';
+                    writeChar('\\', buf);
+                    writeChar('r', buf);
                     break;
                 case '\t':
-                    escaped[1] = 't';
+                    writeChar('\\', buf);
+                    writeChar('t', buf);
                     break;
                 case '\0':
-                    escaped[1] = '0';
+                    writeChar('\\', buf);
+                    writeChar('0', buf);
                     break;
                 case '\\':
                     if constexpr (escape_backslash_with_backslash)
-                        escaped[1] = '\\';
-                    else
-                        escaped_size = 1;
+                        writeChar('\\', buf);
+                    writeChar('\\', buf);
                     break;
                 default:
-                    escaped[0] = *pos;
-                    escaped_size = 1;
+                    writeChar(*pos, buf);
             }
-            if (escaped_size == 2)
-                buf.write(escaped, 2);
-            else
-                buf.write(escaped[0]);
             ++pos;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -1409,16 +1416,18 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    chassert(scale <= max_digits);
-    chassert(fractional_length <= max_digits);
+    /// The digits go to a buffer on the stack, so this is checked in the release build as well: the scale
+    /// of a `DecimalField` is not tied to a data type, and a value that slipped through a boundary without
+    /// validation must not write past the buffer.
+    if (scale > max_digits || fractional_length > max_digits) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: at most {} digits are supported",
+            scale, fractional_length, max_digits);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
 
-    /// The decimal point and the digits are written with one `write`.
-    char point_and_digits[max_digits + 1];
-    point_and_digits[0] = '.';
-    char * buf = point_and_digits + 1;
+    char buf[max_digits];
     if constexpr (sizeof(T) <= sizeof(UInt64))
         writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
@@ -1444,7 +1453,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             --length;
     }
 
-    ostr.write(point_and_digits, length + 1);
+    writeChar('.', ostr);
+    ostr.write(buf, length);
 }
 
 template <typename T>
@@ -1452,6 +1462,16 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
+    /// The scale of a `DecimalField` is not tied to a data type, so check it in the release build before any
+    /// arithmetic that depends on it: a scale wider than the type overflows `scaleMultiplier` and the rounding
+    /// below, and a scale of 2^31 or more becomes a negative exponent, which gives a division by zero.
+    constexpr size_t max_scale = DecimalUtils::max_precision<Decimal<T>>;
+    constexpr size_t max_fractional_length = std::numeric_limits<UInt256>::digits10;
+    if (scale > max_scale || fractional_length > max_fractional_length) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: the maximum scale is {} and at most {} fractional digits are supported",
+            scale, fractional_length, max_scale, max_fractional_length);
+
     /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
     /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
     /// fractional part alone turns 9.995 into 9.00 instead of 10.00.
@@ -1487,7 +1507,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     writeIntText(part, ostr);
 
     bool fractional_written = false;
-    if (rounded_scale || (fixed_fractional_length && fractional_length > 0))
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
