@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# - no-parallel: the test switches the `slowdown_system_parts_enumeration` failpoint, which is a server-global switch.
+# Tags: no-parallel, no-fasttest
+# - no-parallel, no-fasttest: the test switches the `slowdown_system_parts_enumeration` failpoint, which is a server-global switch.
 #
 # The size columns of `system.projections` walk the parts of every table, so the walk must stop on the time limit.
 # The failpoint sleeps 500 ms per part, counted by the `SystemPartsEnumerationSlowdownSleeps` profile event:
