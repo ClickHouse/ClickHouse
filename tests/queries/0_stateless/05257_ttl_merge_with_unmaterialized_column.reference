@@ -28,3 +28,6 @@ column_ttl	15	5
 column_ttl_control	15	5
 group_by_ttl	20	Vertical
 group_by_ttl_control	20	Vertical
+materialized_dependent	20
+table	100	20
+projection	100	20

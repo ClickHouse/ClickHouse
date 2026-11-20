@@ -153,3 +153,19 @@ OPTIMIZE TABLE group_by_ttl FINAL;
 OPTIMIZE TABLE group_by_ttl_control FINAL;
 SYSTEM FLUSH LOGS part_log;
 SELECT * FROM merged_parts WHERE table LIKE 'group_by_ttl%' ORDER BY table;
+
+-- Rows TTL due, TTL merges stopped, a stored `MATERIALIZED` column reading the unstored column: the merge
+-- keeps its stored value, as after any merge that follows a metadata-only `MODIFY COLUMN`, so the projection
+-- still agrees with the table, and keeps the expired rows.
+CREATE TABLE materialized_dependent (id UInt64, d DateTime, m UInt64 MATERIALIZED 100, PROJECTION p (SELECT m, count() GROUP BY m))
+ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 1 DAY
+SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+SYSTEM STOP TTL MERGES materialized_dependent;
+INSERT INTO materialized_dependent SELECT number, '2000-01-01' FROM numbers(10);
+INSERT INTO materialized_dependent SELECT number + 10, '2000-01-01' FROM numbers(10);
+ALTER TABLE materialized_dependent ADD COLUMN x UInt64;
+ALTER TABLE materialized_dependent MODIFY COLUMN m UInt64 MATERIALIZED x + 1;
+OPTIMIZE TABLE materialized_dependent FINAL;
+SELECT 'materialized_dependent', count() FROM materialized_dependent;
+SELECT 'table', m, count() FROM materialized_dependent GROUP BY m ORDER BY m SETTINGS optimize_use_projections = 0;
+SELECT 'projection', m, count() FROM materialized_dependent GROUP BY m ORDER BY m SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
