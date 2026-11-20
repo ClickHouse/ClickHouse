@@ -26,6 +26,7 @@ enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
 enforce, through the upper directory of an overlay of path given by a link: refused
 enforce, outside of an overlay of path whose upper directory is not here: isolated
+enforce, through the relative upper directory of an overlay of path: refused
 enforce, through a link outside of path: isolated
 enforce, through a link and .. to path: refused
 enforce, through a link in a directory writable by others: refused
@@ -167,6 +168,10 @@ echo "enforce, through the upper directory of an overlay of path given by a link
 mount -t tmpfs tmpfs "$DIR/overlay"
 echo "enforce, outside of an overlay of path whose upper directory is not here: $(run enforce "$DIR/pid_directory/server.pid" true "" "$DIR/merged")"
 umount "$DIR/overlay"
+umount "$DIR/merged"
+# The same with a relative upper directory, which its options keep, and which cannot be found.
+(cd "$DIR/overlay" && mount -t overlay overlay -o "lowerdir=lower,upperdir=upper,workdir=work" "$DIR/merged")
+echo "enforce, through the relative upper directory of an overlay of path: $(run enforce "$DIR/overlay/upper/run/server.pid" true "" "$DIR/merged")"
 umount "$DIR/merged"
 umount "$DIR/overlay"
 

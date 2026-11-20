@@ -1377,13 +1377,21 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
 
     const std::vector<MountInfo> mount_info = readMountInfo();
     /// What is written to an overlay goes to its upper directory.
+    std::optional<std::string> relative_upper_directory;
     auto get_upper_location = [&](const FilesystemLocation & location) -> std::optional<FilesystemLocation>
     {
         const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
-        /// The option keeps the path as it was given to `mount`, which can have symbolic links, or lead nowhere here, as the
-        /// upper directory of the root of a container, which is only on the host: then no path here leads to it by that name.
-        if (!upper || fs::path(*upper).is_relative())
+        if (!upper)
             return {};
+        /// The option keeps the path as it was given to `mount`. A relative one is relative to the working directory of
+        /// the process that mounted the overlay, which is not known.
+        if (fs::path(*upper).is_relative())
+        {
+            relative_upper_directory = *upper;
+            return {};
+        }
+        /// An absolute one can have symbolic links, or lead nowhere here, as the upper directory of the root of a
+        /// container, which is only on the host: then no path here leads to it by that name.
         std::error_code error;
         const fs::path upper_directory = fs::canonical(*upper, error);
         if (error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory)
@@ -1436,6 +1444,12 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
                 "remove another file. Move the pid file out of it",
                 pid_file, writable->path, writable->source);
     }
+    if (relative_upper_directory)
+        return fmt::format(
+            "the pid file {} cannot be checked against an overlay with the relative upper directory {}: the directory "
+            "it is relative to is not known, so code inside could write the pid file through the overlay. Mount the "
+            "overlay with an absolute upper directory",
+            pid_file, *relative_upper_directory);
     return {};
 }
 

@@ -8,6 +8,7 @@ enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
 enforce, through the upper directory of an overlay of path given by a link: refused
 enforce, outside of an overlay of path whose upper directory is not here: isolated
+enforce, through the relative upper directory of an overlay of path: refused
 enforce, through a link outside of path: isolated
 enforce, through a link and .. to path: refused
 enforce, through a link in a directory writable by others: refused
