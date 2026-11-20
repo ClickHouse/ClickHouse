@@ -10650,7 +10650,7 @@ writing the next one.
 Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
 writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.
 )", 0, \
-        {"26.11", 1_GiB, 1_GiB, "New setting."}) \
+        {"26.12", 1_GiB, 1_GiB, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
