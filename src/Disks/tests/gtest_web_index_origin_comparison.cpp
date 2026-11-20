@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -145,6 +146,21 @@ TEST(WebObjectStorage, BuildsURLWithRawQueryWithoutDoubleEncoding)
     ASSERT_EQ(
         object_storage.buildURLs("part1.tsv"),
         std::vector<std::string>{"http://example.com/data/part1.tsv?token=a%2Fb"});
+}
+
+TEST(WebIndexOriginComparison, KeepsAColonInTheFirstPathSegment)
+{
+    /// `Poco::URI` reads a colon in the first segment of a relative reference as a scheme, so parsing the key
+    /// before appending it dropped the segment: `data:2024/b.zip` became `.../2024/b.zip`. The access check
+    /// names the URL as written, so reading another object also stepped outside the path a filtered grant named.
+    DB::WebObjectStorage object_storage("http://example.com/", "", ::getContext().context);
+
+    ASSERT_EQ(
+        object_storage.buildURLs("data:2024/b.zip"),
+        std::vector<std::string>{"http://example.com/data:2024/b.zip"});
+    ASSERT_EQ(
+        object_storage.buildURLs("data/2025/part1.tsv"),
+        std::vector<std::string>{"http://example.com/data/2025/part1.tsv"});
 }
 
 TEST(WebIndexMetadataStorage, DoesNotReportUnknownObjectSizeAsZero)

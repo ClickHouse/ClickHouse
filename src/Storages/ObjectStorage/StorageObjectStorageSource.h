@@ -296,7 +296,9 @@ public:
         const ClusterFunctionReadTaskCallback & callback_,
         size_t max_threads_count,
         bool is_archive_,
+        bool expects_whole_archive_,
         ObjectStoragePtr object_storage_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ContextPtr context_);
 
     ObjectInfoPtr next(size_t) override;
@@ -314,7 +316,12 @@ private:
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
     bool is_archive;
+    /// Whether this worker expects one task per archive rather than one per member.
+    bool expects_whole_archive;
     ObjectStoragePtr object_storage;
+    /// The configuration this worker built from the same source as the initiator, so a fixed member name is
+    /// known here without re-parsing the task path.
+    StorageObjectStorageConfigurationPtr configuration;
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
     std::mutex archive_readers_mutex;
@@ -410,6 +417,22 @@ public:
         String archive_member_path_ = {},
         std::optional<FormatSettings> format_settings_ = std::nullopt);
 
+    KeysIterator(
+        const RelativePathsWithMetadata & keys_,
+        ObjectStoragePtr object_storage_,
+        const NamesAndTypesList & virtual_columns_,
+        ObjectInfos * read_keys_,
+        bool ignore_non_existent_files_,
+        bool skip_object_metadata_,
+        bool with_tags_,
+        std::function<void(FileProgress)> file_progress_callback = {},
+        ExpressionActionsPtr deferred_filter_actions_ = {},
+        NamesAndTypesList hive_columns_ = {},
+        String object_namespace_ = {},
+        ContextPtr context_ = {},
+        String archive_member_path_ = {},
+        std::optional<FormatSettings> format_settings_ = std::nullopt);
+
     ~KeysIterator() override = default;
 
     ObjectInfoPtr next(size_t processor) override;
@@ -420,7 +443,7 @@ private:
     const ObjectStoragePtr object_storage;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const RelativePathsWithMetadata keys;
     std::atomic<size_t> index = 0;
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;
@@ -518,6 +541,9 @@ private:
     const std::unique_ptr<IObjectIterator> archives_iterator;
     /// Used when files inside archive are defined with a glob
     const IArchiveReader::NameFilter filter = {};
+    /// The member name the configuration asks for, which is what the whole-archive mode can check
+    /// without enumerating the archive.
+    const String archive_member_name;
     const LoggerPtr log;
     /// Current file inside the archive.
     std::string path_in_archive = {};

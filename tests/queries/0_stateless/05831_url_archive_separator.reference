@@ -1,0 +1,20 @@
+--- a plain glob path with '::' in its query stays a literal URL
+3
+--- and so does one with '::' in its fragment
+3
+--- a bracketed host keeps its '::'
+archive read
+archive read
+archive read
+--- a host template is rejected for an archive read, bracketed or not
+Archive reads do not support failover patterns
+Archive reads do not support failover patterns
+--- a '::' in the userinfo is not the separator
+archive read
+--- and without a bracketed host the first '::' is still the separator
+archive read
+--- a path failover alternative is rejected
+Archive reads do not support failover patterns
+--- the URL table engine does not honour archive syntax
+Archive path syntax is not supported by the `URL` table engine
+Archive path syntax is not supported by the `URL` table engine

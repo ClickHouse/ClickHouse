@@ -71,6 +71,17 @@ public:
 
     [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
+    /// Whether the source is split at `::` into an archive and a path inside it. The reader of a table
+    /// definition is built under the global context, so the decision is taken once by the session that
+    /// parsed the arguments and recorded here, instead of being re-read from the context that happens to
+    /// build the storage.
+    void setAllowArchivePathSyntax(bool allow) { allow_archive_path_syntax = allow; }
+
+    /// A definition stored by an earlier version may combine archive syntax with a failover group, which this
+    /// version refuses. Reject it only while the definition is being written, so that such a table keeps
+    /// loading from the catalog instead of disappearing on startup.
+    void setRejectArchiveFailover(bool reject) { reject_archive_failover = reject; }
+
     [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
     [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
@@ -108,6 +119,8 @@ private:
     Path path;
     Paths paths TSA_GUARDED_BY(paths_mutex);
     std::optional<String> archive_pattern;
+    std::optional<bool> allow_archive_path_syntax;
+    bool reject_archive_failover = true;
     HTTPHeaderEntries headers_from_ast;
 };
 

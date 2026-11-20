@@ -1,0 +1,10 @@
+--- the virtual columns of an archive member
+1	eod.csv	4	2015-10-21 07:28:00	1
+--- and a member glob reports the same values
+1	eod.csv	4	2015-10-21 07:28:00	1
+--- and urlCluster exposes them as well
+1	eod.csv	4	2015-10-21 07:28:00	1
+--- and a member-level predicate selects the same member
+2
+--- while another member name matches nothing
+0

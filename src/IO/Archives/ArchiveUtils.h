@@ -45,8 +45,8 @@ bool archiveContainsFile(const std::string & path_to_archive, const std::string 
 /// it, so it outranks an unspaced `::` that belongs to the URL: `/archive.zip?sig=abc::def :: m.csv`
 /// keeps its signature. `getURIAndArchivePattern`, which serves `s3`, recognizes and trims only a space;
 /// this URL-specific splitter recognizes and trims any ASCII whitespace, and the same characters are
-/// removed from both halves. `file()` is served by `splitToArchivePathAndPathInArchive`, which trims the
-/// whitespace around the separator it picks but does not let whitespace choose it. The whitespace only decides which `::` is the separator: when a `?` or
+/// removed from both halves. `file()` is served by `splitToArchivePathAndPathInArchive`, which trims only a
+/// space around the separator it picks and does not let whitespace choose it. The whitespace only decides which `::` is the separator: when a `?` or
 /// `#` precedes it, whether the source is an archive at all is still decided by the path, so
 /// `/a.csv?x=1 :: y=2` stays literal. Without a query the left side is taken as the archive, as
 /// `getURIAndArchivePattern` already does for a spaced separator, and the reader reports a path that is

@@ -267,8 +267,26 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     const auto max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
     String url = raw_url;
     archive_pattern.reset();
-    if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
+    /// The exemption for a stored definition is decided by the table function, which passes the source it
+    /// settled on here, so this split does not repeat it. A definition that the exemption kept literal
+    /// therefore reaches this point only with a source the function already accepted as an archive.
+    if (allow_archive_path_syntax.value_or(context->getSettingsRef()[Setting::allow_archive_path_syntax]))
+        std::tie(url, archive_pattern) = getURLAndArchivePattern(raw_url);
+
+    /// An archive read pins one resource: a failover group would let the metadata probe and the data
+    /// read land on different origins, so the archive identity, the caches and the distributed task
+    /// would all have to carry the selected origin. Not supported: use a single URL. A definition read
+    /// back from the metadata keeps loading, like everywhere else.
+    /// Only the authority and the path can carry a failover group of the archive: a `{a|b}` template in the
+    /// query is expanded locally into failover options of the same shard below, so it is not a reason to
+    /// refuse the archive read.
+    const size_t failover_search_end = url.find_first_of("?#");
+    if (reject_archive_failover && archive_pattern.has_value()
+        && url.substr(0, failover_search_end).contains('|'))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Archive reads do not support failover patterns ('|'); use a single URL, or set "
+            "`allow_archive_path_syntax = 0` to keep the path literal");
 
     const auto scheme_pos = url.find("://");
     const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;
@@ -289,7 +307,10 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     /// failover template inside the path (e.g. `http://host/data/{bad|good}/**/part*.tsv`) would
     /// be left untouched and treated as a literal by the glob matcher, silently changing the
     /// `url` semantics. Reject it explicitly instead.
-    if (path.path.contains('|'))
+    /// A definition stored by an earlier version may carry a `|` in its path, where it was a literal
+    /// character for the plain `StorageURL`; refusing it here would drop the table from the catalog. The
+    /// same flag that allows a replayed archive failover group allows this one.
+    if (reject_archive_failover && path.path.contains('|'))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Failover patterns ('|') in the path are not supported when expanding `url` wildcards "

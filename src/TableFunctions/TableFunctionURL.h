@@ -12,6 +12,7 @@ namespace DB
 {
 
 class Context;
+class StorageWebConfiguration;
 
 /* url(source, [format, structure, compression]) - creates a temporary storage from url.
  */
@@ -114,10 +115,24 @@ protected:
     /// Source URI used for the access check of the delegated function (e.g. the file path or the
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
+    /// Source URI used for the access check when `StorageURL` handles the scheme itself. It names the
+    /// object that is fetched, which for an archive read is the archive rather than the member.
+    mutable String function_uri;
     /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
     bool is_relative_url = false;
     /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
     bool is_structure_not_overridable = false;
+    /// The same for `format`: the cluster path appends the inferred format to the query it sends to the
+    /// nodes, which a `NOT OVERRIDABLE` key refuses there.
+    bool is_format_not_overridable = false;
+    /// `allow_url_wildcard_from_index_pages` of the session that parsed the arguments. It is recorded
+    /// here because `getStorage` is handed the global context for a table definition, whose settings are
+    /// the server defaults, while this experimental gate is a session setting: it has to be read from the
+    /// query that asked for the reader, not from the context the storage happens to be built in.
+    bool allow_url_wildcard_from_index_pages = false;
+    /// `allow_archive_path_syntax` of the same session, for the same reason: it decides whether the source
+    /// is an archive, and that decision has to be the one the arguments were parsed with.
+    bool allow_archive_path_syntax = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
@@ -131,7 +146,7 @@ private:
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
-    std::string_view getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
+    std::string_view getFunctionURI() const override;
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

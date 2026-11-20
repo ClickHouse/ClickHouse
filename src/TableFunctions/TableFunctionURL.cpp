@@ -19,6 +19,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -29,6 +30,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -133,6 +135,9 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         compression_method = configuration.compression_method;
 
         format = configuration.format;
+        /// After the assignment: the flag describes the stored value, and only an `auto` one is replaced by
+        /// an inferred value on the way to the nodes.
+        is_format_not_overridable = format == "auto" && !named_collection->isOverridable("format", /* default_value= */ true);
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
 
@@ -161,6 +166,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
     /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
     is_relative_url = !StorageURL::isAbsoluteURL(filename);
+
+    /// Recorded for the storage construction, which can run under the global context, see the members.
+    allow_url_wildcard_from_index_pages = context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages];
+    allow_archive_path_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
 
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
@@ -305,6 +314,17 @@ StoragePtr TableFunctionURL::executeImpl(
         ast_function, context, table_name, std::move(cached_columns), keep_creation_storage_choice);
 }
 
+std::string_view TableFunctionURL::getFunctionURI() const
+{
+    if (delegate)
+        return delegate_function_uri;
+    /// The access check names the object that is fetched, which for an archive read is the archive
+    /// rather than the member: the full source contains ` :: ` and is not a URI, so a filtered grant
+    /// would never match it.
+    function_uri = getURLAndArchivePatternForSource(filename).first;
+    return function_uri;
+}
+
 bool TableFunctionURL::needStructureHint() const
 {
     return delegate ? delegate->needStructureHint() : ITableFunctionFileLike::needStructureHint();
@@ -350,17 +370,27 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
+    /// Listable `*` / `**` path wildcards and HTTP archives are read through
     /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
     /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
     /// take over such queries via the parallel-replicas path — that would silently fall back to the
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
-    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+    const auto [url, archive_pattern] = getURLAndArchivePatternForSource(source);
+    /// Whether reading this URL needs HTTP index-page listing, which is what the experimental setting
+    /// below gates. It is deliberately independent of `is_insert_query`, which also marks persistent
+    /// table creation and metadata replay rather than only writes: an archive reader built from a table
+    /// definition lists index pages exactly like an ad-hoc one, so it must pass the same check.
+    const bool has_listable_web_wildcard = configuration.http_method.empty() && urlPathHasListableGlobs(url);
+    /// `is_insert_query` also marks persistent table creation and metadata replay, not just writes.
+    /// Archives always need `StorageObjectStorage`; actual writes are rejected by its `createSink`.
+    /// A custom HTTP method with archive syntax is rejected where the archive reader is built, see
+    /// `createWebObjectStorageConfiguration`.
+    const bool use_web_object_storage = (!is_insert_query && has_listable_web_wildcard) || archive_pattern.has_value();
 
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_object_storage;
 
     if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
@@ -376,13 +406,16 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    if (use_web_wildcard)
+    if (use_web_object_storage)
     {
-        checkExperimentalURLWildcardFromIndexPages(context);
-        auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-
-        auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
-        StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+        /// A glob in the URL path is read by listing the index page, which is the experimental read the
+        /// setting gates. A literal path is expanded locally and needs no listing. A definition read back
+        /// from the metadata is not re-validated: the gate is a session setting, so on a replay it would be
+        /// the server default and the table would disappear from the catalog.
+        if (!skip_experimental_gate && configuration.http_method.empty() && urlPathNeedsIndexPageListing(url))
+            checkExperimentalURLWildcardFromIndexPages();
+        auto object_storage_configuration
+            = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
 
         ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
 
@@ -429,18 +462,42 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (delegate)
         return delegate->getActualTableStructure(context, is_insert_query);
 
+    const auto [url, archive_pattern] = getURLAndArchivePatternForSource(filename);
+
+    /// The archive reader issues its own range requests, so a custom HTTP method cannot apply to it, and it
+    /// pins one resource, so a failover group cannot apply either. Both are checked before the structure is
+    /// looked at, so a `DESCRIBE` with an explicit structure is refused like a `SELECT` is rather than
+    /// reporting the declared columns.
+    if (archive_pattern.has_value())
+    {
+        if (!configuration.http_method.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
+        /// Only the authority and the path can carry a failover group, exactly as the read path decides it.
+        if (url.substr(0, url.find_first_of("?#")).contains('|'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Archive reads do not support failover patterns ('|'); use a single URL, or set "
+                "`allow_archive_path_syntax = 0` to keep the path literal");
+    }
+
     if (structure == "auto")
     {
         ColumnsDescription columns;
         String sample_path = filename;
 
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
-        {
-            checkExperimentalURLWildcardFromIndexPages(context);
+        const bool use_web_wildcard = configuration.http_method.empty() && urlPathHasListableGlobs(url);
+        /// A glob in the URL path is read by listing the index page, which is the experimental read the
+        /// setting gates.
+        const bool needs_index_page_listing = configuration.http_method.empty()
+            && urlPathNeedsIndexPageListing(url);
 
-            auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-            auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
-            StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+        if (use_web_wildcard || (configuration.http_method.empty() && archive_pattern.has_value()))
+        {
+            if (needs_index_page_listing && !skip_experimental_gate)
+                checkExperimentalURLWildcardFromIndexPages();
+
+            auto object_storage_configuration
+                = createWebObjectStorageConfiguration(filename, format, structure, compression_method, context);
             object_storage_configuration->check(context);
 
             auto object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
@@ -514,7 +571,7 @@ void registerTableFunctionURL(TableFunctionFactory & factory)
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,compression_method] [,headers])
 ```
 
 ## Parameters {#parameters}
@@ -564,6 +621,8 @@ For `file://`, a relative path (`file://data.csv`) is resolved inside the [user_
 
 The `format`, `structure` and `compression_method` arguments and the [url_base](#resolving-relative-urls) setting work the same regardless of the dispatch target.
 
+A dispatched call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+
 ```sql
 SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
@@ -571,7 +630,40 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
 
-For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+## Working with archives {#working-with-archives}
+
+Files in remote archives can be read by separating the archive URL and the path inside it with `::`. Globs are supported in both parts. The supported archive suffixes are aligned with the `file` and `s3` functions:
+
+- ZIP: `.zip`, `.zipx`
+- TAR: `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2`, `.tar.lzma`
+- 7Z: `.7z`
+
+```sql
+SELECT *
+FROM url('https://example.com/dataset.zip :: data/*.csv');
+```
+
+A `{...}` union template in the path of the archive URL names independent archives, but unlike a non-archive `url` source it is not expanded locally: it lists the HTTP index page, so it requires [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages). A template in the query string is still expanded locally. Failover groups are not supported.
+
+```sql
+-- Read both numbered archives.
+SELECT * FROM url('https://example.com/dataset{0,1}.zip :: data.csv')
+SETTINGS allow_url_wildcard_from_index_pages = 1;
+```
+
+A `|` failover group is rejected for archive reads: the metadata probe and the data read could land on different origins, so the archive identity, the caches and the distributed task would all have to carry the selected origin. Use a single URL instead.
+
+A literal archive URL is read directly. Any glob character in the URL path - `*`, `**` or a `{...}` template - makes the read list the HTTP index page, so it requires [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages). A comma outside a group is a literal path character for an archive read: `a.zip,b.zip::m.csv` names one archive, not two.
+
+Whitespace around `::` makes it the separator explicitly, because a URL cannot contain whitespace: it then outranks a `::` that belongs to the URL, so `archive.zip?sig=abc::def :: member.csv` keeps its signature. Without a `?` or `#` before it, such a separator needs no further evidence and the left side is taken as the archive, so `data.csv :: member.csv` is read as an archive and reported as an unreadable one. After a `?` or `#`, the path still has to end with a supported archive suffix or contain `*`. The first `::` of the source is the separator, as it is for `file` and `s3`, so an archive whose own path contains `::` cannot be named: `data::v1.zip :: m.csv` stays a literal URL, because the path before the first `::` is `data` and carries no archive evidence. A member may contain `::` instead: `a.zip::dir::file.csv` names the archive `a.zip` with the member `dir::file.csv`.
+
+The final combination of host/query shards and the archive path is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
+
+The [`allow_archive_path_syntax`](/reference/settings/session-settings/allow#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path or contains `*`. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
+
+A table created with `CREATE TABLE ... AS url(...)` stores its definition, which is interpreted again when it is loaded. The experimental gate for HTTP index-page listing is a session setting, so a stored definition is not re-checked against it: a table whose structure was inferred while `allow_url_wildcard_from_index_pages` was enabled keeps listing index pages after a reload, even though the setting is off for the session that selects from it. A table created with an explicit column list is not affected either way, because it reads the literal URL rather than listing the index page. Disable the setting for the server, or recreate the table, if that is not wanted. A table created before archive support was added may contain a `::` that was literal at the time: with this setting enabled it is read as archive syntax after the upgrade, so disable the setting for the server or recreate the table if it must keep reading the literal URL. `SELECT database, name FROM system.tables WHERE create_table_query LIKE '%::%' AND (lower(create_table_query) LIKE '%url(%' OR lower(create_table_query) LIKE '%urlcluster(%')` lists the tables that can be affected, including a `Distributed` target and a view body; the match is case-insensitive because `ENGINE = URL(...)` spells the name in upper case, and `urlCluster(` needs its own pattern because it does not contain `url(`. Filtering on `engine = 'URL'` would miss the first carrier: a table whose structure was inferred from the function reports `engine = 'Proxy'`, because the storage is resolved lazily. The exemption for a stored definition is applied where the definition is read. A `CREATE TABLE ... AS remote(...)` carrier re-executes the inner function from the stored arguments, but the structure of a remote shard is inferred there through a `DESC TABLE` that the shard answers with its own settings, so such a definition is checked there. A `cluster` or `remote` definition whose structure is inferred from a remote shard is checked there with the shard's own settings: recreate such a table, or set `allow_archive_path_syntax = 0` on the shard, if it carries a `::` that has to stay literal. The same holds for a shard that executes a forwarded query: it rebuilds the function from the query text, so a combination that only the exemption accepts is refused there. The exemption keeps the table in the catalog, not readable: the function is built again from the definition on every read, so such a table loads and then fails its first `SELECT`. Recreate it rather than relying on the exemption. A table created with `ENGINE = URL(...)` is affected in the same way when its URL path contains a glob character, because the engine already reads such a source through the object storage; see the [`URL`](/reference/engines/table-engines/special/url#archive-path-syntax) engine page for how it treats `::`.
+
+Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
 
 ## Globs in URL {#globs-in-url}
 
@@ -617,11 +709,11 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
-- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+- `_path` — Path to the `URL`. For an archive member, the value is `<namespace>/<archive path>::<member path>`, where the namespace of a Web source is its `host[:port]`, for example `example.com/data/a.zip::m.csv`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. For an archive member, the value is the member's path inside the archive. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. For an archive member, the value is the member's uncompressed size, that is its bytes after the container's own compression is undone; for an entry stored with `DEFLATE` in a ZIP archive that is larger than the bytes the container holds. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. For an archive member, this is the last modified time of the outer archive, not of the member. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. For an archive member, these are the headers of the metadata probe of the outer archive, not of the request that reads its bytes. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 
@@ -666,6 +758,8 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Permissions {#permissions}
 
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
+
+A filtered grant names the object that is fetched. For an archive source that is the archive, not the member: `GRANT READ ON URL('http://host/a.zip')` covers every member of `a.zip`, while a grant written on `'http://host/a.zip :: member.csv'` does not match. A grant written before archive reads existed, on the literal `'http://host/a.zip::member.csv'` string no longer matches either, because the access check now names the archive; set `allow_archive_path_syntax = 0` to restore the old subject together with the literal meaning.
 
 ## Related {#related}
 

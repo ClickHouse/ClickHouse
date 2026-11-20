@@ -534,8 +534,16 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
-    base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
+    /// `Poco::URI` reads a colon in the first segment of a relative reference as a scheme and drops what
+    /// precedes it, so `data:2024/b.zip` would become `2024/b.zip`. The path is appended as it is, and only
+    /// the query and the fragment are parsed.
+    const auto query_or_fragment = path.find_first_of("?#");
+    const std::string_view raw_path = query_or_fragment == std::string::npos
+        ? std::string_view{path}
+        : std::string_view{path}.substr(0, query_or_fragment);
+    Poco::URI path_uri(
+        query_or_fragment == std::string::npos ? String{} : path.substr(query_or_fragment), false);
+    base_uri.setPath(base_path + stripLeadingSlashes(std::string{raw_path}));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);
     if (!path_uri.getRawQuery().empty())

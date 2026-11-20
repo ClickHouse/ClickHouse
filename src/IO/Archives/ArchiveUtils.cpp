@@ -49,6 +49,10 @@ size_t archiveSeparatorSearchStart(std::string_view source)
     {
         const size_t authority_begin = scheme_pos + 3;
         const size_t authority_end = source.find_first_of("/?#", authority_begin);
+        /// Without a delimiter after it there is no authority to skip: a plain path may contain `://` and
+        /// `@` itself, and skipping its `::` would turn a literal path into an archive read.
+        if (authority_end == std::string_view::npos)
+            return search_from;
         const std::string_view authority(
             source.data() + authority_begin,
             (authority_end == std::string_view::npos ? source.size() : authority_end) - authority_begin);
@@ -86,8 +90,8 @@ size_t findArchiveSeparator(std::string_view source)
 /// The first `::` with whitespace on either side. A URL cannot contain whitespace - it has to be
 /// percent-encoded - so such a separator is one the user wrote explicitly, while a `::` without it may be
 /// part of the URL itself, as in the signature of `archive.zip?sig=abc::def`. The scan starts past the
-/// scheme, the userinfo and any bracketed host, so a `::` of those is not taken for it; an unbracketed host
-/// is not skipped, but a `::` there is not part of a valid URL either.
+/// scheme, the userinfo and any bracketed host, so a `::` of those is not taken for it. An unbracketed host
+/// is not skipped: a `::` there is not part of a valid URL either, so the source is reported as literal.
 size_t findExplicitArchiveSeparator(std::string_view source)
 {
     size_t pos = source.find("::", archiveSeparatorSearchStart(source));
@@ -273,8 +277,18 @@ std::pair<std::string, std::optional<std::string>> getURLAndArchivePattern(std::
         if (query_or_fragment != std::string::npos && query_or_fragment < explicit_separator
             && (first_separator == std::string_view::npos || first_separator > query_or_fragment))
         {
+            /// The URL half must not carry whitespace of its own: a URL cannot contain it, so one there
+            /// means the separator found is inside the member name and the first candidate is the real one.
+            /// The whitespace next to the separator is the separator's own and is trimmed first.
+            std::string_view url_half = std::string_view{source}.substr(0, explicit_separator);
+            while (!url_half.empty() && isWhitespaceASCII(url_half.back()))
+                url_half.remove_suffix(1);
             if (!urlPathLooksLikeArchive(source, query_or_fragment))
                 return {std::string{source}, std::nullopt};
+            /// A URL half that carries whitespace of its own means the spaced separator found is inside the
+            /// member name, so the first candidate is the real one and the member keeps its `::`.
+            if (std::any_of(url_half.begin(), url_half.end(), [](char c) { return isWhitespaceASCII(c); }))
+                return splitAtArchiveSeparator(source, first_separator);
             return splitAtArchiveSeparator(source, explicit_separator);
         }
         /// Without a query before it, the explicit separator is the separator only when it is also the first

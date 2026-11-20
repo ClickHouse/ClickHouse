@@ -696,6 +696,14 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
 {
     if (is_data_lake)
         return identifier;
+
+    /// An archive member is identified by `<archive>::<member>` but its metadata is the container's, and a
+    /// Web server may report an ETag that only changes with the container's mtime and size. Two containers
+    /// that differ in content can then share one key, so the member makes no key at all - the same
+    /// fail-close the TopK path applies to archives.
+    if (object_info.isArchive())
+        return std::nullopt;
+
     const auto & metadata = object_info.getObjectMetadata();
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
@@ -753,7 +761,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],
             /*is_archive_=*/is_archive && !expect_whole_archive,
+            /*expects_whole_archive_=*/is_archive && expect_whole_archive,
             object_storage,
+            configuration,
             local_context);
 
         if (is_archive && expect_whole_archive)
@@ -774,22 +784,93 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
     /// sees only the outer archive object. A known, non-glob archive member is an exception: its
     /// virtual path is known before opening the archive, so filter it before probing a missing outer
-    /// archive. This only works when the outer archive paths are materialized locally - explicit keys
-    /// or a single brace expansion - so that the member name can be appended to each concrete path.
-    /// The outer path must not contain a general glob: that form goes through `GlobIterator`, which
+    /// archive. This only works when the outer archive path is a literal, so that the member name can be
+    /// appended to it. The outer path must not contain a glob: that form goes through `GlobIterator`, which
     /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
     /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
     /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_literal_web_path = match_web_paths_only && !reading_path.hasGlobs();
     const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
         && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
     const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
+
+    /// Web URL shards use `read_source_index` to distinguish union shards from failover options.
+    /// A literal path is expanded here, so its shard identity survives; a glob goes through
+    /// `GlobIterator`, which preserves it as well.
+    if (is_literal_web_path)
+    {
+        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
+        const auto & url_shards = web_object_storage.getURLShards();
+        /// A host or query template names one shard per option, and every one of them is an indexed key.
+        /// Bound that before reserving it.
+        /// For a Web source this is `glob_expansion_max_elements`, where zero means no limit.
+        if (query_settings.list_object_keys_size && url_shards.size() > query_settings.list_object_keys_size)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}': first argument generates too many result addresses",
+                configuration->getEngineName());
+        }
+
+        RelativePathsWithMetadata indexed_paths;
+        indexed_paths.reserve(url_shards.size());
+        for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+            indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(reading_path.path, source_index));
+
+        ExpressionActionsPtr deferred_filter_actions;
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(
+                path_filter_predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(indexed_paths.size());
+            for (const auto & indexed_path : indexed_paths)
+            {
+                auto filter_path = formatObjectPath(
+                    *configuration, indexed_path->relative_path, /*include_connection_info=*/false);
+                if (is_explicit_archive_member)
+                    filter_path += fmt::format("::{}", configuration->getPathInArchive());
+                filter_paths.push_back(std::move(filter_path));
+            }
+
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(indexed_paths.size(), configuration->getPathInArchive());
+
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    indexed_paths,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        filter_paths, actions, virtual_columns, hive_columns, local_context,
+                        format_settings,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
+            }
+        }
+
+        /// Archive reading needs correct object metadata: fixed archive paths must not keep skipping the
+        /// metadata fetch, otherwise whole-archive distribution may end up with a wrong archive size. Every
+        /// other path keeps the value the caller passed.
+        iterator = std::make_unique<KeysIterator>(
+            indexed_paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, is_archive ? false : skip_object_metadata, with_tags,
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{}, format_settings);
+    }
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
     /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
     /// the source index.
-    if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    else if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
+        /// Only a non-Web storage reaches this branch: a Web brace path has globs, so it is not a literal
+        /// path and goes through `GlobIterator`, which is bounded by `max_keys`. Here the expansion is
+        /// bounded by `expandSelectionGlob` alone, which is what these storages have always done.
         auto paths = expandSelectionGlob(reading_path.path);
         ExpressionActionsPtr deferred_filter_actions;
         std::vector<String> archive_member_names;
@@ -826,7 +907,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+            query_settings.ignore_non_existent_file, is_archive ? false : skip_object_metadata, with_tags,
             file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
             is_explicit_archive_member ? configuration->getPathInArchive() : String{}, format_settings);
     }
@@ -1760,7 +1841,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            /// The configured member path can be a glob without a compression suffix. Infer `auto`
+            /// from the concrete member selected by `ArchiveIterator`, e.g. `compressed.csv.gz`.
+            compression_method = chooseCompressionMethod(object_info_in_archive->path_in_archive, configuration->compression_method);
             read_buf = object_info_in_archive->readFile();
         }
         else
@@ -2847,8 +2930,53 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
     return object_infos[index++];
 }
 
+namespace
+{
+RelativePathsWithMetadata makeRelativePathsWithMetadata(const Strings & keys)
+{
+    RelativePathsWithMetadata result;
+    result.reserve(keys.size());
+    for (const auto & key : keys)
+        result.emplace_back(std::make_shared<RelativePathWithMetadata>(key));
+    return result;
+}
+}
+
 StorageObjectStorageSource::KeysIterator::KeysIterator(
     const Strings & keys_,
+    ObjectStoragePtr object_storage_,
+    const NamesAndTypesList & virtual_columns_,
+    ObjectInfos * read_keys_,
+    bool ignore_non_existent_files_,
+    bool skip_object_metadata_,
+    bool with_tags_,
+    std::function<void(FileProgress)> file_progress_callback_,
+    ExpressionActionsPtr deferred_filter_actions_,
+    NamesAndTypesList hive_columns_,
+    String object_namespace_,
+    ContextPtr context_,
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
+    : KeysIterator(
+        makeRelativePathsWithMetadata(keys_),
+        std::move(object_storage_),
+        virtual_columns_,
+        read_keys_,
+        ignore_non_existent_files_,
+        skip_object_metadata_,
+        with_tags_,
+        std::move(file_progress_callback_),
+        std::move(deferred_filter_actions_),
+        std::move(hive_columns_),
+        std::move(object_namespace_),
+        std::move(context_),
+        std::move(archive_member_path_),
+        std::move(format_settings_))
+{
+}
+
+StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const RelativePathsWithMetadata & keys_,
     ObjectStoragePtr object_storage_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
@@ -2879,11 +3007,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
-        for (auto && key : keys)
-        {
-            auto object_info = std::make_shared<ObjectInfo>(key);
-            read_keys_->emplace_back(object_info);
-        }
+        for (const auto & key : keys)
+            read_keys_->emplace_back(std::make_shared<ObjectInfo>(*key));
     }
 }
 
@@ -2895,15 +3020,15 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (current_index >= keys.size())
             return nullptr;
 
-        auto key = keys[current_index];
+        const auto & key = keys[current_index];
 
         /// The filter could not be applied when the iterator was created, because a set in it was not
         /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
         /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
         if (deferred_filter_actions)
         {
-            std::vector<String> filtered_keys({key});
-            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key)});
+            std::vector<String> filtered_keys({key->relative_path});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key->relative_path)});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
             std::vector<String> archive_member_names;
@@ -2928,13 +3053,13 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         {
             if (ignore_non_existent_files)
             {
-                auto metadata = tryGetObjectMetadataForRead(*object_storage, RelativePathWithMetadata(key), with_tags);
+                auto metadata = tryGetObjectMetadataForRead(*object_storage, *key, with_tags);
                 if (!metadata)
                     continue;
                 object_metadata = *metadata;
             }
             else
-                object_metadata = getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(key), with_tags);
+                object_metadata = getObjectMetadataForRead(*object_storage, *key, with_tags);
         }
         else
         {
@@ -2947,7 +3072,9 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (emit_profile_events)
             ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
 
-        return std::make_shared<ObjectInfo>(RelativePathWithMetadata(key, object_metadata));
+        auto relative_path = *key;
+        relative_path.metadata = std::move(object_metadata);
+        return std::make_shared<ObjectInfo>(std::move(relative_path));
     }
 }
 
@@ -2984,12 +3111,16 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     const ClusterFunctionReadTaskCallback & callback_,
     size_t max_threads_count,
     bool is_archive_,
+    bool expects_whole_archive_,
     ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ContextPtr context_)
     : WithContext(context_)
     , callback(callback_)
     , is_archive(is_archive_)
+    , expects_whole_archive(expects_whole_archive_)
     , object_storage(object_storage_)
+    , configuration(std::move(configuration_))
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -3074,16 +3205,123 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
         object_info =  buffer[current_index];
     }
 
+    /// A Web task path is a relative object key that may carry the query or the fragment of the URL it was
+    /// listed from, and `RelativePathWithMetadata::getFileName` has to strip those to report `_file` and to
+    /// detect the format and the compression from the name. The initiator records that in the task it builds,
+    /// but the protocol carries only the path, so the worker restores it from the storage type: for a Web
+    /// source a `?` or a `#` is never part of the object name, only the query or the fragment of the request.
+    if (object_storage->getType() == ObjectStorageType::Web)
+        object_info->relative_path_with_metadata.derive_file_name_from_url_path = true;
+
     if (!is_archive)
+    {
+        /// This worker expects one task per archive, so a task path that already names a member means the
+        /// initiator splits archives while this worker does not. Reading it as an archive would enumerate
+        /// every member once per task, so report the mismatch the way the opposite direction does. The check
+        /// lives here rather than in `ArchiveIterator`, which also walks the keys listed on the initiator,
+        /// where an object name may legitimately contain `::`.
+        if (expects_whole_archive)
+        {
+            const auto & task_path = object_info->getPath();
+            /// A per-member task names the configured member after `::`, so a fixed member name is the
+            /// discriminator: an outer object key that merely contains `::` does not end with it. A member
+            /// glob names a concrete member the configuration does not know, so it falls back to splitting
+            /// the path, which is the only case where an object name containing `::` is misreported.
+            const auto & member = configuration->getPathInArchive();
+            const bool member_is_known = !member.empty() && !configuration->isPathInArchiveWithGlobs();
+            const bool task_names_a_member = member_is_known
+                ? task_path.ends_with("::" + member)
+                : (object_storage->getType() == ObjectStorageType::Web
+                    ? getURLAndArchivePattern(task_path).second.has_value()
+                    : getURIAndArchivePattern(task_path).second.has_value());
+            if (task_names_a_member && member_is_known)
+                throw Exception(
+                    ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                    "Received a per-member read task while `cluster_function_process_archive_on_multiple_nodes` "
+                    "is disabled on this worker. Either the setting does not match the initiator's, or the outer "
+                    "object name itself ends with the configured member name. `allow_archive_path_syntax` has to "
+                    "match on the initiator and on every worker as well");
+            if (task_names_a_member)
+                throw Exception(
+                    ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                    "Received a task path that looks like a per-member one while "
+                    "`cluster_function_process_archive_on_multiple_nodes` is disabled on this worker. Either the "
+                    "setting does not match the initiator's, or the outer object name itself contains `::`; with "
+                    "a member glob the two cannot be told apart");
+        }
         return object_info;
+    }
 
     const auto path = object_info->getPath();
-    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(path);
+    /// A Web task path is relative and may carry a query or a fragment, which `getURIAndArchivePattern` does not
+    /// recognize as part of an archive path. Any other storage passes a key, which may contain those characters
+    /// itself, so it keeps the plain splitter.
+    ///
+    /// A literal archive path is known from this worker's own configuration, so the split is taken from
+    /// there rather than re-parsed: the task path is `<archive>::<member>` with the whitespace of an
+    /// explicit separator dropped, and re-parsing it would split inside an archive path that itself
+    /// contains `::`. A globbed archive path is only resolved by the initiator, so that form falls back to
+    /// splitting the task path.
+    std::pair<std::string, std::optional<std::string>> split;
+    const auto & configured_archive = configuration->getPathForRead().path;
+    const auto & configured_member = configuration->getPathInArchive();
+    /// A fixed member name is known from this worker's own configuration, so the split is taken from there
+    /// rather than re-parsed, whether or not the archive path is a glob: the task path is
+    /// `<archive>::<member>` with the whitespace of an explicit separator dropped, and re-parsing it would
+    /// split inside an archive path or a member name that itself contains `::`.
+    const bool member_is_known = object_storage->getType() == ObjectStorageType::Web
+        && configuration->isArchive() && !configured_member.empty()
+        && !configuration->isPathInArchiveWithGlobs();
+    const std::string member_suffix = member_is_known ? "::" + configured_member : std::string{};
+    if (member_is_known && !configuration->getPathForRead().hasGlobs()
+        && path.starts_with(configured_archive + "::"))
+        split = {configured_archive, path.substr(configured_archive.size() + 2)};
+    else if (member_is_known && path.ends_with(member_suffix))
+        split = {path.substr(0, path.size() - member_suffix.size()), configured_member};
+    else if (object_storage->getType() == ObjectStorageType::Web)
+    {
+        /// The task path is `<archive>::<member>`. A member name may itself contain `::`, and an outer object
+        /// key may too, so neither the first nor the last separator is always the right one. The first is
+        /// taken, which keeps a member that contains `::` intact, and the result is then checked against the
+        /// configured pattern. A key that contains `::` usually makes the member start inside the key, which
+        /// a specific pattern rejects; a permissive one such as `*.csv` can still match, so the check is best
+        /// effort rather than a proof.
+        /// The task path is relative, so it has no authority and the plain scan is enough; a path that did
+        /// carry one is caught by the pattern check below.
+        const size_t first_separator = path.find("::");
+        split = first_separator == std::string::npos
+            ? getURLAndArchivePattern(path)
+            : std::pair<std::string, std::optional<std::string>>{
+                path.substr(0, first_separator), path.substr(first_separator + 2)};
+
+        if (split.second.has_value() && configuration->isPathInArchiveWithGlobs()
+            && !re2::RE2::FullMatch(*split.second, makeRegexpPatternFromGlobs(configuration->getPathInArchive())))
+            throw Exception(
+                ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                "Received a task path whose member does not match the configured pattern '{}', so the path "
+                "cannot be split into an archive and a member without ambiguity; the member name probably "
+                "contains '::'",
+                configuration->getPathInArchive());
+    }
+    else
+        split = getURIAndArchivePattern(path);
+
+    auto [path_to_archive, path_in_archive] = std::move(split);
     if (!path_in_archive.has_value())
     {
         /// `ObjectInfoInArchive::getPath` gives `<archive>::` for an archive entry without a name.
         if (!path.ends_with("::"))
-            return object_info;
+        {
+            /// The initiator sent a whole-archive task, so it expects this worker to unpack it. A worker that
+            /// does not would read the archive bytes as data, so report the mismatch rather than return the
+            /// archive itself: `cluster_function_process_archive_on_multiple_nodes` has to match on the
+            /// initiator and on every worker.
+            throw Exception(
+                ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                "Received a whole-archive read task while `cluster_function_process_archive_on_multiple_nodes` "
+                "is enabled on this worker, so the initiator and the worker disagree; the setting has to match "
+                "on the initiator and on every worker");
+        }
         path_to_archive = path.substr(0, path.size() - 2);
         path_in_archive.emplace();
     }
@@ -3117,8 +3355,14 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         else
         {
             const auto archive_size = getKnownArchiveSize(archive_object);
+            /// The archive type is decided by the suffix, which a Web task path carrying a query or a fragment
+            /// does not end with; the request itself still uses the whole path. A local path or an S3 key may
+            /// contain those characters itself, so only a Web path is stripped.
+            const auto path_for_type = object_storage->getType() == ObjectStorageType::Web
+                ? path_to_archive.substr(0, path_to_archive.find_first_of("?#"))
+                : path_to_archive;
             archive_reader = DB::createArchiveReader(
-                path_to_archive,
+                path_for_type,
                 [=, this]() { return createReadBuffer(archive_object->relative_path_with_metadata, object_storage, getContext(), log); },
                 archive_size);
 
@@ -3177,6 +3421,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
     , archives_iterator(std::move(archives_iterator_))
     , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})
+    , archive_member_name(configuration_->getPathInArchive())
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)
@@ -3188,9 +3433,16 @@ std::shared_ptr<IArchiveReader>
 StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
 {
     const auto size = getKnownArchiveSize(object_info);
+    /// The archive type is decided by the suffix, which a Web path carrying a query or a fragment does not
+    /// end with; the request itself still uses the whole path. A local path or an S3 key may contain those
+    /// characters itself, so only a Web path is stripped.
+    const auto path_to_archive = object_info->getPath();
+    const auto path_for_type = object_storage->getType() == ObjectStorageType::Web
+        ? path_to_archive.substr(0, path_to_archive.find_first_of("?#"))
+        : path_to_archive;
     return DB::createArchiveReader(
         /* path_to_archive */
-        object_info->getPath(),
+        path_for_type,
         /* archive_read_function */ [=, this]()
         { return createReadBuffer(object_info->relative_path_with_metadata, object_storage, getContext(), log); },
         /* archive_size */ size);
@@ -3203,6 +3455,45 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
     std::optional<size_t> archive_entry_index;
     while (true)
     {
+        if (ignore_archive_globs)
+        {
+            archive_object = archives_iterator->next(processor);
+            if (!archive_object)
+                return {};
+
+            if (!archive_object->getObjectMetadata())
+                archive_object->setObjectMetadata(
+                    getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+
+            archive_reader = createArchiveReader(archive_object);
+            /// A fixed member name lets the initiator drop an archive that does not hold it, so the
+            /// whole-archive mode does not dispatch a task for every archive when only a few match. A member
+            /// glob cannot be checked here without enumerating the archive, which is what this mode avoids,
+            /// so every archive is dispatched and the worker filters the members it finds.
+            if (!filter && !archive_reader->fileExists(archive_member_name))
+                continue;
+
+            auto first_file = archive_reader->firstFile();
+            if (!first_file)
+                continue;
+
+            /// With a fixed member name the task names that member, so the object identity has to be the
+            /// member the caller asked for, not whatever the archive happens to list first. When the member
+            /// is a glob the task path drops the name and the worker enumerates the members itself, so the
+            /// first entry is only a placeholder there.
+            if (filter)
+            {
+                path_in_archive = first_file->getFileName();
+                current_file_info = first_file->getFileInfo();
+            }
+            else
+            {
+                path_in_archive = archive_member_name;
+                current_file_info = archive_reader->getFileInfo(archive_member_name);
+            }
+            break;
+        }
+
         if (filter)
         {
             if (!file_enumerator)
@@ -3223,7 +3514,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 if (!file_enumerator)
                     continue;
             }
-            else if (!file_enumerator->nextFile() || ignore_archive_globs)
+            else if (!file_enumerator->nextFile())
             {
                 file_enumerator.reset();
                 continue;
