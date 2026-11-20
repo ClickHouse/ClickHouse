@@ -1236,9 +1236,10 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 /// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
 /// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
 /// the numbers. So the rewrite keeps the semantics only when every key has the type of its column, is
-/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable`
-/// element of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
-/// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is neither `Bool` nor
+/// `SimpleAggregateFunction(f, Bool)`. A `Nullable` element of the left tuple is fine, unlike a `Nullable`
+/// left operand: the set never matches a NULL element, neither does `equals`, and `IN` of a plain tuple
+/// returns 0 rather than NULL.
 static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
 {
     if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))

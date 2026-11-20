@@ -3793,9 +3793,13 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
 
-            /// The key cast into a `Bool` element matches every nonzero value, the element cast into the key names only 1.
-            const auto is_bool = [](const DataTypePtr & type) { return isBool(type) || isSimpleAggregateFunctionOfBool(*type); };
-            if (is_bool(element_type) && !is_bool(predicate_column_type))
+            /// The key cast into a `Bool` element matches every nonzero value, while the element cast into the key names only 1.
+            const auto has_bool = [](const DataTypePtr & type)
+            {
+                return anyInTypeTree(*type, [](const IDataType & node)
+                    { return node.getName() == "Bool" || isSimpleAggregateFunctionOfBool(node); });
+            };
+            if (has_bool(element_type) && !has_bool(predicate_column_type))
                 return false;
         }
 
