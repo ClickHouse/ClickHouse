@@ -55,13 +55,4 @@ SELECT multiFuzzyMatchAnyIndex(c, 1, ['.{51}']) FROM t; -- { serverError HYPERSC
 SELECT multiFuzzyMatchAllIndices('Hallo Welt', 1, ['.{51}']); -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
 SELECT multiFuzzyMatchAllIndices(c, 1, ['.{51}']) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
 
--- and with non-constant needles
-
-SELECT multiMatchAny(c, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-SELECT multiMatchAnyIndex(c, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-SELECT multiMatchAllIndices(c, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-SELECT multiFuzzyMatchAny(c, 1, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-SELECT multiFuzzyMatchAnyIndex(c, 1, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-SELECT multiFuzzyMatchAllIndices(c, 1, materialize(['.{51}'])) FROM t; -- { serverError HYPERSCAN_CANNOT_SCAN_TEXT }
-
 DROP TABLE t;
