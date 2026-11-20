@@ -18,6 +18,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/IDatabase.h>
 #include <Poco/URI.h>
 
 #if USE_AWS_S3
@@ -237,7 +238,7 @@ void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     auto secret_arguments = s3TableEngineSecretArguments();
-    secret_arguments.secret_settings = S3Queue::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = S3Queue::settingsToHide();
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
@@ -254,8 +255,6 @@ void registerStorageS3Queue(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
-
 # S3Queue table engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.
@@ -845,7 +844,7 @@ void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     auto secret_arguments = azureTableEngineSecretArguments();
-    secret_arguments.secret_settings = AzureQueue::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = AzureQueue::settingsToHide();
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)
