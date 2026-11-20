@@ -11,6 +11,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <shared_mutex>
 #include <unordered_map>
 
@@ -404,6 +405,46 @@ PatchIndicesPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_indices->patch_block_indices.reserve(size_to_reserve);
     patch_indices->patch_row_indices.reserve(size_to_reserve);
 
+    auto add_matched_row = [&](size_t row, const std::pair<UInt32, UInt32> & patch_position)
+    {
+        patch_indices->result_row_indices.push_back(row);
+        patch_indices->patch_block_indices.push_back(patch_position.first);
+        patch_indices->patch_row_indices.push_back(patch_position.second);
+    };
+
+    /// Matches each row by lookup, and throws if a patch row matches more than one row.
+    /// Used for parts with duplicate `(_block_number, _block_offset)` pairs, written by older versions
+    /// (see `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`), where the offsets do not increase.
+    auto match_rows_by_lookup = [&]
+    {
+        patch_indices->result_row_indices.clear();
+        patch_indices->patch_block_indices.clear();
+        patch_indices->patch_row_indices.clear();
+
+        absl::flat_hash_set<std::pair<UInt64, UInt64>> matched_pairs;
+
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            const UInt64 block_number = result_block_number[row];
+            if (block_number < join_entry.min_block || block_number > join_entry.max_block)
+                continue;
+
+            auto block_it = join_entry.hash_map.find(block_number);
+            if (block_it == join_entry.hash_map.end())
+                continue;
+
+            const UInt64 block_offset = result_block_offset[row];
+            auto offset_it = block_it->second.find(block_offset);
+            if (offset_it == block_it->second.end())
+                continue;
+
+            if (!matched_pairs.emplace(block_number, block_offset).second)
+                throwDuplicateRowIdentity(block_number, block_offset);
+
+            add_matched_row(row, offset_it->second);
+        }
+    };
+
     struct IteratorsPair
     {
         bool found = false;
@@ -449,35 +490,24 @@ PatchIndicesPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
         chassert(current_offset_iterators);
         auto & iterators = *current_offset_iterators;
 
-        /// The matching below needs offsets that strictly increase within each block number. A part with duplicate
-        /// `(_block_number, _block_offset)` pairs breaks it: a patch row matches several rows, or rows are missed.
+        if (!iterators.found)
+            continue;
+
+        /// Moving forward over the sorted offsets of the patch needs offsets that strictly increase within
+        /// each block number, which holds for every part except the parts with duplicate pairs.
         if (iterators.last_offset && *iterators.last_offset >= result_block_offset[row])
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Block offsets ({}, {}) are not strictly increasing within block number {}. "
-                "The data part probably has duplicate (_block_number, _block_offset) pairs: it was probably merged "
-                "by an older version with enable_block_offset_column = 1 and enable_block_number_column = 0. "
-                "The patch is not applied, because it could change rows that the lightweight update did not match. "
-                "To read the data without patches, use the setting apply_patch_parts = 0",
-                *iterators.last_offset, result_block_offset[row], result_block_number[row]);
+        {
+            match_rows_by_lookup();
+            return patch_indices;
+        }
 
         iterators.last_offset = result_block_offset[row];
 
-        if (iterators.found)
-        {
-            while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
-            {
-                ++iterators.it;
-            }
+        while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
+            ++iterators.it;
 
-            if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
-            {
-                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
-
-                patch_indices->result_row_indices.push_back(row);
-                patch_indices->patch_block_indices.push_back(patch_block_index);
-                patch_indices->patch_row_indices.push_back(patch_row_index);
-            }
-        }
+        if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
+            add_matched_row(row, iterators.it->second);
     }
 
     return patch_indices;

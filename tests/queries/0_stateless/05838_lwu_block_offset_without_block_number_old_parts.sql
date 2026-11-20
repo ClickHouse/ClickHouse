@@ -146,8 +146,10 @@ ORDER BY column;
 
 SELECT _block_number, _block_offset, v FROM t_lwu_old_dup_v1 ORDER BY v;
 
--- The row `c` has a unique pair.
+-- The row `c` has a unique pair. Its patch is applied in `Merge` mode, and in `Join` mode after the part is rewritten.
 UPDATE t_lwu_old_dup_v1 SET v = 'Y' WHERE v = 'c';
+SELECT v FROM t_lwu_old_dup_v1 ORDER BY v;
+OPTIMIZE TABLE t_lwu_old_dup_v1 FINAL;
 SELECT v FROM t_lwu_old_dup_v1 ORDER BY v;
 
 -- The patch for the row `a` is applied in `Merge` mode and is exact until the part is rewritten. Then `Join` mode throws.

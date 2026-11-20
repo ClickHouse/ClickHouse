@@ -32,7 +32,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -423,19 +422,6 @@ struct EqualRunScratch
     /// One flag per row identity in `run_map`: whether a result row already matched it.
     PaddedPODArray<UInt8> run_matched;
 };
-
-/// A patch row must match one row only. A second match means that the part has duplicate
-/// `(_block_number, _block_offset)` pairs, and applying the patch would change rows the update did not match.
-[[noreturn]] void throwDuplicateRowIdentity(UInt64 block_number, UInt64 block_offset)
-{
-    throw Exception(ErrorCodes::INCORRECT_DATA,
-        "A patch part matches more than one row with _block_number = {} and _block_offset = {}. "
-        "The data part has duplicate (_block_number, _block_offset) pairs. "
-        "It was probably merged by an older version with enable_block_offset_column = 1 and enable_block_number_column = 0. "
-        "The patch is not applied, because it would change rows that the lightweight update did not match. "
-        "To read the data without patches, use the setting apply_patch_parts = 0",
-        block_number, block_offset);
-}
 
 /// Emits a matched pair of a result row and a patch row into `patch`.
 ALWAYS_INLINE void addMatchedRow(PatchIndices & patch, UInt64 result_row, UInt32 block_idx, UInt64 patch_row)
