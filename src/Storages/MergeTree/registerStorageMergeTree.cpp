@@ -1298,7 +1298,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             create_query_zk_retries_info);
     }
 
-    return std::make_shared<StorageMergeTree>(
+    auto storage = std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,
         metadata,
@@ -1307,6 +1307,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         date_column_name,
         merging_params,
         std::move(storage_settings));
+    storage->prepareForStartup();
+    return storage;
 }
 
 

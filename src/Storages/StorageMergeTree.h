@@ -54,6 +54,8 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
+    /// Recover before publishing a loaded writable table in the database catalog.
+    void prepareForStartup();
     void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
@@ -232,6 +234,13 @@ private:
     /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
     /// statement would add another `_tryN` directory next to it.
     void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
+
+    /// Outdate the empty parts that `DETACH PART` or `DETACH PARTITION` committed over the detached parts,
+    /// regardless of `remove_empty_parts` and `empty_parts_lifetime`. Must run while merges are stopped.
+    void dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names);
+
+    /// Outdate active empty parts covering detached parts while background workers are stopped.
+    void outdateEmptyPartsCoveringDetachedParts();
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists

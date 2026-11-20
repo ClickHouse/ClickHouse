@@ -112,6 +112,9 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_settings_throw_before_metadata_commit[];
     extern const char mt_throw_after_renaming_empty_parts[];
+    extern const char mt_throw_before_outdating_empty_parts[];
+    extern const char mt_pause_before_outdating_detached_empty_parts[];
+    extern const char mt_pause_after_detach_operations_lock[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_move_partition_pause_before_commit[];
@@ -282,6 +285,12 @@ StorageMergeTree::StorageMergeTree(
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 }
 
+
+void StorageMergeTree::prepareForStartup()
+{
+    if (!isTableReadonly())
+        outdateEmptyPartsCoveringDetachedParts();
+}
 
 void StorageMergeTree::startup()
 {
@@ -708,6 +717,7 @@ void StorageMergeTree::alter(
             /// idempotent, so a retried `ALTER` completes the transition.
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
             {
+                outdateEmptyPartsCoveringDetachedParts();
                 startBackgroundWorkers(&started_workers);
 
                 /// A concurrent `shutdown` may have set `shutdown_called` after the check above and stopped
@@ -2276,6 +2286,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                             .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
                         });
 
+                    /// The wait released the selection lock, so `DETACH` may have added a gap.
+                    merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
+                    parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
                     continue;
                 }
                 else
@@ -3826,6 +3839,61 @@ void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, Conte
     }
 }
 
+void StorageMergeTree::dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_outdating_detached_empty_parts);
+    /// An empty part that stays active covers the block range of the part just copied to `detached/`.
+    /// A later `DETACH` would copy that empty part, or a part merged from it, to `detached/` as well,
+    /// and `ATTACH` would then treat the earlier detached part as covered and rename it to `inactive_`.
+    /// It stays on disk until the outdated parts it covers are removed, see `outdateEmptyPartsCoveringDetachedParts`.
+    for (const auto & part_name : empty_part_names)
+    {
+        if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}); part && isPinnedByDeleteBitmap(*part))
+            continue;
+
+        dropPartNoWaitNoThrow(part_name);
+    }
+}
+
+void StorageMergeTree::outdateEmptyPartsCoveringDetachedParts()
+{
+    /// `grabOldParts` removes an empty part only after the outdated parts it covers. If the table is loaded before
+    /// that, the empty part that `dropEmptyPartsCoveringDetachedParts` outdated is active again, and
+    /// `remove_empty_parts = 0` or `empty_parts_lifetime` keep it. So outdate an active empty part that covers
+    /// a part in `detached/` again, before it can be merged or detached. It stays on disk to cover the outdated parts.
+    DataPartsVector empty_parts;
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        if (part->rows_count == 0)
+            empty_parts.push_back(part);
+
+    if (empty_parts.empty())
+        return;
+
+    fiu_do_on(FailPoints::mt_throw_before_outdating_empty_parts,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before recovering detached empty parts");
+    });
+
+    /// The parts that `tryLoadPartsToAttach` considers for `ATTACH PARTITION`.
+    auto detached_parts = getDetachedParts();
+    std::erase_if(detached_parts, [](const DetachedPartInfo & part_info)
+    {
+        return !part_info.valid_name || !part_info.prefix.empty() || part_info.has_try_suffix;
+    });
+
+    for (const auto & part : empty_parts)
+    {
+        if (std::ranges::none_of(detached_parts, [&](const DetachedPartInfo & part_info) { return part->info.contains(part_info); }))
+            continue;
+
+        if (!part->version->isVisibleByLatestSnapshot() || isPinnedByDeleteBitmap(*part))
+            continue;
+
+        LOG_INFO(log, "Outdating empty part {}, because it covers a detached part", part->name);
+        outdatePart(NO_TRANSACTION_RAW, part->name, /*force=*/ false, /*clear_without_timeout=*/ false);
+    }
+}
+
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     assertNotReadonly();
@@ -3909,6 +3977,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -3920,17 +3989,17 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             auto operation_data_parts_lock = lockOperationsWithParts();
 
-            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
-            if (!part)
-                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
-
-            /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
-            /// anything is written, so that the usual case fails without any side effect at all.
-            /// It is only a fast path, not a reservation: the removal itself is what decides, so the
-            /// clone to `detached/` is made after it, out of `covered_parts`.
-            checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
-
             {
+                auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+                if (!part)
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
+
+                /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
+                /// anything is written, so that the usual case fails without any side effect at all.
+                /// It is only a fast path, not a reservation: the removal itself is what decides, so the
+                /// clone to `detached/` is made after it, out of `covered_parts`.
+                checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
+
                 auto future_parts = initCoverageWithNewEmptyParts({part});
 
                 LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
@@ -3941,7 +4010,11 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
 
                 if (detach)
+                {
                     clonePartsToDetached(removed_parts, query_context);
+                    for (const auto & new_part : new_data_parts)
+                        empty_part_names.push_back(new_part->name);
+                }
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3950,6 +4023,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          op, part->name, future_parts[0].part_name,
                          transaction.getTID());
             }
+            if (detach)
+                dropEmptyPartsCoveringDetachedParts(empty_part_names);
         }
     }
 
@@ -4017,6 +4092,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
 
         if (txn)
         {
@@ -4039,41 +4115,50 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
             auto operation_data_parts_lock = lockOperationsWithParts();
 
-            DataPartsVector parts;
-
-            if (partition_ast && partition_ast->all)
             {
-                parts = getVisibleDataPartsVector(query_context);
+                DataPartsVector parts;
+                FailPointInjection::pauseFailPoint(FailPoints::mt_pause_after_detach_operations_lock);
+
+                if (partition_ast && partition_ast->all)
+                {
+                    parts = getVisibleDataPartsVector(query_context);
+                }
+                else
+                {
+                    parts = getVisibleDataPartsVectorInPartition(query_context, partition_id_to_drop);
+                }
+
+                /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
+                /// only once the removal has gone through.
+                checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
+
+                auto future_parts = initCoverageWithNewEmptyParts(parts);
+
+                LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                         future_parts.size(), parts.size(),
+                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                         transaction.getTID());
+
+
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+
+                if (detach)
+                {
+                    clonePartsToDetached(removed_parts, query_context);
+                    for (const auto & new_part : new_data_parts)
+                        empty_part_names.push_back(new_part->name);
+                }
+
+                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+
+                const auto * op = detach ? "Detached" : "Dropped";
+                LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
+                         op, parts.size(), future_parts.size(),
+                         transaction.getTID());
             }
-            else
-            {
-                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id_to_drop);
-            }
-
-            /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
-            /// only once the removal has gone through.
-            checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
-
-            auto future_parts = initCoverageWithNewEmptyParts(parts);
-
-            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
-                     future_parts.size(), parts.size(),
-                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
-                     transaction.getTID());
-
-
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
-
             if (detach)
-                clonePartsToDetached(removed_parts, query_context);
-
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
-
-            const auto * op = detach ? "Detached" : "Dropped";
-            LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
-                     op, parts.size(), future_parts.size(),
-                     transaction.getTID());
+                dropEmptyPartsCoveringDetachedParts(empty_part_names);
         }
     }
 
