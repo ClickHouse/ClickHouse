@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT 1 FROM numbers(3) tx
 JOIN numbers(3) ty

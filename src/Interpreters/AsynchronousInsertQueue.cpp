@@ -83,6 +83,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char async_insert_pause_before_schedule[];
+    extern const char async_insert_flush_pause_after_set_user[];
 }
 
 namespace Setting
@@ -97,6 +98,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool async_insert_use_adaptive_busy_timeout;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool implicit_transaction;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsUInt64Auto insert_quorum;
@@ -109,7 +111,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace ErrorCodes
@@ -120,11 +122,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NOT_IMPLEMENTED;
     extern const int USER_EXPIRED;
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-static const NameSet settings_to_skip
+[[clang::no_destroy]] static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
     /// which means we can put two inserts with different tokens in the same block safely.
@@ -144,7 +147,10 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & authenticated_user_,
     const String & quota_key_,
     const Settings & settings_,
-    AsynchronousInsertQueueDataKind data_kind_)
+    AsynchronousInsertQueueDataKind data_kind_,
+    const String & quota_client_address_,
+    const String & quota_forwarded_address_,
+    std::optional<UInt64> quota_normalized_query_hash_)
     : query(query_->clone())
     , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -156,6 +162,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
     , quota_key(quota_key_)
+    , quota_client_address(quota_client_address_)
+    , quota_forwarded_address(quota_forwarded_address_)
+    , quota_normalized_query_hash(quota_normalized_query_hash_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -197,11 +206,15 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key})
+    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address})
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
     }
+
+    /// Unset (the common case) contributes nothing, so it does not change the hash of existing keys.
+    if (quota_normalized_query_hash)
+        siphash.update(*quota_normalized_query_hash);
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -234,6 +247,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     quota_key = other.quota_key;
+    quota_client_address = other.quota_client_address;
+    quota_forwarded_address = other.quota_forwarded_address;
+    quota_normalized_query_hash = other.quota_normalized_query_hash;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -256,6 +272,9 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         quota_key = other.quota_key;
+        quota_client_address = other.quota_client_address;
+        quota_forwarded_address = other.quota_forwarded_address;
+        quota_normalized_query_hash = other.quota_normalized_query_hash;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -340,6 +359,14 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 
     resetChunk();
     promise.set_exception(exception_);
+    countFailure();
+}
+
+void AsynchronousInsertQueue::InsertData::Entry::countFailure()
+{
+    if (failure_counted.exchange(true))
+        return;
+
     ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
 }
 
@@ -606,7 +633,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
+        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context);
 
         LimitReadBuffer limit_buf(
             *read_buf,
@@ -658,6 +685,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
     ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
+    /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
+    /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
+    for (const auto & elem : block)
+        if (elem.column && elem.column->convertToFullIfWrapped().get() != elem.column.get())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Async insert block column '{}' must be materialized before queuing, but has a "
+                "non-default serialization representation: {}",
+                elem.name, elem.column->dumpStructure());
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
@@ -717,6 +755,25 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     }
 
     const auto & client_info = query_context->getClientInfo();
+
+    /// The flush runs in a context of its own, which only has the client address restored if a quota needs it.
+    String quota_client_address;
+    String quota_forwarded_address;
+    /// The flush computes the normalized hash of its own (rewritten) statement, which differs from the hash of the
+    /// submitted `INSERT` the quotas keyed by `normalized_query_hash` were checked against, so it is kept as well.
+    std::optional<UInt64> quota_normalized_query_hash;
+    if (auto quota = query_context->getQuota())
+    {
+        if (quota->isKeyedByClientAddress())
+        {
+            if (client_info.current_address)
+                quota_client_address = client_info.current_address->host().toString();
+            quota_forwarded_address = client_info.getLastForwardedForHost();
+        }
+        if (quota->isKeyedByNormalizedQueryHash())
+            quota_normalized_query_hash = query_context->getNormalizedQueryHash();
+    }
+
     InsertQuery key{
         query,
         query_context->getUserID(),
@@ -729,7 +786,10 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         client_info.authenticated_user,
         client_info.quota_key,
         settings,
-        data_kind};
+        data_kind,
+        quota_client_address,
+        quota_forwarded_address,
+        quota_normalized_query_hash};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -941,6 +1001,21 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 
     if (settings[Setting::async_insert_busy_timeout_decrease_rate] <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
+}
+
+bool AsynchronousInsertQueue::checkInsideTransaction(const ContextPtr & query_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!query_context->getCurrentTransaction() && !settings[Setting::implicit_transaction])
+        return false;
+
+    if (settings[Setting::throw_on_unsupported_query_inside_transaction])
+    {
+        if (settings[Setting::implicit_transaction])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+    }
+    return true;
 }
 
 void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
@@ -1234,18 +1309,6 @@ try
 
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
-    /// Fail closed if the authentication method that queued this insert has expired between enqueue
-    /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
-    /// deferred flush has no session, so without this a token could enqueue data just before expiry
-    /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
-    /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
-    if (key.authentication_valid_until != 0)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (now > key.authentication_valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
-    }
-
     bool internal = true;
     bool async_insert = true;
 
@@ -1272,19 +1335,44 @@ try
         insert_context.reset();
     });
 
-    /// Access rights must be checked for the user who executed the initial INSERT query.
-    if (key.user_id)
+    /// Rethrown first in the guarded block below, so a failed identity restore is logged and inserts nothing.
+    std::exception_ptr identity_exception;
+    try
     {
-        /// Replay the whole originating identity in one call: the external (pushed) roles, the
-        /// credential grant limit and its expiry are restored together with the user, so a limited
-        /// credential does not regain the full user's rights and a pushed-role session does not fail
-        /// role revalidation.
-        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
-        /// `current_roles` are the session's *effective* current roles, which already include the
-        /// external roles restored above. Re-apply them without the grant check: external roles are not
-        /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
-        /// granted current roles are kept and the external ones come from `setUser`.
-        insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        /// Fail closed if the authentication method that queued this insert has expired between enqueue
+        /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
+        /// deferred flush has no session, so without this a token could enqueue data just before expiry
+        /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
+        /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
+        if (key.authentication_valid_until != 0)
+        {
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            if (now > key.authentication_valid_until)
+                throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
+        }
+
+        /// Access rights must be checked for the user who executed the initial INSERT query.
+        if (key.user_id)
+        {
+            /// Replay the whole originating identity in one call: the external (pushed) roles, the
+            /// credential grant limit and its expiry are restored together with the user, so a limited
+            /// credential does not regain the full user's rights and a pushed-role session does not fail
+            /// role revalidation.
+            insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
+            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_after_set_user);
+            /// `current_roles` are the session's *effective* current roles, which already include the
+            /// external roles restored above. Re-apply them without the grant check: external roles are not
+            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+            /// granted current roles are kept and the external ones come from `setUser`.
+            insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        }
+    }
+    catch (...)
+    {
+        identity_exception = std::current_exception();
+        /// A partially restored identity must not be used to log the failure.
+        insert_context = Context::createCopy(global_context);
+        insert_context->makeQueryContext();
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user
@@ -1296,6 +1384,11 @@ try
     insert_context->setAuthenticatedUserName(key.authenticated_user);
     /// Restore the quota key so `KEYED BY client_key` quotas bill the originating bucket.
     insert_context->setQuotaClientKey(key.quota_key);
+    /// Restore the client address so `KEYED BY ip_address` / `forwarded_ip_address` quotas bill the originating bucket.
+    if (!key.quota_client_address.empty())
+        insert_context->setCurrentAddress(Poco::Net::SocketAddress(key.quota_client_address, 0));
+    if (!key.quota_forwarded_address.empty())
+        insert_context->setForwardedFor(key.quota_forwarded_address);
 
     insert_context->setSettings(*key.settings);
 
@@ -1337,11 +1430,13 @@ try
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
     /// Make the hash available to the parts of the insert that account `NORMALIZED_QUERY_HASH` quotas
-    /// but do not otherwise have it: the `WRITTEN_BYTES` pre-check in `InterpreterInsertQuery` and the
-    /// `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
+    /// but do not otherwise have it: the `WRITTEN_ROWS`/`WRITTEN_BYTES` pre-check in `InterpreterInsertQuery`
+    /// and the `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
     /// but async insert flushes build the interpreter directly, so without this every async insert
-    /// pattern would charge `WRITTEN_BYTES` to hash `0` and share a single bucket.
-    insert_context->setNormalizedQueryHash(normalized_query_hash);
+    /// pattern would charge `WRITTEN_ROWS`/`WRITTEN_BYTES` to hash `0` and share a single bucket.
+    /// For quotas keyed by `normalized_query_hash`, the hash of the submitted `INSERT`s is used instead, so that the flush
+    /// is charged to the bucket they were checked against (see `chargesQuotaProfileEvents` for the quotas over profile events).
+    insert_context->setNormalizedQueryHash(key.quota_normalized_query_hash.value_or(normalized_query_hash));
 
     /// We add it to the process list so
     /// a) it appears in system.processes
@@ -1442,6 +1537,9 @@ try
 
     try
     {
+        if (identity_exception)
+            std::rethrow_exception(identity_exception);
+
         interpreter = std::make_unique<InterpreterInsertQuery>(
             key.query,
             insert_context,
@@ -1475,6 +1573,9 @@ try
     }
     catch (...)
     {
+        /// The entries are finished with the exception only later, in `finishWithException`,
+        /// so count their failure now, before the snapshot of the profile events charged to the quotas.
+        countFailureOfUnfinishedEntries(*data);
         logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
 
         if (async_insert_log)
@@ -1551,6 +1652,8 @@ try
     }
     catch (...)
     {
+        /// See the comment above about `countFailureOfUnfinishedEntries`.
+        countFailureOfUnfinishedEntries(*data);
         bool log_error = true;
         logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
         if (!log_elements.empty())
@@ -1592,14 +1695,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+    auto create_format = [&] { return getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr); };
+    StreamingFormatExecutor::TransformCreator create_adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
-        if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+        auto columns = insert_context->getInsertionTableColumnsDescription();
+        if (columns->hasDefaults())
+            create_adding_defaults_transform = [columns, shared_header = std::make_shared<const Block>(header), insert_context](IInputFormat & format)
+            { return std::make_shared<AddingDefaultsTransform>(shared_header, *columns, format, insert_context); };
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1617,11 +1721,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     StreamingFormatExecutor executor(
         header,
-        format,
+        std::move(create_format),
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform),
+        std::move(create_adding_defaults_transform),
         [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
@@ -1719,6 +1823,15 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     Chunk chunk(std::move(result_columns), total_rows);
     chunk.getChunkInfos().add(std::move(deduplication_info));
     return chunk;
+}
+
+void AsynchronousInsertQueue::countFailureOfUnfinishedEntries(const InsertData & data)
+{
+    for (const auto & entry : data.entries)
+    {
+        if (!entry->isFinished())
+            entry->countFailure();
+    }
 }
 
 template <typename E>

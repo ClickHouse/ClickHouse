@@ -5,14 +5,15 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Functions/IFunction.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -154,8 +155,8 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
-        return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
+    if (const auto * source_step = dynamic_cast<const ISourceStep*>(parent->step.get()))
+        return {source_step->getSortDescription(), SortingProperty::SortScope::Stream};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
@@ -240,6 +241,14 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                 sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
         }
 
+        /// A partitioned `FinishSorting` scatters its merged stream into the window partitions and streams the
+        /// rows out of every shard as soon as their prefix group is complete (see `SortingStep::transformPipeline`).
+        /// A `MergingSortedTransform` above it would pull from the shards selectively, while the scatter has to
+        /// push to all of them, which can deadlock. So do not advertise this order: the sorting above stays a full
+        /// sort, which consumes every shard independently.
+        if (sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::FinishSorting)
+            return {};
+
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
         return {sorting_step->getSortDescription(), scope};
     }
@@ -319,7 +328,7 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
     Stack stack;
     stack.push_back({.node = &root});
 
-    using SortingPropertyStack = std::vector<SortingProperty>;
+    using SortingPropertyStack = VectorWithMemoryTracking<SortingProperty>;
     SortingPropertyStack properties;
 
     while (!stack.empty())

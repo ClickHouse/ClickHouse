@@ -1,6 +1,11 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 -- no-parallel-replicas: parallel replicas split the aggregation into partial + merging, so the
 -- annotation's `isFinal()` requirement refuses and every applying cell below would return 0.
+-- no-msan: the file averaged 67.1 s (max 159.2 s) over 526 runs of
+-- `Stateless tests (amd_msan, parallel, 1/3)` in the 14 days to 2026-10-13 (`play.clickhouse.com`,
+-- table `checks`). Its cells mostly assert on `EXPLAIN` plans; the conversion that actually skips
+-- groups keeps its MSan coverage through the value oracles in
+-- `05234_query_plan_aggregation_having_prefilter_results`, which still runs under MSan.
 
 -- The `aggregationHavingPrefilter` plan optimization lets the final two-level bucket conversion skip
 -- a group's key materialization when a HAVING bound on that aggregation's own no-argument `count()`
@@ -10,7 +15,8 @@
 -- groups each shape skips, and what a conversion that skips groups leaves observable above it.
 -- The value oracles - the same rows with the setting off and on - and the dataflow statistics live in
 -- `05234_query_plan_aggregation_having_prefilter_results`, which runs on the same fixture: a
--- sanitizer build has to finish either file inside one test's time budget.
+-- sanitizer build other than MSan (see the tags) has to finish either file inside one test's time
+-- budget.
 
 -- The pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
 SET serialize_query_plan = 0;
@@ -377,9 +383,12 @@ SELECT '--- a throwing conjunct evaluated before the bound stops being reached -
 -- 3 of 100 runs of the `s3 storage, meta in keeper` flaky check raised
 -- `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` here while every other cell in this file matched. What is
 -- deterministic is the plan, so that half is pinned as the annotation on the exact shape instead.
+-- The arms expecting the exception disable `short_circuit_function_evaluation_reorder_arguments`,
+-- which otherwise splits the cheap `count() > 3` in front of the throwing conjunct and so elides the
+-- exception as well.
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+) SETTINGS query_plan_aggregation_having_prefilter = 0, short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT 'throwing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
@@ -394,7 +403,7 @@ SELECT count() FROM (
 -- error is already elided without this setting, so only the first pair of arms diverges.
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError ILLEGAL_DIVISION }
+) SETTINGS query_plan_aggregation_having_prefilter = 0, short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError ILLEGAL_DIVISION }
 SELECT 'dividing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';

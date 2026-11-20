@@ -30,9 +30,13 @@ SELECT 'replicated, virtual column in predicate';
 
 DROP TABLE IF EXISTS t_mutation_pruning_exotic_r;
 
+-- `number_of_free_entries_in_pool_to_execute_mutation = 0` keeps the mutations below from waiting for free slots in the
+-- server-global merges/mutations pool: when concurrent tests occupy it, the merge-selecting task retries only after its
+-- backoff, which the preceding mutations have already raised to `max_merge_selecting_sleep_ms` (60 s).
 CREATE TABLE t_mutation_pruning_exotic_r (d Date, x UInt32, y UInt32, a UInt32 ALIAS y + 1, m UInt32 MATERIALIZED y * 2)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_pruning_exotic_r', 'r1')
-PARTITION BY toYYYYMM(d) ORDER BY x;
+PARTITION BY toYYYYMM(d) ORDER BY x
+SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0;
 
 INSERT INTO t_mutation_pruning_exotic_r VALUES ('2024-01-01', 1, 100);
 INSERT INTO t_mutation_pruning_exotic_r VALUES ('2024-02-01', 2, 200);

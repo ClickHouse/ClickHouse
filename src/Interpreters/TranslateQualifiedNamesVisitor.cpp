@@ -367,8 +367,11 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
-                    for (const auto & column : table.columns)
-                        addIdentifier(columns, table.table, column.name);
+                    for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
+                    {
+                        for (const auto & column : *cols)
+                            addIdentifier(columns, table.table, column.name);
+                    }
                     break;
                 }
             }

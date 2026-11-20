@@ -66,15 +66,15 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
     /// We want to insert dynamic and typed paths only once per deserialization.
     bool insert_dynamic_and_typed_paths = true;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDistinctPaths>(*this);
-        new_state->object_structure_state = object_structure_state ? object_structure_state->clone() : nullptr;
-        new_state->shared_data_paths_state = shared_data_paths_state ? shared_data_paths_state->clone() : nullptr;
+        new_state->object_structure_state = object_structure_state ? object_structure_state->clone(context) : nullptr;
+        new_state->shared_data_paths_state = shared_data_paths_state ? shared_data_paths_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_shared_data_paths_state.size(); ++bucket)
-            new_state->bucket_shared_data_paths_state[bucket] = bucket_shared_data_paths_state[bucket] ? bucket_shared_data_paths_state[bucket]->clone() : nullptr;
+            new_state->bucket_shared_data_paths_state[bucket] = bucket_shared_data_paths_state[bucket] ? bucket_shared_data_paths_state[bucket]->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_shared_data_structure_states.size(); ++bucket)
-            new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone() : nullptr;
+            new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone(context) : nullptr;
         return new_state;
     }
 };
