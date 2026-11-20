@@ -105,7 +105,7 @@ struct Expected
         LiteralTokenMap * literal_token_map = nullptr;
     };
 
-    SavedState save() const { return {variants, max_parsed_pos, literal_token_map}; }
+    [[nodiscard]] SavedState save() const { return {variants, max_parsed_pos, literal_token_map}; }
 
     void restore(const SavedState & state)
     {
