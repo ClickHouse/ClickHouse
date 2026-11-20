@@ -74,6 +74,7 @@ public:
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return getNested()->supportsOptimizationToMapKeysAndValuesSubcolumns(); }
     bool hasBucketedMapSerialization() const override { return getNested()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
     /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
