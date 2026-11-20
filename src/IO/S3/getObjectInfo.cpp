@@ -1,6 +1,7 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
+#include <Common/FailPoint.h>
 
 #if USE_AWS_S3
 
@@ -12,6 +13,11 @@ namespace ProfileEvents
     extern const Event DiskS3HeadObject;
 }
 
+
+namespace DB::FailPoints
+{
+    extern const char s3_pause_between_head_object_and_get_object_tagging[];
+}
 
 namespace DB::ErrorCodes
 {
@@ -101,14 +107,44 @@ namespace
         /// belong to the reported size, `ETag` and version.
         if (with_tags && result.GetTagCount() > 0)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::s3_pause_between_head_object_and_get_object_tagging);
+
             String tags_version_id;
             object_info.tags = getObjectTags(client, bucket, key, version_id, &tags_version_id);
-            if (version_id.empty() && !object_info.version_id.empty() && !tags_version_id.empty()
-                && tags_version_id != object_info.version_id)
-                throw Exception(
-                    ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                    "The object {} in bucket {} was rewritten while its tags were read (version {} by `HeadObject`, {} by `GetObjectTagging`)",
-                    key, bucket, object_info.version_id, tags_version_id);
+            if (version_id.empty())
+            {
+                if (!object_info.version_id.empty() && !tags_version_id.empty())
+                {
+                    if (tags_version_id != object_info.version_id)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "The object {} in bucket {} was rewritten while its tags were read (version {} by `HeadObject`, {} by `GetObjectTagging`)",
+                            key, bucket, object_info.version_id, tags_version_id);
+                }
+                else
+                {
+                    /// Without versions `GetObjectTagging` names nothing that the tags could be checked against (it reports
+                    /// no `ETag`). So `HeadObject` is repeated: if it still describes the same generation, nothing was
+                    /// rewritten before the tags were read, and they are of that generation.
+                    auto recheck = headObject(client, bucket, key, version_id);
+                    if (!recheck.IsSuccess())
+                    {
+                        if (isNotFoundError(recheck.GetError().GetErrorType()))
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "The object {} in bucket {} was removed while its tags were read", key, bucket);
+                        return {std::nullopt, recheck.GetError()};
+                    }
+                    const auto & recheck_result = recheck.GetResult();
+                    if (recheck_result.GetETag() != result.GetETag()
+                        || recheck_result.GetLastModified() != result.GetLastModified()
+                        || pinnableVersionId(recheck_result.GetVersionId()) != object_info.version_id)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "The object {} in bucket {} was rewritten while its tags were read (`ETag` {} before `GetObjectTagging`, {} after it)",
+                            key, bucket, object_info.etag, recheck_result.GetETag());
+                }
+            }
         }
 
         return {object_info, {}};
