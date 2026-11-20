@@ -6,7 +6,7 @@
 
 #include <map>
 
-namespace DB
+namespace DB::IcebergRESTCatalog
 {
 
 /// Builds the `metadata.json` of a new table from a CreateTableRequest. Throws `BAD_ARGUMENTS` for an invalid request.
