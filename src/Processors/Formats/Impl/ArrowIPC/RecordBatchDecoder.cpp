@@ -328,7 +328,8 @@ bool asksForRawBytes(const RequestedType & requested)
 
 /// Whether the field at the dotted `path` carries a requested subcolumn below it together with a requested
 /// column that encloses that subcolumn (e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
-/// struct `t`, where `t` itself is not requested), or a subcolumn below it requested several times with
+/// struct `t`, where `t` itself is not requested, or `t.values.s` and the key lookup `t.key_1` for the values
+/// of the map `t`), or a subcolumn below it requested several times with
 /// different types (`t.s String` and `T.S IPv6`), and one of these columns asks for a raw-byte conversion.
 /// Each such column is taken from the one decoded column, whose leaves then keep their bytes (see
 /// `RecordBatchDecoder::rawByteTarget`) and are converted after decoding.
@@ -346,10 +347,25 @@ bool carriesNestedRequests(const String & path, const RequestedTypes * types)
         bool converts = asksForRawBytes(requested);
         for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
         {
-            if (auto it = types->find(name.substr(0, pos)); it != types->end())
+            const String prefix = name.substr(0, pos);
+            if (auto it = types->find(prefix); it != types->end())
             {
                 enclosed = true;
                 converts = converts || asksForRawBytes(it->second);
+            }
+            /// A dynamic key lookup of an enclosing map (`t.key_1` for `t.values.s`) is taken from the entries
+            /// of the map too (see `isDecodedForSeveralRequests`).
+            const std::string_view component = std::string_view(name).substr(pos + 1, name.find('.', pos + 1) - pos - 1);
+            if (component == "keys" || component == "values")
+            {
+                for (const auto & [other_name, other] : *types)
+                {
+                    if (isMapKeyLookup(prefix, other_name))
+                    {
+                        enclosed = true;
+                        converts = converts || asksForRawBytes(other);
+                    }
+                }
             }
         }
         if (enclosed && converts)
@@ -2532,11 +2548,13 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 
     DecodedColumns result;
     result.reserve(schema.fields.size());
-    for (const ArrowField & field : schema.fields)
+    const auto shadowed = keep_top_level_fields ? shadowedTopLevelFields() : VectorWithMemoryTracking<char>(schema.fields.size(), 0);
+    for (size_t i = 0; i < schema.fields.size(); ++i)
     {
+        const ArrowField & field = schema.fields[i];
         expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", field.name));
         const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (shadowed[i] || (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name)))
         {
             /// Skip unrequested values after validating the column's root row count.
             advanceField(field);
@@ -2699,6 +2717,15 @@ String RecordBatchDecoder::normalizedName(const String & name) const
     if (settings.arrow.case_insensitive_column_matching)
         boost::to_lower(normalized);
     return normalized;
+}
+
+VectorWithMemoryTracking<char> RecordBatchDecoder::shadowedTopLevelFields() const
+{
+    VectorWithMemoryTracking<char> shadowed(schema.fields.size(), 0);
+    UnorderedSetWithMemoryTracking<String> later_names;
+    for (size_t i = schema.fields.size(); i > 0; --i)
+        shadowed[i - 1] = !later_names.insert(normalizedName(schema.fields[i - 1].name)).second;
+    return shadowed;
 }
 
 String RecordBatchDecoder::childPath(const String & path, const String & child_name) const
@@ -3050,11 +3077,13 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
     const RequestedTypes * target_types_) const
 {
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> uses;
-    for (const ArrowField & field : schema.fields)
+    const auto shadowed = keep_top_level_fields ? shadowedTopLevelFields() : VectorWithMemoryTracking<char>(schema.fields.size(), 0);
+    for (size_t i = 0; i < schema.fields.size(); ++i)
     {
+        const ArrowField & field = schema.fields[i];
         /// The same kept-field test and starting position as `decodeBatch`.
         const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (shadowed[i] || (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name)))
             continue;
         collectDictionaryUses(
             field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);

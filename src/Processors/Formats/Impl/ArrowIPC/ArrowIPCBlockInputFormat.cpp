@@ -40,8 +40,10 @@
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <functional>
+#include <ranges>
 #include <Common/assert_cast.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -586,9 +588,9 @@ DataTypePtr nameTuplesAsDecoded(const DataTypePtr & hint, const ArrowIPC::ArrowF
             if (tuple->hasExplicitNames())
             {
                 DataTypes elements = tuple->getElements();
-                for (size_t i = 0; i < children.size(); ++i)
-                    if (const auto position = tuple->tryGetPositionByName(children[i].name, case_insensitive))
-                        elements[*position] = nameTuplesAsDecoded(elements[*position], children[i], case_insensitive);
+                for (const auto & child : children)
+                    if (const auto position = tuple->tryGetPositionByName(child.name, case_insensitive))
+                        elements[*position] = nameTuplesAsDecoded(elements[*position], child, case_insensitive);
                 return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
             }
             /// The elements past the fields of the struct are matched with none, and do not affect decoding.
@@ -618,7 +620,9 @@ void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
     {
         const ArrowIPC::ArrowField * field = nullptr;
         size_t list_depth = 0;
-        for (const auto & top_level : arrow_schema->fields)
+        /// Of the top-level fields with the same normalized name, the reader decodes and takes only the last
+        /// (see `RecordBatchDecoder::shadowedTopLevelFields`), so the requested types are resolved against it.
+        for (const auto & top_level : arrow_schema->fields | std::views::reverse)
         {
             String top_level_name = top_level.name;
             if (case_insensitive)
@@ -1213,6 +1217,64 @@ DataTypePtr peelArrays(DataTypePtr type, size_t levels)
     return type;
 }
 
+/// The dotted name of the subcolumn `name` of the column at the dotted `path`, normalized as the requested names are.
+String childRequestPath(const String & path, std::string_view name, bool case_insensitive)
+{
+    String child = path + "." + String(name);
+    if (case_insensitive)
+        boost::to_lower(child);
+    return child;
+}
+
+/// The type requested for the decoded column of type `type` at the dotted `path` (below `array_depth` arrays)
+/// by the requested column of that name, or else assembled from the requested subcolumns below it, with the
+/// decoded types of the parts no request mentions (`Tuple(s IPv6)` for the keys `Tuple(s String)` of a map `t`
+/// with `t.keys.s Array(IPv6)` requested). Null when neither the column nor a subcolumn of it is requested.
+DataTypePtr requestedTypeOrSubcolumns(
+    const DataTypePtr & type, const String & path, size_t array_depth, const FindRequestedType & find_requested,
+    bool case_insensitive)
+{
+    if (DataTypePtr requested = peelArrays(find_requested(path), array_depth))
+        return requested;
+    const DataTypePtr stripped = removeNullable(type);
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+    {
+        DataTypePtr element = requestedTypeOrSubcolumns(array->getNestedType(), path, array_depth + 1, find_requested, case_insensitive);
+        return element ? std::make_shared<DataTypeArray>(element) : nullptr;
+    }
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+    {
+        DataTypes elements = tuple->getElements();
+        bool found = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (DataTypePtr element = requestedTypeOrSubcolumns(
+                    elements[i], childRequestPath(path, tuple->getNameByPosition(i + 1), case_insensitive), array_depth,
+                    find_requested, case_insensitive))
+            {
+                elements[i] = std::move(element);
+                found = true;
+            }
+        }
+        if (!found)
+            return nullptr;
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+    {
+        DataTypePtr key = requestedTypeOrSubcolumns(
+            map->getKeyType(), childRequestPath(path, "keys", case_insensitive), array_depth + 1, find_requested, case_insensitive);
+        DataTypePtr value = requestedTypeOrSubcolumns(
+            map->getValueType(), childRequestPath(path, "values", case_insensitive), array_depth + 1, find_requested, case_insensitive);
+        if (!key && !value)
+            return nullptr;
+        return std::make_shared<DataTypeMap>(key ? key : map->getKeyType(), value ? value : map->getValueType());
+    }
+    return nullptr;
+}
+
 /// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
 /// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `values.key_1`) and `subcolumn_type`
 /// is its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
@@ -1244,13 +1306,7 @@ DataTypePtr keyLookupSourceHint(
     const std::string_view rest = dot == std::string_view::npos ? std::string_view{} : subcolumn.substr(dot + 1);
     if (component.empty())
         return nullptr;
-    auto child_path = [&](std::string_view name)
-    {
-        String child = path + "." + String(name);
-        if (case_insensitive)
-            boost::to_lower(child);
-        return child;
-    };
+    auto child_path = [&](std::string_view name) { return childRequestPath(path, name, case_insensitive); };
 
     if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
     {
@@ -1267,20 +1323,33 @@ DataTypePtr keyLookupSourceHint(
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
     {
-        if (!tuple->hasExplicitNames() || rest.empty())
-            return nullptr;
-        const auto position = tuple->tryGetPositionByName(component, case_insensitive);
-        if (!position)
-            return nullptr;
-        const String & element_name = tuple->getElementNames()[*position];
-        DataTypePtr element_hint = keyLookupSourceHint(
-            tuple->getElement(*position), rest, subcolumn_type,
-            ArrowIPC::tupleElementHint(requested_stripped, element_name, *position, case_insensitive), child_path(component),
-            array_depth, find_requested, case_insensitive);
-        if (!element_hint)
-            return nullptr;
-        /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as decoded.
-        return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{element_name});
+        /// The name of an element can contain dots (`u.m`), and the elements of an unnamed tuple are named by
+        /// their positions (`1`), as the subcolumns of a tuple are.
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+        {
+            const String element_name = tuple->getNameByPosition(i + 1);
+            if (subcolumn.size() <= element_name.size() + 1 || subcolumn[element_name.size()] != '.')
+                continue;
+            const std::string_view prefix = subcolumn.substr(0, element_name.size());
+            if (case_insensitive ? !boost::iequals(prefix, element_name) : prefix != element_name)
+                continue;
+            DataTypePtr element_hint = keyLookupSourceHint(
+                tuple->getElement(i), subcolumn.substr(element_name.size() + 1), subcolumn_type,
+                tuple->hasExplicitNames() ? ArrowIPC::tupleElementHint(requested_stripped, element_name, i, case_insensitive)
+                                          : ArrowIPC::tupleElementHintByPosition(requested_stripped, i),
+                child_path(element_name), array_depth, find_requested, case_insensitive);
+            if (!element_hint)
+                continue;
+            /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as
+            /// decoded. An unnamed tuple is matched by position, so the other elements get their decoded types,
+            /// which keep them as they are.
+            if (tuple->hasExplicitNames())
+                return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{element_name});
+            DataTypes elements = tuple->getElements();
+            elements[i] = std::move(element_hint);
+            return std::make_shared<DataTypeTuple>(std::move(elements));
+        }
+        return nullptr;
     }
 
     if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
@@ -1291,7 +1360,8 @@ DataTypePtr keyLookupSourceHint(
             DataTypePtr key_hint = map->getKeyType();
             if (requested_map)
                 key_hint = requested_map->getKeyType();
-            else if (DataTypePtr requested_keys = peelArrays(find_requested(child_path("keys")), array_depth + 1))
+            else if (DataTypePtr requested_keys = requestedTypeOrSubcolumns(
+                         map->getKeyType(), child_path("keys"), array_depth + 1, find_requested, case_insensitive))
                 key_hint = requested_keys;
             /// The whole rest of the name is the serialized key, so the looked-up value has the requested type.
             return std::make_shared<DataTypeMap>(key_hint, subcolumn_type);

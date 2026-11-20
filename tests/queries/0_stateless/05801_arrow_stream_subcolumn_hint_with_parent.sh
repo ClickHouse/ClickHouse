@@ -202,4 +202,29 @@ $CLICKHOUSE_LOCAL -q "SELECT map('abcdefghijklmnop', toUInt8(7)) AS t FORMAT Arr
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.keys\` Array(IPv6), \`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8')"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70\` UInt8, \`t.keys\` Array(IPv6)')"
 
+echo "null struct row of map values with a key lookup"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(map(1, if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Map(UInt8, Nullable(Tuple(s String)))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.values.s\` Array(IPv6), \`t.key_1\` Tuple(s String)') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_1\` Tuple(s String), \`t.values.s\` Array(IPv6)') SETTINGS enable_nullable_tuple_type = 0"
+
+echo "map without the requested key below a dotted struct field"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(map(toUInt8(number + 1), 'abcdefghijklmnop')) AS Tuple(\`u.m\` Map(UInt8, String))) AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(\`u.m\` Map(UInt8, IPv6)), \`t.u.m.key_1\` IPv6')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.u.m.key_1\` IPv6, t Tuple(\`u.m\` Map(UInt8, IPv6))')"
+
+echo "map without the requested key below an unnamed struct"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(map(toUInt8(number + 1), 'abcdefghijklmnop')) AS Tuple(Map(UInt8, String))) AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(Map(UInt8, IPv6)), \`t.1.key_1\` IPv6')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.1.key_1\` IPv6, t Tuple(Map(UInt8, IPv6))')"
+
+echo "map lookup of a raw-byte key requested through a subcolumn of the keys"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(map(tuple('abcdefghijklmnop'), toUInt8(7)) AS Map(Tuple(s String), UInt8)) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.keys.s\` Array(IPv6), \`t.key_(''6162:6364:6566:6768:696a:6b6c:6d6e:6f70'')\` UInt8')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_(''6162:6364:6566:6768:696a:6b6c:6d6e:6f70'')\` UInt8, \`t.keys.s\` Array(IPv6)')"
+
+echo "case-insensitive names of structs with different field names"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(toDate32('2024-01-01')) AS Tuple(x Date32)) AS t, CAST(tuple(d) AS Tuple(d Date32)) AS T FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(d String), t Tuple(Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(Int32), T Tuple(d String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
 rm -f "$file"
