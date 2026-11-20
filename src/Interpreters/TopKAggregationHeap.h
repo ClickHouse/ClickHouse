@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <base/defines.h>
 #include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -202,8 +204,8 @@ protected:
         size_t heap_key_count,
         size_t total_group_by_keys,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs,
         UInt64 observation_rows);
 
     void freezeBase();
@@ -367,8 +369,8 @@ private:
     void init(
         const ColumnRawPtrs & source_columns,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs);
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs);
 
     void findLowCardinalityColumns();
 
@@ -434,8 +436,8 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t heap_key_count,
         size_t total_group_by_keys,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs,
         UInt64 observation_rows,
         SharedTopKBoundary * shared,
         TopKThresholdTrackerPtr tracker)
@@ -499,7 +501,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
 
 private:
     static constexpr bool keys_hold_pointers
-        = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
+        = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef> || is_keys_and_packed_string<Key>;
 
     std::vector<Key> hash_table_keys;       /// per `heap_column` row: the hash-table key captured at admission, for `erase` on eviction
 
@@ -516,6 +518,12 @@ private:
             /// These keys live in a plain `HashMap` compared by exact `memcmp`,
             /// so the ordinary unpadded persistence applies.
             ArenaPackedStringHolder holder{key, arena};
+            keyHolderPersistKey(holder);
+            return holder.key;
+        }
+        else if constexpr (is_keys_and_packed_string<Key>)
+        {
+            ArenaKeysAndPackedStringHolder<decltype(Key::keys)> holder{key, arena};
             keyHolderPersistKey(holder);
             return holder.key;
         }

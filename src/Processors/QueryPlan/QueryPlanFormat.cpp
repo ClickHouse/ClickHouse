@@ -635,10 +635,12 @@ namespace QueryPlanFormat
         PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
         PerPlanColumnMaps & per_plan_columns,
+        bool only_built_child_plans,
         FragmentWalk * fragment_walk = nullptr)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
+            buildPrettyNamesForNode(
+                *it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans, fragment_walk);
 
         /// Continue into the fragment that sends to a receive step, so that the fragments are walked in the order of the
         /// plan before the cut, as plain `EXPLAIN` walks it, and in the same naming scope.
@@ -649,11 +651,13 @@ namespace QueryPlanFormat
                 const auto * sending_plan = it->second;
                 if (fragment_walk->visited.insert(sending_plan).second && sending_plan->getRootNode())
                     buildPrettyNamesForNode(
-                        sending_plan->getRootNode(), pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
+                        sending_plan->getRootNode(), pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns,
+                        only_built_child_plans, fragment_walk);
             }
         }
 
-        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ true))
+        for (auto * child_plan :
+            only_built_child_plans ? node->step->getBuiltChildPlans() : node->step->getChildPlans(/*for_explain=*/ true))
         {
             if (child_plan && child_plan->getRootNode())
             {
@@ -664,7 +668,8 @@ namespace QueryPlanFormat
                 /// so they stay shared across the whole tree.
                 auto & child_columns = per_plan_columns[child_plan];
                 buildPrettyNamesForNode(
-                    child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
+                    child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns,
+                    only_built_child_plans, fragment_walk);
             }
         }
 
@@ -791,7 +796,7 @@ namespace QueryPlanFormat
         return result;
     }
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool only_built_child_plans)
     {
         /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
         /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
@@ -803,7 +808,7 @@ namespace QueryPlanFormat
         auto & top_columns = per_plan_columns[&plan];
         auto * root = plan.getRootNode();
         if (root)
-            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns, only_built_child_plans);
 
         return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
     }
@@ -820,7 +825,8 @@ namespace QueryPlanFormat
         for (const auto * plan : fragment_plans)
             if (fragment_walk.visited.insert(plan).second && plan->getRootNode())
                 buildPrettyNamesForNode(
-                    plan->getRootNode(), fragment_columns, runtime_filter_names, subquery_set_names, per_plan_columns, &fragment_walk);
+                    plan->getRootNode(), fragment_columns, runtime_filter_names, subquery_set_names, per_plan_columns,
+                    /*only_built_child_plans=*/ false, &fragment_walk);
 
         for (const auto * plan : fragment_plans)
             per_plan_columns[plan] = fragment_columns;
