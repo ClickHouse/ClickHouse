@@ -34,7 +34,7 @@ public:
     [[nodiscard]] bool hasEnoughRows() const;
 
     void setLimit(UInt64 limit) { total_row_limit = limit; }
-    bool reachedLimit() const { return total_row_limit && total_merged_rows >= total_row_limit; }
+    [[nodiscard]] bool reachedLimit() const { return total_row_limit && total_merged_rows >= total_row_limit; }
 
     [[nodiscard]] size_t rowsToInsertBeforeFlush(
         const ColumnRawPtrs & raw_columns,
