@@ -114,7 +114,7 @@ struct ByteLevelAlphabet
 
     /// The bytes a token stands for, or nothing when it is not written in the alphabet, as a special
     /// token such as `<｜begin▁of▁sentence｜>` is not.
-    std::optional<String> decode(const String & token) const
+    [[nodiscard]] std::optional<String> decode(const String & token) const
     {
         String bytes;
         bytes.reserve(token.size());
@@ -150,7 +150,7 @@ try
     if (flag(model, "byte_fallback", false))
         unsupported("its model falls back to byte tokens, which is a SentencePiece model");
     for (const auto * key : {"continuing_subword_prefix", "end_of_word_suffix", "dropout"})
-        if (model->has(key) && !model->isNull(key) && model->get(key).toString() != "")
+        if (model->has(key) && !model->isNull(key) && !model->get(key).toString().empty())
             unsupported(fmt::format("its model has a `{}`", key));
     vocabulary->take_whole_tokens = flag(model, "ignore_merges", false);
 

@@ -78,7 +78,7 @@ private:
     [[nodiscard]] UInt32 rankOf(std::string_view piece) const;
 
     /// The rank of merging the adjacent parts `left` and `right`, or `no_rank` when they do not merge.
-    UInt32 pairRank(std::string_view left, std::string_view right) const;
+    [[nodiscard]] UInt32 pairRank(std::string_view left, std::string_view right) const;
 
     /// Encodes one piece that is not a token of the vocabulary by merging.
     void encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const;
