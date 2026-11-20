@@ -109,7 +109,8 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     return partition.end_visible;
 }
 
-bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & start)
+/// The start of a RANGE or GROUPS frame; `offset` is the signed GROUPS offset.
+bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, int64_t offset, RowPoint & start)
 {
     const WindowFrame & frame = params.window_description.frame;
     switch (frame.begin_type)
@@ -117,32 +118,19 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
         case WindowFrame::BoundaryType::Unbounded:
             return true;
         case WindowFrame::BoundaryType::Current:
-            switch (frame.type)
-            {
-                case WindowFrame::FrameType::ROWS:
-                    start = current;
-                    return true;
-                case WindowFrame::FrameType::RANGE:
-                case WindowFrame::FrameType::GROUPS:
-                    if (peerGroupAt(blocks, start.location) != peerGroupAt(blocks, current.location))
-                        start = current;
-                    return true;
-            }
+            if (peerGroupAt(blocks, start.location) != peerGroupAt(blocks, current.location))
+                start = current;
+            return true;
         case WindowFrame::BoundaryType::Offset:
-            switch (frame.type)
-            {
-                case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(partition, current.row_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
-                case WindowFrame::FrameType::RANGE:
-                    return advanceToRangeBound(params, blocks, partition, current, frame.begin_offset, frame.begin_preceding, false, start);
-                case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.begin_offset, frame.begin_preceding), start);
-            }
+            if (frame.type == WindowFrame::FrameType::RANGE)
+                return advanceToRangeBound(params, blocks, partition, current, frame.begin_offset, frame.begin_preceding, false, start);
+            return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + offset, start);
     }
     UNREACHABLE();
 }
 
-bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & end)
+/// The end of a RANGE or GROUPS frame; `offset` is the signed GROUPS offset plus one.
+bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, int64_t offset, RowPoint & end)
 {
     const WindowFrame & frame = params.window_description.frame;
     switch (frame.end_type)
@@ -150,33 +138,70 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
         case WindowFrame::BoundaryType::Unbounded:
             return advanceToPartitionEnd(partition, end);
         case WindowFrame::BoundaryType::Current:
-            switch (frame.type)
-            {
-                case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(partition, current.row_index_in_partition + 1, end);
-                case WindowFrame::FrameType::RANGE:
-                case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + 1, end);
-            }
+            return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + 1, end);
         case WindowFrame::BoundaryType::Offset:
-            switch (frame.type)
-            {
-                case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(partition, current.row_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
-                case WindowFrame::FrameType::RANGE:
-                    return advanceToRangeBound(params, blocks, partition, current, frame.end_offset, frame.end_preceding, true, end);
-                case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
-            }
+            if (frame.type == WindowFrame::FrameType::RANGE)
+                return advanceToRangeBound(params, blocks, partition, current, frame.end_offset, frame.end_preceding, true, end);
+            return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + offset, end);
     }
     UNREACHABLE();
 }
 
 }
 
+template <bool start_unbounded, bool end_unbounded>
+void Frame::advanceRows(Frame & frame, const SlidingBlocks & /*blocks*/, const RowPoint & current, const PartitionBounds & partition)
+{
+    FrameBounds & bounds = frame.frame_bounds;
+    bounds.start_visible = start_unbounded || advanceToRow(partition, current.row_index_in_partition + frame.start_offset, bounds.start);
+    bounds.end_visible = false;
+    if (!bounds.start_visible)
+        return;
+
+    /// An unbounded start stays at the first row of the partition, which no end precedes.
+    if (!start_unbounded && bounds.end.row_index_in_partition < bounds.start.row_index_in_partition)
+        bounds.end = bounds.start;
+
+    if constexpr (end_unbounded)
+        bounds.end_visible = advanceToPartitionEnd(partition, bounds.end);
+    else
+        bounds.end_visible = advanceToRow(partition, current.row_index_in_partition + frame.end_offset, bounds.end);
+}
+
+void Frame::advanceRangeOrGroups(Frame & frame, const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition)
+{
+    FrameBounds & bounds = frame.frame_bounds;
+    bounds.start_visible = advanceFrameStart(frame.params, blocks, partition, current, frame.start_offset, bounds.start);
+    bounds.end_visible = false;
+    if (!bounds.start_visible)
+        return;
+
+    if (bounds.end.row_index_in_partition < bounds.start.row_index_in_partition)
+        bounds.end = bounds.start;
+
+    bounds.end_visible = advanceFrameEnd(frame.params, blocks, partition, current, frame.end_offset, bounds.end);
+}
+
 Frame::Frame(const WindowTransformParams & params_)
     : params(params_)
 {
+    const WindowFrame & window_frame = params.window_description.frame;
+    if (window_frame.type != WindowFrame::FrameType::RANGE)
+    {
+        if (window_frame.begin_type == WindowFrame::BoundaryType::Offset)
+            start_offset = signedOffset(window_frame.begin_offset, window_frame.begin_preceding);
+        if (window_frame.end_type == WindowFrame::BoundaryType::Offset)
+            end_offset += signedOffset(window_frame.end_offset, window_frame.end_preceding);
+    }
+
+    const bool start_unbounded = window_frame.begin_type == WindowFrame::BoundaryType::Unbounded;
+    const bool end_unbounded = window_frame.end_type == WindowFrame::BoundaryType::Unbounded;
+    if (window_frame.type != WindowFrame::FrameType::ROWS)
+        advance_bounds = &advanceRangeOrGroups;
+    else if (start_unbounded)
+        advance_bounds = end_unbounded ? &advanceRows<true, true> : &advanceRows<true, false>;
+    else
+        advance_bounds = end_unbounded ? &advanceRows<false, true> : &advanceRows<false, false>;
 }
 
 void Frame::enterPartition(RowNumber partition_start)
@@ -185,19 +210,6 @@ void Frame::enterPartition(RowNumber partition_start)
     frame_bounds.end = RowPoint{.location = partition_start};
     frame_bounds.start_visible = false;
     frame_bounds.end_visible = false;
-}
-
-void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition)
-{
-    frame_bounds.start_visible = advanceFrameStart(params, blocks, partition, current, frame_bounds.start);
-    frame_bounds.end_visible = false;
-    if (!frame_bounds.start_visible)
-        return;
-
-    if (frame_bounds.end.row_index_in_partition < frame_bounds.start.row_index_in_partition)
-        frame_bounds.end = frame_bounds.start;
-
-    frame_bounds.end_visible = advanceFrameEnd(params, blocks, partition, current, frame_bounds.end);
 }
 
 const FrameBounds & Frame::bounds() const
