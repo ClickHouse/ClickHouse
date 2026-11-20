@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -54,5 +55,13 @@ private:
 };
 
 std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr & codec_desc);
+
+/// `rabitq` and `turboquant` assume vectors centered around the origin, so `UInt8` elements (stored and reference) are
+/// shifted by -128 before encoding.
+constexpr float QUANTIZED_CODEC_UINT8_SHIFT = 128.0f;
+inline bool quantizedCodecShiftsUInt8(std::string_view method)
+{
+    return method == "rabitq" || method == "turboquant";
+}
 
 }
