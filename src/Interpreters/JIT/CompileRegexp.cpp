@@ -54,7 +54,7 @@ namespace
     /// `SYSTEM DROP COMPILED EXPRESSION CACHE`), so the default-enabled path cannot accumulate unbounded
     /// process-wide state for workloads with many unique patterns.
     std::mutex regexp_seen_counter_mutex;
-    std::unordered_map<UInt128, UInt64, UInt128Hash> regexp_seen_counter;
+    [[clang::no_destroy]] std::unordered_map<UInt128, UInt64, UInt128Hash> regexp_seen_counter;
     constexpr size_t MAX_SEEN_COUNTER_ENTRIES = 10000;
 
     /// Members of a set listed individually are only used when the set (or its complement) is small.
