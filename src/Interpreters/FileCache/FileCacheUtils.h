@@ -37,8 +37,7 @@ inline size_t roundUpToMultiple(size_t num, size_t multiple)
     return result;
 }
 
-/// `ratio` of `total`, rounded to the nearest integer and at most `total`
-/// (`static_cast<double>(total)` may round past `total`, and past the range of `long`).
+/// `ratio` of `total`, rounded to the nearest integer and at most `total` (`double(total)` may round past it).
 inline size_t getRatio(size_t total, double ratio)
 {
     const double share = std::round(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));

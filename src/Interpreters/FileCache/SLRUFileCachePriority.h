@@ -11,9 +11,8 @@ namespace DB
 /// There are two queues: "protected" and "probationary".
 /// All cache entries which have been accessed only once, would lie in probationary queue.
 /// When entry is accessed more than once, it would go to the protected queue.
-/// While the protected queue does not use all of its share, the probationary queue
-/// can use the rest (see `lendProtectedCapacity`), so a cache which is not full does not evict.
-/// The limits of the two queues always add up to the two shares.
+/// While the protected queue does not use all of its share, the probationary queue borrows
+/// the rest (see `lendProtectedCapacity`). The limits of the two queues always add up to the two shares.
 class SLRUFileCachePriority : public IFileCachePriority
 {
 public:
@@ -183,20 +182,16 @@ private:
     LoggerPtr log;
     SharedEvictionCursor promotion_cursor{EvictionCursor::Promotion};
 
-    /// Lent capacity reserved by protected entries which grow (see `collectEvictionInfo`).
+    /// Lent capacity reserved by growing protected entries (see `collectEvictionInfo`), keyed by `take_back_queue_id`.
     std::atomic<size_t> pending_take_back_size = 0;
-    /// Keys that reservation in an `EvictionInfo`.
     const size_t take_back_queue_id;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
-    /// Moves unused protected capacity to probationary, so that probationary does not evict while protected has room.
     void lendProtectedCapacity(size_t size, size_t elements, const CacheStateGuard::Lock & lock);
     bool canFitInProbationary(size_t size, size_t elements, const CacheStateGuard::Lock & lock) const;
-    /// Unused capacity of the protected queue that it can lend.
     size_t getLendableSize(const CacheStateGuard::Lock & lock) const;
     size_t getLendableElements(const CacheStateGuard::Lock & lock) const;
-    /// Capacity that the probationary queue currently borrows from the protected queue.
     size_t getLentSize(const CacheStateGuard::Lock & lock) const;
     size_t getLentElements(const CacheStateGuard::Lock & lock) const;
     /// Moves lent capacity back to protected for an entry which grows by `size`, as far as probationary has it free.

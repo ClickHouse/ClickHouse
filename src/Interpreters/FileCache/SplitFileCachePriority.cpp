@@ -40,7 +40,6 @@ SplitFileCachePriority::SplitFileCachePriority(
     const std::string & description_)
     : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , system_segment_size_ratio(system_segment_size_ratio_)
-    /// The two parts add up to the total.
     , max_data_segment_size(max_size_ - getRatio(max_size_, system_segment_size_ratio))
     , max_data_segment_elements(max_elements_ - getRatio(max_elements_, system_segment_size_ratio))
     , max_system_segment_size(getRatio(max_size_, system_segment_size_ratio))

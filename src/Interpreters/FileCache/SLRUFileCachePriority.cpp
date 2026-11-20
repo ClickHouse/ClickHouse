@@ -42,7 +42,6 @@ namespace
 
     size_t excess(size_t a, size_t b) { return a > b ? a - b : 0; }
 
-    /// The two shares add up to the total.
     size_t getProbationaryShare(size_t total, double ratio) { return total - getRatio(total, ratio); }
 }
 
@@ -272,8 +271,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
     /// everything else goes to probationary.
     bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
 
-    /// The queue limits could have moved since the entry was removed (see `lendProtectedCapacity`),
-    /// so an entry which does not fit its original queue goes to probationary, which can borrow.
+    /// Queue limits move with lending, so an entry which no longer fits its original queue goes to probationary.
     if (state_lock && size)
     {
         const size_t accounted_size = key_metadata->useRealDiskSize() ? key_metadata->alignFileSize(size) : size;
@@ -378,8 +376,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo( /// NOLINT
         /// (to make sure we have space in probationary queue for the downgrade).
         /// But we cannot do it here, as we do not know in advance the exact size to downgrade.
         /// So we will do it in collectCandidatesForEviction.
-        /// A protected entry which grows takes lent capacity back: probationary makes room for it (hold and eviction, as for
-        /// any probationary reservation), and the limit moves when the entry grows (see `SLRUIterator::incrementSize`).
+        /// A growing protected entry takes lent capacity back from probationary; the limit moves in `SLRUIterator::incrementSize`.
         const size_t take_back = std::min(
             excess(size, excess(protected_queue.max_size, protected_queue.getSize(lock))), getLentSize(lock));
         auto info = protected_queue.collectEvictionInfo(
@@ -395,7 +392,6 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo( /// NOLINT
         return info;
     }
 
-    /// Do not evict from probationary while the protected queue has unused capacity.
     lendProtectedCapacity(size, elements, lock);
     return probationary_queue.collectEvictionInfo(
         size, elements, reservee, is_total_space_cleanup, origin_info, lock);
