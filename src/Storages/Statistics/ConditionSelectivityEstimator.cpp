@@ -136,7 +136,12 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     if (!stats)
         return result;
 
-    result.ndv_provenance.origin = stats->hasCardinality() ? ColumnStatsOrigin::MeasuredStatistics : ColumnStatsOrigin::SyntheticFallback;
+    switch (stats->getCardinalitySource())
+    {
+        case ColumnStatistics::CardinalitySource::Counted: result.ndv_provenance.origin = ColumnStatsOrigin::MeasuredStatistics; break;
+        case ColumnStatistics::CardinalitySource::AssumedDistinct: result.ndv_provenance.origin = ColumnStatsOrigin::AssumedDistinct; break;
+        case ColumnStatistics::CardinalitySource::Unknown: result.ndv_provenance.origin = ColumnStatsOrigin::SyntheticFallback; break;
+    }
     auto estimate = stats->getEstimate();
     result.min_value = std::move(estimate.estimated_min);
     result.max_value = std::move(estimate.estimated_max);

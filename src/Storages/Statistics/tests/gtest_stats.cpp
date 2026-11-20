@@ -1916,6 +1916,16 @@ TEST(Statistics, EstimatorAllDistinctAssumption)
         /// Not in the metadata: nothing is assumed.
         EXPECT_EQ(ndvOf(estimator, "missing"), 100u);
 
+        /// The assumed distinct count is an upper bound, not an exact count, and it is marked as such.
+        const auto f64_profile = estimator->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("f64");
+        EXPECT_EQ(f64_profile.ndv_provenance.origin, ColumnStatsOrigin::AssumedDistinct);
+        EXPECT_EQ(f64_profile.distinctCount(DistinctCountGuarantee::UpperBound), std::optional<UInt64>(1000));
+        EXPECT_FALSE(f64_profile.distinctCount(DistinctCountGuarantee::Exact).has_value());
+        /// The placeholder of a column without an assumption is not an upper bound either.
+        const auto placeholder_profile = estimator->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("f64_explicit");
+        EXPECT_EQ(placeholder_profile.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+        EXPECT_FALSE(placeholder_profile.distinctCount(DistinctCountGuarantee::UpperBound).has_value());
+
         /// The equality estimate uses the assumed cardinality.
         NamesAndTypesList names_and_types{{"f64", std::make_shared<DataTypeFloat64>()}, {"f64_explicit", std::make_shared<DataTypeFloat64>()}};
         EXPECT_EQ(estimateRowsFor(estimator, "f64 = 10", names_and_types), 1u);
