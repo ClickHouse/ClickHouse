@@ -13,6 +13,7 @@ node = cluster.add_instance(
     user_configs=[
         "configs/users.xml",
     ],
+    stay_alive=True,
 )
 
 
@@ -211,3 +212,43 @@ def test_old_spelling_of_names_is_resolved():
     assert node.query(
         "SET profile = 'my\\.profile'; SELECT getSetting('max_memory_usage')"
     ) == "10000000\n"
+
+
+def test_default_profile_with_name_collision_between_storages():
+    """A SQL profile `collision.profile` and a profile `<collision.profile>` from users.xml can both exist
+    (the latter was stored as `collision\\.profile` before). The default profile from the server config
+    must be resolved by the same storage precedence as any other lookup by name, e.g. `SET profile`."""
+    default_profile_config = "/etc/clickhouse-server/config.d/default_profile.xml"
+    collision_users_config = "/etc/clickhouse-server/users.d/collision_profile.xml"
+    node.exec_in_container(["cp", default_profile_config, "/tmp/default_profile.xml.bak"])
+
+    # A SQL profile cannot be created if a profile with the same name exists in users.xml,
+    # so the SQL profile is created first, and then the profile is added to users.xml.
+    node.query("DROP SETTINGS PROFILE IF EXISTS `collision.profile`")
+    node.query("CREATE SETTINGS PROFILE `collision.profile` SETTINGS max_query_size = 262146")
+    try:
+        node.replace_config(
+            collision_users_config,
+            "<clickhouse><profiles><collision.profile><max_query_size>262147</max_query_size></collision.profile></profiles></clickhouse>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query(
+            "SELECT storage FROM system.settings_profiles WHERE name = 'collision.profile' ORDER BY storage"
+        ) == "local_directory\nusers_xml\n"
+
+        node.replace_config(
+            default_profile_config,
+            "<clickhouse><default_profile>collision.profile</default_profile></clickhouse>",
+        )
+        node.restart_clickhouse()
+
+        expected = node.query("SET profile = 'collision.profile'; SELECT getSetting('max_query_size')")
+        assert expected in ("262146\n", "262147\n")
+        assert node.query("SELECT getSetting('max_query_size')") == expected
+    finally:
+        node.exec_in_container(["rm", "-f", collision_users_config])
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query("DROP SETTINGS PROFILE IF EXISTS `collision.profile`")
+        node.exec_in_container(["mv", "/tmp/default_profile.xml.bak", default_profile_config])
+        node.restart_clickhouse()
+    assert node.query("SELECT getSetting('max_query_size')") == "262145\n"
