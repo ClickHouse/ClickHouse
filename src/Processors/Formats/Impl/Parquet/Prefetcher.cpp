@@ -305,20 +305,26 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
 bool Prefetcher::hasIncidentalRangesNear(const VectorWithMemoryTracking<std::pair<size_t, size_t>> & own_ranges)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
+    auto own = own_ranges;
+    std::sort(own.begin(), own.end());
+    /// The largest end of `own[0..i]`, which may overlap.
+    VectorWithMemoryTracking<size_t> max_end(own.size());
+    for (size_t i = 0; i < own.size(); ++i)
+        max_end[i] = std::max(own[i].second, i ? max_end[i - 1] : 0);
+
     std::lock_guard lock(mutex);
     for (const RangeState & range : range_sets.at(0).ranges)
     {
         if (range.request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange
             || !range.request->allow_incidental_read.load(std::memory_order_relaxed))
             continue;
-        bool own = false;
-        bool near = false;
-        for (const auto & [start, end] : own_ranges)
-        {
-            own |= range.start >= start && range.end <= end;
-            near |= range.start < end + min_bytes_for_seek && start < range.end + min_bytes_for_seek;
-        }
-        if (near && !own)
+        /// The own ranges before `next` start at or before the range, the others after it.
+        size_t next = std::upper_bound(own.begin(), own.end(), range.start,
+            [](size_t offset, const std::pair<size_t, size_t> & own_range) { return offset < own_range.first; }) - own.begin();
+        bool is_own = next > 0 && range.end <= max_end[next - 1];
+        bool near = (next > 0 && range.start < max_end[next - 1] + min_bytes_for_seek)
+            || (next < own.size() && own[next].first < range.end + min_bytes_for_seek);
+        if (near && !is_own)
             return true;
     }
     return false;

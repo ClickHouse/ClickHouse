@@ -1222,10 +1222,6 @@ void ReadManager::readAheadFirstRowGroup()
         has_short_chunk |= column.data_pages_bytes < reader.options.min_bytes_for_seek;
         chunk_ranges.emplace_back(start, start + bytes);
     }
-    /// Admission reads a short chunk with the ranges near it (later row groups, PREWHERE steps), so reading it ahead
-    /// would take those uncharged or split that read.
-    if (has_short_chunk && reader.prefetcher.hasIncidentalRangesNear(chunk_ranges))
-        return;
     /// A short chunk's read spans the gaps less than `min_bytes_for_seek` to the other chunks, see `Prefetcher::splitRange`.
     size_t bound = chunks_bytes;
     if (has_short_chunk)
@@ -1241,6 +1237,10 @@ void ReadManager::readAheadFirstRowGroup()
         }
     }
     if (bound > limit)
+        return;
+    /// Admission reads a short chunk with the ranges near it (later row groups, PREWHERE steps), so reading it ahead
+    /// would take those uncharged or split that read.
+    if (has_short_chunk && reader.prefetcher.hasIncidentalRangesNear(chunk_ranges))
         return;
 
     /// `addColumnDataPrefetches` hands out pages once; a refused round hands them back, exact only if the row filter skipped no page.
