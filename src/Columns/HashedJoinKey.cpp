@@ -1,4 +1,4 @@
-#include <Interpreters/HashJoin/KeyGetter.h>
+#include <Columns/HashedJoinKey.h>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -113,7 +113,7 @@ void copyValues(UInt8 * __restrict dst, size_t row_size, const UInt8 * __restric
 
 }
 
-bool HashedJoinKey::addParts(const IColumn & column, std::vector<Part> & parts)
+bool HashedJoinKey::addParts(const IColumn & column, VectorWithMemoryTracking<Part> & parts)
 {
     /// `ColumnTuple::updateHashWithValue` hashes its elements one after another.
     if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
