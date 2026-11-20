@@ -85,10 +85,11 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::JSON::Object::Ptr, std::string> UnityCatalog::tryGetManagedTableJSON(const std::string & full_table_name) const
+std::pair<Poco::JSON::Object::Ptr, std::string> UnityCatalog::tryGetStreamingTableOrMaterializedViewAsManaged(const std::string & full_table_name) const
 {
     try
     {
+        /// A second GET for the same table, now with `READ_AS_MANAGED_PARAMS`.
         auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name, READ_AS_MANAGED_PARAMS).first;
         return {json.extract<Poco::JSON::Object::Ptr>(), ""};
     }
@@ -239,7 +240,7 @@ bool UnityCatalog::tryGetTableMetadata(
             if (isStreamingTableOrMaterializedView(object))
             {
                 /// Without the managed description, the default one still gives the columns.
-                auto [managed_object, databricks_error] = tryGetManagedTableJSON(full_table_name);
+                auto [managed_object, databricks_error] = tryGetStreamingTableOrMaterializedViewAsManaged(full_table_name);
                 if (managed_object)
                     object = managed_object;
                 else
@@ -509,7 +510,7 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
                 /// These table types need a second request with additional query parameters.
                 if (isStreamingTableOrMaterializedView(current_table_json))
                 {
-                    if (auto managed_json = tryGetManagedTableJSON(warehouse + "." + schema + "." + table_name).first)
+                    if (auto managed_json = tryGetStreamingTableOrMaterializedViewAsManaged(warehouse + "." + schema + "." + table_name).first)
                         current_table_json = managed_json;
                 }
 
