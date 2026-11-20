@@ -1806,6 +1806,7 @@ protected:
             void onHelloAccepted(const StatelessWorkerControlProtocol::ControlHelloReply &) override {}
             void onHelloRefused(const StatelessWorkerControlProtocol::ControlHelloReply & reply) override { tracker.onHelloRefused(worker, reply); }
             void onStartTasksReply(const StatelessWorkerControlProtocol::StartTasksReply & reply) override { tracker.onStartTasksReply(worker, reply); }
+            void onStartTasksDropped(UInt64 request_id) override { tracker.onStartTasksDropped(worker, request_id); }
             void onGetStatusesReply(StatelessWorkerControlProtocol::GetStatusesReply & reply) override { tracker.onGetStatusesReply(worker, reply); }
             void onCancelTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
             void onForgetTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
@@ -1888,6 +1889,15 @@ protected:
             for (auto & task : request.tasks)
                 state.polled_tasks.push_back(std::move(task));
             sendStatusRequestLocked(worker);
+        }
+
+        /// The teardown dropped the batch unsent: its tasks never start, and the teardown's polls find them unknown.
+        void onStartTasksDropped(WorkerIndex worker, UInt64 request_id)
+        {
+            std::lock_guard g(lock);
+            StartRequest request = takeStartRequestLocked(worker, request_id);
+            if (request.span)
+                request.span->finish(OpenTelemetry::SpanStatus::ERROR, "Not sent: the query ended");
         }
 
         void onGetStatusesReply(WorkerIndex worker, StatelessWorkerControlProtocol::GetStatusesReply & reply)
@@ -2173,6 +2183,8 @@ protected:
                 LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, channel.description);
                 task_ids.push_back(task.task_id);
             }
+            /// So that the `CancelTasks` does not wait behind batches of large plans.
+            channel.connection->dropUnsentStartTasks();
             ProfileEvents::increment(ProfileEvents::DistributedPlanTaskCancelRequests);
             state.other_requests.insert(channel.connection->cancelTasks(std::move(task_ids)));
             /// A poll in flight is answered first, and its reply sends the next one.

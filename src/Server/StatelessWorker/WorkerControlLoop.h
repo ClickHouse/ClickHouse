@@ -38,6 +38,8 @@ public:
     /// The connection is closed; no callback follows.
     virtual void onHelloRefused(const StatelessWorkerControlProtocol::ControlHelloReply & reply) = 0;
     virtual void onStartTasksReply(const StatelessWorkerControlProtocol::StartTasksReply & reply) = 0;
+    /// `dropUnsentStartTasks` dropped the request before any byte of it was sent, so no reply follows.
+    virtual void onStartTasksDropped(UInt64 request_id) = 0;
     /// The handler may move from `reply`.
     virtual void onGetStatusesReply(StatelessWorkerControlProtocol::GetStatusesReply & reply) = 0;
     virtual void onCancelTasksReply(UInt64 request_id) = 0;
@@ -132,6 +134,7 @@ private:
     void receive(Connection & connection);
     void handleFrame(Connection & connection, const StatelessWorkerControlProtocol::PacketHeader & header, std::string_view body);
     void handleHelloReply(Connection & connection, const StatelessWorkerControlProtocol::PacketHeader & header, std::string_view body);
+    void dropUnsentStartTasks(Connection & connection);
     /// Sends the queued frames until the socket is full or the turn's budget is spent, then sets the events it waits for.
     void flush(Connection & connection);
     void checkDeadlines();
@@ -179,6 +182,8 @@ public:
     void close();
     /// Detaches the handler and closes the connection at once.
     void abort();
+    /// Drops the queued `StartTasks` of which no byte was sent, so that the requests after them go out at once.
+    void dropUnsentStartTasks();
     /// Returns the id of a new request; throws after `close` or `abort`.
     UInt64 newRequestId();
     /// Stops the callbacks: once it returns, none runs. It waits for a running one, so the caller must not hold a lock that

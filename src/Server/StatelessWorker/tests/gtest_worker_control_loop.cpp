@@ -65,6 +65,7 @@ struct Event
         HelloAccepted,
         HelloRefused,
         StartTasksReply,
+        StartTasksDropped,
         GetStatusesReply,
         CancelTasksReply,
         ForgetTasksReply,
@@ -89,6 +90,7 @@ String kindName(Event::Kind kind)
         case Event::Kind::HelloAccepted: return "HelloAccepted";
         case Event::Kind::HelloRefused: return "HelloRefused";
         case Event::Kind::StartTasksReply: return "StartTasksReply";
+        case Event::Kind::StartTasksDropped: return "StartTasksDropped";
         case Event::Kind::GetStatusesReply: return "GetStatusesReply";
         case Event::Kind::CancelTasksReply: return "CancelTasksReply";
         case Event::Kind::ForgetTasksReply: return "ForgetTasksReply";
@@ -117,6 +119,8 @@ public:
     {
         push({.kind = Event::Kind::StartTasksReply, .request_id = reply.request_id, .code = reply.code, .message = reply.message});
     }
+
+    void onStartTasksDropped(UInt64 request_id) override { push({.kind = Event::Kind::StartTasksDropped, .request_id = request_id}); }
 
     void onGetStatusesReply(GetStatusesReply & reply) override
     {
@@ -262,6 +266,14 @@ public:
     bool closedByInitiator() { return in.eof(); }
 
     void setReceiveTimeout(std::chrono::seconds timeout) { socket.setReceiveTimeout(Poco::Timespan(timeout.count(), 0)); }
+
+    /// Receives a frame of any type and drops its body.
+    String receiveAny()
+    {
+        const PacketHeader header = readHeader(in, Sender::Initiator);
+        in.ignore(header.bytes_size);
+        return packetTypeName(header.packet_type);
+    }
 
     /// Sends one byte of TCP urgent data.
     void sendUrgent(char byte) { socket.sendUrgent(static_cast<unsigned char>(byte)); }
@@ -718,6 +730,46 @@ TEST(WorkerControlLoop, OpenThatFailsLeavesNoConnection)
         EXPECT_TRUE(closed) << "The initiator kept a control connection that the failed `open` did not hand over";
     }
     EXPECT_FALSE(handler.next(500ms));
+}
+
+TEST(WorkerControlLoop, TeardownDropsUnsentStartTasks)
+{
+    /// Far more than the socket buffers hold, so the second batch is still queued when the teardown starts.
+    const auto plan = std::make_shared<const String>(32 * 1024 * 1024, 'p');
+    FakeWorker fake_worker(/*receive_buffer_bytes=*/ 64 * 1024);
+    WorkerControlLoop loop(withoutPings());
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+
+    StartTasks request;
+    request.temp_path = "tmp/q1";
+    DistributedQueryTaskBatch::Task task;
+    task.task.task_id = "main";
+    request.batch.initial_query_id = "q1";
+    request.batch.stages.push_back({"main", plan, {task}});
+
+    const UInt64 sent_before = globalCount(ProfileEvents::DistributedPlanControlSendBytes);
+    const UInt64 first_id = connection->startTasks(request);
+    const UInt64 second_id = connection->startTasks(request);
+    /// The first batch is partly written.
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (globalCount(ProfileEvents::DistributedPlanControlSendBytes) == sent_before && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+
+    /// The teardown's requests.
+    connection->dropUnsentStartTasks();
+    const UInt64 cancel_id = connection->cancelTasks({"q1::main"});
+    EXPECT_EQ(handler.expect(Event::Kind::StartTasksDropped).request_id, second_id);
+
+    EXPECT_EQ(peer->receive<StartTasks>().request_id, first_id);
+    EXPECT_EQ(peer->receiveAny(), "CancelTasks");
+    peer->send(StartTasksReply{.request_id = first_id, .code = 0, .message = ""});
+    EXPECT_EQ(handler.expect(Event::Kind::StartTasksReply).request_id, first_id);
+    peer->send(CancelTasksReply{.request_id = cancel_id});
+    EXPECT_EQ(handler.expect(Event::Kind::CancelTasksReply).request_id, cancel_id);
 }
 
 TEST(WorkerControlLoop, ShutdownBreaksTheConnections)

@@ -143,6 +143,7 @@ struct WorkerControlLoop::Command
         Send,
         Close,
         Abort,
+        DropUnsentStartTasks,
     };
 
     ConnectionPtr connection;
@@ -492,6 +493,9 @@ bool WorkerControlLoop::processCommands()
                         endConnection(connection, /*broken=*/ false);
                     }
                     break;
+                case Command::Kind::DropUnsentStartTasks:
+                    dropUnsentStartTasks(connection);
+                    break;
             }
             if (connection.isOpen())
                 flush(connection);
@@ -756,6 +760,43 @@ void WorkerControlLoop::handleHelloReply(Connection & connection, const PacketHe
     finishCloseIfDone(connection);
 }
 
+void WorkerControlLoop::dropUnsentStartTasks(Connection & connection)
+{
+    if (!connection.isOpen())
+        return;
+    std::vector<UInt64> dropped;
+    std::erase_if(connection.held, [&](const OutgoingFrame & frame)
+    {
+        if (frame.type != PacketType::StartTasks)
+            return false;
+        dropped.push_back(frame.request_id);
+        return true;
+    });
+    /// A frame partly written stays: the worker reads frames whole.
+    const bool front_started = connection.write_segment != 0 || connection.write_offset != 0;
+    std::deque<OutgoingFrame> kept;
+    for (size_t i = 0; i < connection.write_queue.size(); ++i)
+    {
+        auto & frame = connection.write_queue[i];
+        if (frame.type == PacketType::StartTasks && !(i == 0 && front_started))
+        {
+            connection.requests.erase(frame.request_id);
+            dropped.push_back(frame.request_id);
+        }
+        else
+        {
+            kept.push_back(std::move(frame));
+        }
+    }
+    connection.write_queue = std::move(kept);
+
+    if (!dropped.empty())
+        LOG_TRACE(log, "Dropped {} unsent `StartTasks` of {} to {}", dropped.size(), connection.params.unique_query_id, connection.description);
+    for (const UInt64 request_id : dropped)
+        connection.notify([&](IWorkerControlHandler & handler) { handler.onStartTasksDropped(request_id); });
+    finishCloseIfDone(connection);
+}
+
 void WorkerControlLoop::flush(Connection & connection)
 {
     refreshBudgets(connection, turn);
@@ -1008,6 +1049,11 @@ void WorkerControlConnection::abort()
     detach();
     connection->closing = true;
     loop.post(WorkerControlLoop::Command{.connection = connection, .kind = WorkerControlLoop::Command::Kind::Abort, .frame = {}});
+}
+
+void WorkerControlConnection::dropUnsentStartTasks()
+{
+    loop.post(WorkerControlLoop::Command{.connection = connection, .kind = WorkerControlLoop::Command::Kind::DropUnsentStartTasks, .frame = {}});
 }
 
 void WorkerControlConnection::detach()
