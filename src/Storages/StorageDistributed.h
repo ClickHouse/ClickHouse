@@ -157,13 +157,13 @@ public:
 
     /// Which shards DistributedSink sends a row of `block` to (all of them when no sharding key splits it), by the same selector.
     std::vector<bool> getShardsReceivingRows(const ClusterPtr & cluster, const Block & block) const;
+    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
-    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
     void checkShardingKeySetsAreBuilt() const;
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
