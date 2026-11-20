@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,8 @@
 #include <Interpreters/PreparedSets.h>
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <random>
+
 namespace DB
 {
 
@@ -27,6 +30,7 @@ namespace Setting
 extern const SettingsBool allow_experimental_analyzer;
 extern const SettingsBool log_queries;
 extern const SettingsBool log_query_plans;
+extern const SettingsFloat log_query_plans_probability;
 extern const SettingsBool make_distributed_plan;
 }
 
@@ -90,6 +94,12 @@ bool QueryPlanLogCapture::canCapturePlan(const ContextPtr & context, const ASTPt
 
     if (settings[Setting::make_distributed_plan])
         return declined("setting `make_distributed_plan` is true and distributed execution is not supported");
+
+    /// Sampled last, so that only queries which could be captured take part. The comparison,
+    /// unlike `std::bernoulli_distribution`, is defined for a probability outside of [0, 1].
+    const auto probability = static_cast<double>(settings[Setting::log_query_plans_probability]);
+    if (probability < 1.0 && std::uniform_real_distribution<double>(0.0, 1.0)(thread_local_rng) >= probability)
+        return declined("the query was not selected by the sampling of setting `log_query_plans_probability`");
 
     return true;
 }
