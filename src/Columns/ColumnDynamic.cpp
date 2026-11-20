@@ -979,9 +979,7 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
 
     for (const auto local_discr : local_discr_by_rank)
     {
-        const auto & variant_name = variant_info.variant_names[variant_col.globalDiscriminatorByLocal(local_discr)];
-        hash.update(variant_name.size());
-        hash.update(variant_name);
+        updateHashWithTypeName(hash, variant_info.variant_names[variant_col.globalDiscriminatorByLocal(local_discr)]);
         variant_col.getVariantByLocalDiscriminator(local_discr).updateHashWithValueRange(
             variant_first_offset[local_discr], variant_first_offset[local_discr] + variant_count[local_discr], hash);
     }
