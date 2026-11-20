@@ -23,7 +23,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeString.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
@@ -34,11 +38,33 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include "config.h"
+
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
+extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Estimates the row count of a boolean `expression` over `columns` the way the planner feeds the
+/// estimator: the expression is built into an `ActionsDAG` and its output node is analysed.
+template <class Estimator>
+UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, const NamesAndTypesList & columns)
+{
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, expression, 10000, 10000, 10000);
+    auto syntax_result = TreeRewriter(context).analyze(ast, columns);
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
+    const auto * node = &dag.findInOutputs(ast->getColumnName());
+    return estimator->estimateRelationProfile(nullptr, node).rows;
+}
+
 }
 
 TEST(Statistics, TDigestLessThan)
@@ -158,17 +184,13 @@ TEST(Statistics, Estimator)
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
+    NamesAndTypesList columns{{"a", data_type}, {"b", data_type}, {"c", data_type}};
 
     auto test_impl = [&](const String & expression, Int64 real_result, Float64 eps)
     {
-        ParserExpressionWithOptionalAlias exp_parser(false);
-        ContextPtr context = getContext().context;
-        RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
-        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
-        RPNBuilderTreeNode node(ast.get(), tree_context);
-        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
-        std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
-        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
+        UInt64 estimated_rows = estimateRowsFor(estimator, expression, columns);
+        std::cout << expression << " " << real_result << " " << estimated_rows << std::endl;
+        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimated_rows)), 10000 * eps);
     };
 
     auto test_f = [&](const String & expression, Int64 real_result, Float64 eps = 0.001)
@@ -257,6 +279,18 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    const auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr column = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        column->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -279,21 +313,245 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
-/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
-template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
-{
-    ParserExpressionWithOptionalAlias exp_parser(false);
-    ContextPtr context = getContext().context;
-    RPNBuilderTreeContext tree_context(
-        context,
-        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
-        {});
-    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
-    RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
 }
 
+TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto measured_stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder measured_builder(getContext().context);
+    measured_builder.addStatistics("k", measured_stats);
+    measured_builder.addStatistics("j", measured_stats);
+    measured_builder.incrementRowCount(100);
+    auto measured_estimator = measured_builder.getEstimator();
+
+    const auto measured_profile = measured_estimator->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & measured = measured_profile.column_stats.at("k");
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialStatisticsCoverage));
+
+    auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
+    ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
+    basic_builder.addStatistics("k", basic_stats);
+    basic_builder.incrementRowCount(100);
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & basic = basic_profile.column_stats.at("k");
+    EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+
+    ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
+    partial_builder.addStatistics("k", measured_stats);
+    partial_builder.incrementRowCount(1000);
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & partial = partial_profile.column_stats.at("k");
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+
+    /// The predicate reaches the estimator as an `ActionsDAG` node, as in `estimateRowsFor`.
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, "k < 90 AND j < 50", 1000, 1000, 1000);
+    const auto int32_type = std::make_shared<DataTypeInt32>();
+    auto syntax_result = TreeRewriter(context).analyze(ast, NamesAndTypesList{{"k", int32_type}, {"j", int32_type}});
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    const auto * predicate = &dag.findInOutputs(ast->getColumnName());
+    const auto filtered_profile = measured_estimator->estimateRelationProfile(nullptr, predicate);
+    const auto & filtered = filtered_profile.column_stats.at("k");
+    EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
+}
+
+TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with a
+    /// NULL count but without bounds has non-NULL values outside the bounds merged with it, unless all its rows are NULL.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// Values 0..99, with bounds.
+    auto bounded = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 0); };
+    /// E.g. values 1000..1099, without bounds.
+    auto unbounded = [](const DataTypePtr & type, UInt64 nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field{}, Field{}, nulls); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    auto expect_partial_range = [](const ColumnStats & k)
+    {
+        /// The range is kept as measured, for diagnostics, but gives no guarantee.
+        ASSERT_TRUE(k.min_value && k.max_value);
+        EXPECT_EQ(k.min_value->safeGet<Int64>(), 0);
+        EXPECT_EQ(k.max_value->safeGet<Int64>(), 99);
+        EXPECT_EQ(k.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+        EXPECT_TRUE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Exact));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Representative));
+        /// A data lake can derive the distinct count from the bounds, so it gives no guarantee either.
+        EXPECT_TRUE(k.ndv_provenance.has(PartialStatisticsCoverage));
+    };
+
+    /// Both files have all their rows counted, so only the bounds tell that the second file's values are missing.
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/0)}));
+    expect_partial_range(merge_files({unbounded(nullable_int64, /*nulls=*/0), bounded(nullable_int64)}));
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/99)}));
+    /// A non-Nullable column has a value in every row, whatever the NULL count says.
+    expect_partial_range(merge_files({bounded(int64), unbounded(int64, /*nulls=*/100)}));
+
+    /// An all-NULL file has no values to miss, so the range stays exact.
+    const auto with_all_null_file = merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/100)});
+    EXPECT_FALSE(with_all_null_file.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_all_null_file.ndv_provenance.has(PartialStatisticsCoverage));
+    const auto exact = with_all_null_file.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(exact);
+    EXPECT_EQ(exact->min.safeGet<Int64>(), 0);
+    EXPECT_EQ(exact->max.safeGet<Int64>(), 99);
+    ASSERT_TRUE(exact->null_fraction);
+    EXPECT_DOUBLE_EQ(*exact->null_fraction, 0.5);
+    EXPECT_TRUE(with_all_null_file.valueRange(ValueRangeGuarantee::Representative));
+
+    /// Files with bounds cover all values, and so do statistics built from a column.
+    EXPECT_TRUE(merge_files({bounded(nullable_int64), bounded(nullable_int64)}).valueRange(ValueRangeGuarantee::Exact));
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/1);
+    EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
+}
+
+TEST(Statistics, SummaryWithoutNullCountLeavesNullFractionUnknown)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with
+    /// bounds but without a NULL count (no `null_value_counts`) may hold any number of NULLs: the NULL fraction is
+    /// unknown, also when merged with files that have a NULL count, while the bounds still cover every value.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// 100 rows with values in [10, 19], e.g. 90 of them NULL.
+    auto narrow = [](const DataTypePtr & type, std::optional<UInt64> nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(10)), Field(Int64(19)), nulls); };
+    /// 100 rows with values in [0, 99], 50 of them NULL.
+    auto wide = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 50); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    /// The range keeps every guarantee, with an unknown NULL fraction.
+    auto expect_exact_range_without_null_fraction = [](const ColumnStats & k, Int64 min, Int64 max)
+    {
+        EXPECT_FALSE(k.null_fraction);
+        EXPECT_FALSE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.ndv_provenance.has(PartialStatisticsCoverage));
+        for (const auto guarantee : {ValueRangeGuarantee::Exact, ValueRangeGuarantee::Representative})
+        {
+            const auto range = k.valueRange(guarantee);
+            ASSERT_TRUE(range);
+            EXPECT_EQ(range->min.safeGet<Int64>(), min);
+            EXPECT_EQ(range->max.safeGet<Int64>(), max);
+            EXPECT_FALSE(range->null_fraction);
+        }
+    };
+
+    /// The summary keeps the structure of a NULL count, so that it merges with the files that have one, but marks it.
+    const auto estimate = narrow(nullable_int64, std::nullopt)->getEstimate();
+    EXPECT_TRUE(estimate.min_max_covers_all_values);
+    EXPECT_FALSE(estimate.null_count_covers_all_rows);
+
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt)}), 10, 19);
+    /// A file with a NULL count does not hide the NULLs that the other one does not count, in either order.
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt), wide(nullable_int64)}), 0, 99);
+    expect_exact_range_without_null_fraction(merge_files({wide(nullable_int64), narrow(nullable_int64, std::nullopt)}), 0, 99);
+
+    /// With every NULL counted, the fraction is known: (90 + 50) / 200.
+    const auto counted = merge_files({narrow(nullable_int64, 90), wide(nullable_int64)});
+    EXPECT_FALSE(counted.range_provenance.has(PartialStatisticsCoverage));
+    const auto counted_range = counted.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(counted_range);
+    ASSERT_TRUE(counted_range->null_fraction);
+    EXPECT_DOUBLE_EQ(*counted_range->null_fraction, 0.7);
+
+    /// A non-Nullable column has no NULLs to count, so a missing NULL count misses none.
+    EXPECT_TRUE(narrow(int64, std::nullopt)->getEstimate().null_count_covers_all_rows);
+    EXPECT_TRUE(merge_files({narrow(int64, std::nullopt), wide(int64)}).valueRange(ValueRangeGuarantee::Exact));
+
+    /// Without bounds either, the rows may hold values outside the merged bounds: only a known count of all rows
+    /// being NULL rules them out.
+    const auto without_metrics = ColumnStatistics::createBasicFromSummary(nullable_int64, 100, Field{}, Field{}, std::nullopt);
+    EXPECT_FALSE(without_metrics->getEstimate().min_max_covers_all_values);
+    const auto with_file_without_metrics = merge_files({wide(nullable_int64), without_metrics});
+    EXPECT_TRUE(with_file_without_metrics.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_file_without_metrics.null_fraction);
+
+    /// Statistics built from a column count every NULL.
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/2);
+    EXPECT_TRUE(built->getEstimate().null_count_covers_all_rows);
+}
+
+TEST(Statistics, DeletedRowsDoNotHideFilesWithoutStatistics)
+{
+    /// Deleted rows, e.g. of Iceberg position deletes, leave the rows of the relation, while the statistics still count
+    /// them. A file without statistics leaves the coverage partial however many rows are deleted.
+    tryRegisterFunctions();
+
+    const auto int64 = std::make_shared<DataTypeInt64>();
+    /// Values 0..199, with bounds.
+    const auto bounded = ColumnStatistics::createBasicFromSummary(int64, 200, Field(Int64(0)), Field(Int64(199)), 0);
+
+    auto merge_files = [&](UInt64 rows_without_statistics, UInt64 deleted_rows)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        builder.addStatistics("k", bounded);
+        builder.incrementRowCount(bounded->getNumRows());
+        builder.incrementRowCount(rows_without_statistics);
+        builder.subtractDeletedRows(deleted_rows);
+        return builder.getEstimator();
+    };
+
+    /// 100 rows of a file without statistics and 100 deleted rows: the live rows are as many as the counted ones.
+    const auto with_unmeasured_file = merge_files(/*rows_without_statistics=*/100, /*deleted_rows=*/100)->estimateRelationProfile(nullptr);
+    EXPECT_EQ(with_unmeasured_file.rows, 200);
+    auto partial = with_unmeasured_file.column_stats.at("k");
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+    /// The read records the deleted rows as a row subset; the range still misses the values of the other file.
+    partial.addTransformation(RowSubset);
+    EXPECT_FALSE(partial.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Deleted rows alone leave the remaining values within the bounds.
+    const auto deletes_only_estimator = merge_files(/*rows_without_statistics=*/0, /*deleted_rows=*/100);
+    const auto deletes_only = deletes_only_estimator->estimateRelationProfile(nullptr);
+    EXPECT_EQ(deletes_only.rows, 100);
+    auto enclosing = deletes_only.column_stats.at("k");
+    EXPECT_FALSE(enclosing.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(enclosing.range_provenance.has(PartialStatisticsCoverage));
+    enclosing.addTransformation(RowSubset);
+    EXPECT_TRUE(enclosing.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Selectivities are shares of the live rows: half of the values, half of the 100 live rows.
+    EXPECT_NEAR(static_cast<Float64>(estimateRowsFor(deletes_only_estimator, "k < 100", {{"k", int64}})), 50.0, 1.0);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -319,9 +577,12 @@ TEST(Statistics, NullableEstimatorWithBasic)
     builder.incrementRowCount(1000);
     auto estimator = builder.getEstimator();
 
+    DataTypePtr nullable_int32 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    NamesAndTypesList columns{{"a", nullable_int32}, {"b", nullable_int32}};
+
     auto check = [&](const String & expression, Float64 expected, Float64 eps)
     {
-        Float64 actual = estimateRowsFor(estimator, expression);
+        Float64 actual = static_cast<Float64>(estimateRowsFor(estimator, expression, columns));
         EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
     };
 
@@ -392,15 +653,19 @@ TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
     /// selectivity defaults and their complement behavior under NOT.
-    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
+    /// LIKE selectivity is a fixed factor of the total row count, but the builder yields an estimator
+    /// only when it holds some statistics, so the String column gets `basic` ones.
+    tryRegisterFunctions();
 
-    MutableColumnPtr col = DataTypeInt32().createColumn();
+    DataTypePtr data_type = std::make_shared<DataTypeString>();
+
+    MutableColumnPtr col = DataTypeString().createColumn();
     for (Int32 i = 0; i < 10000; i++)
-        col->insert(i + 1);
+        col->insert(toString(i + 1));
 
     ColumnStatisticsDescription mock_description;
     mock_description.data_type = data_type;
-    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
+    mock_description.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr, false));
 
     ColumnDescription column_desc;
     column_desc.name = "a";
@@ -413,16 +678,14 @@ TEST(Statistics, LikeSelectivity)
     estimator_builder.addStatistics("a", stats);
     estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();
+    ASSERT_NE(estimator, nullptr);
+
+    NamesAndTypesList columns{{"a", data_type}};
 
     /// Helper: estimate rows for a condition string.
     auto estimate = [&](const String & expression) -> UInt64
     {
-        ParserExpressionWithOptionalAlias exp_parser(false);
-        ContextPtr context = getContext().context;
-        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
-        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
-        RPNBuilderTreeNode node(ast.get(), tree_context);
-        return estimator->estimateRelationProfile(nullptr, node).rows;
+        return estimateRowsFor(estimator, expression, columns);
     };
 
     /// default_like_factor = 0.1, total_rows = 10000.
@@ -638,6 +901,8 @@ TEST(Statistics, StructureEqualsConsidersDataType)
 
 TEST(Statistics, BasicDefaultCountNonNullable)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     /// 10 rows, 4 of them equal to the default (0).
@@ -745,6 +1010,8 @@ TEST(Statistics, BasicDefaultCountNullableIsNullCount)
 
 TEST(Statistics, BasicDefaultCountRoundTrip)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     for (Int64 i = 0; i < 8; ++i)
@@ -754,7 +1021,7 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     ASSERT_EQ(stats->estimateDefaults(), 4u);
 
     WriteBufferFromOwnString wb;
-    stats->serialize(wb);
+    stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
     ReadBufferFromString rb(wb.str());
     auto restored = ColumnStatistics::deserialize(rb, data_type);
 
@@ -762,6 +1029,240 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     auto eq0 = restored->estimateEqual(Field(Int64(0)));
     ASSERT_TRUE(eq0.has_value());
     EXPECT_DOUBLE_EQ(*eq0, 4.0);
+
+    /// `basic` statistics written by 26.6 and 26.7 store the default-value count only for `Nullable` columns, as
+    /// the NULL count (bit 2 of the feature mask, then called `NullCount`). For other columns it is absent, so it
+    /// is unknown, and it must stay unknown when the loaded statistics are written again, as a mutation does for
+    /// the columns it does not change. Check each layout these versions wrote.
+    constexpr UInt8 numeric_min_max = 1u << 0;
+    constexpr UInt8 string_length_sum = 1u << 1;
+    constexpr UInt8 null_count = 1u << 2;
+
+    auto load_legacy_and_rewrite = [](const DataTypePtr & type, UInt8 feature_mask, std::function<void(WriteBuffer &)> write_features)
+    {
+        /// `StatisticsBasic::serialize` of 26.7.
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// row_count
+            writeIntBinary(feature_mask, buf);
+            write_features(buf);
+            buf.finalize();
+        }
+
+        /// `ColumnStatistics::serialize` of 26.7 (`V4`) with the single `Basic` statistic.
+        String file;
+        {
+            WriteBufferFromString buf(file);
+            writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+            writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+            writeStringBinary(type->getName(), buf);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// rows
+            writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+            buf.write(payload.data(), payload.size());
+            buf.finalize();
+        }
+
+        ReadBufferFromString file_rb(file);
+        auto loaded = ColumnStatistics::deserialize(file_rb, type);
+        WriteBufferFromOwnString rewritten_wb;
+        loaded->serialize(rewritten_wb, LATEST_STATISTICS_FILE_VERSION);
+        ReadBufferFromString rewritten_rb(rewritten_wb.str());
+        return ColumnStatistics::deserialize(rewritten_rb, type);
+    };
+
+    /// A numeric column: min and max.
+    {
+        auto rewritten = load_legacy_and_rewrite(data_type, numeric_min_max, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(0)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+        });
+        auto estimate = rewritten->getEstimate();
+        EXPECT_FALSE(estimate.estimated_default_count.has_value());
+        /// Without the count there is no estimate for `x = 0`, rather than an estimate of zero rows.
+        EXPECT_FALSE(rewritten->estimateEqual(Field(Int64(0))).has_value());
+        ASSERT_TRUE(estimate.estimated_min.has_value());
+        ASSERT_TRUE(estimate.estimated_max.has_value());
+        EXPECT_EQ(*estimate.estimated_min, Field(Int64(0)));
+        EXPECT_EQ(*estimate.estimated_max, Field(Int64(999)));
+    }
+
+    /// A `String` column: the total byte length of the values.
+    {
+        auto string_type = DataTypeFactory::instance().get("String");
+        auto rewritten = load_legacy_and_rewrite(string_type, string_length_sum, [](WriteBuffer & buf)
+        {
+            writeIntBinary(static_cast<UInt64>(2890), buf);
+        });
+        EXPECT_FALSE(rewritten->getEstimate().estimated_default_count.has_value());
+        EXPECT_FALSE(rewritten->estimateEqual(Field(String(""))).has_value());
+        const auto & basic = assert_cast<const StatisticsBasic &>(*rewritten->getStats().at(StatisticsType::Basic));
+        EXPECT_EQ(basic.getStringTotalBytes(), 2890u);
+    }
+
+    /// A `Nullable` column: min, max and the NULL count, which is the default-value count of a `Nullable` column.
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto rewritten = load_legacy_and_rewrite(nullable_type, numeric_min_max | null_count, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(1)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+            writeIntBinary(static_cast<UInt64>(250), buf);
+        });
+        EXPECT_TRUE(rewritten->hasNullCount());
+        EXPECT_EQ(rewritten->getNullCount(), 250u);
+        EXPECT_EQ(rewritten->estimateDefaults(), 250u);
+    }
+}
+
+/// `basic` statistics written before the sum was tracked have no `ExactSum` bit. They must not report a sum, must not
+/// gain one when a mutation re-serializes them, and must stay compatible with new ones for the selectivity estimator.
+TEST(Statistics, BasicSumMissingFromOlderStatistics)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeInt64>();
+    MutableColumnPtr col = data_type->createColumn();
+    col->insert(Field(std::numeric_limits<Int64>::max()));
+    col->insert(Field(Int64(1)));
+    auto fresh = createTestStats({StatisticsType::Basic}, data_type);
+    fresh->build(std::move(col));
+    /// `max + 1` wraps around to the minimum, as in `sum`, which computes the statistics' sum.
+    ASSERT_EQ(fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+
+    String older_payload;
+    {
+        WriteBufferFromString buf(older_payload);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `row_count`
+        writeIntBinary(static_cast<UInt8>(1 | 4), buf); /// `NumericMinMax | DefaultCount`
+        writeFieldBinary(Field(Int64(1)), buf);
+        writeFieldBinary(Field(std::numeric_limits<Int64>::max()), buf);
+        writeIntBinary(static_cast<UInt64>(0), buf); /// `default_count`
+        buf.finalize();
+    }
+    String older_file;
+    {
+        WriteBufferFromString buf(older_file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// `StatisticsFileVersion::V4`
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+        writeStringBinary(data_type->getName(), buf);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `rows`
+        writeIntBinary(static_cast<UInt64>(older_payload.size()), buf);
+        buf.write(older_payload.data(), older_payload.size());
+        buf.finalize();
+    }
+
+    ReadBufferFromString older_buf(older_file);
+    auto older = ColumnStatistics::deserialize(older_buf, data_type);
+    EXPECT_FALSE(older->hasSum());
+    EXPECT_TRUE(fresh->structureEquals(*older));
+
+    WriteBufferFromOwnString reserialized;
+    older->serialize(reserialized, LATEST_STATISTICS_FILE_VERSION);
+    ReadBufferFromString reserialized_buf(reserialized.str());
+    EXPECT_FALSE(ColumnStatistics::deserialize(reserialized_buf, data_type)->hasSum());
+
+    auto merged = fresh->cloneEmpty();
+    merged->merge(fresh);
+    EXPECT_EQ(merged->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+    merged->merge(older);
+    EXPECT_FALSE(merged->hasSum());
+}
+
+/// The sum is written with the size that `getSerializedSize` declares for every type that tracks it, and read back.
+TEST(Statistics, BasicSumRoundTrip)
+{
+    tryRegisterAggregateFunctions();
+
+    for (const auto * type_name : {"Int8", "UInt16", "Int32", "UInt64", "Int128", "UInt256", "Bool", "Decimal32(2)", "Decimal256(4)"})
+    {
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        MutableColumnPtr col = data_type->createColumn();
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insertDefault();
+        auto stats = createTestStats({StatisticsType::Basic}, data_type);
+        stats->build(std::move(col));
+        ASSERT_TRUE(stats->hasSum()) << type_name;
+
+        WriteBufferFromOwnString buf;
+        stats->serialize(buf, LATEST_STATISTICS_FILE_VERSION);
+        ReadBufferFromString read_buf(buf.str());
+        auto read_stats = ColumnStatistics::deserialize(read_buf, data_type);
+        ASSERT_TRUE(read_stats->hasSum()) << type_name;
+        EXPECT_EQ(read_stats->getEstimate().estimated_sum, stats->getEstimate().estimated_sum) << type_name;
+    }
+}
+
+/// The selectivity estimator accumulates the statistics of the parts into a copy made by `cloneEmpty`. The copy
+/// must keep the structure of `basic` statistics deserialized from an older format without a default-value count:
+/// otherwise it gets a fabricated exact count of zero defaults, and the following parts with the same old statistics
+/// are discarded as incompatible.
+TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeInt32>();
+    constexpr UInt8 numeric_min_max = 1u << 0;
+
+    /// `basic` statistics of 1000 rows with the given min and max, as written by 26.7 (`V4`) for a non-`Nullable` column.
+    auto load_legacy = [&](Int64 min, Int64 max)
+    {
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// row_count
+            writeIntBinary(numeric_min_max, buf);
+            writeFieldBinary(Field(min), buf);
+            writeFieldBinary(Field(max), buf);
+            buf.finalize();
+        }
+
+        String file;
+        {
+            WriteBufferFromString buf(file);
+            writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+            writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+            writeStringBinary(data_type->getName(), buf);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// rows
+            writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+            buf.write(payload.data(), payload.size());
+            buf.finalize();
+        }
+
+        ReadBufferFromString rb(file);
+        return ColumnStatistics::deserialize(rb, data_type);
+    };
+
+    auto part1 = load_legacy(0, 999);
+    auto part2 = load_legacy(1000, 1999);
+
+    auto accumulated = part1->cloneEmpty();
+    EXPECT_TRUE(accumulated->structureEquals(*part1));
+    accumulated->merge(part1);
+    EXPECT_FALSE(accumulated->getEstimate().estimated_default_count.has_value());
+    EXPECT_FALSE(accumulated->estimateEqual(Field(Int64(0))).has_value());
+
+    EXPECT_TRUE(accumulated->structureEquals(*part2));
+    accumulated->merge(part2);
+    auto estimate = accumulated->getEstimate();
+    ASSERT_TRUE(estimate.estimated_min.has_value());
+    ASSERT_TRUE(estimate.estimated_max.has_value());
+    EXPECT_EQ(*estimate.estimated_min, Field(Int64(0)));
+    EXPECT_EQ(*estimate.estimated_max, Field(Int64(1999)));
+
+    /// The same through the estimator: `x = 0` is not estimated as matching no rows, and both parts are used.
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("x", part1);
+    builder.incrementRowCount(1000);
+    builder.addStatistics("x", part2);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+    NamesAndTypesList columns{{"x", data_type}};
+    EXPECT_GT(estimateRowsFor(estimator, "x = 0", columns), 0u);
+    EXPECT_NEAR(static_cast<double>(estimateRowsFor(estimator, "x < 1500", columns)), 1500.0, 20.0);
 }
 
 TEST(Statistics, BasicDefaultCountArray)
@@ -791,6 +1292,8 @@ TEST(Statistics, BasicDefaultCountArray)
 /// of the type mask -- the reverted `NullCount` -- must be skipped rather than parsed as `Basic`.
 TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
 
     auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
@@ -847,3 +1350,303 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
 }
+
+/// `minmax` of `V1` stored inexact `Float64` bounds for any column type: `9007199254740995` and `9007199254740997`
+/// both become `9007199254740996`, and fractional bounds of a `Float64` column could not be distinguished from
+/// rounded ones. The statistics are dropped when read, and the file can still be written again.
+TEST(Statistics, DeserializeV1MinMaxDropsBounds)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_v1_file = [](Float64 min, Float64 max)
+    {
+        String file;
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(1), buf); /// StatisticsFileVersion::V1
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::MinMax)), buf);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count of `minmax`
+        writeFloatBinary(min, buf);
+        writeFloatBinary(max, buf);
+        buf.finalize();
+        return file;
+    };
+
+    for (const auto * type_name : {"UInt64", "Float64", "Decimal64(2)"})
+    {
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        auto load = [&](const String & file)
+        {
+            ReadBufferFromString rb(file);
+            return ColumnStatistics::deserialize(rb, data_type);
+        };
+
+        for (auto [min, max] : {std::pair{1.25, 2.75}, std::pair{9007199254740996.0, 9007199254740996.0},
+                                std::pair{-1.0, std::numeric_limits<Float64>::infinity()}})
+        {
+            auto loaded = load(make_v1_file(min, max));
+            ASSERT_TRUE(loaded != nullptr);
+            EXPECT_FALSE(loaded->getStats().contains(StatisticsType::MinMax)) << type_name;
+            auto estimate = loaded->getEstimate();
+            EXPECT_FALSE(estimate.estimated_min.has_value()) << type_name;
+            EXPECT_FALSE(estimate.estimated_max.has_value()) << type_name;
+
+            for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+            {
+                WriteBufferFromOwnString rewritten;
+                loaded->serialize(rewritten, version);
+                auto restored = load(rewritten.str());
+                ASSERT_TRUE(restored != nullptr);
+                EXPECT_FALSE(restored->getStats().contains(StatisticsType::MinMax)) << type_name;
+            }
+        }
+    }
+}
+
+/// Older versions rewrote the `Float64` bounds of `minmax` of `V1` unchanged in `V4`. Such bounds of an integer or
+/// decimal column cannot be written with the serialization of the column type, so the statistics are dropped
+/// when read, while the bounds of the type of the column are kept.
+TEST(Statistics, DeserializeV4BoundsOfAnotherType)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_v4_file = [](const String & type_name, StatisticsType type, const Field & min, const Field & max)
+    {
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(2), buf); /// row_count
+            if (type == StatisticsType::MinMax)
+            {
+                writeStringBinary(type_name, buf);
+            }
+            else
+            {
+                writeIntBinary(static_cast<UInt8>(1), buf); /// `BasicFeatureMask::NumericMinMax`
+            }
+            writeFieldBinary(min, buf);
+            writeFieldBinary(max, buf);
+            buf.finalize();
+        }
+
+        String file;
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+        writeStringBinary(type_name, buf);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// rows
+        writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+        writeString(payload, buf);
+        buf.finalize();
+        return file;
+    };
+
+    struct Case
+    {
+        const char * type_name;
+        Field min;
+        Field max;
+        bool kept;
+    };
+
+    const std::vector<Case> cases{
+        {"UInt64", Field(1.0), Field(2.0), false},
+        {"Int32", Field(-1.0), Field(2.0), false},
+        {"Decimal64(2)", Field(1.25), Field(2.75), false},
+        {"UInt64", Field(UInt64(1)), Field(UInt64(2)), true},
+        {"Int64", Field(UInt64(1)), Field(UInt64(2)), true},
+        {"Float64", Field(1.25), Field(2.75), true},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(125, 2)), Field(DecimalField<Decimal64>(275, 2)), true},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        auto data_type = DataTypeFactory::instance().get(test_case.type_name);
+        for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
+        {
+            const String file = make_v4_file(data_type->getName(), type, test_case.min, test_case.max);
+            ReadBufferFromString rb(file);
+            auto loaded = ColumnStatistics::deserialize(rb, data_type);
+            ASSERT_TRUE(loaded != nullptr);
+            EXPECT_EQ(loaded->getStats().contains(type), test_case.kept) << test_case.type_name << " " << statisticsTypeToString(type);
+
+            /// A merge writes the statistics again.
+            for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+            {
+                WriteBufferFromOwnString rewritten;
+                loaded->serialize(rewritten, version);
+                ReadBufferFromString rewritten_rb(rewritten.str());
+                auto restored = ColumnStatistics::deserialize(rewritten_rb, data_type);
+                ASSERT_TRUE(restored != nullptr);
+                EXPECT_EQ(restored->getStats().contains(type), test_case.kept) << test_case.type_name;
+                if (test_case.kept)
+                {
+                    auto estimate = restored->getEstimate();
+                    ASSERT_TRUE(estimate.estimated_min.has_value()) << test_case.type_name;
+                    ASSERT_TRUE(estimate.estimated_max.has_value()) << test_case.type_name;
+                }
+            }
+        }
+    }
+}
+
+#if USE_DATASKETCHES
+
+TEST(Statistics, CountMinSketchRoundTrip)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    auto round_trip = [&](const ColumnStatisticsPtr & stats)
+    {
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
+        ReadBufferFromString rb(wb.str());
+        auto restored = ColumnStatistics::deserialize(rb, data_type);
+        EXPECT_TRUE(rb.eof());
+        return restored;
+    };
+
+    auto estimate_equal = [](const ColumnStatisticsPtr & stats, UInt64 value)
+    {
+        auto estimate = stats->getStats().at(StatisticsType::CountMinSketch)->estimateEqual(Field(value));
+        EXPECT_TRUE(estimate.has_value());
+        return estimate.value_or(-1.0);
+    };
+
+    /// An empty sketch.
+    {
+        auto restored = round_trip(createTestStats({StatisticsType::CountMinSketch}, data_type));
+        ASSERT_TRUE(restored != nullptr);
+        EXPECT_DOUBLE_EQ(estimate_equal(restored, 5), 0.0);
+    }
+
+    /// 1000 rows with the values 0 .. 9, 100 rows each.
+    {
+        MutableColumnPtr col = data_type->createColumn();
+        for (UInt64 i = 0; i < 1000; ++i)
+            col->insert(i % 10);
+        auto stats = createTestStats({StatisticsType::CountMinSketch}, data_type);
+        stats->build(std::move(col));
+
+        auto restored = round_trip(stats);
+        ASSERT_TRUE(restored != nullptr);
+        EXPECT_EQ(restored->getNumRows(), 1000u);
+        for (UInt64 value : {0, 5, 9, 10})
+            EXPECT_DOUBLE_EQ(estimate_equal(restored, value), estimate_equal(stats, value)) << "value " << value;
+        EXPECT_GE(estimate_equal(restored, 5), 100.0);
+    }
+}
+
+/// A malformed sketch makes `datasketches` throw `std::invalid_argument` or `std::out_of_range`, or parse into a sketch
+/// that is read out of bounds later. Each case must be rejected with `ILLEGAL_STATISTICS`: a `std::logic_error`
+/// escaping from `deserialize` lost the part and column context and aborted debug and sanitizer builds.
+TEST(Statistics, CountMinSketchDeserializeCorrupted)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    /// `StatisticsCountMinSketch` itself, without the `ColumnStatistics` wrapper.
+    auto create = [&]
+    {
+        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(StatisticsType::CountMinSketch, data_type);
+        EXPECT_TRUE(stats != nullptr);
+        return stats;
+    };
+
+    /// `StatisticsCountMinSketch::serialize` writes the `UInt64` size of the sketch, then the sketch.
+    auto serialize = [&](const ColumnPtr & column)
+    {
+        auto stats = create();
+        stats->build(column);
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
+        ReadBufferFromString rb(wb.str());
+        UInt64 size = 0;
+        readIntBinary(size, rb);
+        String bytes = wb.str().substr(sizeof(UInt64));
+        EXPECT_EQ(size, bytes.size());
+        return bytes;
+    };
+
+    MutableColumnPtr col = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        col->insert(i % 10);
+    const String sketch_bytes = serialize(std::move(col));
+    const String empty_sketch_bytes = serialize(data_type->createColumn());
+
+    /// The sizes of 7 hashes x 2718 buckets: two preamble longs, then the total weight and the counters.
+    ASSERT_EQ(empty_sketch_bytes.size(), 16u);
+    ASSERT_EQ(sketch_bytes.size(), 16u + 8 * (1 + 7 * 2718));
+
+    auto with_size = [](UInt64 size, const String & bytes)
+    {
+        WriteBufferFromOwnString wb;
+        writeIntBinary(size, wb);
+        wb.write(bytes.data(), bytes.size());
+        return wb.str();
+    };
+
+    /// In the second preamble long: [8, 12) the number of buckets, 12 the number of hashes, [13, 15) the seed hash.
+    auto with_dimensions = [&](UInt32 buckets, UInt8 hashes)
+    {
+        String bytes = sketch_bytes;
+        memcpy(bytes.data() + 8, &buckets, sizeof(buckets));
+        bytes[12] = static_cast<char>(hashes);
+        return with_size(bytes.size(), bytes);
+    };
+
+    auto expect_illegal_statistics = [&](const String & case_name, const String & payload)
+    {
+        SCOPED_TRACE(case_name);
+        auto stats = create();
+        const size_t allocated_bytes = stats->allocatedBytes();
+        ReadBufferFromString rb(payload);
+        try
+        {
+            stats->deserialize(rb, StatisticsFileVersion::V4);
+            ADD_FAILURE() << "expected ILLEGAL_STATISTICS";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_STATISTICS) << e.message();
+            EXPECT_NE(e.message().find("MATERIALIZE STATISTICS"), std::string::npos) << e.message();
+        }
+        catch (const std::exception & e)
+        {
+            ADD_FAILURE() << "expected DB::Exception, got std::exception: " << e.what();
+        }
+        /// The rejected sketch did not replace the existing one.
+        EXPECT_EQ(stats->allocatedBytes(), allocated_bytes);
+    };
+
+    /// The valid payloads are accepted.
+    for (const String & bytes : {sketch_bytes, empty_sketch_bytes})
+    {
+        auto stats = create();
+        const String payload = with_size(bytes.size(), bytes);
+        ReadBufferFromString rb(payload);
+        EXPECT_NO_THROW(stats->deserialize(rb, StatisticsFileVersion::V4));
+        EXPECT_TRUE(rb.eof());
+    }
+
+    {
+        String bytes = sketch_bytes;
+        bytes[13] = static_cast<char>(bytes[13] ^ 0xFF);
+        expect_illegal_statistics("seed hash", with_size(bytes.size(), bytes));
+    }
+
+    /// A valid sketch of other dimensions.
+    expect_illegal_statistics("1 hash x 3 buckets", with_dimensions(3, 1));
+
+    /// The number of counters overflows 32 bits, so `datasketches` 5.2.0 parses a sketch without counters.
+    expect_illegal_statistics("2 hashes x 2^31 buckets", with_dimensions(1u << 31, 2));
+
+    /// Truncated payloads with a consistent size. `datasketches` 5.2.0 does not detect a sketch that is
+    /// at most 16 bytes too short.
+    expect_illegal_statistics("truncated by 8 bytes", with_size(sketch_bytes.size() - 8, sketch_bytes.substr(0, sketch_bytes.size() - 8)));
+    expect_illegal_statistics("truncated to the preamble", with_size(16, sketch_bytes.substr(0, 16)));
+
+    /// A size that cannot be allocated (#91206).
+    expect_illegal_statistics("size UINT64_MAX", with_size(std::numeric_limits<UInt64>::max(), sketch_bytes));
+}
+
+#endif

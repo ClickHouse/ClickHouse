@@ -12,16 +12,9 @@ ClickHouse's Cluster Discovery feature simplifies cluster configuration by allow
 
 <Note>
 
-Cluster Discovery is an experimental feature and can be changed or removed in future versions.
-To enable it include the `allow_experimental_cluster_discovery` setting in your configuration file:
-
-```xml
-<clickhouse>
-    <!-- ... -->
-    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-    <!-- ... -->
-</clickhouse>
-```
+Cluster Discovery requires [ClickHouse Keeper](/guides/sre/keeper/clickhouse-keeper) or ZooKeeper to be configured.
+In older versions, it was an experimental feature that had to be enabled with the `allow_experimental_cluster_discovery` setting in the configuration file.
+This setting is now obsolete and has no effect.
 </Note>
 
 ## Remote servers configuration {#remote-servers-configuration}

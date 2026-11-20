@@ -1,0 +1,25 @@
+--- mysql table function
+SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', 'u', '[HIDDEN]', ssl_key_pem = '[HIDDEN]', ssl_key_passphrase = '[HIDDEN]')
+--- MySQL table engine
+CREATE TABLE t (`x` Int32) ENGINE = MySQL('127.0.0.1:3306', 'db', 't', 'u', '[HIDDEN]', ssl_key_pem = '[HIDDEN]', ssl_key_passphrase = '[HIDDEN]')
+--- MySQL database engine
+CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', 'u', '[HIDDEN]', ssl_key_pem = '[HIDDEN]', ssl_key_passphrase = '[HIDDEN]')
+--- MySQL dictionary source
+CREATE DICTIONARY d (`id` UInt32) PRIMARY KEY id SOURCE(MYSQL(HOST '127.0.0.1' PORT 3306 USER 'u' PASSWORD '[HIDDEN]' DB 'db' TABLE 't' SSL_KEY_PEM '[HIDDEN]' SSL_KEY_PASSPHRASE '[HIDDEN]')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())
+--- mysql table function, named collection
+SELECT * FROM mysql(creds, ssl_key_pem = '[HIDDEN]', `table` = 't', ssl_key_passphrase = '[HIDDEN]')
+--- MySQL table engine, named collection
+CREATE TABLE t (`x` Int32) ENGINE = MySQL(creds, ssl_key_pem = '[HIDDEN]', `table` = 't', ssl_key_passphrase = '[HIDDEN]')
+--- CREATE NAMED COLLECTION
+CREATE NAMED COLLECTION creds AS host = '[HIDDEN]', ssl_key_pem = '[HIDDEN]', ssl_key_passphrase = '[HIDDEN]'
+--- passphrase without a key is rejected
+OK
+--- passphrase with a key is accepted as an argument
+OK
+--- named collection: passphrase without a key is rejected
+OK
+--- named collection: passphrase with a key is accepted
+OK
+OK
+--- named collection: stored query hides the passphrase
+OK

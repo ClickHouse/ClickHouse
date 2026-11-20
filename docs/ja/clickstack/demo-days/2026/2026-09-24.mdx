@@ -1,0 +1,86 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-24
+title: 'デモデイズ - 2026-09-24'
+sidebarTitle: '2026-09-24'
+description: 'ClickStack デモデイズ（2026-09-24）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## チャートの軸描画と自動粒度の改善 {#chart-axis-rendering-and-auto-granularity-improvements}
+
+*デモ: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+[@arj22](https://github.com/arj22) さんから、チャートの使い勝手を向上させる一連の改善がコントリビュートされました。修正にご協力いただきありがとうございます。
+
+これまで、Duration ラベルは軸上で利用できる領域よりも幅が広くなり、見切れてしまうことがありました。今回から、チャートはヒートマップと同じコンパクトな Duration フォーマッタを使用するため、`7.38min` は `7.4m` と表示され、利用可能な領域内に収まります。CLI の `hdx chart` コマンドでも同じフォーマットが使用されます。
+
+軸ラベルの精度も向上しました。これまでは、`1050` と `1450` のような値がどちらも `1k` と表示されることがあり、近い値を見分けるのが困難でした。現在のフォーマッタは、小数点以下 2 桁までの範囲で収まる最も高い精度を使用し、末尾のゼロを削除します。これにより、これらの値はラベルの幅を広げることなく `1.05k` と `1.45k` として表示されます。
+
+高さの低いチャートでも、Y 軸のティックが等間隔に保たれるようになりました。これまで Recharts は、ラベルの重なりを避けるために個々のティックを間引くことがあり、`0, 300, 1k` のような不均等な数列になることがありました。現在は、ティックの数を維持したまま、チャート側で等間隔のティック候補を提供します。
+
+また、メトリクスのログソース向けに **Minimum Auto Granularity** 設定が新たに追加され、**Team Settings → Sources** から設定できるようになりました。これまで、自動粒度は選択された時間範囲のみに基づいてバケットサイズを決定していました。そのため、1 分に 1 回スクレイプされるメトリクスでは、短い時間範囲を選択すると 30 秒のバケットが生成されることがあり、値とギャップが交互に現れて、本来平坦なメトリクスが波打っているように見えていました。
+
+最小値をスクレイプ間隔に合わせて設定すれば、こうしたギャップを防げます。この設定は Grafana のデータソースごとの最小インターバルと同様に機能し、粒度が **Auto** に設定されている場合にのみ適用されます。粒度を明示的に指定したタイルの動作は変わりません。
+
+現時点で、この最小値が適用されるのはダッシュボードとタイルのみです。アラート、外部 API、CLI、MCP クエリツールでは、まだこの設定は反映されません。
+
+**関連 PR:** [#3148](https://github.com/hyperdxio/hyperdx/pull/3148) Duration 軸のティックをコンパクトなフォーマッタ経由で処理, [#3158](https://github.com/hyperdxio/hyperdx/pull/3158) 端末チャートで Duration 軸のティックをコンパクトに維持, [#3162](https://github.com/hyperdxio/hyperdx/pull/3162) 大きな数値でチャート軸ティックの小数部が破棄されないように修正, [#3172](https://github.com/hyperdxio/hyperdx/pull/3172) Recharts が重なり回避のためにティックを間引く際に Y 軸のティックを等間隔に維持, [#3149](https://github.com/hyperdxio/hyperdx/pull/3149) 自動粒度にログソースごとの下限を追加
+
+## タブ、ソート、タグフィルタを備えたダッシュボード一覧 {#dashboards-list-with-tabs-sort-and-tag-filters}
+
+*デモ: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=108" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボード一覧を刷新しました。従来は、プリセットダッシュボードとお気に入りがテーブルの上にカード形式で並び、その分一覧がページの下方へ押し下げられていました。現在は、お気に入りが **All** および **My dashboards** と並ぶ専用タブになり、**Import** と **New dashboard** はページヘッダーに配置されています。
+
+各ダッシュボードは、付与されたタグの数にかかわらず、一覧に一度だけ表示されるようになりました。従来は、ダッシュボードが付与されたタグごとに重複して表示され、タグのないダッシュボードは最下部にまとめられていました。現在、タグは複数選択可能なフィルタとして機能し、件数バッジ付きの固定幅の Tags ボタンから利用できます。2 つのタグを選択すると、両方のタグを持つダッシュボードのみが表示されます。
+
+一覧はデフォルトで最終更新日時順にソートされ、名前順や作成日時の新しい順にも切り替えられます。最終閲覧日時のタイムスタンプは現在記録されていないため、最終閲覧順は選択できません。
+
+フィルタ、選択中のタブ、ソート順は URL に保存されるため、フィルタを適用したビューを再読み込みしたり共有したりできます。現在のユーザーのメールアドレスが存在しない場合(ローカルモードを含む)、**My dashboards** タブは表示されません。
+
+**関連 PR:** [#3199](https://github.com/hyperdxio/hyperdx/pull/3199) タブ、ソート、タグフィルタによるダッシュボード一覧の刷新
+
+## 検索結果テーブルのレイアウトとカラム設定 {#search-results-table-layout-and-column-settings}
+
+*デモ: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=232" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは検討段階の取り組みであり、リリースを確約するものではありません。**
+
+複数のお客様から寄せられた課題に対応するため、検索結果テーブルの新しいレイアウトを検討しています。現在、テーブルのアクションは最後のクエリフィールドと同じ行に配置されているため、`SELECT` に多数のカラムが含まれると窮屈になってしまいます。このローカルプロトタイプでは、アクションを専用の行に分けて配置しています。
+
+最も多く寄せられる質問は、カラムの追加方法です。現状では `SELECT` を編集する必要がありますが、この方法に気付かないユーザーが少なくありません。プロトタイプでは **Columns** コントロールを追加し、クエリを編集しなくてもカラムを選択・適用できるようにしています。
+
+設定パネルには表示オプションを集約しています。現在の行選択機能では、チェックボックスがホバー時にしか表示されない場合でも、すべての行の左側にそのためのスペースが確保されています。さらに、行を選択するとテーブルのアクションが増えます。プロトタイプでは、チェックボックスを常に表示する、ホバー時に表示する、完全に非表示にする、のいずれかを選択できます。行の折り返しについてもより分かりやすいコントロールを用意しているほか、画面により多くの行を表示できる高密度レイアウトなど、将来的なオプションを追加する余地も設けています。
+
+これはまだ開発中で、PR も作成されていません。使い勝手について、ぜひフィードバックをお寄せください。
+
+**関連 PR:** まだありません。これはリリース済みの機能ではなく、検討段階の取り組みです。今回見直しの対象となる行選択機能は、[#3140](https://github.com/hyperdxio/hyperdx/pull/3140) (ダウンロードおよびコピーのための検索結果行の複数選択) と [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) (ホバー時にチェックボックスを表示) でリリースされたものです。
+
+## 複数行クエリフィールドとフォーカス時に展開されるオーバーレイ {#multi-line-query-fields-and-an-expand-on-focus-overlay}
+
+*デモ: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=367" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは検討段階の取り組みであり、リリースを確約するものではありません。**
+
+検索バーでの複数行クエリの扱いについては、以前から不満の声が寄せられていました。従来は、フィールドからフォーカスが外れるとクエリが 1 行に折りたたまれてしまうため、クエリ全体を確認するにはフィールドを再度クリックする必要がありました。
+
+この問題は最近修正されました。SQL、Lucene、PromQL の各フィールドは、フォーカスが外れても全体が表示されたままになり、内容が増えるとそれに合わせてページのレイアウトも広がります。時間選択コントロールと **Run** ボタンは 1 行目の高さに揃えて配置されます。また、冗長だった `WHERE` ラベルと `/` キーキャップも削除しました。なお、`/` と `s` キーで入力欄にフォーカスする操作は引き続き使えます。
+
+ただし、高さが増えることでいくつかの問題も生じます。`SELECT` と `ORDER BY` のフィールドも同様に拡大するため、一般的な顧客の画面では、短い `ORDER BY` でさえ 2 行に折り返されることがあります。チャートエクスプローラーでは、シリーズが複数あると多数のフィールドが同時に拡大し、エディタが縦方向に大きな領域を占めてしまいます。
+
+このドラフトでは、操作していないときはフィールドを 1 行に保つ方式を検討しています。フィールドにフォーカスすると、下のコンテンツに重なるオーバーレイとしてクエリ全体が表示され、ツールバーと結果の位置は変わりません。オーバーレイはフィールドからフォーカスが外れると閉じますが、**Keep expanded** で固定しておくこともできます。これにより、長いクエリを結果と見比べながら読むことができます。言語選択コントロールはオーバーレイに合わせて拡大し、折りたたまれたフィールドに貼り付けた場合も、1 行目とコントロールは表示されたままになります。
+
+現時点では、このドラフトはマージしない方向で考えています。入力やマウス操作に応じて拡大するフィールドは、ユーザーを混乱させるおそれがあります。フィールドをクリックしたときだけオーバーレイを開く方式であればその点は緩和されますが、内容に応じて拡大するテキストエリアはすでにリリース済みで、問題なく機能しています。別の案として、カラムと `ORDER BY` のコントロールを検索バーの外に移す方法もあります。そうすれば拡大するのは `WHERE` フィールドだけになり、現在の動作で十分対応できます。
+
+チャートエクスプローラーなど、他の箇所で大きな入力をどう扱うかについては、まだ結論が出ていません。この動作について、ぜひフィードバックをお寄せください。
+
+**関連 PR:** [#3150](https://github.com/hyperdxio/hyperdx/pull/3150) フォーカスが外れても複数行クエリフィールドを表示したままにする、[#3151](https://github.com/hyperdxio/hyperdx/pull/3151) 拡大するクエリフィールドの横のツールバーを上揃えにする、[#3168](https://github.com/hyperdxio/hyperdx/pull/3168) 検索バーの WHERE ラベルと / キーキャップを削除する、[#3175](https://github.com/hyperdxio/hyperdx/pull/3175) フォーカス時に複数行クエリフィールドをオーバーレイ表示する (オープン) 。#3175 はデモで紹介したドラフトです。マージ済みの 3 つの PR はリリース済みの常時表示の動作で、#3175 はこれを置き換えるものとなります。

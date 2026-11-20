@@ -124,6 +124,9 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
     int64_t getDeadBlobsQueueEstimate() override;
+
+    /// The storage has a single location, so there is never anything to replicate.
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
@@ -152,7 +155,7 @@ public:
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
-    bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
+    [[nodiscard]] bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
 
     void chmod(const String & path, mode_t mode) override;
 
