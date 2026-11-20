@@ -1,0 +1,6 @@
+start 1: data: existing metadata
+start 1: data next to the link: absent
+start 1: target of the link: visible
+start 2: data: existing metadata
+start 2: data next to the link: absent
+start 2: target of the link: visible
