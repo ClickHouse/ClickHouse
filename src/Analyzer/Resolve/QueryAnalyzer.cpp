@@ -4707,6 +4707,10 @@ bool convertNestedGroupByKeysToNullable(
     const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
+    /// The identifier resolve cache can make several references one node: change it in place only through its own copy.
+    if (node.use_count() > 1)
+        node = node->clone();
+
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
     {
         node->convertToNullable();
