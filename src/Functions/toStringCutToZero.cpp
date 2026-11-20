@@ -3,43 +3,47 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <base/find_symbols.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionToStringCutToZero final : public IFunction
+class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStringCutToZero>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(StringOrFixedString) -> String";
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     static bool tryExecuteString(const IColumn * col, ColumnPtr & col_res, size_t input_rows_count)
     {
@@ -126,7 +130,7 @@ public:
         return false;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
@@ -144,7 +148,7 @@ REGISTER_FUNCTION(ToStringCutToZero)
 {
     /// toStringCutToZero documentation
     FunctionDocumentation::Description description = R"(
-Accepts a [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
+Accepts a [String](/sql-reference/data-types/string) or [FixedString](/sql-reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
 
 Null bytes (\\0) are considered as string terminators.
 This function is useful for processing C-style strings or binary data where null bytes mark the end of meaningful content.
@@ -163,7 +167,7 @@ SELECT
     toStringCutToZero('hello\0world')
         )",
         R"(
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
         )"

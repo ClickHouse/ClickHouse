@@ -39,8 +39,8 @@ public:
             : byte(t | s)
         {
         }
-        [[nodiscard]] [[maybe_unused]] UInt8 Type() const { return byte & flagTypeMask; }
-        [[nodiscard]] [[maybe_unused]] UInt8 SubFlag() const { return byte & subFlagMask; }
+        [[maybe_unused]] UInt8 Type() const { return byte & flagTypeMask; }
+        [[maybe_unused]] UInt8 SubFlag() const { return byte & subFlagMask; }
     };
 
     // FLAG TYPES

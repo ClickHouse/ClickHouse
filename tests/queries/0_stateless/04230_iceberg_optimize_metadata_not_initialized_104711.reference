@@ -1,4 +1,4 @@
-metadata corrupted
+INSERT failed as expected
 OPTIMIZE did not crash with Logical error
 ALTER did not crash with Logical error
 ALTER ADD COLUMN did not crash with Logical error

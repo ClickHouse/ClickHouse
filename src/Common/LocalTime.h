@@ -20,9 +20,9 @@ class LocalTime
 {
 private:
     bool is_negative = false;
-    uint64_t m_hour{}; /// NOLINT             /// Hours (0-999)
-    unsigned char m_minute{};                 /// Minutes (0-59)
-    unsigned char m_second{};                 /// Seconds (0-59)
+    uint64_t m_hour; /// NOLINT             /// Hours (0-999)
+    unsigned char m_minute;                 /// Minutes (0-59)
+    unsigned char m_second;                 /// Seconds (0-59)
 
     /**
      * Initializes time from `time_t` and time zone.
@@ -32,10 +32,12 @@ private:
      */
     void init(time_t time, const DateLUTImpl & time_zone)
     {
-        const auto components = time_zone.toTimeComponents(
-            static_cast<DateLUTImpl::Time>(time));
+        if (time < 0)
+            is_negative = true;
 
-        is_negative = components.is_negative;
+        auto time_to_split = is_negative ? time * (-1) : time;
+
+        const auto components = time_zone.toTimeComponents(static_cast<DateLUTImpl::Time>(time_to_split));
 
         m_hour = components.hour;
         m_minute = components.minute;
@@ -130,7 +132,7 @@ private:
 
     // Helper function to compute the total seconds represented by the LocalTime.
     // For negative times, the total seconds is negative.
-    [[nodiscard]] inline int64_t totalSeconds() const
+    inline int64_t totalSeconds() const
     {
         // Compute total seconds from hours, minutes, and seconds.
         int64_t total = static_cast<int64_t>(m_hour) * 3600
@@ -197,10 +199,10 @@ public:
     LocalTime & operator= (const LocalTime &) noexcept = default;
 
     // Accessor methods
-    [[nodiscard]] bool negative() const { return is_negative; }
+    bool negative() const { return is_negative; }
     uint64_t hour() const { return m_hour; } /// NOLINT
-    [[nodiscard]] unsigned char minute() const { return m_minute; }
-    [[nodiscard]] unsigned char second() const { return m_second; }
+    unsigned char minute() const { return m_minute; }
+    unsigned char second() const { return m_second; }
 
     // Mutator methods
     void negative(bool b) { is_negative = b; }

@@ -1,5 +1,4 @@
 #include <memory>
-#include <thread>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -7,20 +6,15 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
-#include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
-#include <base/EnumReflection.h>
-#include <base/errnoToString.h>
-#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
-#include <Common/StackTrace.h>
+#include <Common/SymbolIndex.h>
 
 
 namespace DB
@@ -29,37 +23,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace
-{
-
-/// Formatted by `StackTrace`, so the trace is printed with the same rules as any other one.
-std::string formatTrace(const std::vector<UInt64> & trace)
-{
-    FramePointers frame_pointers{};
-    const size_t size = std::min(trace.size(), frame_pointers.size());
-    for (size_t i = 0; i < size; ++i)
-        frame_pointers[i] = reinterpret_cast<void *>(trace[i]);
-
-    std::string result = StackTrace::toString(frame_pointers.data(), 0, size);
-    if (result.ends_with('\n'))
-        result.pop_back();
-    return result;
-}
-
-/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
-constexpr char FLUSH_MARKER = 2;
-
 }
 
 TraceCollector::TraceCollector()
 {
-    /// The budget belongs to this collector's lifetime: a trace can only be delivered while one
-    /// exists, and the server constructs exactly one, before any threshold can be published.
-    MemoryTracker::resetLargeAllocationTraceBudget();
-
     TraceSender::pipe.open();
 
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
@@ -68,13 +35,7 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.setNonBlockingWrite();
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
-    /// Re-arm the shutdown gate in case a previous TraceCollector ran in this
-    /// process. The previous destructor left it set to true to drain senders
-    /// before closing the pipe; on a fresh start, senders should be allowed
-    /// through again.
-    TraceSender::shutdown.store(false);
-
-    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
+    thread = ThreadFromGlobalPool(&TraceCollector::run, this);
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
@@ -130,57 +91,35 @@ TraceCollector::~TraceCollector()
         }
     }
 
-    /// Close the gate first so no new sender writes to the pipe, then wait for
-    /// any sender already past the gate to finish its `write()`. After this
-    /// the write fd has no concurrent users and we can safely close it.
-    TraceSender::shutdown.store(true);
-    while (TraceSender::in_flight.load() > 0)
-        std::this_thread::yield();
-
-    /// Guaranteed fallback to unblock the worker even if the in-band stop byte
-    /// above failed to deliver (e.g. EAGAIN on the non-blocking write end):
-    /// closing the write end makes the worker's `read()` return EOF, so
-    /// `thread.join()` below cannot wait indefinitely on a missed stop byte.
-    if (TraceSender::pipe.fds_rw[1] >= 0)
-    {
-        if (0 != ::close(TraceSender::pipe.fds_rw[1]))
-            LOG_ERROR(getLogger("TraceCollector"), "Cannot close write end of trace pipe: {}", errnoToString());
-        TraceSender::pipe.fds_rw[1] = -1;
-    }
+    tryClosePipe();
 
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
-
-    /// Worker has exited; close the read end (the write end is already closed).
-    tryClosePipe();
 }
 
 
 void TraceCollector::run()
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const auto * object = SymbolIndex::instance().thisObject();
+#endif
+
     try
     {
         while (true)
         {
-            char message_type = 0;
-            readChar(message_type, in);
-            if (message_type == FLUSH_MARKER)
-            {
-                std::lock_guard lock(TraceSender::flush_mutex);
-                ++TraceSender::flush_completed;
-                TraceSender::flush_cv.notify_all();
-                continue;
-            }
-            if (message_type)
+            char is_last;
+            readChar(is_last, in);
+            if (is_last)
                 break;
 
             std::string query_id;
@@ -199,120 +138,90 @@ void TraceCollector::run()
             {
                 uintptr_t addr = 0;
                 readPODBinary(addr, in);
-                /// Runtime addresses: `TraceLogElement::appendToBlock` converts them for storage.
-                trace.emplace_back(static_cast<UInt64>(addr));
+
+                /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+                uintptr_t offset = 0;
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+                    offset = uintptr_t(object->address_begin);
+#endif
+
+                trace.emplace_back(static_cast<UInt64>(addr) - offset);
             }
 
-            TraceType trace_type = {};
+            TraceType trace_type;
             readPODBinary(trace_type, in);
 
-            UInt64 cpu_id = 0;
+            UInt64 cpu_id;
             readPODBinary(cpu_id, in);
 
-            UInt64 thread_id = 0;
+            UInt64 thread_id;
             readPODBinary(thread_id, in);
 
             UInt8 thread_name_id = 0;
             readPODBinary(thread_name_id, in);
 
-            Int64 size = 0;
+            Int64 size;
             readPODBinary(size, in);
 
-            UInt64 ptr = 0;
+            UInt64 ptr;
             readPODBinary(ptr, in);
 
-            Int8 memory_context = 0;
+            Int8 memory_context;
             readPODBinary(memory_context, in);
-            Int8 memory_blocked_context = 0;
+            Int8 memory_blocked_context;
             readPODBinary(memory_blocked_context, in);
 
             ProfileEvents::Event event;
             readPODBinary(event, in);
 
-            ProfileEvents::Count increment = 0;
+            ProfileEvents::Count increment;
             readPODBinary(increment, in);
-
-            /// Mirrored to the log before the trace_log insert below, because a server whose global
-            /// tracker has run away fails every system-log flush while still writing its log file,
-            /// and that is exactly the state this trace type exists to diagnose.
-            if (trace_type == TraceType::MemoryLargeAllocation)
-            {
-                LOG_WARNING(
-                    getLogger("MemoryTracker"),
-                    "Single charge of {} to the global memory tracker on thread {} "
-                    "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
-                    ReadableSize(size),
-                    thread_id,
-                    static_cast<VariableContext>(memory_blocked_context) == VariableContext::Max
-                        ? std::string_view("none")
-                        : magic_enum::enum_name(static_cast<VariableContext>(memory_blocked_context)),
-                    ReadableSize(total_memory_tracker.get()),
-                    formatTrace(trace));
-            }
 
             if (auto trace_log = getTraceLog())
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
                 // times will be equal up to the precision of a second.
-                struct timespec ts{};
+                struct timespec ts;
                 clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
 
                 UInt64 timestamp_ns = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
 
-                trace_log->add([&](TraceLogElement & element)
-                {
-                    element = TraceLogElement{
-                        .symbolize = symbolize,
-                        .event_time = time_t(timestamp_ns / 1000000000),
-                        .event_time_microseconds = time_in_microseconds,
-                        .timestamp_ns = timestamp_ns,
-                        .trace_type = trace_type,
-                        .cpu_id = cpu_id,
-                        .thread_id = thread_id,
-                        .thread_name = static_cast<ThreadName>(thread_name_id),
-                        .query_id = query_id,
-                        .trace = trace,
-                        .size = size,
-                        .ptr = ptr,
-                        .memory_context = memory_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_context)),
-                        .memory_blocked_context = memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_blocked_context)),
-                        .event = event,
-                        .increment = increment,
-                        .instrumented_point_id = 0,
-                        .function_id = -1,
-                        .function_name = "",
-                        .handler = "",
-                        .entry_type = std::nullopt,
-                        .duration_nanoseconds = std::nullopt,
-                    };
-                });
+                TraceLogElement element{
+                    .symbolize = symbolize,
+                    .event_time = time_t(timestamp_ns / 1000000000),
+                    .event_time_microseconds = time_in_microseconds,
+                    .timestamp_ns = timestamp_ns,
+                    .trace_type = trace_type,
+                    .cpu_id = cpu_id,
+                    .thread_id = thread_id,
+                    .thread_name = static_cast<ThreadName>(thread_name_id),
+                    .query_id = query_id,
+                    .trace = std::move(trace),
+                    .size = size,
+                    .ptr = ptr,
+                    .memory_context = memory_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_context)),
+                    .memory_blocked_context = memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_blocked_context)),
+                    .event = event,
+                    .increment = increment,
+                    .instrumented_point_id = 0,
+                    .function_id = -1,
+                    .function_name = "",
+                    .handler = "",
+                    .entry_type = std::nullopt,
+                    .duration_nanoseconds = std::nullopt,
+                };
+                trace_log->add(std::move(element));
             }
         }
     }
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
+        tryClosePipe();
         throw;
     }
-}
-
-void TraceCollector::flush()
-{
-    std::unique_lock lock(TraceSender::flush_mutex);
-    {
-        TraceSender::in_flight.fetch_add(1);
-        SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
-        /// A full pipe drops the marker like it drops traces, then there is nothing to wait for.
-        if (!TraceSender::isCollecting() || ::write(TraceSender::pipe.fds_rw[1], &FLUSH_MARKER, 1) != 1)
-            return;
-    }
-
-    /// The markers reach the pipe in the order of their numbers, and the collector reads the pipe in order.
-    const UInt64 marker = ++TraceSender::flush_requested;
-    constexpr auto timeout = std::chrono::seconds(180);
-    if (!TraceSender::flush_cv.wait_for(lock, timeout, [&] { return TraceSender::flush_completed >= marker; }))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while waiting for the trace collector", timeout.count());
 }
 
 }

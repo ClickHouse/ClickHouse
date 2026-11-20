@@ -6,61 +6,26 @@
 
 #if USE_AWS_S3
 
-#include <algorithm>
-#include <atomic>
-#include <chrono>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <functional>
 #include <memory>
-#include <mutex>
-#include <set>
-#include <string>
-#include <thread>
-#include <vector>
-
-#include <Common/Silk/FiberScheduler.h>
-#include <Common/Silk/tests/gtest_silk_scheduler.h>
-
-#if USE_SILK
-#include <silk/fibers/future.h>
-#endif
-
-#include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Poco/Event.h>
-#include <Poco/ThreadPool.h>
-#include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
-#include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
-#include <aws/core/internal/AWSHttpResourceClient.h>
 
-#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
-#include <IO/S3/Requests.h>
-#include <IO/S3/S3Capabilities.h>
-#include <IO/S3/copyS3File.h>
-#include <IO/S3/deleteFileFromS3.h>
-#include <Common/Exception.h>
-#include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
-#include <IO/S3RequestSettings.h>
 #include <Poco/Util/ServerApplication.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
@@ -69,8 +34,6 @@ namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
-    extern const S3RequestSettingsString delete_checksum_algorithm;
-    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
 }
 
 /*
@@ -82,34 +45,8 @@ namespace DB::S3RequestSetting
  * */
 [[maybe_unused]] static Poco::Util::ServerApplication app;
 
-/// Sets an environment variable for the lifetime of the object and restores the previous state afterwards.
-class ScopedEnvVarForAwsS3ClientTests
-{
-    const char * name;
-    bool had_value;
-    std::string saved_value;
 
-public:
-    ScopedEnvVarForAwsS3ClientTests(const char * name_, const std::string & value)
-        : name(name_)
-    {
-        const char * prev = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
-        had_value = prev != nullptr;
-        if (had_value)
-            saved_value = prev;
-        (void)::setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-    }
-
-    ~ScopedEnvVarForAwsS3ClientTests()
-    {
-        if (had_value)
-            (void)::setenv(name, saved_value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        else
-            (void)::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
-    }
-};
-
-static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
+String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
     String content;
     for (const auto & [header_name, header_value] : message_header)
@@ -132,7 +69,7 @@ static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_he
     return content;
 }
 
-static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     String version_id;
     UInt64 max_single_read_retries = 1;
@@ -153,7 +90,7 @@ static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB
     DB::readStringUntilEOF(content, read_buffer);
 }
 
-static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
@@ -174,44 +111,22 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
-/// Sends a `DeleteObjects` request the way `deleteFilesFromS3` does. The test server answers with an empty `200`,
-/// which `deleteFilesFromS3` would reject, so the request is built and sent directly.
-static RequestFn makeDeleteObjectsRequest(const String & delete_checksum_algorithm)
+void testServerSideEncryption(
+    RequestFn do_request,
+    bool disable_checksum,
+    String server_side_encryption_customer_key_base64,
+    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
+    String expected_headers,
+    bool is_s3express_bucket = false)
 {
-    return [delete_checksum_algorithm](std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
-    {
-        DB::S3::S3RequestSettings request_settings;
-        if (!delete_checksum_algorithm.empty())
-            request_settings[DB::S3RequestSetting::delete_checksum_algorithm] = delete_checksum_algorithm;
+    TestPocoHTTPServer http;
 
-        Aws::S3::Model::ObjectIdentifier object;
-        object.SetKey(uri.key);
-        Aws::S3::Model::Delete to_delete;
-        to_delete.AddObjects(object);
-
-        DB::S3::DeleteObjectsRequest request;
-        request.SetBucket(uri.bucket);
-        request.SetDelete(to_delete);
-        request.setUploadChecksumAlgorithm(DB::S3::RequestChecksum::getDeleteChecksumAlgorithm(request_settings, client->isS3ExpressBucket(), /*md5_rejected_by_server=*/false));
-
-        (void)client->DeleteObjects(request);
-    };
-}
-
-static std::shared_ptr<DB::S3::Client> makeTestClient(
-    const DB::S3::URI & uri,
-    const String & server_side_encryption_customer_key_base64,
-    const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
-    bool is_s3express_bucket,
-    const std::function<void(DB::S3::PocoHTTPClientConfiguration &)> & configure = {})
-{
-    /// The client keeps a reference to the filter, so it must outlive the returned client.
-    /// `const` makes sure no test reconfigures the shared instance.
-    static const DB::RemoteHostFilter remote_host_filter{};
+    DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
     bool s3_slow_all_threads_after_retryable_error = true;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
@@ -225,26 +140,25 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
-    if (configure)
-        configure(client_configuration);
 
-    DB::NormalizedHTTPHeaderEntries headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = is_s3express_bucket,
     };
 
-    return DB::S3::ClientFactory::instance().create(
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
         access_key_id,
@@ -256,23 +170,8 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
         {
             .use_environment_credentials = use_environment_credentials,
             .use_insecure_imds_request = use_insecure_imds_request,
-            .forbid_implicit_credentials = false,
         }
     );
-}
-
-static void testServerSideEncryption(
-    RequestFn do_request,
-    String server_side_encryption_customer_key_base64,
-    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers,
-    bool is_s3express_bucket = false)
-{
-    TestPocoHTTPServer http;
-
-    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
-    std::shared_ptr<DB::S3::Client> client
-        = makeTestClient(uri, server_side_encryption_customer_key_base64, sse_kms_config, is_s3express_bucket);
 
     ASSERT_TRUE(client);
 
@@ -286,6 +185,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -310,6 +210,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -321,7 +222,30 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "host;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
+        "x-amz-server-side-encryption-customer-algorithm: AES256\n"
+        "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
+        "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+}
+
+TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWriteDisableChecksum)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
         "x-amz-server-side-encryption-customer-algorithm;"
         "x-amz-server-side-encryption-customer-key;"
         "x-amz-server-side-encryption-customer-key-md5, ...\n"
@@ -339,6 +263,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
     // KMS headers shouldn't be set on a read request
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -360,6 +285,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
     sse_kms_config.bucket_key_enabled = true;
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -371,7 +297,6 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
         "host;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-server-side-encryption;"
         "x-amz-server-side-encryption-aws-kms-key-id;"
         "x-amz-server-side-encryption-bucket-key-enabled;"
@@ -388,6 +313,7 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ true,
         "",
         {},
         "authorization: ... SignedHeaders="
@@ -399,604 +325,12 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         "x-amz-checksum-crc32;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-sdk-checksum-algorithm, ...\n",
         /*is_s3express_bucket=*/true);
 }
 
-TEST(IOTestAwsS3Client, DeleteObjectsSendsRequestedChecksum)
-{
-    testServerSideEncryption(
-        makeDeleteObjectsRequest("CRC32"),
-        "",
-        {},
-        "authorization: ... SignedHeaders="
-        "amz-sdk-invocation-id;"
-        "amz-sdk-request;"
-        "content-length;"
-        "content-type;"
-        "host;"
-        "x-amz-api-version;"
-        "x-amz-checksum-crc32;"
-        "x-amz-content-sha256;"
-        "x-amz-date;"
-        "x-amz-sdk-checksum-algorithm, ...\n");
-
-    testServerSideEncryption(
-        makeDeleteObjectsRequest("SHA256"),
-        "",
-        {},
-        "authorization: ... SignedHeaders="
-        "amz-sdk-invocation-id;"
-        "amz-sdk-request;"
-        "content-length;"
-        "content-type;"
-        "host;"
-        "x-amz-api-version;"
-        "x-amz-checksum-sha256;"
-        "x-amz-content-sha256;"
-        "x-amz-date;"
-        "x-amz-sdk-checksum-algorithm, ...\n");
-}
-
 namespace
 {
-
-/// A `DeleteObjects` endpoint that, like a store requiring a digest, answers `400` with `error_code` unless the request
-/// carries an `x-amz-checksum-sha256` header (or, with `accept_sha256 = false`, always). Plain `DeleteObject` requests
-/// succeed. It keeps no other state: what a later batch does is decided by the client. Records whether each
-/// `DeleteObjects` request carried `Content-MD5` or `SHA256`, and counts the plain deletes.
-class DeleteObjectsStubServer
-{
-public:
-    enum class Digest
-    {
-        MD5,
-        SHA256,
-        None,
-    };
-
-    explicit DeleteObjectsStubServer(bool accept_sha256_, String error_code_ = "MissingContentMD5")
-        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , factory(new Factory(*this))
-        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
-        , accept_sha256(accept_sha256_)
-        , error_code(std::move(error_code_))
-    {
-        server->start();
-    }
-
-    ~DeleteObjectsStubServer() { server->stop(); }
-
-    String getUrl() const { return "http://" + server_socket->address().toString(); }
-
-    std::vector<Digest> getDigests() const
-    {
-        std::lock_guard lock(mutex);
-        return digests;
-    }
-
-    size_t getPlainDeleteCount() const
-    {
-        std::lock_guard lock(mutex);
-        return plain_deletes;
-    }
-
-private:
-    class Handler : public Poco::Net::HTTPRequestHandler
-    {
-    public:
-        explicit Handler(DeleteObjectsStubServer & stub_) : stub(stub_) {}
-
-        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-        {
-            if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
-            {
-                {
-                    std::lock_guard lock(stub.mutex);
-                    ++stub.plain_deletes;
-                }
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_NO_CONTENT);
-                response.send();
-                return;
-            }
-
-            const bool has_sha256 = request.has("x-amz-checksum-sha256");
-            const bool has_md5 = request.has("content-md5");
-            {
-                std::lock_guard lock(stub.mutex);
-                stub.digests.push_back(has_sha256 ? Digest::SHA256 : has_md5 ? Digest::MD5 : Digest::None);
-            }
-
-            if (has_sha256 && stub.accept_sha256)
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                response.setContentType("application/xml");
-                response.send() << R"(<?xml version="1.0" encoding="UTF-8"?><DeleteResult/>)";
-                return;
-            }
-
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-            response.setContentType("application/xml");
-            response.send() << R"(<?xml version="1.0" encoding="UTF-8"?>)"
-                               "<Error><Code>" << stub.error_code << "</Code><Message>Digest rejected</Message></Error>";
-        }
-
-    private:
-        DeleteObjectsStubServer & stub;
-    };
-
-    class Factory : public Poco::Net::HTTPRequestHandlerFactory
-    {
-    public:
-        explicit Factory(DeleteObjectsStubServer & stub_) : stub(stub_) {}
-
-        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-        {
-            return new Handler(stub);
-        }
-
-    private:
-        DeleteObjectsStubServer & stub;
-    };
-
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    Poco::SharedPtr<Factory> factory;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-    const bool accept_sha256;
-    const String error_code;
-
-    mutable std::mutex mutex;
-    std::vector<Digest> digests;
-    size_t plain_deletes = 0;
-};
-
-using Digest = DeleteObjectsStubServer::Digest;
-
-void deleteTwoKeys(
-    const std::shared_ptr<DB::S3::Client> & client, const DB::S3::URI & uri, DB::S3Capabilities & capabilities,
-    const DB::S3::S3RequestSettings & request_settings)
-{
-    DB::deleteFilesFromS3(client, uri.bucket, {"key1", "key2"}, /*if_exists=*/ false, capabilities, request_settings);
-}
-
-}
-
-TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256AndRemembers)
-{
-    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
-    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
-    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-    DB::S3Capabilities capabilities;
-    DB::S3::S3RequestSettings automatic;
-
-    deleteTwoKeys(client, uri, capabilities, automatic);
-    /// `Content-MD5` is rejected once and the same batch is retried with `SHA256`. Without `MD5` (FIPS) it starts there.
-    if (md5_available)
-        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256}));
-    else
-        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256}));
-    EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available);
-
-    /// A later call starts with `SHA256`.
-    deleteTwoKeys(client, uri, capabilities, automatic);
-    EXPECT_EQ(stub.getDigests().back(), Digest::SHA256);
-    EXPECT_EQ(stub.getDigests().size(), md5_available ? 3u : 2u);
-}
-
-/// Stores that reject the automatic `MD5` request with a generic error code are retried with `SHA256` too.
-TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256OnInvalidRequest)
-{
-    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
-    for (const String error_code : {"InvalidRequest", "InvalidArgument"})
-    {
-        DeleteObjectsStubServer stub(/*accept_sha256=*/ true, error_code);
-        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-        DB::S3Capabilities capabilities;
-        DB::S3::S3RequestSettings automatic;
-
-        deleteTwoKeys(client, uri, capabilities, automatic);
-        if (md5_available)
-            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
-        else
-            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
-        EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available) << error_code;
-        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
-        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
-    }
-}
-
-/// The server accepts no digest. With `DeleteObjects` support still undecided, that means it is unsupported.
-TEST(IOTestAwsS3Client, DeleteObjectsFallsBackWhenNoDigestIsAccepted)
-{
-    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
-    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
-    {
-        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
-        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-        DB::S3Capabilities capabilities;
-        DB::S3::S3RequestSettings automatic;
-
-        deleteTwoKeys(client, uri, capabilities, automatic);
-        if (md5_available)
-            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
-        else
-            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
-        EXPECT_EQ(stub.getPlainDeleteCount(), 2u) << error_code;
-        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(false)) << error_code;
-        /// The `SHA256` retry did not succeed, so it is not remembered.
-        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
-    }
-}
-
-/// Once `DeleteObjects` has worked, a digest error is a fault of that request, not a lack of support.
-TEST(IOTestAwsS3Client, DeleteObjectsDigestErrorAfterSuccessIsThrown)
-{
-    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
-    {
-        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
-        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-        DB::S3Capabilities capabilities;
-        capabilities.setIsBatchDeleteSupported(true);
-        DB::S3::S3RequestSettings automatic;
-
-        EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, automatic), DB::Exception) << error_code;
-        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
-        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
-        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
-    }
-}
-
-TEST(IOTestAwsS3Client, DeleteObjectsExplicitChecksumIsNotRetried)
-{
-    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
-    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-    DB::S3Capabilities capabilities;
-    DB::S3::S3RequestSettings explicit_crc32;
-    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
-
-    /// The stub wants `SHA256`, but an explicit algorithm is never replaced.
-    EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, explicit_crc32), DB::Exception);
-    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::None}));
-    EXPECT_EQ(stub.getPlainDeleteCount(), 0u);
-    EXPECT_FALSE(capabilities.isBatchDeleteSupported().has_value());
-    EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
-}
-
-TEST(IOTestAwsS3Client, DeleteChecksumAlgorithmSelection)
-{
-    using DB::S3::RequestChecksum::Algorithm;
-    using DB::S3::RequestChecksum::getDeleteChecksumAlgorithm;
-
-    DB::S3::S3RequestSettings automatic;
-    DB::S3::S3RequestSettings explicit_md5;
-    explicit_md5[DB::S3RequestSetting::delete_checksum_algorithm] = "MD5";
-    DB::S3::S3RequestSettings explicit_crc32;
-    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
-
-    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
-
-    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, false), md5_available ? Algorithm::MD5 : Algorithm::SHA256);
-    /// A server rejection of `MD5` switches the automatic default to `SHA256`.
-    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, true), Algorithm::SHA256);
-    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, true, false), Algorithm::CRC32);
-    /// An explicit value is used as given, whatever the server did before.
-    EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_crc32, false, true), Algorithm::CRC32);
-    EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, true, false), DB::Exception);
-    if (md5_available)
-        EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_md5, false, true), Algorithm::MD5);
-    else
-        EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, false, false), DB::Exception);
-}
-
-TEST(IOTestAwsS3Client, DeleteObjectsDefaultChecksum)
-{
-    /// Without an available `MD5` digest (FIPS) the default is `SHA256`, otherwise the SDK's `Content-MD5`.
-    const bool fips = !DB::OpenSSLInitializer::instance().isMD5Available();
-    testServerSideEncryption(
-        makeDeleteObjectsRequest(""),
-        "",
-        {},
-        fips ? "authorization: ... SignedHeaders="
-               "amz-sdk-invocation-id;"
-               "amz-sdk-request;"
-               "content-length;"
-               "content-type;"
-               "host;"
-               "x-amz-api-version;"
-               "x-amz-checksum-sha256;"
-               "x-amz-content-sha256;"
-               "x-amz-date;"
-               "x-amz-sdk-checksum-algorithm, ...\n"
-             : "authorization: ... SignedHeaders="
-               "amz-sdk-invocation-id;"
-               "amz-sdk-request;"
-               "content-length;"
-               "content-md5;"
-               "content-type;"
-               "host;"
-               "x-amz-api-version;"
-               "x-amz-content-sha256;"
-               "x-amz-date, ...\n");
-}
-
-namespace
-{
-
-/// A native-copy endpoint that, like S3, answers a server-side copy (`UploadPartCopy`, `CopyObject`) only after
-/// `copy_delay`, the time it takes to copy the data. Records the kind of every request it receives.
-class ServerSideCopyStubServer
-{
-public:
-    enum class Kind
-    {
-        CreateMultipartUpload,
-        UploadPartCopy,
-        CompleteMultipartUpload,
-        CopyObject,
-        Other,
-    };
-
-    explicit ServerSideCopyStubServer(std::chrono::milliseconds copy_delay_)
-        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , factory(new Factory(*this))
-        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
-        , copy_delay(copy_delay_)
-    {
-        server->start();
-    }
-
-    ~ServerSideCopyStubServer() { server->stop(); }
-
-    String getUrl() const { return "http://" + server_socket->address().toString(); }
-
-    std::vector<Kind> getRequests() const
-    {
-        std::lock_guard lock(mutex);
-        return requests;
-    }
-
-    size_t getCopyRequestCount() const
-    {
-        std::lock_guard lock(mutex);
-        return static_cast<size_t>(
-            std::ranges::count_if(requests, [](Kind kind) { return kind == Kind::UploadPartCopy || kind == Kind::CopyObject; }));
-    }
-
-private:
-    static Kind classify(const Poco::Net::HTTPServerRequest & request)
-    {
-        const bool has_copy_source = request.has("x-amz-copy-source");
-        const auto query_parameters = Poco::URI(request.getURI()).getQueryParameters();
-        auto has_parameter = [&](const String & name)
-        {
-            return std::ranges::any_of(query_parameters, [&](const auto & parameter) { return parameter.first == name; });
-        };
-
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            if (has_parameter("uploads"))
-                return Kind::CreateMultipartUpload;
-            if (has_parameter("uploadId"))
-                return Kind::CompleteMultipartUpload;
-        }
-        else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT && has_copy_source)
-        {
-            if (has_parameter("partNumber") && has_parameter("uploadId"))
-                return Kind::UploadPartCopy;
-            if (query_parameters.empty())
-                return Kind::CopyObject;
-        }
-        return Kind::Other;
-    }
-
-    static String getResponseBody(Kind kind)
-    {
-        switch (kind)
-        {
-            case Kind::CreateMultipartUpload:
-                return R"(<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult><Bucket>bucket</Bucket>)"
-                       R"(<Key>dst</Key><UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>)";
-            case Kind::UploadPartCopy:
-                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyPartResult>)"
-                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"part-etag"</ETag></CopyPartResult>)";
-            case Kind::CompleteMultipartUpload:
-                return R"(<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult><Bucket>bucket</Bucket>)"
-                       R"(<Key>dst</Key><ETag>"final-etag"</ETag></CompleteMultipartUploadResult>)";
-            case Kind::CopyObject:
-                return R"(<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult>)"
-                       R"(<LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>"copy-etag"</ETag></CopyObjectResult>)";
-            case Kind::Other:
-                break;
-        }
-        return "";
-    }
-
-    class Handler : public Poco::Net::HTTPRequestHandler
-    {
-    public:
-        explicit Handler(ServerSideCopyStubServer & stub_) : stub(stub_), copy_delay(stub_.copy_delay) {}
-
-        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-        {
-            const Kind kind = classify(request);
-            {
-                std::lock_guard lock(stub.mutex);
-                stub.requests.push_back(kind);
-            }
-
-            /// The stub is not touched after the delay: the client may have given up on this request already.
-            if (kind == Kind::UploadPartCopy || kind == Kind::CopyObject)
-                std::this_thread::sleep_for(copy_delay);
-
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-            response.setContentType("application/xml");
-            response.send() << getResponseBody(kind);
-        }
-
-    private:
-        ServerSideCopyStubServer & stub;
-        const std::chrono::milliseconds copy_delay;
-    };
-
-    class Factory : public Poco::Net::HTTPRequestHandlerFactory
-    {
-    public:
-        explicit Factory(ServerSideCopyStubServer & stub_) : stub(stub_) {}
-
-        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-        {
-            return new Handler(stub);
-        }
-
-    private:
-        ServerSideCopyStubServer & stub;
-    };
-
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    Poco::SharedPtr<Factory> factory;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-    const std::chrono::milliseconds copy_delay;
-
-    mutable std::mutex mutex;
-    std::vector<Kind> requests;
-};
-
-using RequestKind = ServerSideCopyStubServer::Kind;
-
-/// Longer than the 3 s first-attempt receive timeout of a `PUT`, far below the configured `requestTimeoutMs`.
-constexpr auto server_side_copy_delay = std::chrono::milliseconds(3500);
-
-std::shared_ptr<DB::S3::Client> makeServerSideCopyTestClient(const DB::S3::URI & uri)
-{
-    return makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false, [](DB::S3::PocoHTTPClientConfiguration & configuration)
-    {
-        configuration.s3_use_adaptive_timeouts = true;
-        /// The SDK default of 3 s would cut the copy by itself.
-        configuration.requestTimeoutMs = 30 * 1000;
-        /// A cut attempt is resent, so it shows up as a second copy request.
-        configuration.retry_strategy.max_retries = 1;
-    });
-}
-
-}
-
-TEST(IOTestAwsS3Client, UploadPartCopyIsNotRetriedAfterTheAdaptiveTimeout)
-{
-    ServerSideCopyStubServer server(server_side_copy_delay);
-    DB::S3::URI uri(server.getUrl() + "/bucket/src");
-    auto client = makeServerSideCopyTestClient(uri);
-
-    DB::S3::S3RequestSettings settings;
-    settings[DB::S3RequestSetting::max_single_operation_copy_size] = 1;
-
-    Stopwatch watch;
-    bool copied = DB::copyS3File(
-        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", settings, DB::ReadSettings{},
-        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
-
-    EXPECT_TRUE(copied);
-    EXPECT_EQ(server.getCopyRequestCount(), 1u);
-    EXPECT_EQ(
-        server.getRequests(),
-        (std::vector<RequestKind>{RequestKind::CreateMultipartUpload, RequestKind::UploadPartCopy, RequestKind::CompleteMultipartUpload}));
-    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
-}
-
-TEST(IOTestAwsS3Client, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
-{
-    ServerSideCopyStubServer server(server_side_copy_delay);
-    DB::S3::URI uri(server.getUrl() + "/bucket/src");
-    auto client = makeServerSideCopyTestClient(uri);
-
-    Stopwatch watch;
-    bool copied = DB::copyS3File(
-        client, uri.bucket, uri.key, /*src_size=*/ 1024, client, uri.bucket, "dst", DB::S3::S3RequestSettings{}, DB::ReadSettings{},
-        /*blob_storage_log=*/ nullptr, /*schedule=*/ {}, /*fallback_file_reader=*/ {});
-
-    EXPECT_TRUE(copied);
-    EXPECT_EQ(server.getCopyRequestCount(), 1u);
-    EXPECT_EQ(server.getRequests(), (std::vector<RequestKind>{RequestKind::CopyObject}));
-    EXPECT_GE(watch.elapsedMilliseconds(), static_cast<UInt64>(server_side_copy_delay.count()));
-}
-
-TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
-{
-    DB::RemoteHostFilter remote_host_filter;
-    unsigned int s3_max_redirects = 100;
-    unsigned int s3_retry_attempts = 0;
-    bool s3_slow_all_threads_after_network_error = true;
-    bool s3_slow_all_threads_after_retryable_error = true;
-    bool enable_s3_requests_logging = false;
-    DB::S3::URI uri("https://test-perf-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/test.csv");
-
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        /*force_region=*/"",
-        remote_host_filter,
-        s3_max_redirects,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
-        s3_slow_all_threads_after_network_error,
-        s3_slow_all_threads_after_retryable_error,
-        enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "https");
-
-    client_configuration.endpointOverride = uri.endpoint;
-
-    DB::NormalizedHTTPHeaderEntries headers;
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .gcs_issue_compose_request = false,
-        .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
-    };
-
-    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        /*access_key_id=*/"ACCESS_KEY_ID",
-        /*secret_access_key=*/"SECRET_ACCESS_KEY",
-        /*server_side_encryption_customer_key_base64=*/"",
-        {},
-        headers,
-        DB::S3::CredentialsConfiguration{.forbid_implicit_credentials = false});
-
-    ASSERT_TRUE(client);
-    EXPECT_EQ(client->getRegion(), "eu-north-1");
-}
-
-namespace
-{
-
-std::string getCredentialString(const Poco::Net::MessageHeader & headers)
-{
-    for (const auto & [header_name, header_value] : headers)
-    {
-        if (header_name == "authorization")
-        {
-            std::vector<String> parts;
-            boost::split(parts, header_value, [](char c){ return c == ' '; });
-            for (const auto & part : parts)
-            {
-                if (part.starts_with("Credential="))
-                    return part;
-            }
-        }
-    }
-
-    return "";
-}
 
 void validateCredential(const std::string_view credential_string, const std::string_view service_name, const std::string_view expected_access_key, const std::string_view expected_region)
 {
@@ -1015,15 +349,8 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(
-    const Poco::URI::QueryParameters query_params,
-    const std::string_view expected_role_arn,
-    const std::string_view expected_role_session_name,
-    const std::string_view expected_external_id = "",
-    const std::string_view expected_policy = "")
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name)
 {
-    bool external_id_present = false;
-    bool policy_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -1032,20 +359,7 @@ void validateAssumeRoleQueryParams(
             ASSERT_EQ(value, expected_role_arn);
         else if (param == "RoleSessionName")
             ASSERT_EQ(value, expected_role_session_name);
-        else if (param == "ExternalId")
-        {
-            external_id_present = true;
-            ASSERT_EQ(value, expected_external_id);
-        }
-        else if (param == "Policy")
-        {
-            policy_present = true;
-            ASSERT_EQ(value, expected_policy);
-        }
     }
-    /// ExternalId and Policy are optional and must be sent only when configured.
-    ASSERT_EQ(external_id_present, !expected_external_id.empty());
-    ASSERT_EQ(policy_present, !expected_policy.empty());
 }
 
 }
@@ -1076,6 +390,27 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsProviderCaching)
 
 TEST(IOTestAwsS3Client, AssumeRole)
 {
+    const auto get_credential_string =  [&](const Poco::Net::MessageHeader & headers) -> std::string
+    {
+        for (const auto & [header_name, header_value] : headers)
+        {
+            if (header_name == "authorization")
+            {
+                std::vector<String> parts;
+                boost::split(parts, header_value, [](char c){ return c == ' '; });
+                for (const auto & part : parts)
+                {
+                    if (part.starts_with("Credential="))
+                    {
+                        return part;
+                    }
+                }
+            }
+        }
+
+        return "";
+    };
+
     TestPocoHTTPServer http;
 
     static constexpr std::string_view role_access_key = "role_access_key";
@@ -1083,7 +418,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
     TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
 
-    static const DB::RemoteHostFilter remote_host_filter;
+    DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
@@ -1104,7 +439,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -1112,15 +447,16 @@ TEST(IOTestAwsS3Client, AssumeRole)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>();
 
-    DB::NormalizedHTTPHeaderEntries headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
 
-    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name, const std::string & external_id = "")
+    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name)
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
+            .disable_checksum = false,
         };
 
         std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -1137,9 +473,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
                 .use_insecure_imds_request = use_insecure_imds_request,
                 .role_arn = role_arn,
                 .role_session_name = role_session_name,
-                .external_id = external_id,
-                .sts_endpoint_override = sts_http.getUrl(),
-                .forbid_implicit_credentials = false,
+                .sts_endpoint_override = sts_http.getUrl()
             }
         );
 
@@ -1170,10 +504,10 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, role_session_name);
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name);
     }
 
@@ -1184,7 +518,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3("", "");
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", access_key_id, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", access_key_id, region);
         ASSERT_FALSE(sts_http.hasLastRequest());
     }
 
@@ -1197,913 +531,12 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, "");
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
     }
-
-    {
-        SCOPED_TRACE("With role arn and external id set");
-
-        sts_http.resetLastRequest();
-
-        std::string role_arn = "arn::role/my_role";
-        std::string role_session_name = "session_name";
-        std::string external_id = "my_external_id";
-
-        read_from_s3(role_arn, role_session_name, external_id);
-
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
-
-        ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
-        validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
-    }
 }
-
-TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
-{
-    static constexpr std::string_view role_access_key = "role_access_key";
-    static constexpr std::string_view role_secret_key = "role_secret_key";
-
-    TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
-
-    const String region = "eu-west-1";
-    const String access_key_id = "ACCESS_KEY_ID";
-
-    DB::RemoteHostFilter remote_host_filter;
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        region,
-        remote_host_filter,
-        /* s3_max_redirects = */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "http");
-    /// `ClientFactory::create` normally copies the region into the SDK configuration. This test bypasses it.
-    client_configuration.region = region;
-
-    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(Aws::String(access_key_id), "SECRET_ACCESS_KEY");
-    auto client = DB::S3::AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_http.getUrl());
-    ASSERT_TRUE(client);
-
-    const std::string role_arn = "arn::role/my_role";
-    const std::string role_session_name = "session_name";
-    const std::string policy
-        = R"({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/table/*"}]})";
-
-    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(Aws::String(role_arn), Aws::String(role_session_name), "", Aws::String(policy)));
-    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
-
-    ASSERT_TRUE(sts_http.hasLastRequest());
-    validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
-    validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, "", policy);
-
-    const auto & result = outcome.GetResult();
-    ASSERT_EQ(result.getAccessKeyID(), role_access_key);
-    ASSERT_EQ(result.getSecretAccessKey(), role_secret_key);
-    ASSERT_EQ(result.getSessionToken(), "session_token");
-    ASSERT_EQ(result.getExpiration().Millis(), Aws::Utils::DateTime("2030-01-01T00:00:00Z", Aws::Utils::DateFormat::ISO_8601).Millis());
-}
-
-TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
-{
-    auto & registry = DB::S3::ClientCacheRegistry::instance();
-
-    std::shared_ptr<DB::S3::ClientCache> cache_ab1 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
-    std::shared_ptr<DB::S3::ClientCache> cache_ab2 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
-    EXPECT_EQ(cache_ab1.get(), cache_ab2.get()) << "Same (endpoint, bucket) should return the same cache";
-
-    std::shared_ptr<DB::S3::ClientCache> cache_b1 = registry.getOrCreateCacheForKey("endpoint1", "bucket2");
-    EXPECT_NE(cache_ab1.get(), cache_b1.get()) << "Different bucket should return different cache";
-
-    std::shared_ptr<DB::S3::ClientCache> cache_e2 = registry.getOrCreateCacheForKey("endpoint2", "bucket1");
-    EXPECT_NE(cache_ab1.get(), cache_e2.get()) << "Different endpoint should return different cache";
-
-    auto cache_concat1 = registry.getOrCreateCacheForKey("ab", "c");
-    auto cache_concat2 = registry.getOrCreateCacheForKey("a", "bc");
-    EXPECT_NE(cache_concat1.get(), cache_concat2.get())
-        << "Pairs with identical concatenation but different boundary must not share a cache";
-}
-
-TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
-{
-    DB::RemoteHostFilter remote_host_filter;
-    DB::S3::URI uri("https://s3.eu-central-1.amazonaws.com/my-bucket/key");
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "eu-central-1",
-        remote_host_filter,
-        10,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        true,
-        true,
-        false,
-        DB::HTTPConnectionGroupType::STORAGE,
-        {},
-        {},
-        "https");
-    client_configuration.endpointOverride = uri.endpoint;
-
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .gcs_issue_compose_request = false,
-        .is_s3express_bucket = false,
-    };
-
-    auto shared_cache = DB::S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(uri.endpoint, uri.bucket);
-    std::unique_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        "access",
-        "secret",
-        "",
-        {},
-        {},
-        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
-        "",
-        shared_cache);
-
-    ASSERT_TRUE(client);
-    std::unique_ptr<DB::S3::Client> clone = client->clone();
-    ASSERT_TRUE(clone);
-
-    EXPECT_EQ(client->getRawCache(), shared_cache.get()) << "Client should use the shared cache";
-    EXPECT_EQ(clone->getRawCache(), client->getRawCache()) << "Clone should share the same cache as original";
-}
-
-TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
-{
-    /// Verify ClientCacheRegistry refcounting directly via the test-only refcount accessor.
-    /// We can't go through Client construction/destruction because Client::~Client catches
-    /// and logs exceptions from unregisterClient, so a refcount bug would be invisible;
-    /// and we can't probe via the throwing path (the entry was already removed) because in
-    /// debug/sanitizer builds LOGICAL_ERROR aborts the process instead of throwing.
-    auto & registry = DB::S3::ClientCacheRegistry::instance();
-    auto shared_cache = registry.getOrCreateCacheForKey(
-        "https://s3.us-east-1.amazonaws.com",
-        "test-refcount-bucket");
-
-    ASSERT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
-
-    registry.registerClient(shared_cache);
-    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
-
-    /// Second registration of the same cache must bump the refcount, not silently no-op.
-    registry.registerClient(shared_cache);
-    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 2u);
-
-    registry.unregisterClient(shared_cache.get());
-    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
-
-    registry.unregisterClient(shared_cache.get());
-    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
-}
-
-TEST(IOTestAwsS3Client, StsCredentialsClientEndpoint)
-{
-    DB::S3::ClientFactory::instance();
-    const auto endpoint_for = [](const std::string & region, const std::string & endpoint_override = "")
-    {
-        Aws::Client::ClientConfiguration configuration;
-        configuration.region = region;
-        configuration.endpointOverride = endpoint_override;
-        return Aws::Internal::STSCredentialsClient(configuration).GetEndpoint();
-    };
-
-    /// Without an override the SDK derives the endpoint from the region, including the partition suffix.
-    EXPECT_EQ(endpoint_for("eu-west-1"), "https://sts.eu-west-1.amazonaws.com");
-    EXPECT_EQ(endpoint_for("cn-north-1"), "https://sts.cn-north-1.amazonaws.com.cn");
-    EXPECT_EQ(endpoint_for("eusc-de-east-1"), "https://sts.eusc-de-east-1.amazonaws.eu");
-    /// An explicit override wins over the derived endpoint.
-    EXPECT_EQ(endpoint_for("eusc-de-east-1", "http://localhost:1234"), "http://localhost:1234");
-}
-
-/// The configuration keeps a reference to the filter, so the caller owns it.
-static DB::S3::PocoHTTPClientConfiguration createWebIdentityClientConfiguration(const DB::RemoteHostFilter & remote_host_filter)
-{
-    return DB::S3::ClientFactory::instance().createClientConfiguration(
-        "eu-west-1",
-        remote_host_filter,
-        /* s3_max_redirects = */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {});
-}
-
-TEST(IOTestAwsS3Client, WebIdentityUsesStsEndpointFromEnvironment)
-{
-    static constexpr std::string_view role_access_key = "web_identity_access_key";
-    static constexpr std::string_view role_secret_key = "web_identity_secret_key";
-    static constexpr std::string_view role_arn = "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_endpoint";
-    static constexpr std::string_view token = "web-identity-token-for-gtest";
-
-    /// A fake STS server that answers every request with the keys above.
-    TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
-
-    const std::string token_file = std::filesystem::temp_directory_path() / "clickhouse_web_identity_token_for_gtest";
-    {
-        std::ofstream out(token_file);
-        out << token;
-    }
-    SCOPE_EXIT({ std::filesystem::remove(token_file); });
-
-    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", std::string{role_arn});
-    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", token_file);
-    /// Point the STS endpoint override at the fake server.
-    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", sts_http.getUrl());
-
-    DB::RemoteHostFilter remote_host_filter;
-    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
-
-    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
-        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
-    ASSERT_TRUE(provider);
-
-    /// Getting the fake keys back proves the request went to the fake server and not to AWS.
-    const auto credentials = provider->GetAWSCredentials();
-    ASSERT_EQ(credentials.GetAWSAccessKeyId(), role_access_key);
-    ASSERT_EQ(credentials.GetAWSSecretKey(), role_secret_key);
-
-    /// The request carries the web identity action, role, and token.
-    ASSERT_TRUE(sts_http.hasLastRequest());
-    for (const auto & [param, value] : sts_http.getLastQueryParams())
-    {
-        if (param == "Action")
-            ASSERT_EQ(value, "AssumeRoleWithWebIdentity");
-        else if (param == "RoleArn")
-            ASSERT_EQ(value, role_arn);
-        else if (param == "WebIdentityToken")
-            ASSERT_EQ(value, token);
-    }
-}
-
-TEST(IOTestAwsS3Client, WebIdentityIgnoresGlobalEndpointFromEnvironment)
-{
-    /// The token file is only read on the first request, which this test does not make.
-    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_global_endpoint");
-    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_global_endpoint");
-    /// Only the STS-specific variable is honored. On-prem setups point the global one at MinIO.
-    ScopedEnvVarForAwsS3ClientTests global_endpoint_env("AWS_ENDPOINT_URL", "http://localhost:1234");
-    (void)::unsetenv("AWS_ENDPOINT_URL_STS"); // NOLINT(concurrency-mt-unsafe)
-
-    DB::RemoteHostFilter remote_host_filter;
-    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
-
-    /// The provider writes the resolved endpoint into the configuration, so no request is needed.
-    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
-        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
-    ASSERT_TRUE(provider);
-
-    EXPECT_TRUE(client_configuration.endpointOverride.empty());
-}
-
-TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
-{
-    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_unit_test_role");
-    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_path_for_gtest");
-
-    EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured({}));
-}
-
-TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
-{
-    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "");
-    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_path_for_gtest_override");
-
-    EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(
-        "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
-}
-
-TEST(IOTestAwsS3Client, HttpResponseCodeToString)
-{
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::NOT_FOUND), "404");
-
-    /// The AWS SDK uses this value when there was no response at all: it must not be printed as a number,
-    /// and especially not as 18446744073709551615, which is what a cast to an unsigned type produces.
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-
-    /// The same rendering must be used by `{}` in log and exception messages.
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-}
-
-TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
-{
-    {
-        SCOPED_TRACE("400 with non-empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "us-west-2");
-        EXPECT_TRUE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("2xx with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-        response.set("x-amz-bucket-region", "eu-central-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(200, response));
-    }
-    {
-        SCOPED_TRACE("400 without header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("400 with empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("404 with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.set("x-amz-bucket-region", "ap-south-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(404, response));
-    }
-}
-
-namespace DB::ErrorCodes
-{
-    extern const int S3_OBJECT_CHANGED_DURING_READ;
-}
-
-namespace
-{
-
-/// Mock S3 endpoint that serves a fixed body and a fixed ETag for every GET, simulating an object
-/// whose current generation (ETag) differs from the one captured at listing time.
-class FixedETagHandler : public Poco::Net::HTTPRequestHandler
-{
-public:
-    FixedETagHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
-    void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
-    {
-        response.set("ETag", etag);
-        response.setContentType("application/octet-stream");
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-        response.setContentLength(static_cast<std::streamsize>(body.size()));
-        auto & os = response.send();
-        os << body;
-        os.flush();
-    }
-private:
-    std::string body;
-    std::string etag;
-};
-
-class FixedETagHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
-{
-public:
-    FixedETagHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-    {
-        return new FixedETagHandler(body, etag);
-    }
-private:
-    std::string body;
-    std::string etag;
-};
-
-class FixedETagServer
-{
-public:
-    FixedETagServer(std::string body, std::string etag)
-        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
-              new FixedETagHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, makeMockServerParams()))
-    {
-        server->start();
-    }
-    ~FixedETagServer() { server->stop(); }
-    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
-private:
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-};
-
-/// Like FixedETagServer, but honors the `If-Match` conditional header the way S3/GCS do: if the
-/// request carries an `If-Match` that differs from the object's ETag, it responds 412 Precondition
-/// Failed (before sending any body) instead of 200. Used to exercise the server-enforced overwrite
-/// detection path, as opposed to FixedETagServer which ignores If-Match (the defense-in-depth path).
-class IfMatchAwareHandler : public Poco::Net::HTTPRequestHandler
-{
-public:
-    IfMatchAwareHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-    {
-        const std::string if_match = request.get("If-Match", "");
-        if (!if_match.empty() && if_match != etag)
-        {
-            const std::string error_body =
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                "<Error><Code>PreconditionFailed</Code>"
-                "<Message>At least one of the preconditions you specified did not hold.</Message>"
-                "<Condition>If-Match</Condition></Error>";
-            response.setContentType("application/xml");
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED);
-            response.setContentLength(static_cast<std::streamsize>(error_body.size()));
-            auto & os = response.send();
-            os << error_body;
-            os.flush();
-            return;
-        }
-        response.set("ETag", etag);
-        response.setContentType("application/octet-stream");
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-        response.setContentLength(static_cast<std::streamsize>(body.size()));
-        auto & os = response.send();
-        os << body;
-        os.flush();
-    }
-private:
-    std::string body;
-    std::string etag;
-};
-
-class IfMatchAwareHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
-{
-public:
-    IfMatchAwareHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-    {
-        return new IfMatchAwareHandler(body, etag);
-    }
-private:
-    std::string body;
-    std::string etag;
-};
-
-class IfMatchAwareServer
-{
-public:
-    IfMatchAwareServer(std::string body, std::string etag)
-        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
-              new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, makeMockServerParams()))
-    {
-        server->start();
-    }
-    ~IfMatchAwareServer() { server->stop(); }
-    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
-private:
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-};
-
-std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
-{
-    static const DB::RemoteHostFilter remote_host_filter;
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "us-east-1",
-        remote_host_filter,
-        /* s3_max_redirects= */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        /* s3_slow_all_threads_after_network_error= */ true,
-        /* s3_slow_all_threads_after_retryable_error= */ true,
-        /* enable_s3_requests_logging= */ false,
-        /* group= */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name= */ {},
-        /* request_throttler= */ {},
-        uri.uri.getScheme());
-    client_configuration.endpointOverride = uri.endpoint;
-
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .gcs_issue_compose_request = false,
-        .is_s3express_bucket = false,
-    };
-    return DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        "ACCESS_KEY_ID",
-        "SECRET_ACCESS_KEY",
-        /* server_side_encryption_customer_key_base64= */ "",
-        {},
-        {},
-        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
-}
-
-DB::ReadBufferFromS3 makeReadBuffer(
-    std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri, size_t file_size, const String & expected_etag,
-    const String & version_id = "")
-{
-    DB::ReadSettings read_settings;
-    DB::S3::S3RequestSettings request_settings;
-    request_settings[DB::S3RequestSetting::max_single_read_retries] = 3;
-    return DB::ReadBufferFromS3(
-        std::move(client),
-        uri.bucket,
-        uri.key,
-        version_id,
-        request_settings,
-        read_settings,
-        /* use_external_buffer= */ false,
-        /* offset= */ 0,
-        /* read_until_position= */ 0,
-        /* restricted_seek= */ false,
-        /* file_size= */ std::optional<size_t>(file_size),
-        /* credentials_refresh_callback= */ [] { return nullptr; },
-        /* blob_storage_log= */ {},
-        /* expected_etag= */ expected_etag);
-}
-
-}
-
-/// The object's ETag changed between listing and reading (an in-place overwrite). The read must
-/// fail with S3_OBJECT_CHANGED_DURING_READ instead of returning bytes from the wrong generation.
-/// FixedETagServer ignores the If-Match header (returns 200 with the new ETag), so this exercises the
-/// client-side response-ETag comparison - the defense-in-depth layer for backends that drop If-Match.
-TEST(IOTestAwsS3Client, ReadDetectsObjectReplacedDuringRead)
-{
-    const std::string body(128, 'x');
-    FixedETagServer server(body, "\"etag-after-overwrite\"");
-    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
-    auto client = createTestS3Client(uri);
-    ASSERT_TRUE(client);
-
-    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
-
-    String content;
-    try
-    {
-        DB::readStringUntilEOF(content, read_buffer);
-        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
-    }
-}
-
-/// When the ETag matches the listed one (no concurrent overwrite) the read proceeds normally.
-TEST(IOTestAwsS3Client, ReadAcceptsMatchingETag)
-{
-    const std::string body(128, 'x');
-    FixedETagServer server(body, "\"etag-stable\"");
-    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
-    auto client = createTestS3Client(uri);
-    ASSERT_TRUE(client);
-
-    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
-
-    String content;
-    DB::readStringUntilEOF(content, read_buffer);
-    EXPECT_EQ(content, body);
-}
-
-/// For an explicit pinned-version read (?versionId=), the requested generation is immutable, so the
-/// ETag check must be skipped even when the (current-version) expected ETag differs from the GET's.
-/// Otherwise a versioned read would spuriously fail with S3_OBJECT_CHANGED_DURING_READ.
-TEST(IOTestAwsS3Client, ReadSkipsETagCheckForVersionedRead)
-{
-    const std::string body(128, 'x');
-    FixedETagServer server(body, "\"etag-of-requested-version\"");
-    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
-    auto client = createTestS3Client(uri);
-    ASSERT_TRUE(client);
-
-    /// expected_etag is the *current* version's etag (differs from the requested version's), but a
-    /// version_id is pinned, so validation must be skipped and the read must succeed.
-    auto read_buffer = makeReadBuffer(
-        client, uri, body.size(), /* expected_etag= */ "\"etag-of-current-version\"", /* version_id= */ "some-version-id");
-
-    String content;
-    DB::readStringUntilEOF(content, read_buffer);
-    EXPECT_EQ(content, body);
-}
-
-/// Server-enforced overwrite detection: the backend honors If-Match and answers 412 Precondition
-/// Failed when the conditional GET's ETag no longer matches. The 412 must be mapped to
-/// S3_OBJECT_CHANGED_DURING_READ rather than surfacing as a generic S3 error.
-TEST(IOTestAwsS3Client, ReadMapsIfMatchPreconditionFailedToObjectChanged)
-{
-    const std::string body(128, 'x');
-    IfMatchAwareServer server(body, "\"etag-after-overwrite\"");
-    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
-    auto client = createTestS3Client(uri);
-    ASSERT_TRUE(client);
-
-    /// expected_etag (the listed generation) differs from the server's current ETag, so the
-    /// If-Match the read sends will not match and the server returns 412.
-    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
-
-    String content;
-    try
-    {
-        DB::readStringUntilEOF(content, read_buffer);
-        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
-    }
-}
-
-/// When the conditional GET's If-Match matches the current ETag, the If-Match-honoring server returns
-/// the body normally - no spurious failure.
-TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
-{
-    const std::string body(128, 'x');
-    IfMatchAwareServer server(body, "\"etag-stable\"");
-    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
-    auto client = createTestS3Client(uri);
-    ASSERT_TRUE(client);
-
-    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
-
-    String content;
-    DB::readStringUntilEOF(content, read_buffer);
-    EXPECT_EQ(content, body);
-}
-
-/// The response wait of a credential round trip is bounded by the credential cap whatever the
-/// data-transfer timeouts are: a looser component is lowered to the cap, a non-positive one
-/// (unbounded downstream) takes the cap, and one already tighter than the cap is kept rather than
-/// raised. The connect timeout is passed through untouched.
-TEST(IOTestAwsS3Client, CredentialAcquisitionTimeoutsAreCapped)
-{
-    const Poco::Timespan request_cap(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
-
-    struct Case
-    {
-        const char * name;
-        Poco::Timespan input;
-        Poco::Timespan expected;
-    };
-
-    const Case request_cases[] = {
-        {"one hour is lowered to the cap", Poco::Timespan(60 * 60, 0), request_cap},
-        {"no limit takes the cap", Poco::Timespan(0), request_cap},
-        {"tighter than the cap is kept", Poco::Timespan(2, 0), Poco::Timespan(2, 0)},
-        {"exactly the cap is kept", request_cap, request_cap},
-    };
-
-    for (const auto & c : request_cases)
-    {
-        auto timeouts = DB::ConnectionTimeouts().withSendTimeout(c.input).withReceiveTimeout(c.input);
-        auto capped = DB::S3::getCredentialAcquisitionTimeouts(timeouts);
-        EXPECT_EQ(capped.receive_timeout, c.expected) << c.name;
-        EXPECT_EQ(capped.send_timeout, c.expected) << c.name;
-    }
-
-    const Case connect_cases[] = {
-        {"the backup's ten seconds is kept", Poco::Timespan(10, 0), Poco::Timespan(10, 0)},
-        {"a custom metadata service budget is kept", Poco::Timespan(30, 0), Poco::Timespan(30, 0)},
-        {"no limit is kept", Poco::Timespan(0), Poco::Timespan(0)},
-    };
-
-    for (const auto & c : connect_cases)
-    {
-        auto timeouts = DB::ConnectionTimeouts().withConnectionTimeout(c.input);
-        auto capped = DB::S3::getCredentialAcquisitionTimeouts(timeouts);
-        EXPECT_EQ(capped.connection_timeout, c.expected) << c.name;
-        EXPECT_EQ(capped.secure_connection_timeout, c.expected) << c.name;
-    }
-}
-
-namespace
-{
-
-/// `timeouts` is protected, so reading the data-plane value the client actually serves requests with
-/// needs a subclass rather than a friend declaration.
-class GCPOAuthClientWithVisibleTimeouts : public DB::S3::PocoHTTPClientGCPOAuth
-{
-public:
-    using DB::S3::PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth;
-
-    const DB::ConnectionTimeouts & getDataPlaneTimeouts() const { return timeouts; }
-};
-
-}
-
-/// Capping the credential round trip must not touch the data plane: a backup keeps the one-hour
-/// per-request timeout it sets for large multipart transfers.
-TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
-{
-    DB::RemoteHostFilter remote_host_filter;
-    auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "eu-west-1",
-        remote_host_filter,
-        /* s3_max_redirects = */ 10,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "http");
-
-    /// The values BackupIO_S3 sets for a backup.
-    client_configuration.connectTimeoutMs = 10 * 1000;
-    client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-
-    GCPOAuthClientWithVisibleTimeouts client(client_configuration);
-
-    const auto & data_plane = client.getDataPlaneTimeouts();
-    EXPECT_EQ(data_plane.receive_timeout, Poco::Timespan(60 * 60, 0));
-    EXPECT_EQ(data_plane.send_timeout, Poco::Timespan(60 * 60, 0));
-    EXPECT_EQ(data_plane.connection_timeout, Poco::Timespan(10, 0));
-
-    auto credential = DB::S3::getCredentialAcquisitionTimeouts(data_plane);
-    EXPECT_EQ(credential.receive_timeout, Poco::Timespan(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000));
-    EXPECT_EQ(credential.connection_timeout, Poco::Timespan(10, 0));
-}
-
-#if USE_SILK
-
-namespace
-{
-
-using HTTPHandlerFunction = std::function<void(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse &)>;
-
-/// A mock endpoint that answers with `handler`, which is called from up to `max_threads` concurrent server threads.
-class FunctionHTTPServer
-{
-public:
-    explicit FunctionHTTPServer(HTTPHandlerFunction handler, int max_threads = 16)
-        : thread_pool(std::make_unique<Poco::ThreadPool>(/* minCapacity = */ 2, max_threads))
-        , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
-              new Factory(std::move(handler)), *thread_pool, *server_socket, makeServerParams(max_threads)))
-    {
-        server->start();
-    }
-    ~FunctionHTTPServer() { server->stop(); }
-    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
-
-private:
-    static Poco::AutoPtr<Poco::Net::HTTPServerParams> makeServerParams(int max_threads)
-    {
-        auto params = makeMockServerParams();
-        params->setMaxThreads(max_threads);
-        /// Requests of concurrent fibers wait in the queue while the handlers that hold their answers occupy the server threads.
-        params->setMaxQueued(1024);
-        return params;
-    }
-
-    class Handler : public Poco::Net::HTTPRequestHandler
-    {
-    public:
-        explicit Handler(const HTTPHandlerFunction & handler_) : handler(handler_) {}
-        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-        {
-            handler(request, response);
-        }
-    private:
-        const HTTPHandlerFunction & handler;
-    };
-
-    class Factory : public Poco::Net::HTTPRequestHandlerFactory
-    {
-    public:
-        explicit Factory(HTTPHandlerFunction handler_) : handler(std::move(handler_)) {}
-        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-        {
-            return new Handler(handler);
-        }
-    private:
-        const HTTPHandlerFunction handler;
-    };
-
-    std::unique_ptr<Poco::ThreadPool> thread_pool;
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-};
-
-void sendHTTPBody(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
-{
-    response.setStatus(status);
-    response.setContentLength(static_cast<std::streamsize>(body.size()));
-    auto & out = response.send();
-    out << body;
-    out.flush();
-}
-
-DB::S3::PocoHTTPClientConfiguration createFiberTestClientConfiguration(const std::string & region)
-{
-    static const DB::RemoteHostFilter remote_host_filter;
-    return DB::S3::ClientFactory::instance().createClientConfiguration(
-        region,
-        remote_host_filter,
-        /* s3_max_redirects = */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 3, .initial_delay_ms = 1, .max_delay_ms = 10},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "http");
-}
-
-/// More fibers than the threads that may run them: Silk has a scheduler thread and a worker thread per CPU.
-size_t getFiberCountAboveSchedulerThreads()
-{
-    return 4 * std::max(1U, std::thread::hardware_concurrency()) + 1;
-}
-
-/// Runs `task` in `fiber_count` fibers, waits for `ready` and then sets `release`, which a server waits for before it
-/// answers. Fails the test if `ready` is not set in time; all fibers have finished on return.
-void runFibersAndReleaseWhenReady(
-    size_t fiber_count, Poco::Event & ready, Poco::Event & release, const std::function<void(size_t)> & task)
-{
-    std::vector<silk::FiberFuture> futures(fiber_count);
-    size_t spawned = 0;
-    /// The started fibers use `task` and `futures`, so they are released and finish before the function returns,
-    /// also when a spawn throws.
-    SCOPE_EXIT({
-        release.set();
-        for (size_t i = 0; i < spawned; ++i)
-            EXPECT_EQ(futures[i].wait(), 0);
-    });
-
-    while (spawned < fiber_count && Silk::spawn([&task, i = spawned]
-        {
-            task(i);
-            return 0;
-        }, futures[spawned]) == 0)
-        ++spawned;
-    EXPECT_EQ(spawned, fiber_count);
-
-    /// Reported before the release: fibers that block their threads may never finish.
-    EXPECT_TRUE(spawned == fiber_count && ready.tryWait(60'000)) << "The fibers did not get ready within 60 seconds";
-}
-
-}
-
-/// S3 requests from fibers use fiber-aware transport also outside of `AMBER`: more fibers than the threads that run them
-/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With fiber-unaware
-/// transport every waiting fiber holds its thread, so the requests of the other fibers are never sent.
-TEST(IOTestAwsS3Client, RequestsFromConcurrentFibersDoNotBlockSchedulerThreads)
-{
-    initializeFiberSchedulerForTests();
-
-    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
-    Poco::Event all_fibers_waiting(/* autoReset = */ false);
-    Poco::Event release(/* autoReset = */ false);
-    std::mutex requested_paths_mutex;
-    std::set<std::string> requested_paths;
-    FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
-    {
-        {
-            std::lock_guard lock(requested_paths_mutex);
-            requested_paths.insert(Poco::URI(request.getURI()).getPath());
-            if (requested_paths.size() == fiber_count)
-                all_fibers_waiting.set();
-        }
-        release.wait();
-        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "");
-    }, /* max_threads = */ static_cast<int>(fiber_count));
-
-    const std::string bucket_url = http.getUrl() + "/IOTestAwsS3ClientRequestsFromConcurrentFibers";
-    const DB::S3::URI uri(bucket_url + "/test.txt");
-    auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
-    client_configuration.endpointOverride = uri.endpoint;
-    /// A request that timed out would free its thread for another fiber, so no request times out before the release.
-    client_configuration.s3_use_adaptive_timeouts = false;
-    client_configuration.requestTimeoutMs = 600'000;
-    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        DB::S3::ClientSettings{.use_virtual_addressing = uri.is_virtual_hosted_style},
-        "ACCESS_KEY_ID",
-        "SECRET_ACCESS_KEY",
-        /* server_side_encryption_customer_key_base64 = */ "",
-        {},
-        {},
-        DB::S3::CredentialsConfiguration{
-            .use_environment_credentials = false,
-            .use_insecure_imds_request = false,
-            .forbid_implicit_credentials = false,
-        });
-    ASSERT_TRUE(client);
-
-    /// Each fiber reads its own key, so that the server tells the fibers apart, also if a request is retried.
-    runFibersAndReleaseWhenReady(fiber_count, all_fibers_waiting, release, [&](size_t i)
-    {
-        doReadRequest(client, DB::S3::URI(fmt::format("{}/{}.txt", bucket_url, i)));
-    });
-
-    std::lock_guard lock(requested_paths_mutex);
-    EXPECT_EQ(requested_paths.size(), fiber_count);
-}
-
-#endif
 
 #endif

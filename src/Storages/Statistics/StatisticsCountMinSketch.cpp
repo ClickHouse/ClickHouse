@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STATISTICS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -24,11 +23,6 @@ namespace ErrorCodes
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
-/// The sizes of the sketches that `serialize` writes: two preamble longs, then, unless the sketch is empty,
-/// the total weight and the counters.
-static constexpr UInt64 serialized_size_empty = 2 * sizeof(UInt64);
-static constexpr UInt64 serialized_size_full = serialized_size_empty + (1 + num_hashes * num_buckets) * sizeof(UInt64);
-
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
@@ -36,30 +30,23 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 {
 }
 
-std::optional<Float64> StatisticsCountMinSketch::estimateEqual(const Field & val) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    /// Coerce the comparison field to data_type (e.g. parse '5' into a number). `val` may have an
-    /// unrelated type on paths that do not pre-coerce it, such as `col IN (subquery)`.
-    /// No from_type_hint: a hint equal to data_type short-circuits convertFieldToType into a no-op.
-    /// The try-variant returns null (-> zero selectivity) instead of throwing on an out-of-range or
-    /// unconvertible field, mirroring how TDigest/MinMax guard via tryConvertToFloat64.
-    Field val_converted = tryConvertFieldToType(val, *data_type);
+    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
+    /// Return null if val larger than the range of data_type
+    ///
+    /// For example: if data_type is Int32:
+    ///     1. For 1.0, 1, '1', return Field(1)
+    ///     2. For 1.1, max_value_int64, return null
+    Field val_converted = convertFieldToType(val, *data_type, data_type.get());
     if (val_converted.isNull())
         return 0;
 
     if (data_type->isValueRepresentedByNumber())
-    {
-        /// Cannot use &val_converted directly: Field stores small types in a wider NearestFieldType
-        /// (e.g. Float32 → Float64, Int8 → Int64), so the bit pattern differs from what the column
-        /// stores. Insert into a temporary column to get the same byte representation as build().
-        auto temp_col = data_type->createColumn();
-        temp_col->insert(val_converted);
-        auto data = temp_col->getDataAt(0);
-        return static_cast<Float64>(sketch.get_estimate(data.data(), data.size()));
-    }
+        return static_cast<Float64>(sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory()));
 
     if (isStringOrFixedString(data_type))
-        return static_cast<Float64>(sketch.get_estimate(val_converted.safeGet<String>()));
+        return static_cast<Float64>(sketch.get_estimate(val.safeGet<String>()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
@@ -75,13 +62,6 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
     }
 }
 
-size_t StatisticsCountMinSketch::allocatedBytes() const
-{
-    /// The counters, one row of buckets per hash function, and the seeds of the hash functions.
-    const size_t sketch_num_hashes = sketch.get_num_hashes();
-    return sizeof(*this) + (sketch_num_hashes * sketch.get_num_buckets() + sketch_num_hashes) * sizeof(UInt64);
-}
-
 void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());
@@ -90,79 +70,21 @@ void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
-    const size_t sketch_size = sketch.get_serialized_size_bytes();
-    writeIntBinary(static_cast<UInt64>(sketch_size), buf);
-
-    /// Stream the sketch directly into the destination buffer, avoiding an intermediate copy.
-    const size_t written = sketch.serialize_to(
-        [&buf](const void * data, size_t size) { buf.write(static_cast<const char *>(data), size); });
-
-    if (written != sketch_size)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Statistics 'countmin' serialization wrote {} bytes but declared {} bytes",
-            written, sketch_size);
+    Sketch::vector_bytes bytes = sketch.serialize();
+    writeIntBinary(static_cast<UInt64>(bytes.size()), buf);
+    buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
-std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize() const
+void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 {
-    return sizeof(UInt64) + sketch.get_serialized_size_bytes();
-}
-
-void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
-{
-    UInt64 size = 0;
+    UInt64 size;
     readIntBinary(size, buf);
-
-    /// Check the size before allocating: a garbage size made `resize` throw `std::length_error` (#91206).
-    /// `datasketches` also does not fully check the size of the buffer, so a truncated sketch could be read out of bounds.
-    if (size != serialized_size_empty && size != serialized_size_full)
-        throw Exception(
-            ErrorCodes::ILLEGAL_STATISTICS,
-            "Statistics 'countmin' has serialized size {}, expected {} or {}; rebuild with ALTER TABLE ... MATERIALIZE STATISTICS.",
-            size,
-            serialized_size_empty,
-            serialized_size_full);
 
     Sketch::vector_bytes bytes;
     bytes.resize(size); /// To avoid 'container-overflow' in AddressSanitizer checking
     buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
 
-    try
-    {
-        Sketch loaded = Sketch::deserialize(bytes.data(), size);
-
-        /// Other dimensions cannot be merged with the sketches of other parts, and some of them parse into a sketch
-        /// with fewer counters than `num_hashes` x `num_buckets` (their product overflows 32 bits).
-        if (loaded.get_num_hashes() != num_hashes || loaded.get_num_buckets() != num_buckets)
-            throw Exception(
-                ErrorCodes::ILLEGAL_STATISTICS,
-                "Statistics 'countmin' has {} hashes and {} buckets, expected {} and {}; "
-                "rebuild with ALTER TABLE ... MATERIALIZE STATISTICS.",
-                static_cast<UInt32>(loaded.get_num_hashes()),
-                loaded.get_num_buckets(),
-                num_hashes,
-                num_buckets);
-
-        sketch = std::move(loaded);
-    }
-    catch (const Exception &)
-    {
-        throw;
-    }
-    catch (const std::bad_alloc &)
-    {
-        throw;
-    }
-    catch (const std::exception & e)
-    {
-        /// `datasketches` throws `std::invalid_argument` and `std::out_of_range` on malformed input. Translate them:
-        /// an escaping `std::logic_error` loses the part and column context and aborts debug and sanitizer builds.
-        throw Exception(
-            ErrorCodes::ILLEGAL_STATISTICS,
-            "Cannot deserialize statistics 'countmin': {}; rebuild with ALTER TABLE ... MATERIALIZE STATISTICS.",
-            e.what());
-    }
+    sketch = Sketch::deserialize(bytes.data(), size);
 }
 
 bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

@@ -7,6 +7,11 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
+namespace DB
+{
+using ObjectAttributes = std::map<std::string, std::string>;
+}
+
 namespace DB::S3
 {
 
@@ -40,8 +45,8 @@ ObjectInfo getObjectInfo(
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    std::string_view bucket,
-    std::string_view key,
+    const String & bucket,
+    const String & key,
     const String & version_id = {});
 
 size_t getObjectSize(

@@ -52,7 +52,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         if (id_mode)
             return parse<UUID>(name_);
-        chassert(access_control);
+        assert(access_control);
         return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
     };
 
@@ -89,18 +89,6 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             max_value = Settings::castValueUtil(setting_name, *max_value);
         for (auto & allowed_value : disallowed_values)
             value = Settings::castValueUtil(setting_name, allowed_value);
-
-        /// `allow_experimental_analyzer` (`enable_analyzer`) is obsolete and frozen at `1`. A value that would
-        /// disable it is accepted for backward compatibility and stored as `1`, so that the access entity does not
-        /// keep the disabling value (e.g. in `SHOW CREATE` or `system.settings_profile_elements`).
-        if (Settings::resolveName(setting_name) == "allow_experimental_analyzer")
-        {
-            for (auto * bound : {&value, &min_value, &max_value})
-            {
-                if (*bound && !SettingFieldBool{**bound}.value)
-                    **bound = Field(true);
-            }
-        }
     }
 }
 
@@ -313,9 +301,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-UUIDs SettingsProfileElements::toProfileIDs() const
+std::vector<UUID> SettingsProfileElements::toProfileIDs() const
 {
-    UUIDs res;
+    std::vector<UUID> res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)

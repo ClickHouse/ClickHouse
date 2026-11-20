@@ -132,16 +132,13 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
-static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
+NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
+    String value;
+    String decoded_value;
     do
     {
-        /// Declared inside the loop: `readStringUntilAmpersand` appends to its argument, so a buffer
-        /// kept across iterations carries the previous fields into this one and makes the inferred
-        /// type of a field depend on the fields before it.
-        String value;
-        String decoded_value;
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
         Poco::URI::decode(value, decoded_value);
@@ -162,7 +159,6 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     return readRowAndGetNamesAndDataTypesForFormRow(in, format_settings);
 }
 
-void registerInputFormatForm(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory)
 {
     factory.registerInputFormat("Form", [](
@@ -172,56 +168,14 @@ void registerInputFormatForm(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
-    }, /*supports_reset_parser=*/ true);
-
-    factory.setDocumentation("Form", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✗      |       |
-
-## Description {#description}
-
-The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 
-in which data is formatted as `key1=value1&key2=value2`.
-
-## Example usage {#example-usage}
-
-Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
-
-```text title="data.tmp"
-t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
-```
-
-```sql title="Query"
-SELECT * FROM file(data.tmp, Form) FORMAT vertical;
-```
-
-```response title="Response"
-Row 1:
-──────
-t_page:   116
-c.e:      ls7xfkpm
-c.tti.m:  raf
-rt.start: navigation
-rt.bmr:   390,11,10
-```
-
-## Format settings {#format-settings}
-)DOCS_MD"});
+    });
 }
 
-void registerFormSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Form", [](ReadBuffer & buffer, const FormatSettings & settings)
     {
         return std::make_shared<FormSchemaReader>(buffer, settings);
-    });
-    factory.registerAdditionalInfoForSchemaCacheGetter("Form", [](const FormatSettings & settings)
-    {
-        /// Raw matches the rule readRowAndGetNamesAndDataTypesForFormRow infers with.
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw);
     });
 }
 

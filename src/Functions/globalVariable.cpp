@@ -7,8 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-
+#include <unordered_map>
 #include <Poco/String.h>
 
 
@@ -27,7 +26,7 @@ namespace
   *
   * Currently it's a stub, no variables are implemented. Feel free to add more variables.
   */
-class FunctionGlobalVariable final : public IFunction
+class FunctionGlobalVariable : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
@@ -36,26 +35,19 @@ public:
         return std::make_shared<FunctionGlobalVariable>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Documentation-only — the result type is looked up from the
-    /// per-variable map, so it varies with the const-string argument.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(const String) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!checkColumnConst<ColumnString>(arguments[0].column.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must be constant string", getName());
@@ -67,7 +59,7 @@ public:
         return variable->second.type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col = arguments[0];
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
@@ -84,7 +76,7 @@ private:
         DataTypePtr type;
         Field value;
     };
-    UnorderedMapWithMemoryTracking<String, TypeAndValue> global_variable_map =
+    std::unordered_map<String, TypeAndValue> global_variable_map =
     {
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
         {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},

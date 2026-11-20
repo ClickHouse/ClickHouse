@@ -6,7 +6,6 @@ body:
     attributes:
       value: |
         > (you don't have to strictly follow this form)
-        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related performance issues and optimizations before filing.
   - type: textarea
     attributes:
       label: Company or project name
@@ -39,15 +38,6 @@ body:
     attributes:
       label: Expected performance
       description: What are your performance expectation, why do you think they are realistic? Has it been working faster in older ClickHouse releases? Is it working faster in some specific other system?
-    validations:
-      required: false
-  - type: textarea
-    attributes:
-      label: Related issues and pull requests
-      description: |
-        Use full GitHub URLs, one relationship per line.
-        * If a pull request caused this (a regression): `Caused by: <full pull request URL>`
-        * For any related issue or pull request: `Related: <full URL>`
     validations:
       required: false
   - type: textarea
