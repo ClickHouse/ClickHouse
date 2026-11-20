@@ -34,6 +34,15 @@ bool FunctionToFunctionBaseAdaptor::isInjective(const ColumnsWithTypeAndName & s
                 return false;
     }
 
+    /// When the result type cannot be `Nullable` (e.g. `Array`), the default implementation for NULLs
+    /// evaluates a NULL argument as `f(default)`, so NULL and the default value share one result.
+    if (function->useDefaultImplementationForNulls() && !isNullableOrLowCardinalityNullable(getResultType()))
+    {
+        for (const auto & argument : sample_columns)
+            if (isNullableOrLowCardinalityNullable(argument.type))
+                return false;
+    }
+
     return function->isInjective(sample_columns);
 }
 

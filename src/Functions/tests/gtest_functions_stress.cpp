@@ -2174,7 +2174,10 @@ struct FunctionsStressTestThread
             /// on the mixed-type domain, and the resolver lacks full type information before build().
             /// A result type admitting at most one value is skipped for the same reason: it is known
             /// only after build(), so the resolver can still claim what the built function declines.
-            if (!isAnyArgumentDynamicallyTyped(valid_args) && !isNothing(removeNullable(result_type)))
+            /// So is a result type that cannot be `Nullable` while an argument is, since NULL maps to `f(default)`.
+            bool null_maps_to_default = resolver->useDefaultImplementationForNulls() && !isNullableOrLowCardinalityNullable(result_type)
+                && std::ranges::any_of(valid_args, [](const auto & arg) { return isNullableOrLowCardinalityNullable(arg.type); });
+            if (!isAnyArgumentDynamicallyTyped(valid_args) && !isNothing(removeNullable(result_type)) && !null_maps_to_default)
             {
                 stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
             }
