@@ -78,6 +78,13 @@ std::optional<NameSet> getSourceColumns(const ActionsDAG::NodeRawConstPtrs & roo
     return columns;
 }
 
+bool isStateful(const ActionsDAG::Node * node)
+{
+    static constexpr auto is_stateful = [](const IFunctionBase & function) { return function.isStateful(); };
+    return (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && is_stateful(*node->function_base))
+        || ActionsDAG::hasUnsafeHiddenLambdaBody(*node, is_stateful);
+}
+
 bool hasColumns(const QueryPlan::Node & node, const NameSet & columns)
 {
     const auto & header = *node.step->getOutputHeader();
@@ -341,6 +348,10 @@ bool runtimeFilterReachesInputAbove(
         else if (lhs.fromRight() && rhs.fromLeft())
             filter_keys.push_back({rhs.getNode()});
     }
+
+    /// The filters are merged with the step that computes all the keys, and a stateful filter is not pushed down.
+    if (std::ranges::any_of(filter_keys, [](const auto & keys) { return anyReachableNode(keys, isStateful); }))
+        return false;
 
     /// A LEFT ANTI JOIN on several keys gets one filter on the tuple of them, see `tryAddJoinRuntimeFilter`.
     if (check_left_does_not_contain && filter_keys.size() > 1)

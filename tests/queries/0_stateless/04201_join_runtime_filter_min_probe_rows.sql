@@ -108,6 +108,10 @@ FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JO
 SELECT 'stateful key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON timeSeriesStoreTags(p.y, []) = s.y);
 
+-- A stateful key keeps the filters on the other keys of its join in place.
+SELECT 'key next to a stateful key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y AND timeSeriesStoreTags(p.y, []) = s.z);
+
 -- A filter on a key of a join below is pushed down to both of its inputs, with the key replaced by the equal key of the other input.
 SELECT 'key equal to a key of a larger input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.x = s.y);
