@@ -231,7 +231,7 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -393,7 +393,7 @@ public:
         return columns;
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return data ? data->getTotalByteCount() : 0;
     }

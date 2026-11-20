@@ -121,6 +121,10 @@ public:
         /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
         const bool is_subquery;
 
+        /// Was the query that wrote the entry exempt from quotas (see `IInterpreter::ignoreQuota`)? A hit does not create an
+        /// interpreter, so it takes the decision from here and keeps the exemption of a query served from the cache.
+        bool ignore_quota = false;
+
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -303,7 +307,7 @@ public:
         OnDisk
     };
 
-    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+    [[nodiscard]] bool hasCacheEntryForKey(bool update_profile_events = true) const;
 
     /// Records the overall outcome of the query result cache lookup in `QueryCacheHits` / `QueryCacheMisses`. Must be called
     /// exactly once per query that probes the cache, after every enabled backend has been probed, so that these events keep
@@ -311,10 +315,16 @@ public:
     /// backend alone).
     static void recordProbeResult(bool has_entry);
 
+    /// Records a miss of the query result cache whose probes ran with `hasCacheEntryForKey(false)`: the per-backend
+    /// `QueryCacheOnDiskMisses` if the on-disk backend was probed, and `QueryCacheMisses` (via `recordProbeResult`). Lets the
+    /// caller record the probe only after it has decided that the query is allowed to run.
+    static void recordMiss(bool probed_on_disk);
+
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
-    const ResultColumnOrigins & entryResultColumnOrigins() const;
+    [[nodiscard]] bool entryIgnoresQuota() const;
+    [[nodiscard]] const ResultColumnOrigins & entryResultColumnOrigins() const;
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
@@ -334,7 +344,9 @@ private:
         QueryResultCache::Entry && entry,
         ResultColumnOrigins && result_column_origins_,
         std::chrono::time_point<std::chrono::system_clock> created_at_,
-        std::chrono::time_point<std::chrono::system_clock> expires_at_);
+        std::chrono::time_point<std::chrono::system_clock> expires_at_,
+        bool ignore_quota_,
+        size_t on_disk_read_bytes_);
 
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
@@ -346,7 +358,14 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> created_at;
     std::chrono::time_point<std::chrono::system_clock> expires_at;
+    bool ignore_quota = false;
     ResultColumnOrigins result_column_origins;
+
+    /// What reading the entry amounts to, recorded in `QueryCacheReadRows` / `QueryCacheReadBytes` / `QueryCacheOnDiskReadBytes`
+    /// by `hasCacheEntryForKey`.
+    size_t read_rows = 0;
+    size_t read_bytes = 0;
+    size_t on_disk_read_bytes = 0;
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
