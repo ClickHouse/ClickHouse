@@ -239,13 +239,13 @@ public:
             }
             else
             {
-                tmp_args[0] = filtered_args[i];
+                tmp_args[0] = castNullableEnumToResultType(filtered_args[i], result_type);
 
                 DataTypePtr cond_type = std::make_shared<DataTypeUInt8>();
                 ColumnPtr cond_column
                     = is_not_null->build(tmp_args)->execute(tmp_args, cond_type, input_rows_count, /* dry_run = */ false);
 
-                DataTypePtr val_type = removeNullable(filtered_args[i].type);
+                DataTypePtr val_type = removeNullable(tmp_args[0].type);
                 ColumnPtr val_column
                     = assume_not_null->build(tmp_args)->execute(tmp_args, val_type, input_rows_count, /* dry_run = */ false);
 

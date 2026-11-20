@@ -29,7 +29,6 @@ RUN apt-get update \
         build-essential \
         zlib1g-dev \
         libzstd-dev \
-        libjemalloc-dev \
         python3-boto3 \
         pigz \
         yasm \
@@ -46,11 +45,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
+ARG TOOLCHAIN_COMMIT=51fdb0b1b64e10e205041802cd91d962fb1d281c
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and
 # has changed it, so the location is pinned next to the commit instead of being
 # spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
-ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
+ARG TOOLCHAIN_S3_DIR=REFs/master/51fdb0b1b64e10e205041802cd91d962fb1d281c/optimizetoolchain
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \

@@ -511,7 +511,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    build_id = SymbolIndex::instance().getBuildIDHex();
+    /// Without building the symbol index: the signal listener builds it in the background (see `SignalListener::run`).
+    build_id = SymbolIndex::getSelfBuildIDHex();
 #endif
 
     startSignalListener();
@@ -645,7 +646,7 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
-        /// Temporarily close the logging thread and open it in each process later
+        /// Temporarily close the logging thread and reopen it in the child process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
             async_channel->closeAndJoinThreads();
@@ -665,7 +666,8 @@ void BaseDaemon::setupWatchdog()
         }
 #endif
 
-        if (async_channel)
+        /// The watchdog logs synchronously: it calls `_exit` right after logging how the child ended.
+        if (async_channel && pid == 0)
             async_channel->open();
 
         if (-1 == pid)
