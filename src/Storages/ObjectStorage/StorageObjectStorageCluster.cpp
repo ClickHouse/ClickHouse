@@ -552,6 +552,24 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
         configuration->partition_strategy_type)));
 }
 
+StorageMetadataPtr StorageObjectStorageCluster::getInMemoryMetadataForDataLakeTableState(
+    const DataLakeTableStateSnapshot & state, ContextPtr query_context) const
+{
+    /// Mirrors `updateExternalDynamicMetadataIfExists`, which pinned `state`.
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    StorageInMemoryMetadata pinned = *current_metadata;
+    pinned.setDataLakeTableState(state);
+
+    if (configuration->isDataLakeConfiguration() && configuration->shouldReloadSchemaForConsistency(query_context))
+    {
+        if (auto rebuilt = configuration->buildStorageMetadataFromState(state, query_context))
+            pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                rebuilt->columns, query_context, /* format_settings */ std::nullopt, configuration->partition_strategy_type));
+    }
+
+    return std::make_shared<StorageInMemoryMetadata>(std::move(pinned));
+}
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,

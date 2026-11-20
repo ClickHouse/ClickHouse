@@ -22,13 +22,13 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- The `system.tables` filter is spelled with `currentDatabase()` because the style check only
--- recognizes that form. Reading the engine name does not load a lazy table.
+-- recognizes that form. Reading `is_loaded` does not load a lazy table.
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT 'listing skips unloaded tables and loads none of them';
 SELECT count() FROM system.replicas WHERE database = currentDatabase();
 SELECT count() FROM system.parts WHERE database = currentDatabase();
-SELECT name, engine = 'TableProxy' AS unloaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, NOT is_loaded AS unloaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT 'listing shows a table once it is loaded';
 SELECT count() FROM t_replicated;
@@ -38,7 +38,7 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND active;
 
 SELECT 'a replica command loads the table it names';
 SYSTEM SYNC REPLICA t_sync;
-SELECT name, engine = 'TableProxy' AS unloaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, NOT is_loaded AS unloaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

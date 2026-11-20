@@ -45,6 +45,11 @@ public:
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
     using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
+    /// Answers `IStorage::checkTableCanBeRenamedByDatabaseRename` for a table of the engine from its definition only, like
+    /// the storage would if it were constructed under `table_id`. A database with `lazy_load_tables` asks this for a
+    /// table it has not loaded yet, since constructing the storage may run I/O and starting it runs background work.
+    using CheckDatabaseRenameFn = void(const ASTStorage & storage_def, const StorageID & table_id, const String & new_database_name);
+
     struct Arguments
     {
         const String & engine_name;
@@ -95,12 +100,22 @@ public:
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
         bool supports_sql_security = false;
+        /// Whether a table of this engine can be deferred behind `StorageTableProxy` in a database
+        /// with `lazy_load_tables`. Opting in also means listing its class in the storage-cast check.
+        bool supports_deferred_load = false;
+        /// The background job only feeds dependent views, so a table that has none is deferred like
+        /// any other, while one that has some is loaded eagerly to keep them fed.
+        bool defers_only_without_dependent_views = false;
+        /// Set if `IStorage::checkTableCanBeRenamedByDatabaseRename` of the engine can refuse the new name. A deferred
+        /// table of such an engine that is not loaded yet is asked through this, see `StorageTableProxy`.
+        CheckDatabaseRenameFn * check_database_rename_fn = nullptr;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
 
         /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        /// A deferred table answers from here until it loads.
         bool stores_data_on_disk = false;
         /// Whether the engine may back a temporary table (opt-in).
         bool supports_temporary = false;
@@ -145,6 +160,9 @@ public:
         .supports_schema_inference = false,
         .supports_unique_key = false,
         .supports_sql_security = false,
+        .supports_deferred_load = false,
+        .defers_only_without_dependent_views = false,
+        .check_database_rename_fn = nullptr,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
@@ -184,6 +202,10 @@ public:
     [[nodiscard]] std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     [[nodiscard]] const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Null for an unregistered engine, so a caller that only wants to inspect an engine named in a
+    /// `CREATE` query does not have to handle `UNKNOWN_STORAGE` itself.
+    [[nodiscard]] const StorageFeatures * tryGetStorageFeatures(const String & storage_name) const;
 
     /// Throws if storage cannot be temporary
     void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;

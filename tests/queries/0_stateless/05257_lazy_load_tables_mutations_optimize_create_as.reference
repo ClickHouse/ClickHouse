@@ -1,4 +1,4 @@
-stand-in	TableProxy
+stand-in	MergeTree	0
 lightweight delete	9
 lightweight update	100
 mutation	8

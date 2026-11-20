@@ -1,0 +1,6 @@
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+
+    <!-- Lets the tests write `ENGINE = ReplicatedMergeTree` with no arguments. -->
+    <default_replica_path>/clickhouse/test_lazy/{database}/{table}/{shard}</default_replica_path>
+</clickhouse>

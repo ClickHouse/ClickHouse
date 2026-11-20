@@ -20,14 +20,14 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SELECT 'in system.replicas', count() FROM system.replicas WHERE database = currentDatabase() AND table = 't';
 
 -- A `SYSTEM` command addressed to the table is an access to it, so it resolves the stand-in instead of
 -- refusing the table as not replicated.
 SYSTEM SYNC REPLICA t;
 
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 -- Reading a system table only inspects tables and never loads them, but it must see the loaded one.
 SELECT 'in system.replicas', count() FROM system.replicas WHERE database = currentDatabase() AND table = 't';
 SELECT 'in system.replication_queue', count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't';

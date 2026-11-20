@@ -17,7 +17,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t UPDATE a = a + 10 WHERE 1 SETTINGS alter_update_mode = 'heavy'; -- { serverError CANNOT_UPDATE_COLUMN }
 

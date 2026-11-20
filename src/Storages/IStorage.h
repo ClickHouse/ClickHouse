@@ -642,6 +642,19 @@ public:
     /// Return true if external metadata exists and was updated.
     virtual void updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { }
 
+    /// The metadata of the table at the data lake table state `state`, which `updateExternalDynamicMetadataIfExists`
+    /// pinned in the metadata of an earlier analysis. The schema can belong to the state (e.g. a column of an Iceberg
+    /// table can be renamed between snapshots), so a data lake builds it from the state rather than from the current
+    /// metadata, which another analysis may have changed since. The default is for a storage whose schema does not
+    /// depend on the state.
+    virtual StorageMetadataPtr getInMemoryMetadataForDataLakeTableState(const DataLakeTableStateSnapshot & state, ContextPtr context) const
+    {
+        const auto current_metadata = getInMemoryMetadataPtr(context, false);
+        auto pinned_metadata = std::make_shared<StorageInMemoryMetadata>(*current_metadata);
+        pinned_metadata->setDataLakeTableState(state);
+        return pinned_metadata;
+    }
+
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */

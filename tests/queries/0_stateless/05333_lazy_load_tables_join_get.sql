@@ -16,7 +16,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT joinGet(t_join, 'v', toUInt64(1));
 SELECT number, joinGetOrNull(t_join, 'v', number) FROM numbers(4) ORDER BY number;

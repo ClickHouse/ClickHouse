@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
@@ -1714,7 +1715,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!isSharedPtrUnique(dropped_table.table))
+    while (!isTableUnused(dropped_table.table))
     {
         if (throw_if_cancelled)
             throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
@@ -1746,7 +1747,7 @@ std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
     size_t in_use_count = 0;
     for (const auto & item : tables_marked_dropped)
     {
-        bool in_use = item.table && !isSharedPtrUnique(item.table);
+        bool in_use = item.table && !isTableUnused(item.table);
         in_use_count += in_use;
     }
     return {tables_marked_dropped.size(), in_use_count};
@@ -1771,7 +1772,7 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
 
     for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end();)
     {
-        bool in_use = it->table && !isSharedPtrUnique(it->table);
+        bool in_use = it->table && !isTableUnused(it->table);
         bool old_enough = it->drop_time <= current_time;
         if (!in_use && old_enough)
         {
@@ -2777,6 +2778,119 @@ bool TableNameHints::isHintNameVisible(const String & name) const
     }
 
     return false;
+}
+
+
+namespace
+{
+
+/// Whether the user holds `access` on the table, or on at least one of its columns for a right that can be
+/// granted per column (the user then sees those columns). A grant on the exact name of a subcolumn (e.g.
+/// ``GRANT SELECT(`p.s`)``) is enough to read that subcolumn, so it counts as well. The stand-in of a lazily
+/// loaded table knows its columns without being loaded, but not the virtual columns of its engine, and a grant on
+/// a virtual column (e.g. ``GRANT SELECT(_part)``) is enough to read it. So a grant on the exact name of any column
+/// that is not a physical one counts too: it may be a virtual column, and the precise check after loading decides.
+bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, const ContextPtr & context, AccessType access)
+{
+    const auto access_rights = context->getAccess();
+    if (access_rights->isGranted(access, table_id.database_name, table_id.table_name))
+        return true;
+
+    if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(AccessFlags(access)))
+        return false;
+
+    const auto metadata = table.getInMemoryMetadataPtr(context, false);
+    const auto & columns = metadata->getColumns();
+    for (const auto & column : columns)
+        if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
+            return true;
+
+    /// Probe the raw rights, like `getColumnsSelectableByTrivialQuery`, so that probing does not pollute `used_privileges`.
+    const auto rights_with_implicit = access_rights->getAccessRightsWithImplicit();
+    for (const auto & column : columns)
+        if (!columns.getSubcolumnsWithExplicitGrant(
+                *rights_with_implicit, access, table_id.database_name, table_id.table_name, column.name).empty())
+            return true;
+
+    for (const auto & name : rights_with_implicit->getColumnsWithExplicitGrantAndPrefix(
+             access, table_id.database_name, table_id.table_name, /*prefix=*/ ""))
+        if (!columns.has(name))
+            return true;
+
+    return false;
+}
+
+bool isAnyAccessGranted(
+    const IStorage & table, const StorageID & table_id, const ContextPtr & context, std::initializer_list<AccessType> accesses)
+{
+    return std::ranges::any_of(accesses, [&](AccessType access) { return isAnyAccessGranted(table, table_id, context, access); });
+}
+
+/// The table that a command naming `table` loads if it is a lazily loaded one: for an `Alias`, the last table of its chain.
+/// Every `Alias` forwards the engine facts and the metadata to its target, which loads the target, but checks the rights on
+/// the target only when it reads or writes, after that. The rights on the last table of the chain are the ones its read or
+/// write eventually requires. Returns null if the chain has no last table (a cycle or a missing target).
+std::pair<StoragePtr, StorageID> resolveAliasTarget(const StoragePtr & table, const StorageID & table_id, const ContextPtr & context)
+{
+    const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+    if (!alias)
+        return {table, table_id};
+
+    const auto chain = alias->getTargetChain();
+    if (chain.empty())
+        return {nullptr, StorageID::createEmpty()};
+
+    StorageID target_id(chain.back().first, chain.back().second);
+    auto target = DatabaseCatalog::instance().tryGetTable(target_id, context);
+    if (!target || dynamic_cast<const StorageAlias *>(target.get()))
+        return {nullptr, StorageID::createEmpty()};
+    return {std::move(target), std::move(target_id)};
+}
+
+bool isUnloadedLazyTable(const StoragePtr & table)
+{
+    const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+    return proxy && proxy->isLazyStandIn() && !proxy->tryGetNested();
+}
+
+}
+
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access)
+{
+    /// Only a local database defers loading, and looking a table up in a remote one costs a round trip.
+    if (DatabaseCatalog::instance().isRemoteDatabase(table_id.database_name))
+        return;
+
+    auto named_table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!named_table)
+        return;
+
+    auto [table, resolved_id] = resolveAliasTarget(named_table, table_id, context);
+    if (!table || !isUnloadedLazyTable(table))
+        return;
+
+    if (!isAnyAccessGranted(*table, resolved_id, context, access))
+        return;
+
+    resolveStorageProxyLoading(table);
+}
+
+void checkAccessBeforeLoadingLazyTable(
+    const StoragePtr & table,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::initializer_list<AccessType> accesses,
+    LazyTableThroughAlias through_alias)
+{
+    chassert(accesses.size() != 0);
+    auto [checked_table, checked_id] = through_alias == LazyTableThroughAlias::Check
+        ? resolveAliasTarget(table, table_id, context)
+        : std::pair{table, table_id};
+    if (!checked_table || !isUnloadedLazyTable(checked_table))
+        return;
+
+    if (!isAnyAccessGranted(*checked_table, checked_id, context, accesses))
+        context->checkAccess(*accesses.begin(), checked_id.database_name, checked_id.table_name);
 }
 
 }

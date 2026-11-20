@@ -2109,17 +2109,52 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
 
 void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
 {
+    checkKeeperPathAllowsDatabaseRename(keeper_path_database_name, engine_name, getStorageID(), new_database_name);
+}
+
+void StorageObjectStorageQueue::checkDatabaseRenameByDefinition(
+    const ASTStorage & storage_def, const StorageID & table_id, const String & new_database_name)
+{
+    /// The same settings and the same global context as the constructor gets for a table loaded from its metadata,
+    /// see `createQueueStorage`. Only the macro expansion matters, so nothing is read from Keeper.
+    ObjectStorageQueueSettings queue_settings;
+    if (storage_def.settings)
+    {
+        auto storage_def_copy = storage_def.clone();
+        queue_settings.loadFromQuery(storage_def_copy->as<ASTStorage &>(), /* is_attach */ true, table_id);
+    }
+
+    const auto context = Context::getGlobalContextInstance();
+    Macros::MacroExpansionInfo macro_info;
+    /// The UUID of the database takes part only in the default path, which has no macros of its own. Passing any UUID
+    /// keeps `chooseZooKeeperPath` from looking the database up, which is being renamed and whose mutex the caller may hold.
+    const UUID placeholder_database_uuid{UInt128{1}};
+    chooseZooKeeperPath(
+        context, table_id, context->getSettingsRef(), queue_settings, placeholder_database_uuid, /* result_zookeeper_name */ nullptr, &macro_info);
+
+    std::optional<String> keeper_path_database_name_;
+    if (macro_info.expanded_database)
+        keeper_path_database_name_ = table_id.database_name;
+    checkKeeperPathAllowsDatabaseRename(keeper_path_database_name_, storage_def.engine->name, table_id, new_database_name);
+}
+
+void StorageObjectStorageQueue::checkKeeperPathAllowsDatabaseRename(
+    const std::optional<String> & keeper_path_database_name_,
+    const String & engine_name_,
+    const StorageID & table_id,
+    const String & new_database_name)
+{
     /// Compared against the name the path was expanded with, not against the current one: the last step of
     /// the Ordinary-to-Atomic conversion renames the database back to that name, which leaves the table on
     /// its own Keeper node and must stay allowed.
-    if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
+    if (!keeper_path_database_name_ || *keeper_path_database_name_ == new_database_name)
         return;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
+        "Cannot rename the database of Storage{} table {} to {}, because its `keeper_path` setting "
         "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
         "and the table would process every file again",
-        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
+        engine_name_, table_id.getNameForLogs(), backQuoteIfNeed(new_database_name));
 }
 
 String StorageObjectStorageQueue::chooseZooKeeperPath(

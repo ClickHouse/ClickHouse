@@ -127,7 +127,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${lazy_db}.file_log (a UInt64) ENGINE = Fi
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM ${lazy_db}.file_log"
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${lazy_db}"
 ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${lazy_db}"
-${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${lazy_db}' AND name = 'file_log'"
+${CLICKHOUSE_CLIENT} -q "SELECT engine, is_loaded FROM system.tables WHERE database = '${lazy_db}' AND name = 'file_log'"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG ${lazy_db}.file_log"
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM ${lazy_db}.file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${lazy_db} SYNC"

@@ -1,0 +1,6 @@
+before	r	0
+before	t	0
+before	u	0
+after	r	1	
+after	t2	1	second
+after	u	1	first

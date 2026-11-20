@@ -11,6 +11,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
@@ -69,7 +70,16 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
+                /// A deferred replica knows its delay only once it is loaded, and only a replicated MergeTree engine has one.
+                /// `supportsReplication` is also true for the data lake engines, which have no delay, so the engine
+                /// registration is checked instead, without loading the table.
+                auto table = iterator->table();
+                if (!table)
+                    continue;
+                const auto * features = StorageFactory::instance().tryGetStorageFeatures(table->getName());
+                if (!features || !features->supports_replication)
+                    continue;
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
                 if (!table_replicated)
                     continue;
 

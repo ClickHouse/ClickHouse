@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -337,6 +338,17 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (inside_database && table_name == to_table_name)
         return;
 
+    /// Load a lazily loaded table before taking the database mutex, so that `checkTableCanBeRenamed` below asks the
+    /// real storage: building it can look up a table in this database (a constraint with a scalar subquery does),
+    /// which takes the same mutex. The caller holds the DDL guards of both names, so the table is not replaced meanwhile.
+    if (auto table_to_load = tryGetTable(table_name, local_context))
+        resolveStorageProxyLoading(table_to_load);
+    if (exchange)
+    {
+        if (auto other_table_to_load = other_db.tryGetTable(to_table_name, local_context))
+            resolveStorageProxyLoading(other_table_to_load);
+    }
+
     std::unique_lock<std::mutex> db_lock;
     std::unique_lock<std::mutex> other_db_lock;
     if (inside_database)
@@ -525,7 +537,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
     LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (isSharedPtrUnique(it->second))
+        if (isTableUnused(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);
@@ -762,6 +774,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
+
     std::lock_guard lock(mutex);
 
     /// A longer database name leaves less room for the table name in the dropped-metadata file

@@ -1,0 +1,15 @@
+valid: ACCESS_DENIED
+valid: ACCESS_DENIED
+valid: ACCESS_DENIED
+valid: ACCESS_DENIED
+valid: ACCESS_DENIED
+broken: ACCESS_DENIED
+broken: ACCESS_DENIED
+broken: ACCESS_DENIED
+broken: ACCESS_DENIED
+broken: ACCESS_DENIED
+broken	0
+valid	0
+0
+broken	0
+valid	1

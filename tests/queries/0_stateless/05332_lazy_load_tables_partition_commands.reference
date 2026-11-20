@@ -1,7 +1,7 @@
-t_dst	TableProxy
-t_log	TableProxy
-t_moved	TableProxy
-t_src	TableProxy
+t_dst	MergeTree	0
+t_log	Log	0
+t_moved	MergeTree	0
+t_src	MergeTree	0
 ATTACH PARTITION FROM an unloaded source
 13	348
 MOVE PARTITION TO an unloaded destination

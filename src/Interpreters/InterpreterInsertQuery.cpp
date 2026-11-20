@@ -222,8 +222,13 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    /// The insert path reads engine facts the proxy of an unloaded table cannot answer.
-    return resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, current_context));
+    /// The insert path reads engine facts the proxy of an unloaded table cannot answer. Loading it constructs
+    /// and starts the storage, so a user without the right to insert must not be able to trigger that.
+    /// The precise check for the inserted columns follows in `execute`.
+    auto table = DatabaseCatalog::instance().getTable(query.table_id, current_context);
+    if (!skip_target_insert_access_check)
+        checkAccessBeforeLoadingLazyTable(table, query.table_id, current_context, {AccessType::INSERT});
+    return resolveStorageProxyLoading(table);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(

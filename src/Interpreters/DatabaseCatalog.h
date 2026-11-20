@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
@@ -17,6 +18,7 @@
 #include <array>
 #include <condition_variable>
 #include <functional>
+#include <initializer_list>
 #include <list>
 #include <map>
 #include <memory>
@@ -411,6 +413,36 @@ private:
 
     std::atomic<bool> replicated_ddl_queries_enabled = false;
 };
+
+
+/// Materializes a table that a database with `lazy_load_tables` has not loaded yet, if the user holds
+/// the given right on it (on at least one of its columns, for a right that can be granted per column). Commands
+/// that read the passive system tables need this to observe keys and indices. For an `Alias`, this is about
+/// the last table of its chain, whose metadata the alias reports.
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access);
+
+/// Whether `checkAccessBeforeLoadingLazyTable` follows an `Alias` to the last table of its chain.
+enum class LazyTableThroughAlias : uint8_t
+{
+    /// The command asks the alias for engine facts or metadata, which loads the target.
+    Check,
+    /// The command never asks the alias anything that loads its target.
+    Ignore,
+};
+
+/// Throws `ACCESS_DENIED` if `table` is a table that a database with `lazy_load_tables` has not loaded yet and
+/// the user holds none of `accesses` neither on it nor (for a right that can be granted per column) on any of its
+/// columns. The exception names the first of `accesses`. For an `Alias`, with `LazyTableThroughAlias::Check`,
+/// this is about the last table of its chain, since the alias loads it before checking the rights on it.
+/// Loading constructs and starts the storage under the global context, which runs expensive initialization and
+/// background work, and reports errors from the table definition. So a command that names a table explicitly
+/// checks this before loading it, and keeps its precise checks (per column, per engine) for later.
+void checkAccessBeforeLoadingLazyTable(
+    const StoragePtr & table,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::initializer_list<AccessType> accesses,
+    LazyTableThroughAlias through_alias = LazyTableThroughAlias::Check);
 
 
 /// This class is useful when creating a table or database.

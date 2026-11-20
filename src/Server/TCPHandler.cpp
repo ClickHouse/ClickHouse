@@ -31,6 +31,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
@@ -1700,8 +1701,14 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
     bool async_insert_enabled = settings[Setting::async_insert];
     if (insert_query.table_id)
+    {
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
+        {
+            /// `areAsynchronousInsertsEnabled` loads a lazily loaded table, see `checkAccessBeforeLoadingLazyTable`.
+            checkAccessBeforeLoadingLazyTable(table, insert_query.table_id, state.query_context, {AccessType::INSERT});
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+        }
+    }
 
     if (insert_queue && async_insert_enabled && !insert_query.select
         && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
@@ -1981,9 +1988,26 @@ void TCPHandler::processTablesStatusRequest()
         if (!table)
             continue;
 
+        /// An ordinary session asks about the tables of a query it is going to send, so loading a deferred table
+        /// requires the access that query needs, see `checkAccessBeforeLoadingLazyTable`. The interserver
+        /// mode is authenticated with the cluster secret above and has no user to check.
+        /// Only a replicated table is loaded below, so the target of an `Alias` is not.
+        if (!is_interserver_mode)
+            checkAccessBeforeLoadingLazyTable(
+                table,
+                resolved_id,
+                context_to_resolve_table_names,
+                {AccessType::SELECT, AccessType::INSERT, AccessType::SHOW_COLUMNS},
+                LazyTableThroughAlias::Ignore);
+
         TableStatus status;
-        /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
-        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
+        /// Only a replicated MergeTree engine has a delay to report, so only such a table is loaded if it is deferred.
+        /// `supportsReplication` is also true for the data lake engines, which have no delay, so the engine
+        /// registration is checked instead, without loading the table, like in `ReplicasStatusHandler`.
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(table->getName());
+        if (auto * replicated_table = features && features->supports_replication
+                ? castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get()
+                : nullptr)
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
