@@ -1482,13 +1482,15 @@ LostMergeResultDrop ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
 
         /// `virtual_parts` = `current_parts` + `queue`. The lost part replaced its sources in both sets; put them back.
         current_parts.remove(part_name);
+        virtual_parts.remove(part_name);
         for (const auto & source_part_info : source_parts)
         {
-            auto current_outcome = current_parts.tryAddPart(source_part_info);
+            /// After a restart `current_parts` is built from the replica's parts in Keeper, where the lost part
+            /// is already gone and the sources are present, so adding them to it may be a no-op.
+            current_parts.tryAddPart(source_part_info);
             auto virtual_outcome = virtual_parts.tryAddPart(source_part_info);
-            chassert(current_outcome == ActiveDataPartSet::AddPartOutcome::Added);
             chassert(virtual_outcome == ActiveDataPartSet::AddPartOutcome::Added);
-            UNUSED(current_outcome, virtual_outcome);
+            UNUSED(virtual_outcome);
 
             /// Inserting the lost part took the sources out of the mutations' parts to do. Mutations that are
             /// newer than the sources still have to be applied to them.
