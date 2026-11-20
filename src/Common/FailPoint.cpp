@@ -494,6 +494,10 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
+    REGULAR(iceberg_compaction_refuse_metadata_commit) \
+    ONCE(iceberg_compaction_lose_metadata_commit_response) \
+    ONCE(iceberg_compaction_lose_metadata_commit_request) \
+    PAUSEABLE_ONCE(iceberg_compaction_pause_before_commit_reconciliation) \
     PAUSEABLE_ONCE(iceberg_reader_pause_before_next_file) \
     PAUSEABLE_ONCE(datalake_optimize_pause_before_arming_compaction) \
     PAUSEABLE_ONCE(datalake_background_pause_before_loading_metadata) \
