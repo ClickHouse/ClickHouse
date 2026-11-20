@@ -18,6 +18,8 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/UncompressedCacheUtils.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -70,7 +72,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
-    , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
+    , settings_changes(other.settings_changes)
+    , settings_changes_names(other.settings_changes_names)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , definer(other.definer)
@@ -108,10 +111,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
-    if (other.settings_changes)
-        settings_changes = other.settings_changes->clone();
-    else
-        settings_changes.reset();
+    settings_changes = other.settings_changes;
+    settings_changes_names = other.settings_changes_names;
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
     definer = other.definer;
@@ -187,6 +188,8 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// A part of the outer query: plan it from the same snapshot.
+    new_context->shareQueryMaxThreadsSnapshot(*context);
     /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
@@ -340,10 +343,15 @@ void StorageInMemoryMetadata::setColumnTTLs(const TTLColumnsDescription & column
 
 void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes_)
 {
+    settings_changes_names.clear();
     if (settings_changes_)
-        settings_changes = settings_changes_;
+    {
+        settings_changes = settings_changes_->formatWithSecretsOneLine<SecretString>();
+        for (const auto & change : settings_changes_->as<const ASTSetQuery &>().changes)
+            settings_changes_names.push_back(change.name);
+    }
     else
-        settings_changes = nullptr;
+        settings_changes.reset();
 }
 
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
@@ -794,17 +802,23 @@ Names StorageInMemoryMetadata::getUniqueKeyColumns() const
 
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
 {
-    if (settings_changes)
-        return settings_changes->clone();
-    return nullptr;
+    if (!settings_changes)
+        return nullptr;
+
+    if (settings_changes->empty())
+    {
+        auto empty_settings_changes = make_intrusive<ASTSetQuery>();
+        empty_settings_changes->is_standalone = false;
+        return empty_settings_changes;
+    }
+
+    ParserSetQuery parser(/* parse_only_internals_ = */ true);
+    return parseQueryFromText(parser, *settings_changes);
 }
 
 bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
 {
-    if (!settings_changes)
-        return false;
-
-    return settings_changes->as<const ASTSetQuery &>().changes.tryGet(setting_name) != nullptr;
+    return std::ranges::contains(settings_changes_names, setting_name);
 }
 
 Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
@@ -812,7 +826,8 @@ Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) con
     if (!settings_changes)
         return Field();
 
-    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    const auto settings_changes_ast = getSettingsChanges();
+    const auto & changes = settings_changes_ast->as<const ASTSetQuery &>().changes;
     auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
     return it != changes.end() ? it->value : Field();
 }
@@ -1117,7 +1132,12 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
             if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
                 return;
 
-        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        /// A projection has these only when its query selects them.
+        if (!columns.has(column_name) && !virtuals.has(column_name))
+            return;
+
+        const auto columns_to_analyze = columns.has(column_name) ? columns : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
         MergeTreeIndexFactory::instance().validate(index, false, default_settings);

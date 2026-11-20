@@ -4,6 +4,8 @@
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -57,9 +59,9 @@ std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffs
     return {};
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);

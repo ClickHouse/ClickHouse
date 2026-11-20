@@ -29,6 +29,7 @@ from ci.jobs.scripts.buildx import (
     with_timeout,
 )
 from ci.jobs.scripts.create_release import (
+    GITHUB_REPOSITORY,
     PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,
@@ -516,11 +517,13 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    step(
-        name="Bump Changelog and Push to master",
-        command=_push_changelog_to_master,
-        workdir=REPO_PATH,
-    )
+    # A private repository releases during an embargo; the changelog goes to public master after it.
+    if GITHUB_REPOSITORY == "ClickHouse/ClickHouse":
+        step(
+            name="Bump Changelog and Push to master",
+            command=_push_changelog_to_master,
+            workdir=REPO_PATH,
+        )
 
     if not args.skip_repo:
         # Restore the working tree after the changelog/version-bump steps, which

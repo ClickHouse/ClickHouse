@@ -184,7 +184,7 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
+            [[nodiscard]] DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
                 if (nodes.empty())
                     return leaf_type;
@@ -844,17 +844,17 @@ namespace
         }
     }
 
-    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"))
+    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"), UInt32 scale = 9)
     {
         ReadBufferFromString buf(field);
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                return tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
+                return tryReadDateTime64Text(date_time, scale, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                return tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                return tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortUSStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
         }
     }
 
@@ -974,18 +974,21 @@ namespace
         skipWhitespaceIfAny(buf);
 
         DataTypes nested_types;
-        bool first = true;
+        size_t num_elements = 0;
         bool have_invalid_nested_type = false;
         while (!buf.eof() && *buf.position() != ')')
         {
-            if (!first)
+            if (num_elements)
             {
                 if (!checkChar(',', buf))
                     return nullptr;
                 skipWhitespaceIfAny(buf);
+
+                /// A one-element tuple can be written with a trailing comma: (1,).
+                if (num_elements == 1 && !buf.eof() && *buf.position() == ')')
+                    break;
             }
-            else
-                first = false;
+            ++num_elements;
 
             auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
             if (nested_type)
@@ -1717,11 +1720,11 @@ bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, cons
     return tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone);
 }
 
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale)
 {
     if (fastCheckForInvalidDateTimeOrDateTime64(field))
         return false;
-    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
+    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone, scale);
 }
 
 bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)

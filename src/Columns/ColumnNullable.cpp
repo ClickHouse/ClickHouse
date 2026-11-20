@@ -39,12 +39,17 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    nested_column = getNestedColumn().convertToFullColumnIfConst();
+    /// Use the const `ColumnPtr` accessors (`getNestedColumnPtr`, `getNullMapColumnPtr`) so we go through
+    /// `immutable_ptr::operator->`/`operator*` rather than the `WrappedPtr`'s mutable accessors. The latter
+    /// call `assumeMutableRef`, which now `chassert(use_count() == 1)`. When this constructor is reached via
+    /// `ColumnNullable::create(const ColumnPtr &, const ColumnPtr &)`, the caller still holds an immutable
+    /// reference to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
+    nested_column = getNestedColumnPtr()->convertToFullColumnIfConst();
 
-    if (!getNestedColumn().canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+    if (!getNestedColumnPtr()->canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumnPtr()->getName());
 
-    if (isColumnConst(*null_map))
+    if (isColumnConst(*getNullMapColumnPtr()))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
@@ -330,6 +335,27 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
 {
     for (size_t i = 0; i < length; ++i)
         insertFromNotNullable(src, position);
+}
+
+void ColumnNullable::insertManyDefaults(size_t length)
+{
+    if (length == 0)
+        return;
+
+    /// Reserved first, so that filling the null map cannot throw.
+    reserve(size() + length);
+    auto & null_map_data = getNullMapData();
+    try
+    {
+        getNestedColumn().insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        /// Keep the null map in sync with the rows the nested column appended before throwing.
+        null_map_data.resize_fill(getNestedColumn().size(), 1);
+        throw;
+    }
+    null_map_data.resize_fill(null_map_data.size() + length, 1);
 }
 
 void ColumnNullable::popBack(size_t n)
@@ -806,9 +832,12 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
+        const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        new_size += source_nullable_column->size();
+        nested_source_columns.push_back(source_nullable_column->getNestedColumnPtr());
     }
 
     nested_column->prepareForSquashing(nested_source_columns, factor);
@@ -817,8 +846,12 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
 
 void ColumnNullable::shrinkToFit()
 {
-    getNestedColumn().shrinkToFit();
-    getNullMapColumn().shrinkToFit();
+    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
+    /// to avoid violating the `assumeMutableRef` deep ownership check.
+    if (std::as_const(nested_column)->use_count() == 1)
+        getNestedColumn().shrinkToFit();
+    if (std::as_const(null_map)->use_count() == 1)
+        getNullMapColumn().shrinkToFit();
 }
 
 void ColumnNullable::ensureOwnership()
@@ -1044,19 +1077,29 @@ void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracki
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
+    const auto * source_nullable = typeid_cast<const ColumnNullable *>(&source);
+    if (!source_nullable)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Nullable", getName(), source.getName());
+
+    nested_column->takeExactDynamicStructureFrom(source_nullable->getNestedColumn());
 }
 
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
 {
-    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
-    return nested_column->dynamicStructureEquals(rhs_nested_column);
+    const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs);
+    return rhs_nullable && nested_column->dynamicStructureEquals(rhs_nullable->getNestedColumn());
 }
 
 void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -1064,13 +1107,19 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for statistics of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+void ColumnNullable::gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+    getNestedColumn().gatherFromRows(rows, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const

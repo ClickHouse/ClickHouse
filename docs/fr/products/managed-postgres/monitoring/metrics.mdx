@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Référence des métriques'
 title: 'Référence des métriques de ClickHouse Managed Postgres'
 description: 'Liste complète des métriques exposées par l’endpoint Prometheus de ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'métriques', 'prometheus', 'référence', 'observabilité']
+keywords: ['managed postgres', 'métriques', 'prometheus', 'référence', 'observabilité', 'événements d’attente', 'attentes de verrou']
 doc_type: 'reference'
 ---
 
@@ -17,7 +17,7 @@ Pour la configuration et l’authentification, consultez la page [endpoint Prome
 
 ## Labels communs {#common-labels}
 
-Chaque métrique comporte les labels suivants :
+Chaque métrique comporte les labels suivants :
 
 | Label                   | Description              |
 | ----------------------- | ------------------------ |
@@ -27,7 +27,7 @@ Chaque métrique comporte les labels suivants :
 
 Certaines métriques ajoutent un label pour la dimension selon laquelle elles sont ventilées (par ex.
 `mode` pour les métriques CPU, `state` pour les connexions, `database` pour la
-taille de la base de données). Ces labels sont indiqués à côté de chaque métrique.
+taille de la base de données, `wait` pour les événements d&#39;attente). Ces labels sont indiqués à côté de chaque métrique.
 
 ## Métrique d’information {#information-metric}
 
@@ -121,10 +121,31 @@ Compteurs issus des événements enregistrés par Query Insights, à l&#39;exclu
 | `PostgresServer_CacheHitRatio`     | gauge |                          | Taux de réussite du cache tampon : pourcentage de blocs servis depuis le cache par rapport au nombre total de blocs accédés.                                 |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`               | Taille sur disque de chaque base de données, en octets. Inclut la base `postgres` par défaut ainsi que toutes les bases de données créées par l’utilisateur. |
 
+## Événements d’attente {#wait-events}
+
+Jauges issues des échantillons d’attente que ClickHouse Managed Postgres prélève sur
+l’instance principale toutes les 30 secondes. Ce sont les mêmes échantillons que ceux qui alimentent les
+[graphiques des attentes dans Query insights](/fr/products/managed-postgres/monitoring/query-insights#wait-charts).
+Une série n’apparaît que lorsqu’il y a quelque chose à signaler : un service
+inactif n’a aucune série d’attente, et `PostgresServer_LockWaitMaxSeconds`
+n’apparaît que lorsqu’une session est bloquée par un verrou.
+
+| Métrique                              | Type  | Libellés supplémentaires | Description                                                                                                                                                                                                                                                                                   |
+| ------------------------------------- | ----- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | Jauge | `wait`                   | Sessions actives par événement d’attente, moyennées sur les échantillons récents qui l’ont signalé. `wait` correspond à l’événement d’attente au format `type:event`, par exemple `Lock:relation` ou `IO:WalSync`, ou `None` pour les sessions en cours d’exécution sans événement d’attente. |
+| `PostgresServer_LockWaitMaxSeconds`   | Jauge |                          | Durée maximale pendant laquelle une session est restée bloquée par un verrou, en secondes.                                                                                                                                                                                                    |
+
+Pour compter les sessions bloquées par des verrous, additionnez les événements d’attente `Lock` :
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## Pages associées {#related}
 
 * [Endpoint Prometheus] — configuration, authentification et scraping
 * [Tableau de bord](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés à la console cloud
+* [Query insights](/fr/products/managed-postgres/monitoring/query-insights#wait-charts) — graphiques des attentes et table Waits dans la console cloud
 * [Guide OpenAPI](/fr/products/managed-postgres/openapi) — création de clé API
   et récupération des ID d&#39;organisation et de service
 

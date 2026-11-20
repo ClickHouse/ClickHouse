@@ -31,6 +31,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 启用通过扫描倒排文本索引字典对 LIKE/ILIKE 查询进行求值。
 
 可加速的模式包括 `%value%`、`value%` 和 `%value`，以及被 `optimize_rewrite_like_perfect_affix` 改写为 `value%` 和 `%value` 的 `startsWith` 与 `endsWith` 调用。
+对于仅包含一个 needle 的 `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive` 或 `multiSearchAnyCaseInsensitiveUTF8` 调用，会按 `%value%` 模式进行搜索。
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
