@@ -14,6 +14,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
@@ -1317,9 +1318,14 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const auto & key_node = *key_node_ptr;
     /// A cast to a type that `equals` the key's keeps the values (e.g. a `DateTime` time zone) and is left out, so the indexes
     /// can use the key. Except a cast to `Bool`, which converts 2 to 1.
-    const auto & cast_type = descriptor.key_cast_type;
-    const bool apply_cast = cast_type && (!key_node.result_type->equals(*cast_type) || isBool(removeLowCardinalityAndNullable(cast_type)));
-    const auto & key_casted = apply_cast ? dag.addCast(key_node, cast_type, {}, context) : key_node;
+    bool apply_cast = false;
+    if (const auto & cast_type = descriptor.key_cast_type)
+    {
+        const auto nested_cast_type = removeLowCardinalityAndNullable(cast_type);
+        apply_cast = !key_node.result_type->equals(*cast_type) || isBool(nested_cast_type)
+            || isSimpleAggregateFunctionOfBool(*nested_cast_type);
+    }
+    const auto & key_casted = apply_cast ? dag.addCast(key_node, descriptor.key_cast_type, {}, context) : key_node;
     chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)

@@ -83,6 +83,11 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, u
 SELECT 'bool_nullable', count() FROM probe_u8_null AS p JOIN build_true AS b ON CAST(p.x AS Nullable(Bool)) = b.flag
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
 
+-- A cast to `SimpleAggregateFunction(any, Bool)` converts 2 to 1 as well.
+SELECT 'bool_simple_aggregate_function', count() FROM probe_u8 AS p JOIN build_true AS b
+    ON CAST(p.x AS SimpleAggregateFunction(any, Bool)) = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
+
 -- A `UInt8` build key: the filter type is `UInt8`, the probe key is still cast to `Bool`.
 SELECT 'bool_u8_build', count() FROM probe_u8 AS p JOIN build_u8 AS b ON CAST(p.x AS Bool) = b.u
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
