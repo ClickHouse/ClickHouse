@@ -2250,7 +2250,19 @@ bool CachedOnDiskReadBufferFromFile::isRangeCachedLocally(size_t offset, size_t 
         return true;
     if (!cache->isInitialized())
         return false;
-    return !cache->getDownloadedContiguousOrEmpty(info.cache_key, offset, size, origin.user_id)->empty();
+    /// `get` returns a DETACHED segment for a hole and for a range larger than `bypass_cache_threshold`.
+    auto holder = cache->get(info.cache_key, offset, size, /* file_segments_limit */0, origin.user_id);
+    for (const auto & file_segment : *holder)
+    {
+        const auto segment_state = file_segment->state();
+        if (segment_state == FileSegment::State::DOWNLOADED)
+            continue;
+        /// A passive read uses only DOWNLOADED segments (see `createReadFromFileSegmentState`).
+        if (info.cache_settings.read_if_exists_otherwise_bypass || segment_state == FileSegment::State::DETACHED
+            || file_segment->getCurrentWriteOffset() < std::min(file_segment->range().right + 1, offset + size))
+            return false;
+    }
+    return true;
 }
 
 }
