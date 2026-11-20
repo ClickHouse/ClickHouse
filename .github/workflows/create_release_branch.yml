@@ -7,10 +7,6 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Must be master, since a new release branch starts at the master tip
-        required: true
-        default: ''
       dry-run:
         description: Dry run — show what would be done without making changes
         required: false
@@ -18,11 +14,6 @@ on:
         default: false
   workflow_call:
     inputs:
-      ref:
-        description: Must be master, since a new release branch starts at the master tip
-        required: true
-        type: string
-        default: ''
       dry-run:
         description: Dry run — show what would be done without making changes
         required: false

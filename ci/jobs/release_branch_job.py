@@ -1,6 +1,6 @@
 """ClickHouse new-release-branch pipeline job.
 
-Cuts a new release branch off the given ref: pushes the release tag and the
+Cuts a new release branch off the master tip: pushes the release tag and the
 branch, then bumps the version (on the branch and on master, opening the master
 version-bump PR). Run by the `CreateReleaseBranch` workflow; the patch release is
 the separate `release_job.py` / `CreateRelease` workflow. Each flow is a single
@@ -15,7 +15,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import os
-import shlex
 from pathlib import Path
 
 from ci.praktika.info import Info
@@ -46,8 +45,6 @@ def main():
         value = Info.get_workflow_input_value(name)
         return "" if value is None else str(value)
 
-    ref = _wi("ref")
-    assert ref, "workflow input 'ref' must be set"
     dry_run = _wi("dry-run").lower() == "true"
     dry_run_flag = "--dry-run" if dry_run else ""
 
@@ -103,7 +100,7 @@ def main():
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(ref)} --release-type new"
+            " --ref master --release-type new"
             f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
