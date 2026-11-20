@@ -13,11 +13,19 @@ DROP TABLE IF EXISTS t_05816;
 CREATE TABLE t_05816 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_05816 SELECT number, number * 2 FROM numbers(1000);
 
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so the nonzero limit of
+-- the test profile (`tests/config/users.d/limits.yaml`) would make the subquery fall back to local
+-- execution.
+SET max_rows_to_group_by = 0;
+
 SET log_query_plans = 1;
 
+-- `distributed_plan_fallback_to_local_execution = 0` makes any other reason to fall back throw
+-- with that reason, instead of the subquery silently running locally and being captured.
 SELECT count() FROM t_05816
 WHERE v > (SELECT avg(v) FROM t_05816 WHERE k % 7 = 0
-    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1)
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+        distributed_plan_fallback_to_local_execution = 0)
     SETTINGS enable_parallel_replicas = 0, log_comment = '05816_distributed_scalar' FORMAT Null;
 
 -- The same subquery run locally, which must be captured.
