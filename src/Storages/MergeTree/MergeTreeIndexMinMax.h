@@ -21,9 +21,9 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
 
-    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+    [[nodiscard]] size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
 
     const String & index_name;
     const Block & index_sample_block;
@@ -40,7 +40,7 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
@@ -60,11 +60,11 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
-    bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
-    std::string getDescription() const override;
+    [[nodiscard]] std::string getDescription() const override;
 
     /// Evaluate a columnar batch and return its surviving granule numbers.
     FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
@@ -101,8 +101,8 @@ public:
 
     ~MergeTreeIndexMinMax() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     /// Bulk filtering: see `MergeTreeIndexBulkGranulesMinMaxColumnar`. Whether a query uses it is decided by
     /// `MergeTreeIndexConditionMinMax::supportsBulkFiltering`.
@@ -112,14 +112,14 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    [[nodiscard]] MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
-    MergeTreeIndexSubstreams getPotentialSubstreams() const override
+    [[nodiscard]] MergeTreeIndexSubstreams getPotentialSubstreams() const override
     {
         return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
     }
     using IMergeTreeIndex::getPhysicalFormat;
-    MergeTreeIndexFormat getPhysicalFormat(
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const override;

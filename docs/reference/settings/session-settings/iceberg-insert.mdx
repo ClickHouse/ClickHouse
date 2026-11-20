@@ -27,6 +27,17 @@ written so far, that is, the compressed size, so a file can exceed it by what th
 incomplete Parquet row groups and the ones being encoded. `iceberg_insert_max_rows_in_data_file` caps the file
 independently of its size.
 
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}]}]}/>
+
+The maximum number of finished data files of one insert stream whose upload is not waited for while the `INSERT` writes the next
+file, for object storages that upload in the background (S3, Azure). Such a file holds its upload buffers until its upload
+completes, so higher values hide more upload latency at the cost of memory. `0` waits for the upload of each data file before
+writing the next one.
+
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />

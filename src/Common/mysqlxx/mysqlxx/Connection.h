@@ -155,7 +155,7 @@ public:
     }
 
     /// If MySQL connection was established.
-    bool connected() const;
+    [[nodiscard]] bool connected() const;
 
     /// Disconnect from MySQL.
     void disconnect();
