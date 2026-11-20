@@ -27,8 +27,7 @@ def count_generations(table):
     """The number of generations of a system log table: the table itself plus
     the `<table>_0`, `<table>_1`, ... it was renamed to when its structure
     changed. Other tables whose name merely starts with the same prefix are not
-    counted - `system` also holds the `<table>_sender`/`<table>_watcher` of the
-    CI logs export, see tests/integration/helpers/ci_logs_export.py."""
+    counted."""
     return int(
         node.query(
             "SELECT count() FROM system.tables WHERE database = 'system' "
@@ -227,11 +226,11 @@ def test_materialized_view_over_rotated_system_log():
         node.query("SYSTEM FLUSH LOGS")
 
         assert node.query(rotated) != rotated_before
-        # Not counting the `query_log_watcher` of the CI logs export, see
+        # Not counting the `ci_logs_export_query_log_watcher` of the CI logs export, see
         # tests/integration/helpers/ci_logs_export.py.
         assert (
             node.query(
-                "SELECT arrayFilter(name -> name != 'query_log_watcher', dependencies_table) "
+                "SELECT arrayFilter(name -> name != 'ci_logs_export_query_log_watcher', dependencies_table) "
                 "FROM system.tables WHERE database = 'system' AND name = 'query_log'"
             )
             == "['mv_124177']\n"

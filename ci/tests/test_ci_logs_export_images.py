@@ -299,13 +299,13 @@ def test_shutdown_flushes_the_async_insert_queue_before_the_senders():
     # Scoped to the `_sender` tables, so that a batch of a table of the test
     # held by a failpoint does not block the graceful stop
     async_flush = (
-        "SYSTEM FLUSH ASYNC INSERT QUEUE system.query_log_sender, system.text_log_sender"
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.ci_logs_export_query_log_sender, system.ci_logs_export_text_log_sender"
     )
     assert statements.index("SYSTEM FLUSH LOGS") < statements.index(async_flush)
     senders = [s for s in statements if s.startswith("SYSTEM FLUSH DISTRIBUTED ")]
     assert senders == [
-        "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
-        "SYSTEM FLUSH DISTRIBUTED system.text_log_sender",
+        "SYSTEM FLUSH DISTRIBUTED system.ci_logs_export_query_log_sender",
+        "SYSTEM FLUSH DISTRIBUTED system.ci_logs_export_text_log_sender",
     ]
     assert all(statements.index(async_flush) < statements.index(s) for s in senders)
 
@@ -328,8 +328,8 @@ def test_flush_before_shutdown_runs_the_statements_in_order():
     sent = [s for s in instance.queries[0].split(";\n") if s]
     assert sent == [
         "SYSTEM FLUSH LOGS",
-        "SYSTEM FLUSH ASYNC INSERT QUEUE system.query_log_sender",
-        "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.ci_logs_export_query_log_sender",
+        "SYSTEM FLUSH DISTRIBUTED system.ci_logs_export_query_log_sender",
     ]
 
     class Idle:
@@ -394,7 +394,7 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
 
         def query(self, sql, timeout=None):
             if sql.startswith("SELECT name FROM system.tables"):
-                return "metric_log_sender\nmetric_log_watcher\n"
+                return "ci_logs_export_metric_log_sender\nci_logs_export_metric_log_watcher\n"
             self.queries.append(sql)
             return ""
 
@@ -440,13 +440,13 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
     # the async insert queue, which must be flushed before the sends and drops
     statements = dropped.splitlines()
     assert statements[:4] == [
-        "SYSTEM FLUSH ASYNC INSERT QUEUE system.metric_log_sender;",
-        "SYSTEM FLUSH DISTRIBUTED system.metric_log_sender;",
-        "DROP VIEW IF EXISTS system.metric_log_watcher SYNC;",
-        "DROP TABLE IF EXISTS system.metric_log_sender SYNC;",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.ci_logs_export_metric_log_sender;",
+        "SYSTEM FLUSH DISTRIBUTED system.ci_logs_export_metric_log_sender;",
+        "DROP VIEW IF EXISTS system.ci_logs_export_metric_log_watcher SYNC;",
+        "DROP TABLE IF EXISTS system.ci_logs_export_metric_log_sender SYNC;",
     ]
-    assert "DROP VIEW IF EXISTS system.metric_log_watcher SYNC" in dropped
-    assert "DROP TABLE IF EXISTS system.metric_log_sender SYNC" in dropped
+    assert "DROP VIEW IF EXISTS system.ci_logs_export_metric_log_watcher SYNC" in dropped
+    assert "DROP TABLE IF EXISTS system.ci_logs_export_metric_log_sender SYNC" in dropped
     assert "query_log" not in dropped
     assert ensured == [("metric_log", "new", "CREATE metric_log")]
     assert created == [("metric_log", "new", "CREATE metric_log")]
@@ -477,7 +477,7 @@ def test_a_restart_after_a_partially_failed_refresh(monkeypatch):
         def query(self, sql, timeout=None):
             if sql.startswith("SELECT name FROM system.tables"):
                 # `query_log` was already flushed and dropped
-                return "metric_log_sender\nmetric_log_watcher\n"
+                return "ci_logs_export_metric_log_sender\nci_logs_export_metric_log_watcher\n"
             self.queries.append(sql)
             return ""
 
@@ -514,10 +514,10 @@ def test_a_restart_after_a_partially_failed_refresh(monkeypatch):
     assert len(instance.queries) == 1
     assert "query_log" not in instance.queries[0]
     assert instance.queries[0].splitlines() == [
-        "SYSTEM FLUSH ASYNC INSERT QUEUE system.metric_log_sender;",
-        "SYSTEM FLUSH DISTRIBUTED system.metric_log_sender;",
-        "DROP VIEW IF EXISTS system.metric_log_watcher SYNC;",
-        "DROP TABLE IF EXISTS system.metric_log_sender SYNC;",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.ci_logs_export_metric_log_sender;",
+        "SYSTEM FLUSH DISTRIBUTED system.ci_logs_export_metric_log_sender;",
+        "DROP VIEW IF EXISTS system.ci_logs_export_metric_log_watcher SYNC;",
+        "DROP TABLE IF EXISTS system.ci_logs_export_metric_log_sender SYNC;",
     ]
     assert instance.ci_logs_export_tables == ["metric_log", "query_log"]
     assert instance.ci_logs_export_hashes == {"metric_log": "new", "query_log": "new"}
@@ -707,6 +707,20 @@ def test_a_test_can_opt_a_server_out_of_the_export():
     assert "with_ci_logs_export=True," in source
 
 
+def test_export_objects_are_not_matched_as_log_tables():
+    """The `_sender`/`_watcher` objects live in `system`, and the built-in
+    `system.dashboards` read the logs with `merge('system', '^<table>')`: a
+    `Distributed` sender matched there reads from the CI Logs cluster, where
+    the export user has no `SELECT` grant, and the dashboard query fails."""
+    for table in ("asynchronous_metric_log", "metric_log", "query_log"):
+        for name in (HELPER.sender_table(table), HELPER.watcher_view(table)):
+            assert not name.startswith(table)
+            assert not name.endswith("_log")
+        assert HELPER._log_table_of(HELPER.sender_table(table), HELPER.SENDER_SUFFIX) == table
+        assert HELPER._log_table_of(HELPER.watcher_view(table), HELPER.WATCHER_SUFFIX) == table
+        assert HELPER._log_table_of(f"{table}_watcher", HELPER.WATCHER_SUFFIX) is None
+
+
 def test_an_unrelated_watcher_is_not_taken_for_an_exported_table():
     """The helper keeps its `_sender`/`_watcher` tables in `system`, a namespace
     it shares with the test: the list of exported tables must only name the
@@ -714,8 +728,8 @@ def test_an_unrelated_watcher_is_not_taken_for_an_exported_table():
     `teardown_for_instance` would flush and drop a test's own
     `system.<name>_watcher` as if the export owned it."""
     scope = (
-        "name IN ('query_log_watcher', 'query_log_sender', "
-        "'text_log_watcher', 'text_log_sender')"
+        "name IN ('ci_logs_export_query_log_watcher', 'ci_logs_export_query_log_sender', "
+        "'ci_logs_export_text_log_watcher', 'ci_logs_export_text_log_sender')"
     )
     query = HELPER._active_tables_query(["query_log", "text_log"])
     assert scope in query
@@ -726,7 +740,7 @@ def test_an_unrelated_watcher_is_not_taken_for_an_exported_table():
         def query(self, sql, timeout=None):
             # The DDL batch ends with the scoped query, never an unscoped one
             assert scope in sql
-            return "query_log_watcher\nquery_log_sender\ntext_log_watcher\ntext_log_sender\n"
+            return "ci_logs_export_query_log_watcher\nci_logs_export_query_log_sender\nci_logs_export_text_log_watcher\nci_logs_export_text_log_sender\n"
 
     tables = [("query_log", "h1", ""), ("text_log", "h2", ""), ("trace_log", "h3", "")]
     active = HELPER._create_senders_and_watchers(
@@ -751,7 +765,7 @@ def test_a_sender_left_without_a_watcher_is_dropped():
                 raise RuntimeError("the batch failed half way")
             if "DROP" in sql:
                 return ""
-            return "query_log_watcher\nquery_log_sender\ntext_log_sender\n"
+            return "ci_logs_export_query_log_watcher\nci_logs_export_query_log_sender\nci_logs_export_text_log_sender\n"
 
     instance = Instance()
     tables = [("query_log", "h1", ""), ("text_log", "h2", "")]
@@ -759,7 +773,7 @@ def test_a_sender_left_without_a_watcher_is_dropped():
         instance, tables, {"query_log", "text_log"}, "1 AS c"
     )
     assert active == ["query_log"]
-    assert instance.queries[-1] == "DROP TABLE IF EXISTS system.text_log_sender SYNC;\n"
+    assert instance.queries[-1] == "DROP TABLE IF EXISTS system.ci_logs_export_text_log_sender SYNC;\n"
 
 
 def test_a_sender_whose_drop_failed_is_not_reused():
@@ -777,7 +791,7 @@ def test_a_sender_whose_drop_failed_is_not_reused():
             self.queries.append(sql)
             if self.fail and ("CREATE" in sql or "DROP" in sql):
                 raise RuntimeError("the local DDL failed")
-            return "text_log_sender\n" if self.fail else "text_log_watcher\ntext_log_sender\n"
+            return "ci_logs_export_text_log_sender\n" if self.fail else "ci_logs_export_text_log_watcher\nci_logs_export_text_log_sender\n"
 
     instance = Instance()
     tables = [("text_log", "h2", "")]
@@ -788,9 +802,9 @@ def test_a_sender_whose_drop_failed_is_not_reused():
     active = HELPER._create_senders_and_watchers(instance, tables, {"text_log"}, "1 AS c")
     assert active == ["text_log"]
     batch = instance.queries[0]
-    drop = batch.index("DROP TABLE IF EXISTS system.text_log_sender SYNC;")
-    assert drop < batch.index("CREATE TABLE IF NOT EXISTS system.text_log_sender")
-    assert batch.index("DROP VIEW IF EXISTS system.text_log_watcher SYNC;") < drop
+    drop = batch.index("DROP TABLE IF EXISTS system.ci_logs_export_text_log_sender SYNC;")
+    assert drop < batch.index("CREATE TABLE IF NOT EXISTS system.ci_logs_export_text_log_sender")
+    assert batch.index("DROP VIEW IF EXISTS system.ci_logs_export_text_log_watcher SYNC;") < drop
 
 
 def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
@@ -811,7 +825,7 @@ def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
                 return "1700000000\n"
             if sql.startswith("SELECT table FROM system.columns"):
                 return "query_log\n"
-            return "query_log_watcher\nquery_log_sender\ntext_log_watcher\ntext_log_sender\n"
+            return "ci_logs_export_query_log_watcher\nci_logs_export_query_log_sender\nci_logs_export_text_log_watcher\nci_logs_export_text_log_sender\n"
 
     instance = Instance()
     tables = [("query_log", "h1", ""), ("text_log", "h2", "")]
@@ -823,13 +837,13 @@ def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
     )
     assert active == ["query_log", "text_log"]
     batch = instance.queries[-1]
-    assert "INSERT INTO system.query_log_sender SETTINGS " in batch
+    assert "INSERT INTO system.ci_logs_export_query_log_sender SETTINGS " in batch
     assert (
         "SELECT 1 AS c, * FROM system.query_log "
         "WHERE event_time >= toDateTime(1700000000);"
     ) in batch
-    assert "INSERT INTO system.text_log_sender" not in batch
-    assert "CREATE MATERIALIZED VIEW IF NOT EXISTS system.text_log_watcher" in batch
+    assert "INSERT INTO system.ci_logs_export_text_log_sender" not in batch
+    assert "CREATE MATERIALIZED VIEW IF NOT EXISTS system.ci_logs_export_text_log_watcher" in batch
 
     source = CLUSTER_HELPER.read_text()
     assert "setup_for_instance(self.cluster, self, only_since_start=True)" in source
@@ -927,7 +941,7 @@ def test_the_backfill_runs_with_the_export_settings():
 
         def query(self, sql, timeout=None):
             self.queries.append(sql)
-            return "query_log_watcher\nquery_log_sender\n"
+            return "ci_logs_export_query_log_watcher\nci_logs_export_query_log_sender\n"
 
     instance = Instance()
     HELPER._create_senders_and_watchers(
@@ -935,7 +949,7 @@ def test_the_backfill_runs_with_the_export_settings():
     )
     settings = ", ".join(f"{k} = {v}" for k, v in HELPER.BACKFILL_SETTINGS.items())
     assert (
-        f"INSERT INTO system.query_log_sender SETTINGS {settings} "
+        f"INSERT INTO system.ci_logs_export_query_log_sender SETTINGS {settings} "
         "SELECT 1 AS c, * FROM system.query_log;"
     ) in instance.queries[0]
 

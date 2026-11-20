@@ -9,8 +9,9 @@ after the cluster is started:
   - a remote destination table `<table>_<hash>` is created on the CI Logs
     cluster for every `system.*_log` table (the hash covers the structure, so
     servers of different versions can export into the same cluster);
-  - a Distributed table `system.<table>_sender` pointing to the destination
-    table and a materialized view `system.<table>_watcher` are created locally,
+  - a Distributed table `system.ci_logs_export_<table>_sender` pointing to the
+    destination table and a materialized view
+    `system.ci_logs_export_<table>_watcher` are created locally,
     so every flushed log block is forwarded to the CI Logs cluster.
 
 The views are created with `DEFINER = ci_logs_sender`, a dedicated user with a
@@ -112,6 +113,36 @@ SENDER_USER = "ci_logs_sender"
 SENDER_USER_CONFIG = os.path.join(
     os.path.dirname(__file__), "..", "..", "config", "users.d", "ci_logs_sender.yaml"
 )
+
+# The local objects of the export live in `system`, next to the log tables, but
+# their names must not start with the name of a log table: `merge('system',
+# '^asynchronous_metric_log')` and the like (the built-in `system.dashboards`
+# read the logs this way, with `clusterAllReplicas`) would otherwise pick up
+# the `Distributed` sender table and read from the CI Logs cluster, which the
+# export user is not allowed to `SELECT` from.
+EXPORT_OBJECT_PREFIX = "ci_logs_export_"
+SENDER_SUFFIX = "_sender"
+WATCHER_SUFFIX = "_watcher"
+
+
+def sender_table(table):
+    """The name of the local `Distributed` table (in `system`) that forwards
+    the rows of the log table `table` to its destination table."""
+    return f"{EXPORT_OBJECT_PREFIX}{table}{SENDER_SUFFIX}"
+
+
+def watcher_view(table):
+    """The name of the local materialized view (in `system`) that copies the
+    rows of the log table `table` into its sender table."""
+    return f"{EXPORT_OBJECT_PREFIX}{table}{WATCHER_SUFFIX}"
+
+
+def _log_table_of(name, suffix):
+    """The log table of the export object `name` with the suffix `suffix`, or
+    `None` if `name` is not such an object."""
+    if name.startswith(EXPORT_OBJECT_PREFIX) and name.endswith(suffix):
+        return name[len(EXPORT_OBJECT_PREFIX) : -len(suffix)]
+    return None
 
 
 
@@ -785,16 +816,16 @@ def _refresh_after_start(cluster, instance):
         # stale, and a flush of a missing `_sender` would fail the whole batch
         # on every later restart, leaving those tables unexported for good.
         existing = set(instance.query(_active_tables_query(stale), timeout=60).split())
-        senders = [f"system.{table}_sender" for table in stale if f"{table}_sender" in existing]
+        senders = [f"system.{sender_table(table)}" for table in stale if sender_table(table) in existing]
         statements = ""
         if senders:
             statements += f"SYSTEM FLUSH ASYNC INSERT QUEUE {', '.join(senders)};\n"
             statements += "".join(f"SYSTEM FLUSH DISTRIBUTED {sender};\n" for sender in senders)
         statements += "".join(
-            f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
-            f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
+            f"DROP VIEW IF EXISTS system.{watcher_view(table)} SYNC;\n"
+            f"DROP TABLE IF EXISTS system.{sender_table(table)} SYNC;\n"
             for table in stale
-            if f"{table}_watcher" in existing or f"{table}_sender" in existing
+            if watcher_view(table) in existing or sender_table(table) in existing
         )
         if statements:
             instance.query(statements, timeout=300)
@@ -863,11 +894,11 @@ def _active_tables_query(tables):
     failure gives a correct list rather than one that makes the shutdown flush
     fail on a `_sender` table which was never created. It is scoped to the
     tables this helper attempted to create, so that an unrelated
-    `system.<name>_watcher` is never flushed or dropped as if it were ours."""
+    `system.ci_logs_export_<name>_watcher` is never flushed or dropped as if it were ours."""
     names = ", ".join(
-        f"'{_escape_sql_string(table + suffix)}'"
+        f"'{_escape_sql_string(name(table))}'"
         for table in tables
-        for suffix in ("_watcher", "_sender")
+        for name in (watcher_view, sender_table)
     )
     return f"SELECT name FROM system.tables WHERE database = 'system' AND name IN ({names})"
 
@@ -927,12 +958,12 @@ def _create_senders_and_watchers(instance, tables, exportable, expression, backf
             continue
         if backfill_filters is None:
             backfill = (
-                f"INSERT INTO system.{table}_sender SETTINGS {backfill_settings} "
+                f"INSERT INTO system.{sender_table(table)} SETTINGS {backfill_settings} "
                 f"SELECT {expression}, * FROM system.{table};"
             )
         elif table in backfill_filters:
             backfill = (
-                f"INSERT INTO system.{table}_sender SETTINGS {backfill_settings} "
+                f"INSERT INTO system.{sender_table(table)} SETTINGS {backfill_settings} "
                 f"SELECT {expression}, * FROM system.{table} WHERE {backfill_filters[table]};"
             )
         else:
@@ -954,18 +985,18 @@ def _create_senders_and_watchers(instance, tables, exportable, expression, backf
         # lost, which is a much shorter window than the flush interval.
         statements.append(
             f"""
-            DROP VIEW IF EXISTS system.{table}_watcher SYNC;
-            DROP TABLE IF EXISTS system.{table}_sender SYNC;
+            DROP VIEW IF EXISTS system.{watcher_view(table)} SYNC;
+            DROP TABLE IF EXISTS system.{sender_table(table)} SYNC;
 
-            CREATE TABLE IF NOT EXISTS system.{table}_sender
+            CREATE TABLE IF NOT EXISTS system.{sender_table(table)}
             ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
             SETTINGS flush_on_detach = 0
             EMPTY AS SELECT {expression}, * FROM system.{table};
 
             {backfill}
 
-            CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
-            TO system.{table}_sender
+            CREATE MATERIALIZED VIEW IF NOT EXISTS system.{watcher_view(table)}
+            TO system.{sender_table(table)}
             DEFINER = {SENDER_USER}
             AS SELECT {expression}, * FROM system.{table};
             """
@@ -986,7 +1017,11 @@ def _create_senders_and_watchers(instance, tables, exportable, expression, backf
         # The statements before the failing one did take effect
         output = instance.query(active_tables_query, timeout=60)
     names = output.split()
-    active = sorted(name[: -len("_watcher")] for name in names if name.endswith("_watcher"))
+    active = sorted(
+        table
+        for table in (_log_table_of(name, WATCHER_SUFFIX) for name in names)
+        if table is not None
+    )
     # A batch that failed between the `CREATE TABLE` of a `_sender` and the
     # `CREATE MATERIALIZED VIEW` of its `_watcher` leaves the `_sender` behind.
     # Nothing records it, so it is dropped right away. This cleanup may fail
@@ -994,14 +1029,14 @@ def _create_senders_and_watchers(instance, tables, exportable, expression, backf
     # the next attempt for the table drops it before creating a new one, see
     # the statements above.
     orphans = sorted(
-        name[: -len("_sender")]
-        for name in names
-        if name.endswith("_sender") and name[: -len("_sender")] not in active
+        table
+        for table in (_log_table_of(name, SENDER_SUFFIX) for name in names)
+        if table is not None and table not in active
     )
     if orphans:
         try:
             instance.query(
-                "".join(f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n" for table in orphans),
+                "".join(f"DROP TABLE IF EXISTS system.{sender_table(table)} SYNC;\n" for table in orphans),
                 timeout=120,
             )
         except Exception:
@@ -1023,7 +1058,7 @@ def _shutdown_statements(tables):
     only then do they reach the `_sender` tables the last statements send out.
     Mirrors `stop` in `ci/jobs/scripts/log_export.py`, except that the
     asynchronous insert queue is flushed only for the `_sender` tables."""
-    senders = [f"system.{table}_sender" for table in tables]
+    senders = [f"system.{sender_table(table)}" for table in tables]
     return [
         "SYSTEM FLUSH LOGS",
         # Only the queues of the `_sender` tables: a flush of the whole queue
@@ -1050,8 +1085,8 @@ def teardown_for_instance(instance):
         return
     flush_before_shutdown(instance)
     statements = "".join(
-        f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
-        f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
+        f"DROP VIEW IF EXISTS system.{watcher_view(table)} SYNC;\n"
+        f"DROP TABLE IF EXISTS system.{sender_table(table)} SYNC;\n"
         for table in tables
     )
     instance.query(statements, timeout=120)
