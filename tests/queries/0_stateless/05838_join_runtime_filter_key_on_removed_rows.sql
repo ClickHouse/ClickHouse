@@ -1,7 +1,6 @@
--- A JOIN runtime filter must not compute its key below another join on rows that join,
--- or the filters around it, remove.
+-- A JOIN runtime filter computes its key on rows that are removed before its join, so it is not built on a key that can throw.
 
--- A replica of plan-based parallel replicas gets the plan without knowing which filters are JOIN runtime filters.
+-- A replica of plan-based parallel replicas gets the join keys already computed, so it cannot tell whether a key can throw.
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, parallel_replicas_plan_based = 0;
 
 -- No query has read these tables yet, so PREWHERE orders the two filters by column size.
@@ -58,7 +57,7 @@ CREATE VIEW v_aj AS SELECT x, a FROM t ARRAY JOIN arr AS a;
 CREATE TABLE m_aj (x UInt8, a UInt8) ENGINE = Merge(currentDatabase(), '^v_aj$');
 SELECT count() FROM m_aj JOIN r ON intDiv(100, m_aj.x) = r.k;
 
--- A single join, with a WHERE that is not filtered atom by atom together with the runtime filter.
+-- A single join with a WHERE below it.
 CREATE TABLE p2 (id UInt64, b UInt8, s String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO p2 SELECT number, number % 10 != 0 AS b, if(b = 0, 'bad', '1.2.3.4') FROM numbers(100000);
 CREATE TABLE r32 (k UInt32) ENGINE = MergeTree ORDER BY k;
@@ -70,3 +69,24 @@ SELECT count() FROM p2 JOIN r32 ON IPv4StringToNum(p2.s) = r32.k WHERE p2.b SETT
 CREATE TABLE r64 (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO r64 VALUES (5);
 SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2 SETTINGS optimize_move_to_prewhere = 1, enable_parallel_replicas = 0);
+
+-- The key-unification cast of a `UInt32 = Int64` key cannot throw, so the key still gets its runtime filter.
+SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r ON p.id32 = r.k WHERE p.b + g.flag = 2 SETTINGS optimize_move_to_prewhere = 1, enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- A cast that can throw: `Date` to `DateTime` under `date_time_overflow_behavior = 'throw'`.
+CREATE TABLE pd (id UInt64, b UInt8, dt Date) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pd SELECT number, number % 2 AS b, if(b = 0, toDate('2149-06-06'), toDate('2020-01-01')) FROM numbers(100000);
+CREATE TABLE rdt (k DateTime('UTC')) ENGINE = MergeTree ORDER BY k;
+INSERT INTO rdt VALUES ('2020-01-01 00:00:00');
+SELECT count() FROM pd JOIN g ON pd.id = g.id JOIN rdt ON CAST(pd.dt AS DateTime('UTC')) = rdt.k WHERE pd.b + g.flag = 2 SETTINGS date_time_overflow_behavior = 'throw';
+
+-- Two keys: the one that cannot throw keeps its runtime filter.
+CREATE TABLE r2k (a UInt64, k Int64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO r2k VALUES (1, 100), (2, 100), (3, 100);
+SELECT count() FROM p JOIN g ON p.id = g.id JOIN r2k ON p.id = r2k.a AND intDiv(100, p.b) = r2k.k WHERE p.b + g.flag = 2;
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r2k ON p.id = r2k.a AND intDiv(100, p.b) = r2k.k WHERE p.b + g.flag = 2 SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- LEFT ANTI JOIN builds one filter on all keys, so a key that can throw leaves it without one.
+CREATE TABLE ra2 (a UInt64, k UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO ra2 VALUES (1, 16909060), (3, 0);
+SELECT count() FROM p JOIN g ON p.id = g.id LEFT ANTI JOIN ra2 ON p.id = ra2.a AND IPv4StringToNum(p.s) = ra2.k WHERE p.b + g.flag = 2;
