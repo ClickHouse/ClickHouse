@@ -5958,7 +5958,7 @@ Possible values:
 - 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
 - 1 - The truncated parts are removed at once.
 )", 0, \
-        {"26.11", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
+        {"26.12", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \
