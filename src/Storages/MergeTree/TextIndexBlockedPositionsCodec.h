@@ -52,8 +52,8 @@ public:
         std::array<char, MAX_EMBEDDED_BYTES> embedded{};
         size_t embedded_size = 0;
 
-        size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
-        size_t docsInBlock(size_t block_idx) const
+        [[nodiscard]] size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
+        [[nodiscard]] size_t docsInBlock(size_t block_idx) const
         {
             const UInt64 begin = block_idx * BLOCK_DOCS;
             return static_cast<size_t>(std::min<UInt64>(BLOCK_DOCS, num_docs - begin));
@@ -79,7 +79,7 @@ public:
         /// `positions` must be non-empty and strictly increasing.
         void addDocument(std::span<const UInt32> positions);
         void finalize(WriteBuffer & out);
-        UInt64 numDocuments() const { return num_docs; }
+        [[nodiscard]] UInt64 numDocuments() const { return num_docs; }
 
     private:
         /// Appends the open block's payload to `out` and returns its size.
