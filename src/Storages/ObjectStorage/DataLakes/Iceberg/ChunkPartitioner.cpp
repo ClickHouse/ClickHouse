@@ -40,6 +40,7 @@ ChunkPartitioner::ChunkPartitioner(
             id_to_column[field->getValue<Int32>(Iceberg::f_id)] = field->getValue<String>(Iceberg::f_name);
         }
     }
+    const auto binary_field_ids = Iceberg::IcebergSchemaProcessor::collectIcebergFieldIdsOfType(schema_fields, Iceberg::f_binary);
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -69,6 +70,7 @@ ChunkPartitioner::ChunkPartitioner(
         functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
+        source_is_binary.push_back(binary_field_ids.contains(source_id));
     }
 }
 
@@ -150,8 +152,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         auto partition_key = get_partition(partition_num_to_first_row[i]);
         for (size_t transform_ind = 0; transform_ind < partition_key.size(); ++transform_ind)
         {
-            /// String partition values are stored as Avro strings in the manifest, which must be UTF-8.
-            if (partition_key[transform_ind].getType() != Field::Types::String)
+            /// String partition values are stored as Avro strings in the manifest, which must be UTF-8,
+            /// except those of a `binary` source column, which are Avro bytes.
+            if (partition_key[transform_ind].getType() != Field::Types::String || source_is_binary[transform_ind])
                 continue;
             const auto & value = partition_key[transform_ind].safeGet<String>();
             if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))

@@ -1223,7 +1223,7 @@ void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, I
             column_name, format_version);
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id, bool is_binary)
 {
     switch (type->getTypeId())
     {
@@ -1260,6 +1260,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
         case TypeIndex::Float64:
             return "double";
         case TypeIndex::String:
+            return is_binary ? "bytes" : "string";
         case TypeIndex::UUID:
             return "string";
         case TypeIndex::Decimal32:
@@ -1289,7 +1290,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id, is_binary));
             return union_array;
         }
         default:

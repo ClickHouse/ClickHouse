@@ -154,6 +154,9 @@ public:
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
 
+    /// Field ids (including nested ones) whose Iceberg type is `type_name`.
+    static std::unordered_set<Int64> collectIcebergFieldIdsOfType(Poco::JSON::Array::Ptr schema, const String & type_name);
+
     /// The effective `initial-default` of the fields (including nested ones) that have one, by the paths of `traverseSchema`.
     static std::unordered_map<String, ColumnMapper::IcebergInitialDefault> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 

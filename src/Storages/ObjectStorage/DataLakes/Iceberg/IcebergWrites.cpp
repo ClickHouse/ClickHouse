@@ -390,7 +390,8 @@ static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
     const DataTypes & partition_types,
-    const Poco::JSON::Array::Ptr & partition_spec_fields)
+    const Poco::JSON::Array::Ptr & partition_spec_fields,
+    const std::unordered_set<Int64> & binary_field_ids)
 {
     /// Iceberg projects the manifest `partition` values onto the spec by field-id, so reuse
     /// the persisted spec ids. A legacy v1 spec may omit them; there the spec assigns partition
@@ -415,10 +416,18 @@ static void extendSchemaForPartitions(
             ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
             : static_cast<Int32>(1000 + i);
 
+        bool is_binary = false;
+        if (partition_spec_fields && partition_spec_fields->size() == partition_columns.size())
+        {
+            const auto spec_field = partition_spec_fields->getObject(static_cast<UInt32>(i));
+            is_binary = spec_field->has(Iceberg::f_source_id)
+                && binary_field_ids.contains(spec_field->getValue<Int64>(Iceberg::f_source_id));
+        }
+
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, field_id);
         field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id));
+        field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id, is_binary));
         partition_fields->add(field);
     }
 
@@ -611,7 +620,11 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
+    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
+    const auto binary_field_ids
+        = IcebergSchemaProcessor::collectIcebergFieldIdsOfType(schema_object_to_write->getArray(Iceberg::f_fields), Iceberg::f_binary);
+    extendSchemaForPartitions(
+        schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields), binary_field_ids);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
@@ -619,7 +632,6 @@ void generateManifestFile(
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
     std::string json_representation = stringifyJSON(schema_object_to_write, 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -814,6 +826,8 @@ void generateManifestFile(
                     case Field::Types::String:
                     {
                         const auto & value = partition_values[i].safeGet<String>();
+                        if (value_schema->type() == avro::AVRO_BYTES)
+                            return avro::GenericDatum(std::vector<uint8_t>(value.begin(), value.end()));
                         /// Avro strings must be UTF-8.
                         if (value_schema->type() == avro::AVRO_STRING
                             && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
