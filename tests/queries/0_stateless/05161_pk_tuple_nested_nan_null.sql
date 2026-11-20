@@ -324,6 +324,7 @@ DROP TABLE t_pk_nullable_tuple_null_inside;
 SELECT 'a negated comparison over a Float element, kept as NOT of a range';
 
 -- `NOT (t < c)` is not folded to `t >= c` when the key may hold a NaN, so the range atom is under `NOT`.
+
 CREATE TABLE t_pk_tuple_not_range_nested_null (t Tuple(Int32, Nullable(Float64)), x Int32) ENGINE = MergeTree ORDER BY t
 SETTINGS index_granularity = 3, allow_nullable_key = 1;
 
