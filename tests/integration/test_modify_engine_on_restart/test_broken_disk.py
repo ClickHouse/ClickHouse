@@ -358,9 +358,9 @@ def test_broken_secondary_disk_of_existing_replica(started_cluster, lazy_load_ta
             ]
         )
         ch1.restart_clickhouse()
-        assert engine_of("replicated") == "ReplicatedMergeTree"
         q("INSERT INTO replicated SELECT number FROM numbers(10, 10)")
         assert q("SELECT count() FROM replicated").strip() == "20"
+        assert engine_of("replicated") == "ReplicatedMergeTree"
     finally:
         ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
         ch1.exec_in_container(["rm", "-f", defaults_path])
