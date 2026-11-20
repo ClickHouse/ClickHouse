@@ -30,6 +30,14 @@ QueryProfiler의 활성 스레드 로컬 타이머 수
 
 연결 풀에서 연결을 생성할 때 문제가 있는 것으로 판단되어 차단된 주소의 총개수
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+스택 트레이스 심볼화에 사용되는 해석된 소스 코드 위치(file:line:column) 캐시가 사용하는 근사 메모리 양으로, 바이트 단위입니다.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+system.trace&#95;log, system.errors, system.error&#95;log의 스택 트레이스를 심볼화하는 데 사용되는 해석된 소스 코드 위치(file:line:column) 캐시에 저장된 코드 주소 수입니다.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator 스레드 풀에 있는 스레드 수입니다.
@@ -357,6 +365,10 @@ JIT 컴파일된 머신 코드 캐시에 있는 총 항목 수
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 경합 중인 것으로 간주되지 않는 획득된 CPU 슬롯의 총수입니다(`fair_round_robin` 스케줄러를 사용하는 경우 첫 번째 스레드).
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+블로킹 I/O나 실행할 작업이 없는 경우처럼 CPU를 사용하지 않는 대기 상태로 인해 CPU 슬롯을 파킹(반납)한 현재 스레드 수
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -710,6 +722,14 @@ ZooKeeper에 유지되고 있는 임시 노드의 수입니다.
 
 분산 exchange 서버의 핸드셰이크 스레드 풀에서 큐에 대기 중이거나 현재 실행 중인 작업 수입니다.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+외부 메모리에 있는 `IN` 집합(set)의 캐시에 보관된 블록(blocks)의 총 크기(바이트 단위)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+외부 메모리에 있는 `IN` 집합(set) 캐시에 보관된 블록의 총 개수
+
 ### FiberStackBytes {#fiberstackbytes}
 
 현재 할당된 파이버 스택의 총 크기입니다.
@@ -833,6 +853,14 @@ Global Thread 풀 내 스레드 수.
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 Global Thread 풀의 큐에 있거나 현재 활성 상태인 작업 수입니다.
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue 카탈로그의 현재 Iceberg 스키마(schema) 필드 타입 캐시 크기(바이트 단위)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue 카탈로그의 현재 Iceberg 스키마 필드 타입을 저장하는 캐시의 엔트리 수
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1098,6 +1126,10 @@ Keeper changelog 병렬 시작 읽기를 담당하는 스레드 풀에서 큐에
 
 대기 중인 요청 수
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+서버 시작 후 로컬 로그 항목의 전처리가 끝나기를 기다리고 있는 Raft 이벤트 루프 스레드 수입니다. Raft 이벤트 루프는 리스너, 선출 타이머와 하트비트 타이머, 모든 RPC 완료 처리도 함께 실행하므로 이 값은 0 또는 1로 유지되어야 합니다.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper server의 읽기 작업을 위한 스레드 풀의 스레드 수입니다.
@@ -1169,6 +1201,10 @@ DDLWorker가 ZooKeeper에 푸시한 최대 DDL 엔트리 ID입니다.
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 메모리 예약에 대한 미처리 증가 요청 바이트의 총량
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+회수 가능한 메모리의 총량
 
 ### MemoryTracking {#memorytracking}
 
@@ -1362,6 +1398,10 @@ AzureObjectStorage 스레드 풀에 있는 스레드 수입니다.
 
 AzureObjectStorage 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+이 서버가 현재 객체 스토리지에 보유 중인 배타적 임대(exclusive lease)의 수입니다. Iceberg 테이블(Iceberg table) 컴팩션이 그 예입니다.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue 메타데이터 캐시 크기(바이트)입니다.
@@ -1398,6 +1438,10 @@ S3ObjectStorage 스레드 풀에 있는 스레드 수입니다.
 
 S3ObjectStorage 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+이 서버의 쿼리가 객체 스토리지에서 현재 임대 중인 키(예: 읽는 중인 Iceberg 스냅샷)의 수입니다.
+
 ### OpenFileForRead {#openfileforread}
 
 읽기용으로 열려 있는 파일 수
@@ -1429,6 +1473,10 @@ Outdated 데이터 파트를 로드하는 스레드 풀에서 활성 상태인 �
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Outdated 데이터 파트를 로드하는 스레드 풀에서 큐에 있거나 현재 실행 중인 작업 수입니다.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+기록 중인 패킹 데이터 파트(data part)에서 버퍼에 저장된 데이터에 할당된 메모리 양(바이트)입니다. 임시 파일로 옮겨진 데이터는 포함되지 않습니다.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1962,6 +2010,14 @@ stateless worker 스레드 풀 내 스레드 수입니다.
 
 stateless worker 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+통계 캐시의 전체 크기(바이트)입니다. MergeTree 테이블(MergeTree tables)의 데이터 파트(data part)별 컬럼 통계(Column Statistics)를 보관하며, 파트와 컬럼 조합마다 엔트리가 하나씩 저장됩니다.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+통계 캐시에 있는 엔트리의 총 개수(데이터 파트(data part)와 컬럼 조합마다 1개)
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Buffer 테이블 버퍼의 바이트 수
@@ -2126,6 +2182,14 @@ JOIN에 대해 생성된 임시 파일 수
 
 수직 병합용 임시 파일 수
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+기록 중인 패킹 데이터 파트의 버퍼링된 데이터를 저장하는 임시 파일 수
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+외부 메모리에서 `IN` 집합(set)용으로 생성된 임시 파일 수
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 외부 정렬 시 생성된 임시 파일 수
@@ -2245,6 +2309,10 @@ vector similarity index cache의 크기(바이트)
 ### VersionInteger {#versioninteger}
 
 서버 버전을 1000진법의 단일 정수로 나타냅니다. 예를 들어, 버전 11.22.33은 11022033으로 변환됩니다.
+
+### WaitingQuery {#waitingquery}
+
+비동기 로딩 또는 시작이 완료되기를 기다리고 있는 쿼리 수입니다. &#39;max&#95;waiting&#95;queries&#39; 서버 설정으로 제한됩니다
 
 ### 쓰기 {#write}
 
