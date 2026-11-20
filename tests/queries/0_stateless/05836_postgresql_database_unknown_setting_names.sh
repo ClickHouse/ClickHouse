@@ -23,7 +23,9 @@ trap cleanup EXIT
 
 function create()
 {
-    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB} $1 ${ENGINE} SETTINGS $2" 2>&1 | grep -o -m1 'UNKNOWN_SETTING' || echo 'created'
+    # A rejection by a worker after `ON CLUSTER` is dispatched comes back as `There was an error on [host:port]: ...`.
+    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB} $1 ${ENGINE} SETTINGS $2" 2>&1 \
+        | grep -o -m1 -E 'There was an error on|UNKNOWN_SETTING' || echo 'created'
     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}"
 }
 
