@@ -1156,7 +1156,25 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
                 key_storage_columns.insert(column->getNameInStorage());
 
-        for (const auto & column_name : affected_materialized_closure(type_changed_columns))
+        NameSet to_recompute = affected_materialized_closure(type_changed_columns);
+
+        /// The closure starts from the converted columns, so it skips a MATERIALIZED column that is converted
+        /// itself. Casting its stored value does not apply its expression to a converted input, so recompute it
+        /// too when one of its inputs is converted or recomputed.
+        for (const auto & column_name : type_changed_columns)
+        {
+            auto it = materialized_column_dependencies.find(column_name);
+            if (it == materialized_column_dependencies.end())
+                continue;
+
+            if (std::ranges::any_of(it->second, [&](const auto & dependency)
+                {
+                    return dependency != column_name && (type_changed_columns.contains(dependency) || to_recompute.contains(dependency));
+                }))
+                to_recompute.insert(column_name);
+        }
+
+        for (const auto & column_name : to_recompute)
         {
             if (!key_storage_columns.contains(column_name))
                 type_changed_affected_materialized.insert(column_name);
@@ -1201,6 +1219,26 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & col : index_storage_columns)
                     dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
         }
+
+        /// The raw index inputs above can still name a subcolumn (`t.a`, reached through another input `y`).
+        /// Reading it from the source part would put a stale `t.a` next to the updated `t` in the stream, and
+        /// the index recalculation takes a subcolumn present in the block as is. Read its storage column
+        /// instead, so the subcolumn is extracted from the updated value.
+        ColumnDependencies normalized_dependencies;
+        for (const auto & dependency : dependencies)
+        {
+            if (dependency.kind == ColumnDependency::SKIP_INDEX)
+            {
+                auto column = columns_for_analysis.tryGetColumnOrSubcolumn(GetColumnsOptions::All, dependency.column_name);
+                if (column && column->isSubcolumn())
+                {
+                    normalized_dependencies.emplace(column->getNameInStorage(), dependency.kind);
+                    continue;
+                }
+            }
+            normalized_dependencies.insert(dependency);
+        }
+        dependencies = std::move(normalized_dependencies);
     }
 
     bool need_rebuild_indexes = false;
