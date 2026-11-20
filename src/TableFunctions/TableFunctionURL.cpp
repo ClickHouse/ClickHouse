@@ -46,17 +46,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
-    {
-        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
-            return;
-
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
-    }
-
     ASTs makeWebObjectStorageEngineArgs(
         const String & source,
         const String & format,
@@ -97,6 +86,70 @@ namespace
 
         return engine_args;
     }
+}
+
+void TableFunctionURL::checkExperimentalURLWildcardFromIndexPages() const
+{
+    if (allow_url_wildcard_from_index_pages)
+        return;
+
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Wildcard expansion for `{}` from HTTP index pages is experimental. "
+        "Set `allow_url_wildcard_from_index_pages = 1` to enable it. A table whose stored definition reads "
+        "this source keeps loading after a restart without re-checking the setting, so recreate it, or "
+        "enable the setting for the query, if that is not wanted",
+        getName());
+}
+
+std::pair<String, std::optional<String>> TableFunctionURL::getURLAndArchivePatternForSource(const String & source) const
+{
+    if (!allow_archive_path_syntax)
+        return {source, std::nullopt};
+
+    auto [archive, member] = getURLAndArchivePattern(source);
+    if (!member.has_value())
+        return {source, std::nullopt};
+
+    /// A definition stored by an earlier version kept `::` literal, so a custom HTTP method or a failover
+    /// group next to it was a plain URL read. Reinterpreting it as an archive would drop the method and read
+    /// the container over `GET`, or pin the listing root to the first alternative and match nothing, which is
+    /// not what the stored definition meant, so such a source stays literal.
+    ///
+    /// The condition has to be the exact complement of what a fresh definition rejects, which is the archive
+    /// half - not the whole source - with the failover check limited to the part before the query, because a
+    /// `{a|b}` template there is expanded locally rather than being a failover group of the archive. A `|`
+    /// in the member path is a literal member name, so it must not exempt the source.
+    if (is_replayed_table_definition
+        && (!configuration.http_method.empty() || archive.substr(0, archive.find_first_of("?#")).contains('|')))
+        return {source, std::nullopt};
+
+    return {archive, member};
+}
+
+std::shared_ptr<StorageWebConfiguration> TableFunctionURL::createWebObjectStorageConfiguration(
+    const String & source,
+    const String & format_,
+    const String & structure_,
+    const String & compression_method_,
+    ContextPtr context) const
+{
+    /// The archive reader issues its own range requests, so a custom HTTP method cannot apply to it.
+    if (!configuration.http_method.empty() && getURLAndArchivePatternForSource(source).second.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
+
+    auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
+    /// The configuration splits the source again when it builds the namespace, so it has to be told the
+    /// decision this function settled on: a definition the exemption kept literal must not be re-split into
+    /// an archive there.
+    object_storage_configuration->setAllowArchivePathSyntax(getURLAndArchivePatternForSource(source).second.has_value());
+    /// An archive read pins one resource: a failover group would let the metadata probe and the data read
+    /// land on different origins, so the archive identity, the caches and the distributed task would all
+    /// have to carry the selected origin. Not supported: use a single URL.
+    object_storage_configuration->setRejectArchiveFailover(!is_replayed_table_definition);
+    auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure_, compression_method_, configuration.headers);
+    StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+    return object_storage_configuration;
 }
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const

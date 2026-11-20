@@ -191,6 +191,25 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
+/// Whether reading this source has to list an HTTP index page, which is what the experimental
+/// `allow_url_wildcard_from_index_pages` setting gates. A Web archive read expands only a literal path
+/// locally, so a glob character in the URL path - `*`, `**` or a `{...}` template - makes it list.
+/// A `|` makes the path a failover group, which an archive read rejects before it could list.
+bool urlPathNeedsIndexPageListing(std::string_view uri)
+{
+    const size_t scheme_pos = uri.find("://");
+    const size_t authority_start = (scheme_pos == std::string_view::npos) ? 0 : scheme_pos + 3;
+    const size_t path_start = uri.find('/', authority_start);
+    if (path_start == std::string_view::npos)
+        return false;
+
+    const size_t path_end = uri.find_first_of("?#", path_start);
+    const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
+    if (path.contains('|'))
+        return false;
+    return path.find_first_of("*{") != std::string_view::npos;
+}
+
 String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))

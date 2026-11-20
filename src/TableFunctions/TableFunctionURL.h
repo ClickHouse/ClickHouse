@@ -105,6 +105,20 @@ protected:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
+    void checkExperimentalURLWildcardFromIndexPages() const;
+
+    /// The archive pattern of the source, or nothing when the source is read as a literal URL. A definition
+    /// stored by an earlier version kept `::` literal, so a custom HTTP method next to it was a plain URL
+    /// read; reinterpreting it as an archive would drop the method and read the container over `GET`.
+    std::pair<String, std::optional<String>> getURLAndArchivePatternForSource(const String & source) const;
+
+    std::shared_ptr<StorageWebConfiguration> createWebObjectStorageConfiguration(
+        const String & source,
+        const String & format_,
+        const String & structure_,
+        const String & compression_method_,
+        ContextPtr context) const;
+
     StorageURL::Configuration configuration;
 
     /// When the URL scheme maps to another backend (file://, s3://, az://, hdfs://, ...), the `url`

@@ -99,14 +99,22 @@ def test_url_cluster():
     assert result.strip() == "1\t2\t3"
 
 
-def test_url_cluster_rejects_url_wildcard_from_index_pages():
-    error = node1.query_and_get_error(
+def test_url_cluster_supports_url_wildcard_from_index_pages():
+    result = node1.query(
         with_url_wildcard_setting(
-            "SELECT count() FROM urlCluster('test_cluster_two_shards', "
+            "SELECT sum(x) FROM urlCluster('test_cluster_two_shards', "
             "'http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
         )
     )
-    assert "`urlCluster` does not support wildcard expansion from HTTP index pages" in error
+    assert result.strip() == "12"
+
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(c1) FROM urlCluster('test_cluster_two_shards', "
+            "'http://resolver:8087/data/**/part*.tsv', 'TSV')"
+        )
+    )
+    assert result.strip() == "12"
 
 
 def test_url_cluster_secure():
