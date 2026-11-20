@@ -951,7 +951,7 @@ std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & fi
     return parseIcebergDefaultValue(value, iceberg_type, type, field->getValue<bool>(f_required), field_name);
 }
 
-std::string IcebergSchemaProcessor::default_link{};
+[[clang::no_destroy]] std::string IcebergSchemaProcessor::default_link{};
 
 std::optional<String> IcebergSchemaProcessor::findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema)
 {
