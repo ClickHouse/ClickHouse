@@ -36,6 +36,9 @@ SETTINGS {{ settings }};
 -- A date/time destination reads the text through the parser, not the source's internal value through a CAST.
 {{ check('Time to DateTime', 'JSON(a Time)', 'JSON(a DateTime)', '{"a": "00:00:01"}', 'j.a') }}
 {{ check('Date to DateTime', 'JSON(a Date)', 'JSON(a DateTime)', '{"a": "2024-01-15"}', 'j.a') }}
+-- A FixedString to String keeps the trailing zero bytes, which a CAST would strip.
+{{ check('FixedString to String', 'JSON(a FixedString(3))', 'JSON(a String)', '{"a": "a"}', 'hex(j.a)') }}
+{{ check('Array(FixedString) to Array(String)', 'JSON(a Array(FixedString(3)))', 'JSON(a Array(String))', '{"a": ["a", "bc"]}', 'arrayMap(x -> hex(x), j.a)') }}
 
 SELECT name, cfg, result FROM k_results
 WHERE name IN (SELECT name FROM k_results GROUP BY name HAVING uniqExact(result) > 1)

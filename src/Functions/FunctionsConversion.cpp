@@ -2630,6 +2630,15 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (isFixedString(*to_inner))
         return isStringOrFixedString(*from);
 
+    /// A CAST from FixedString to String strips trailing zero bytes, while the parser keeps them.
+    if (isFixedString(*from) && isString(*to_inner))
+        return false;
+
+    /// A CAST to a Nullable destination turns a text-parse failure into NULL, while the parser rejects
+    /// malformed input, so a String source to a Nullable destination goes through the parser.
+    if (isStringOrFixedString(*from) && removeLowCardinality(to)->isNullable())
+        return false;
+
     /// Bool is UInt8, but a CAST normalizes any nonzero to 1 while the parser builds it through UInt8
     /// (truncating), so only a Boolean source matches; a number goes through the parser. The wrapper
     /// SimpleAggregateFunction(any, Bool) is a Boolean too (its serializer writes true/false).
@@ -3462,6 +3471,12 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
+
+            /// The extract-tree FixedString node handles a too-long or zero-padded string differently from the
+            /// serialization the format+parse path uses (it can insert a null into a Nullable where the latter
+            /// rejects), so a FixedString destination takes the whole-block fallback to match it exactly.
+            if (anyInTypeTree(*to_tp, [](const IDataType & t) { return isFixedString(t); }))
+                return {};
 
             /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
             /// destination default: nothing but the Nullable wrapper may differ (else the converted source

@@ -67,3 +67,14 @@ SELECT CAST('{"a":["y"]}'::JSON(a Array(Enum8('x'=1,'y'=2))), 'JSON(a Array(Enum
 SELECT CAST('{"a":["y"]}'::JSON(a Array(Enum8('x'=1,'y'=2))), 'JSON(a Array(Enum8(''x''=1)))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":2}'::JSON, 'JSON(a Enum8(''x''=1))') SETTINGS check_conversion_from_numbers_to_enum = 0; -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":2}'::JSON, 'JSON(a Enum8(''x''=1))') SETTINGS check_conversion_from_numbers_to_enum = 0, json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+
+-- Malformed text to a Nullable typed path is rejected, not stored as NULL, when invalid paths are not
+-- skipped (a CAST to Nullable would turn the parse failure into NULL). Holds for array elements.
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(UUID))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(UUID))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(IPv4))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(IPv4))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(FixedString(3)))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"badbad"}'::JSON(a String), 'JSON(a Nullable(FixedString(3)))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":["badbad"]}'::JSON(a Array(String)), 'JSON(a Array(Nullable(UUID)))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":["badbad"]}'::JSON(a Array(String)), 'JSON(a Array(Nullable(UUID)))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
