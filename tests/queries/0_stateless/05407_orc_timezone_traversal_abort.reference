@@ -1,5 +1,5 @@
-writer: Invalid time zone name
-reader: Invalid time zone name
-reader file: Invalid time zone name
+writer: time zone is rejected
+reader: time zone is rejected
+reader file: time zone is rejected
 --- stateless server is still alive ---
 1

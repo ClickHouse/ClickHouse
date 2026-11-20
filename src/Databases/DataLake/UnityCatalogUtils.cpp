@@ -36,7 +36,7 @@ void checkUnityTableDrop(const Poco::JSON::Object::Ptr & unity_table, const Stri
 
 #include <sstream>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 
 namespace DB::ErrorCodes
 {
@@ -46,7 +46,7 @@ namespace DB::ErrorCodes
 namespace DataLake
 {
 
-/// Delta primitive type name (see `DeltaLakeMetadata::getSimpleTypeByName`) -> Unity `ColumnTypeName`.
+/// Delta primitive type name (see `getDeltaLakeSimpleTypeByName`) -> Unity `ColumnTypeName`.
 static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
 {
     if (delta_type == "boolean") return "BOOLEAN";
@@ -94,7 +94,7 @@ Poco::JSON::Array::Ptr buildUnityColumnsFromDeltaSchema(const Poco::JSON::Array:
             type_name = deltaPrimitiveToUnityTypeName(delta_type);
             if (type_name == "DECIMAL")
             {
-                const auto decimal_type = DB::DeltaLakeMetadata::getSimpleTypeByName(delta_type);
+                const auto decimal_type = DB::getDeltaLakeSimpleTypeByName(delta_type);
                 precision = static_cast<int>(DB::getDecimalPrecision(*decimal_type));
                 scale = static_cast<int>(DB::getDecimalScale(*decimal_type));
             }
