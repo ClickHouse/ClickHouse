@@ -1134,6 +1134,12 @@
             the bucket entries as well; a temporary (307) redirect is checked by host only and is rejected under a bucket-only list:
                     <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
         -->
+
+        <!-- Apply the list to every resolution of a host name by the server, including the ones made inside client
+            libraries, such as the brokers advertised by a Kafka cluster. Only the host is checked then, not the port.
+            The server's own connections (ZooKeeper, Keeper, clusters, replicas, credential providers) are not checked:
+                    <check_name_resolution>true</check_name_resolution>
+        -->
     <!--</remote_url_allow_hosts>-->
 
     <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.

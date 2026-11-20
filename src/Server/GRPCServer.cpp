@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
@@ -2208,7 +2209,11 @@ void GRPCServer::start()
     builder.SetDefaultCompressionLevel(default_transport_compression.level);
 
     queue = builder.AddCompletionQueue();
-    grpc_server = builder.BuildAndStart();
+    {
+        /// gRPC resolves the address to listen on, which comes from the server configuration.
+        NameResolutionFilter::InternalScope internal_scope;
+        grpc_server = builder.BuildAndStart();
+    }
     if (nullptr == grpc_server)
     {
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Can't start grpc server, there is a port conflict");

@@ -8,6 +8,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <ifaddrs.h>
 #include <filesystem>
 
@@ -53,6 +54,8 @@ namespace
     {
         IPAddress addr_v6 = toIPv6(address);
 
+        /// The host is only compared with the address of a client, nothing connects to it.
+        NameResolutionFilter::InternalScope internal_scope;
         auto host_addresses = DNSResolver::instance().resolveHostAllInOriginOrder(host);
 
         for (const auto & addr : host_addresses)

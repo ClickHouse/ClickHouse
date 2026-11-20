@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
@@ -52,6 +53,22 @@ namespace
 {
 
 const std::string copy_lock_file = "STATE_COPY_LOCK";
+
+/// The raft peers come from the server configuration and from the cluster configuration replicated by Raft, so
+/// they are not subject to `remote_url_allow_hosts`. NuRaft resolves them in an internal thread of `asio`, which
+/// no `NameResolutionFilter::InternalScope` reaches, so they are registered as internal hosts.
+void addInternalHosts(const nuraft::cluster_config & config)
+{
+    for (const auto & server : config.get_servers())
+    {
+        std::string_view endpoint = server->get_endpoint();
+        if (endpoint.starts_with('['))
+            endpoint = endpoint.substr(1, endpoint.find(']') - 1);
+        else if (const auto colon = endpoint.rfind(':'); colon != std::string_view::npos)
+            endpoint = endpoint.substr(0, colon);
+        NameResolutionFilter::addInternalHost(endpoint);
+    }
+}
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -193,6 +210,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
 
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
+        NameResolutionFilter::addInternalHost(hostname);
         int port = config.getInt(full_prefix + ".port");
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
@@ -376,7 +394,11 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
 {
     auto entry_with_change = log_store->getLatestConfigChange();
     if (entry_with_change)
-        return ClusterConfig::deserialize(entry_with_change->get_buf());
+    {
+        auto config = ClusterConfig::deserialize(entry_with_change->get_buf());
+        addInternalHosts(*config);
+        return config;
+    }
     return nullptr;
 }
 
@@ -396,6 +418,7 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     std::lock_guard lock(configuration_wrapper_mutex);
     nuraft::ptr<nuraft::buffer> buf = config.serialize();
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
+    addInternalHosts(*configuration_wrapper.cluster_config);
 }
 
 const String & KeeperStateManager::getOldServerStatePath()

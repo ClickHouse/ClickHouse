@@ -1,6 +1,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HostResolvePool.h>
+#include <Common/NameResolutionFilter.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -1117,6 +1118,11 @@ private:
         /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
         /// there would break certificate verification. Routing it through the cache needs a
         /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
+        ///
+        /// The target host is resolved by the proxy, so it is checked against `remote_url_allow_hosts` here, and
+        /// the proxy itself, which comes from the server configuration or the environment, is not.
+        NameResolutionFilter::check(host);
+
 #if USE_SILK
         /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
         /// with ordinary Poco sockets, so the connection would block despite its transport.
@@ -1126,6 +1132,7 @@ private:
                 "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for fiber-aware HTTPS connections",
                 host, proxy_configuration.host);
 #endif
+
         auto connection = createConnection();
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
@@ -1135,6 +1142,7 @@ private:
             setTimeouts(*connection, timeouts);
 
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
+            NameResolutionFilter::InternalScope internal_scope;
             connection->doConnect(connect_time);
             applySocketBufferSizes(*connection, group->getSocketBufferSizes());
         }

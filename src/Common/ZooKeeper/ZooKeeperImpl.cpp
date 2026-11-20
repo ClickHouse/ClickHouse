@@ -26,6 +26,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -610,6 +611,8 @@ void ZooKeeper::connect(
     /// A node that cannot be resolved on a later try keeps the address of the previous one.
     auto resolve_nodes = [&]
     {
+        /// The nodes come from the server configuration, they are not subject to `remote_url_allow_hosts`.
+        DB::NameResolutionFilter::InternalScope internal_scope;
         bool dns_error = false;
         for (const auto & node : nodes)
         {

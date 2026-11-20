@@ -7,6 +7,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/HTTPConnectionInfo.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -22,6 +23,9 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     /// The lookup can go out inside the scope of a logged object storage request, right before it,
     /// but is not that request: never report its connection as the one that carried the object.
     HTTPConnectionInfoHelperRequests helper_requests;
+
+    /// The endpoint comes from the server configuration, it is not subject to `remote_url_allow_hosts`.
+    NameResolutionFilter::InternalScope internal_scope;
 
     auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);

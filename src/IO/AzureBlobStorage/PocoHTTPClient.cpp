@@ -5,6 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
+#include <Common/NameResolutionFilter.h>
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -637,13 +638,34 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
 }
 
+namespace
+{
+
+/// The endpoints of the credentials, the instance metadata service and the authority host, come from the
+/// environment, not from a user, so they are not subject to `remote_url_allow_hosts`.
+class PocoAzureHTTPClientForCredentials : public DB::PocoAzureHTTPClient
+{
+public:
+    using DB::PocoAzureHTTPClient::PocoAzureHTTPClient;
+
+    std::unique_ptr<Azure::Core::Http::RawResponse> Send(
+        Azure::Core::Http::Request & request,
+        Azure::Core::Context const & context) override
+    {
+        DB::NameResolutionFilter::InternalScope internal_scope;
+        return DB::PocoAzureHTTPClient::Send(request, context);
+    }
+};
+
+}
+
 /// Default transport for SDK pipelines created without an explicit transport,
 /// e.g. internal pipelines of `ManagedIdentityCredential` and `WorkloadIdentityCredential`.
 /// The SDK is built with `BUILD_TRANSPORT_CUSTOM_ADAPTER` and has no other transport.
 std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport()
 {
     static const DB::RemoteHostFilter remote_host_filter;
-    static auto transport = std::make_shared<DB::PocoAzureHTTPClient>(
+    static auto transport = std::make_shared<PocoAzureHTTPClientForCredentials>(
         DB::PocoAzureHTTPClientConfiguration{
             .remote_host_filter = remote_host_filter,
             .max_redirects = 10,

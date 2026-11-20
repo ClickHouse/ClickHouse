@@ -39,6 +39,7 @@
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUKernelCache.h>
 #endif
+#include <Common/NameResolutionFilter.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -7322,6 +7323,7 @@ bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & confi
         if (startsWith(key, "node"))
         {
             String host = config.getString(config_name + "." + key + ".host");
+            NameResolutionFilter::InternalScope internal_scope;
             if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                 return true;
         }
@@ -7862,6 +7864,7 @@ String Context::getInterserverScheme() const
 void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
     shared->remote_host_filter.setValuesFromConfig(config);
+    NameResolutionFilter::setValuesFromConfig(config);
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const

@@ -4,6 +4,7 @@
 #include <Poco/Util/Application.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 
 #include <mutex>
 #include <iomanip>
@@ -41,5 +42,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 
 Poco::Net::SocketAddress GraphiteWriter::resolveAddress() const
 {
+    /// The Graphite server comes from the server configuration.
+    DB::NameResolutionFilter::InternalScope internal_scope;
     return DB::DNSResolver::instance().resolveAddress(host, static_cast<UInt16>(port));
 }

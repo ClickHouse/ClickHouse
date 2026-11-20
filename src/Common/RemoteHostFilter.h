@@ -30,6 +30,11 @@ public:
 
     void checkHostAndPort(const std::string & host, const std::string & port) const; /// Does the same as checkURL, but for host and port.
 
+    /// Returns whether a connection to some port of `host` can be allowed, for checks that do not know the port,
+    /// such as a name resolution. A `<host>` entry matches by its host part, a `<host_regexp>` matches the bare
+    /// host name, and an `<s3_bucket>` entry `host/bucket` matches both `host` and the virtual-hosted `bucket.host`.
+    bool checkHostName(const std::string & host) const;
+
     /// Parses a `host[:port]` string, checks it as checkHostAndPort does, and returns it rebuilt as
     /// `host:port` with an explicit port - the string to hand to a client library in place of the
     /// original value, so the library dials exactly what the filter saw. A string whose re-parse by

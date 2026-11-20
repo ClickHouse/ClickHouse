@@ -1,5 +1,6 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/NetException.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/IPAddress.h>
@@ -37,6 +38,9 @@ bool isIPAddressLiteral(const std::string & host)
 
 Poco::Net::SocketAddress makeBindAddress(const std::string & host, uint16_t port)
 {
+    /// A local address to listen on, from the server configuration, is not subject to `remote_url_allow_hosts`.
+    NameResolutionFilter::InternalScope internal_scope;
+
     /// A literal is handed to Poco exactly as before, rather than parsed here. For `::` Poco falls
     /// back to `getaddrinfo` (see above), which refuses it on a host with no IPv6 address configured
     /// (`EAI_ADDRFAMILY`, because of `AI_ADDRCONFIG`). `listen_try` relies on that: with
