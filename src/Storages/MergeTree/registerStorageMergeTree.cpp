@@ -43,6 +43,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#include <Databases/IDatabase.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -992,7 +993,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            metadata.setSettingsChanges(args.storage_def->settings->ptr());
 
         /// Whether the table's own stored `SETTINGS` clause states this setting. The merged
         /// `storage_settings` cannot answer that: it starts from the server-level defaults, and

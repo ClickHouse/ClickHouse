@@ -195,10 +195,10 @@ void recomputeImplicitIndexPolicy(
     /// on a table whose `enable_block_number_column = 0` override is being reset, so the running table
     /// did not regain `auto_minmax_index__block_number` until DETACH / ATTACH or restart.
     MergeTreeSettings effective_settings = default_settings ? *default_settings : context->getMergeTreeSettings();
-    if (metadata.settings_changes)
+    if (const auto settings_changes_ast = metadata.getSettingsChanges())
     {
         SettingsChanges builtin_changes;
-        for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+        for (const auto & change : settings_changes_ast->as<ASTSetQuery &>().changes)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
                 builtin_changes.push_back(change);
@@ -1519,14 +1519,15 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_SETTING)
     {
-        if (!metadata.settings_changes)
+        auto settings_changes_ast = metadata.getSettingsChanges();
+        if (!settings_changes_ast)
         {
             auto changes = make_intrusive<ASTSetQuery>();
             changes->is_standalone = false;
-            metadata.settings_changes = std::move(changes);
+            settings_changes_ast = std::move(changes);
         }
 
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = settings_changes_ast->as<ASTSetQuery &>().changes;
         resetSettings(settings_from_storage, settings_resets);
 
         for (const auto & change : settings_changes)
@@ -1549,14 +1550,17 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
+        metadata.setSettingsChanges(settings_changes_ast);
         recomputeImplicitIndexPolicy(metadata, context, settings_changes, settings_resets, default_merge_tree_settings);
     }
     else if (type == RESET_SETTING)
     {
-        if (!metadata.settings_changes)
+        if (!metadata.hasSettingsChanges())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        auto settings_changes_ast = metadata.getSettingsChanges();
+        resetSettings(settings_changes_ast->as<ASTSetQuery &>().changes, settings_resets);
+        metadata.setSettingsChanges(settings_changes_ast);
         recomputeImplicitIndexPolicy(metadata, context, /*settings_changes=*/{}, settings_resets, default_merge_tree_settings);
     }
     else if (type == RENAME_COLUMN)
@@ -2785,7 +2789,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
-            if (metadata->settings_changes == nullptr)
+            if (!metadata->hasSettingsChanges())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)

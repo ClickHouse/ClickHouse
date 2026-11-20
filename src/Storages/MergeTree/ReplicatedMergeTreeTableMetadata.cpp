@@ -276,12 +276,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
     /// otherwise the index is explicit locally but stripped here, and the replica cannot attach.
     const auto stored_and_enabled = [&](std::string_view name, bool enabled)
     {
-        if (!enabled || !table_metadata.settings_changes)
-            return false;
-        for (const auto & change : table_metadata.settings_changes->as<const ASTSetQuery &>().changes)
-            if (change.name == name)
-                return true;
-        return false;
+        return enabled && table_metadata.hasSettingChange(String(name));
     };
     const bool add_minmax_index_for_numeric_columns
         = stored_and_enabled("add_minmax_index_for_numeric_columns", table_metadata.add_minmax_index_for_numeric_columns);
