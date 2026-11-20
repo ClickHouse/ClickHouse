@@ -271,7 +271,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// The stored codes of an Array(UInt8) column were computed from shifted elements, shift the reference vector the same way.
     if (WhichDataType(element_type).isUInt8() && quantizedCodecShiftsUInt8(params->method))
         for (auto & value : reference_vector)
-            value -= QUANTIZED_CODEC_UINT8_SHIFT;
+            value -= static_cast<Float64>(QUANTIZED_CODEC_UINT8_SHIFT);
 
     /// The rewrite introduces internal columns named `__quantize_*` (the approximate-distance sort key and the constant
     /// function arguments). Blocks permit duplicate column names, so if a column with such a name already flows into the
@@ -298,11 +298,11 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (storage_columns.has(codes_column) || (is_pq && storage_columns.has(codebook_column)))
         return false;
 
-    /// `rabitq`/`turboquant` are cosine-only estimators (they drop the vector norm), so their shortlist ranks by angle.
-    /// Do not use it for an L2Distance query: a true L2-nearest row could be dropped before the exact rescore. Leave the
-    /// query exact instead. (`int8`, `prefix` and `product` retain enough to rank L2.)
-    if (is_l2 && !is_pq && !VectorQuantizer::supportsL2(method))
-        return false;
+    /// `rabitq`/`turboquant` are cosine-only estimators (they drop the vector norm). For an L2Distance query their
+    /// shortlist ranks by the angle and the exact rescore ranks by L2Distance. The final distances are exact, but the
+    /// recall depends on how much the vector norms vary: a true L2-nearest row can be missing from the shortlist if its
+    /// norm differs much from that of the reference vector. For normalized vectors, both rankings are the same.
+    const bool is_l2_shortlist = is_l2 && (is_pq || VectorQuantizer::supportsL2(method));
 
     /// Shortlist size k' = k * fetch_multiplier, clamped so that the inner LimitStep stays eligible for lazy
     /// materialization of the heavy vector column.
@@ -399,7 +399,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     auto uint8_type = std::make_shared<DataTypeUInt8>();
     const auto & is_l2_node = approx_dag.addColumn(
-        uint8_type->createColumnConst(1, Field(static_cast<UInt64>(is_l2 ? 1 : 0))), uint8_type, "__quantize_is_l2");
+        uint8_type->createColumnConst(1, Field(static_cast<UInt64>(is_l2_shortlist ? 1 : 0))), uint8_type, "__quantize_is_l2");
 
     const ActionsDAG::Node * approx_node = nullptr;
     if (is_pq)
