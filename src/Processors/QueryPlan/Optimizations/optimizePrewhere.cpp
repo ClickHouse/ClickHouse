@@ -6,14 +6,12 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -26,6 +24,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -195,47 +194,49 @@ static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
     return normalized->getOutputs()[0]->getHash();
 }
 
-static bool hasStatefulDefault(
-    const String & column_name, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns);
-
-static bool hasStatefulFunction(
-    const IAST & ast, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns)
+/// An expensive function like `aiFilter` is stateful only to count its calls, so it may run on the rows that passed PREWHERE.
+static bool hasRowDependentFunctions(const ActionsDAG & dag)
 {
-    if (const auto * function = ast.as<ASTFunction>())
+    return std::ranges::any_of(dag.getNodes(), [](const ActionsDAG::Node & node)
     {
-        auto function_builder = FunctionFactory::instance().tryGet(function->name, context);
-        if (function_builder && function_builder->isStateful())
-            return true;
-    }
-    else if (const auto * identifier = ast.as<ASTIdentifier>())
-    {
-        return hasStatefulDefault(identifier->name(), columns, context, visited_columns);
-    }
-
-    for (const auto & child : ast.children)
-        if (hasStatefulFunction(*child, columns, context, visited_columns))
-            return true;
-
-    return false;
+        return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isStateful() && !node.function_base->isExpensive();
+    });
 }
 
 /// The reader fills the default of a column missing in a part after PREWHERE, on the rows that passed it.
-static bool hasStatefulDefault(
-    const String & column_name, const ColumnsDescription & columns, const ContextPtr & context, NameSet & visited_columns)
+static bool hasStatefulDefaultOfMissingColumn(
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const RangesInDataParts & parts,
+    const ContextPtr & context,
+    NameSet & visited_columns)
 {
-    if (!visited_columns.insert(column_name).second)
+    checkStackSize();
+
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    String name_in_storage = column ? column->getNameInStorage() : column_name;
+    if (!visited_columns.insert(name_in_storage).second)
         return false;
 
-    auto column_default = columns.getDefault(column_name);
-    return column_default && column_default->expression
-        && hasStatefulFunction(*column_default->expression, columns, context, visited_columns);
-}
+    auto column_default = columns.getDefault(name_in_storage);
+    if (!column_default || !column_default->expression)
+        return false;
 
-static bool isMissingInSomePart(const String & column_name, const RangesInDataParts & parts)
-{
-    for (const auto & part : parts)
-        if (!part.data_part->getColumnsDescription().has(column_name))
+    if (std::ranges::all_of(parts, [&](const auto & part) { return part.data_part->getColumnsDescription().has(name_in_storage); }))
+        return false;
+
+    TablesWithColumns tables;
+    ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
+    ExpressionInfoVisitor(expression_info).visit(column_default->expression);
+    if (expression_info.is_stateful_function)
+        return true;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+    for (const auto & identifier : identifiers)
+        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, context, visited_columns))
             return true;
+
     return false;
 }
 
@@ -335,7 +336,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     /// A stateful function in the filter expression would be calculated only on the rows that passed PREWHERE.
-    if (filter_step->getExpression().hasStatefulFunctions())
+    if (hasRowDependentFunctions(filter_step->getExpression()))
         return;
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
@@ -345,9 +346,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         const auto & columns = storage_snapshot->metadata->getColumns();
         NameSet visited_columns;
         for (const auto & column : queried_columns)
-            if (columns.hasDefault(column) && isMissingInSomePart(column, read_from_merge_tree_step->getParts())
-                && hasStatefulDefault(column, columns, context, visited_columns))
+        {
+            if (hasStatefulDefaultOfMissingColumn(column, columns, read_from_merge_tree_step->getParts(), context, visited_columns))
                 return;
+        }
     }
 
     /// Statistics are only used to reorder conditions, so skip if there is just one.

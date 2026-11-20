@@ -1,4 +1,6 @@
 -- Tags: no-random-settings, no-parallel-replicas
+-- no-random-settings: the values of `rowNumberInAllBlocks` depend on the order the rows are read in.
+-- no-parallel-replicas: `rowNumberInAllBlocks` counts only the rows of the local read.
 
 -- A stateful function must see the same rows with and without `optimize_move_to_prewhere`.
 
@@ -23,15 +25,18 @@ SELECT a FROM (SELECT a FROM t_prewhere_stateful WHERE a % 2 = 0) WHERE rowNumbe
 DROP TABLE t_prewhere_stateful;
 
 DROP TABLE IF EXISTS t_prewhere_stateful_default;
-CREATE TABLE t_prewhere_stateful_default (a UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_prewhere_stateful_default (a UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_prewhere_stateful_default SELECT number FROM numbers(10);
 ALTER TABLE t_prewhere_stateful_default ADD COLUMN n UInt64 DEFAULT rowNumberInAllBlocks();
 ALTER TABLE t_prewhere_stateful_default ADD COLUMN m UInt64 DEFAULT n + 100;
+ALTER TABLE t_prewhere_stateful_default ADD COLUMN tup Tuple(x UInt64, y String) DEFAULT tuple(rowNumberInAllBlocks(), 'z');
 
 SELECT '-- stateful default of a missing column';
 SELECT n FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a;
 SELECT n FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 SELECT m FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a;
 SELECT m FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
+SELECT tup.x FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a;
+SELECT tup.x FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 
 DROP TABLE t_prewhere_stateful_default;
