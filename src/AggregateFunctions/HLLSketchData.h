@@ -74,7 +74,7 @@ private:
             {
                 noteInputLgK(*sk_update);
                 sk_union->update(*sk_update);
-                sk_update.reset();
+                sk_update = nullptr;
             }
         }
         return sk_union.get();
