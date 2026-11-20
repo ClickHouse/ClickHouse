@@ -24,6 +24,8 @@
 #include <string>
 #include <type_traits>
 
+extern "C" void * __cxa_current_primary_exception() noexcept;
+
 namespace DB::GPU
 {
 
@@ -50,27 +52,31 @@ __host__ auto guarded(const std::string & doing, Body && body)
     {
         return body();
     }
-    catch (const rmm::out_of_memory & exception)
-    {
-        throwGPUError((doing + ": out of device memory: " + exception.what()).c_str());
-    }
-    catch (const cudf::cuda_error & exception)
-    {
-        throwGPUError((doing + ": CUDA error: " + messageOf<std::runtime_error>(exception)).c_str());
-    }
-    catch (const cudf::logic_error & exception)
-    {
-        throwGPUError((doing + ": " + messageOf<std::logic_error>(exception)).c_str());
-    }
     catch (const std::exception & exception)
     {
         if (isClickHouseException(exception))
             throw;
 
-        const cudaError_t last = cudaPeekAtLastError();
-        std::string message = doing + ": an exception the device library does not know";
-        if (last != cudaSuccess)
-            message += std::string(", the device reports: ") + cudaGetErrorString(last);
+        /// Leaked: its destructor would bind to libc++'s too.
+        static_cast<void>(__cxa_current_primary_exception());
+
+        std::string message = doing + ": ";
+        if (dynamic_cast<const cudf::cuda_error *>(&exception))
+            message += "CUDA error: ";
+
+        /// rmm's own `what` is of its header, compiled here.
+        if (const auto * out_of_memory = dynamic_cast<const rmm::out_of_memory *>(&exception))
+            message += std::string("out of device memory: ") + out_of_memory->what();
+        else if (const auto * runtime = dynamic_cast<const std::runtime_error *>(&exception))
+            message += messageOf<std::runtime_error>(*runtime);
+        else if (const auto * logic = dynamic_cast<const std::logic_error *>(&exception))
+            message += messageOf<std::logic_error>(*logic);
+        else
+        {
+            message += "an exception the device library does not know";
+            if (const cudaError_t last = cudaPeekAtLastError(); last != cudaSuccess)
+                message += std::string(", the device reports: ") + cudaGetErrorString(last);
+        }
         throwGPUError(message.c_str());
     }
 }
