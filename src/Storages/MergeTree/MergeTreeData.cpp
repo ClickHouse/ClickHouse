@@ -148,6 +148,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
@@ -232,6 +233,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
@@ -652,7 +654,7 @@ struct TableDiskRoot
 };
 
 std::mutex table_disk_roots_mutex;
-std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
+[[clang::no_destroy]] std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
 
 /// Whether one path is equal to the other one or contains it, compared by path components.
 bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
@@ -980,6 +982,111 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
             auto & result_command = result_commands.emplace_back(command);
             result_command.mutation_version = mutation_version;
         }
+    }
+}
+
+void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const
+{
+    std::erase_if(commands, [&](const MutationCommand & command)
+    {
+        if (!command.has_partition)
+            return false;
+
+        /// A scoped command whose partitions are not resolved is applied to no partition at all: not
+        /// applying it only defers its effect until the mutation materializes, while applying it to a
+        /// partition it does not name answers wrong values and can persist them.
+        return !command.partition_ids || !command.partition_ids->contains(partition_id);
+    });
+}
+
+void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned) const
+{
+    auto is_pinned = [](const IAST * partition_ast)
+    {
+        const auto * partition = partition_ast->as<ASTPartition>();
+        return partition && partition->id;
+    };
+
+    auto make_partition_id_ast = [](const String & partition_id)
+    {
+        auto partition = make_intrusive<ASTPartition>();
+        partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+        return partition;
+    };
+
+    for (auto & command : commands)
+    {
+        if (!command.has_partition || command.partition_ids)
+            continue;
+
+        auto command_ast = command.ast();
+        if (!command_ast)
+            continue;
+
+        if (only_pinned)
+        {
+            bool all_pinned = true;
+            if (const auto * partitions = command_ast->partitions)
+            {
+                for (const auto & partition : partitions->children)
+                    all_pinned = all_pinned && is_pinned(partition.get());
+            }
+            else if (const auto * partition = command_ast->partition)
+            {
+                all_pinned = is_pinned(partition);
+            }
+
+            /// An entry written by an older version may still carry a partition expression. It is not
+            /// evaluated here: this runs while the table is being loaded (the expression may contain a
+            /// subquery over the very table, which is not in the catalog yet) or while the mutations of a
+            /// replicated table are updated. Such a command stays unresolved and is not applied on the fly;
+            /// its partitions are evaluated when the mutation materializes, as before.
+            if (!all_pinned)
+                continue;
+        }
+
+        /// Resolved before the AST is opened for editing, so that an expression which cannot be
+        /// resolved throws with the command left untouched.
+        std::vector<String> resolved;
+        if (const auto * partitions = command_ast->partitions)
+        {
+            for (const auto & partition : partitions->children)
+                resolved.push_back(getPartitionIDFromQuery(partition, local_context, nullptr));
+        }
+        else if (const auto * partition = command_ast->partition)
+        {
+            resolved.push_back(getPartitionIDFromQuery(ASTPtr(partition->clone()), local_context, nullptr));
+        }
+
+        /// Every partition expression is replaced with the `ID '...'` it resolves to, so the command
+        /// text that is persisted - in `mutation_*.txt` or in the `/mutations` znode - names exactly the
+        /// partitions resolved here. Whatever parses it again later (loading the entry after a restart,
+        /// another replica, the rewrites of `AlterConversions`) gets the same partitions back without
+        /// evaluating any user SQL.
+        auto handle = command.mutateAst();
+        if (auto * partitions = handle->partitions)
+        {
+            chassert(partitions->children.size() == resolved.size());
+            for (size_t i = 0; i < resolved.size(); ++i)
+                partitions->children[i] = make_partition_id_ast(resolved[i]);
+        }
+        else if (const auto * partition = handle->partition)
+        {
+            chassert(resolved.size() == 1);
+            for (auto & child : handle->children)
+            {
+                if (child.get() == partition)
+                {
+                    child = make_partition_id_ast(resolved.front());
+                    handle->partition = child.get();
+                    break;
+                }
+            }
+        }
+
+        NameSet partition_ids(resolved.begin(), resolved.end());
+        handle.commit();
+        command.partition_ids = std::move(partition_ids);
     }
 }
 
@@ -1385,6 +1492,19 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         window_begin = window_end;
     }
+}
+
+bool MergeTreeData::isInsertOrderSensitive() const
+{
+    /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
+    /// `Replacing` keeps the last inserted row among rows with equal versions too.
+    /// A table with a `UNIQUE KEY` resolves a conflict between two rows by the order in which their
+    /// blocks are committed (see `unique_key_conflict_action`), so it depends on the input order as well.
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Coalescing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::Replacing
+        || hasUniqueKey();
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -2732,7 +2852,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     /// TODO Checks for Graphite mode.
 }
 
-const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
+[[clang::no_destroy]] const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
 
 Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const
 {
@@ -6610,9 +6730,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
+    const bool disk_setting_changed = new_metadata.hasSettingsChanges() && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
-        /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        /*new_changes=*/new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes);
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
@@ -6796,7 +6916,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
-            if (old_metadata.settings_changes == nullptr)
+            if (!old_metadata.hasSettingsChanges())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
 
@@ -7270,9 +7390,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
     /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
     MergeTreeSettingsPtr alter_effective_settings = getSettings();
-    if (new_metadata.settings_changes)
+    if (new_metadata.hasSettingsChanges())
     {
-        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         /// The settings constraints below compare the resolved `disk`, so it is resolved here. A changed
         /// `disk` is a fresh definition and is checked as one, before anything registers the disk unchecked.
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
@@ -7303,7 +7423,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (new_storage_policy != getStoragePolicy())
     {
         /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
-        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context, /* check_remote_hosts */ true);
 
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
@@ -7395,7 +7515,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (old_metadata.hasSettingsChanges())
     {
         auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
@@ -11795,9 +11915,12 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         {
             auto query_tree = subquery->detachQueryTree();
             createUniqueAliasesIfNecessary(query_tree, execution_context);
+            /// The `Planner` mutates the options it is given (see `Planner::markDistributedPlanContext`),
+            /// so each subquery gets its own copy and cannot affect the planning of its siblings.
+            SelectQueryOptions current_subquery_options = subquery_options;
             Planner subquery_planner(
                 query_tree,
-                subquery_options,
+                current_subquery_options,
                 std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
             subquery_planner.buildQueryPlanIfNeeded();
 
@@ -13350,10 +13473,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     {
         auto func = column.getAggregateFunction();
         Arena & arena = column.createOrGetArena();
-        size_t size_of_state = func->sizeOfData();
-        size_t align_of_state = func->alignOfData();
-        auto * place = arena.alignedAlloc(size_of_state, align_of_state);
-        func->create(place);
+        column.insertDefault();
+        auto * place = column.getData().back();
         if (const AggregateFunctionCount * /*agg_count*/ _ = typeid_cast<const AggregateFunctionCount *>(func.get()))
             AggregateFunctionCount::set(place, value.safeGet<UInt64>());
         else
@@ -13362,7 +13483,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto * value_column_ptr = value_column.get();
             func->add(place, &value_column_ptr, 0, &arena);
         }
-        column.insertFrom(place);
     };
 
     Block virtual_columns_block;
@@ -13436,6 +13556,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
+    /// published only when the block is returned, otherwise the ordinary read counts the same parts
+    size_t granules_dropped_by_partition_key = 0;
     DataPartsVector real_parts;
     real_parts.reserve(rows);
     for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
@@ -13464,12 +13586,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
-                continue;
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
+        }
+
+        if (partition_pruner && partition_pruner->canBePruned(*part))
+        {
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
         }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
@@ -13598,6 +13723,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
 
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
     return res;
 }
 
@@ -13653,9 +13779,10 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
 void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
 {
     auto settings = getDefaultSettings();
-    if (metadata.settings_changes)
+    if (metadata.hasSettingsChanges())
     {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        const auto settings_changes_ast = metadata.getSettingsChanges();
+        const auto & changes = settings_changes_ast->as<const ASTSetQuery &>().changes;
         settings->applyChangesLeavingDiskUnresolved(changes);
     }
 
@@ -15990,6 +16117,27 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         LOG_TRACE(log, "Outdated parts {} may be hold by SELECT query and still need the index", fmt::join(getPartsNames(parts_in_use), ", "));
 
     return parts_to_clear.size();
+}
+
+void MergeTreeData::clearVectorSimilarityIndexCache() const
+{
+    auto vector_similarity_index_cache = getContext()->getVectorSimilarityIndexCache();
+    if (!vector_similarity_index_cache)
+        return;
+
+    /// The cache is keyed by the paths of the parts. We also take outdated parts: the entries of an
+    /// outdated part stay in the cache until the part is destroyed or the cleanup thread clears the caches of the part.
+    std::unordered_set<String> paths_to_data_parts;
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & part : data_parts_by_info)
+            /// Skip `PreActive` parts: an INSERT renames them in `Transaction::renameParts` without holding `data_parts_mutex`, so
+            /// reading their paths would be a data race. Also, queries never read `PreActive` parts, so there can be no cache entries.
+            if (part->getState() != DataPartState::PreActive)
+                paths_to_data_parts.insert(part->getPathForCacheKey());
+    }
+
+    vector_similarity_index_cache->clear(paths_to_data_parts);
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

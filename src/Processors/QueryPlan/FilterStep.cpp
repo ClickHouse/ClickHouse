@@ -35,6 +35,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {

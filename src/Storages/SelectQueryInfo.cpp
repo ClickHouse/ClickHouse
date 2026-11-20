@@ -4,6 +4,8 @@
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
