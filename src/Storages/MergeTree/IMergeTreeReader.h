@@ -111,10 +111,13 @@ public:
 
     /// Enables `takeCompressedBytesRead`. The readers of a read share `counted`, so a block several of them load is counted
     /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
+    /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
+    /// reading from the cache; it still writes to it.
     virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted)
     {
         chassert(!counted_compressed_blocks || counted_compressed_blocks == counted);
         counted_compressed_blocks = std::move(counted);
+        columns_cache_reads_possible = false;
     }
 
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
@@ -180,7 +183,8 @@ protected:
 
     /// See `countCompressedBytesRead`.
     CountedCompressedBlocksPtr counted_compressed_blocks;
-    /// Granules served from the columns cache load nothing from the part, so the bytes read are not measured then.
+    /// Granules served from the columns cache load nothing from the part, so the bytes read are not measured then. Not
+    /// expected after `countCompressedBytesRead`, which stops the reads from the cache.
     bool served_from_columns_cache = false;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;

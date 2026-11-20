@@ -7,10 +7,8 @@
 05452_wide_single_stream_full_and_size	1
 1
 1
-05452_cache_compact_1	1
-05452_cache_compact_2	1
-05452_cache_wide_1	1
-05452_cache_wide_2	1
+compact	1
+wide	1
 05452_skew_compact_prewhere	1
 05452_skew_compact_primary_key	1
 05452_skew_wide_prewhere	1

@@ -186,10 +186,9 @@ SELECT key, sum(value) FROM t_one_block_compact GROUP BY key FORMAT Null
 SETTINGS max_threads = 4, max_block_size = 128, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
     merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 1, log_comment = '05452_one_block_compact';
 
--- Rows served from the columns cache are read from no file, so no statistics are collected for a read the cache serves.
--- The first read must not serve itself from the cache: the ranges are not split into overlapping ones.
-SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
+-- Rows served from the columns cache are read from no file, so a read that collects statistics doesn't read from the cache,
+-- and the second read is measured as the first one, which filled the cache.
+SET use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1;
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_1';
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_wide_2';
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_cache_compact_1';
@@ -199,15 +198,16 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, use_colu
 
 SYSTEM FLUSH LOGS query_log;
 
--- A read is measured if the cache served nothing. Which granules it serves is not fixed: other tests can evict the
--- entries before the second read.
-SELECT log_comment, if(ProfileEvents['ColumnsCacheHits'] = 0,
-    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
-    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_without_cache_hits
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
-ORDER BY log_comment;
+SELECT part_type, min(input_bytes) > 0 AND max(input_bytes) <= min(input_bytes) * 1.25 AS measured_with_columns_cache
+FROM
+(
+    SELECT extract(log_comment, '05452_cache_(\\w+)_\\d') AS part_type, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
+)
+GROUP BY part_type
+ORDER BY part_type;
 
 WITH
     (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
