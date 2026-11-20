@@ -14,6 +14,25 @@ SELECT count(), uniqExact(progress), min(progress), max(progress), countIf(progr
 SELECT count() FROM (SELECT intDiv(number, 1000) AS b, uniqExact(progress) AS u FROM dst GROUP BY b) WHERE u != 1;
 DROP TABLE dst;
 
+-- Inside a materialized view the value is for the INSERT query, not only for the view.
+SELECT 'materialized view';
+DROP TABLE IF EXISTS mv;
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS dst;
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t VALUES (1);
+CREATE TABLE src (x UInt8) ENGINE = Null;
+CREATE TABLE dst (parallel UInt8, parts UInt64, insert_queries UInt64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv TO dst AS SELECT getSetting('parallel_view_processing') AS parallel, getQueryProfileEvent('SelectedParts') AS parts, getQueryProfileEvent('InsertQuery') AS insert_queries FROM src;
+INSERT INTO src SELECT x FROM t SETTINGS parallel_view_processing = 0;
+INSERT INTO src SELECT x FROM t SETTINGS parallel_view_processing = 1;
+SELECT parallel, parts > 0, insert_queries FROM dst ORDER BY parallel;
+DROP TABLE mv;
+DROP TABLE src;
+DROP TABLE dst;
+DROP TABLE t;
+
 SELECT getQueryProfileEvent('SelectedRowz'); -- { serverError BAD_ARGUMENTS }
 SELECT getQueryProfileEvent(toString(number)) FROM numbers(1); -- { serverError ILLEGAL_COLUMN }
 SELECT getQueryProfileEvent(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

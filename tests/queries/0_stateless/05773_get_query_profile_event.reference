@@ -17,3 +17,6 @@ old analyzer
 insert
 100000	100	1000	100000	0
 0
+materialized view
+0	1	1
+1	1	1
