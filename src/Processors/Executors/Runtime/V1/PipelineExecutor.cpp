@@ -54,6 +54,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Runtime::V1
@@ -452,7 +453,20 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         {
             auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
             if (!context.executeTask(spill_target))
-                cancelWithException(context.getException());
+            {
+                /// A function watching the time limit (`makeCancellationCheck`) throws `TIMEOUT_EXCEEDED` at the deadline.
+                /// Inside a source (`PREWHERE` of a `MergeTree` read) that fails the task here, so stop the query as the
+                /// time check below does, and `timeout_overflow_mode = 'break'` returns a partial result.
+                /// `finalizeExecution` checks the limit again, so `throw` and killed queries still fail.
+                auto exception = context.getException();
+                if (getExceptionErrorCode(exception) == ErrorCodes::TIMEOUT_EXCEEDED
+                    && process_list_element && !process_list_element->checkTimeLimitSoft())
+                {
+                    cancel(IProcessor::CancelReason::CancelledByTimeout);
+                    break;
+                }
+                cancelWithException(std::move(exception));
+            }
 
             if (tasks.isFinished())
                 break;
