@@ -754,7 +754,12 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
             const auto * create_query = ast->as<ASTCreateQuery>();
             if (create_query && create_query->is_ordinary_view)
             {
-                auto ref_deps = getDependenciesFromCreateQuery(local_context->getGlobalContext(), name, ast, name.database, /* can_throw */ false, /* validate_current_database */ false);
+                /// As in `TablesLoader::buildDependencyGraph`, the names resolved in the context of the query which runs the view
+                /// are resolved against the default database of the server.
+                const auto global_context = local_context->getGlobalContext();
+                auto ref_deps = getDependenciesFromCreateQuery(
+                    global_context, name, ast, name.database, /* can_throw */ false, /* validate_current_database */ false,
+                    /* max_expanded_ast_elements */ 0, /* execution_database */ global_context->getCurrentDatabase());
                 if (!ref_deps.plain_view_dependencies.empty())
                     DatabaseCatalog::instance().addPlainViewDependencies(name, ref_deps.plain_view_dependencies);
             }

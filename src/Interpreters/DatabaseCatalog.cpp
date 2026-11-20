@@ -979,8 +979,12 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     /// The visitor erases the name it is given from the dependencies. For an ordinary view it is given the
     /// current name, so that a reference to the destination stays visible and is rejected below.
     QualifiedTableName name_to_erase = is_ordinary_view ? QualifiedTableName{database.getDatabaseName(), table_name} : new_name;
+    /// The names which are resolved in the context of the query that runs the view (e.g. of `joinGet`) do not follow
+    /// the view into the new database. They are resolved against the current database, as on the `CREATE` and `ALTER` paths.
+    const String execution_database = query_context->getCurrentDatabase();
     auto dependencies = getDependenciesFromCreateQuery(
-        global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
+        global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false,
+        /*max_expanded_ast_elements*/ 0, execution_database);
 
     /// The dependencies count a name which is a table only in a session with `enable_global_with_statement` disabled,
     /// e.g. the reference of a recursive common table expression to itself, which is named like the view. The view
@@ -988,7 +992,7 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     auto self_reference_dependencies = is_ordinary_view
         ? getDependenciesFromCreateQuery(
               global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false,
-              /*max_expanded_ast_elements*/ 0, /*execution_database*/ {}, /*enable_global_with_statement*/ true).dependencies
+              /*max_expanded_ast_elements*/ 0, execution_database, /*enable_global_with_statement*/ true).dependencies
         : TableNamesSet{};
 
     if (is_ordinary_view && self_reference_dependencies.contains(new_name))

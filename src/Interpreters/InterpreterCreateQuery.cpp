@@ -2019,8 +2019,9 @@ namespace
 /// A name shadowed by a session temporary table stays unqualified in the stored definition.
 /// Resolve it against the database owning the table, as the metadata loading path and `ALTER` do.
 /// Temporary objects belong to no database, so their names are resolved against the current database.
-/// The column expressions and the arguments of the table engine are not qualified in the stored definition and are evaluated
-/// in the context of a query, so they are resolved against the current database (the `execution_database` argument of
+/// The column expressions, the arguments of the table engine, and the names of `joinGet`, `dictGet` and the calls of parameterized
+/// views in the query of a view are not qualified in the stored definition and are evaluated in the context of a query,
+/// so they are resolved against the current database (the `execution_database` argument of
 /// `getDependenciesFromCreateQuery` and `getLoadingDependenciesFromCreateQuery`).
 String getDatabaseForUnqualifiedNames(const ASTCreateQuery & create, const ContextPtr & context)
 {

@@ -360,7 +360,8 @@ namespace
         }
 
         /// Like in the analyzer, a table function which is not registered is a call of a parameterized view,
-        /// e.g. `pv(id = 1)` or `db.pv(id = 1)`.
+        /// e.g. `pv(id = 1)` or `db.pv(id = 1)`. A bare name is not qualified in the stored definition and is resolved
+        /// against the current database of the query which runs it, so against `execution_database`.
         void visitParameterizedViewCall(const IAST & table_function)
         {
             const auto * function = table_function.as<ASTFunction>();
@@ -369,7 +370,7 @@ namespace
 
             Identifier identifier{function->name};
             if (identifier.getPartsSize() == 1)
-                dependencies.emplace(QualifiedTableName{current_database, identifier[0]});
+                dependencies.emplace(QualifiedTableName{execution_database, identifier[0]});
             else if (identifier.getPartsSize() == 2)
                 dependencies.emplace(QualifiedTableName{identifier[0], identifier[1]});
         }
@@ -611,7 +612,9 @@ namespace
                 /// dictGet('dict_name', attr_names, id_expr)
                 /// dictHas('dict_name', id_expr)
                 /// joinGet(join_storage_table_name, `value_column`, join_keys)
-                addQualifiedNameFromArgument(function, 0);
+                /// The name is evaluated and an unqualified one is resolved when the function is executed, in the context
+                /// of the query which runs it: `AddDefaultDatabaseVisitor` qualifies only literal names of dictionaries.
+                addQualifiedNameFromArgumentWithExecutionDatabase(function, 0);
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
@@ -805,6 +808,14 @@ namespace
         {
             if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// Like addQualifiedNameFromArgument, but evaluates the argument and resolves an unqualified name against `execution_database`.
+        void addQualifiedNameFromArgumentWithExecutionDatabase(const ASTFunction & function, size_t arg_idx)
+        {
+            String saved_current_database = std::exchange(current_database, execution_database);
+            SCOPE_EXIT({ current_database = std::move(saved_current_database); });
+            addQualifiedNameFromArgument(function, arg_idx);
         }
 
         /// Like addQualifiedNameFromArgument, but uses the database of the table being created

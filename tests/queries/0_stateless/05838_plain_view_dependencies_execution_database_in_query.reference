@@ -1,0 +1,34 @@
+reader	reader
+reader
+create
+reader	d	['v']
+reader	j	['v']
+reader	pv	['v_pv']
+view	d	[]
+view	j	[]
+view	pv	[]
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+rename table
+reader	d	['v']
+reader	j	['v']
+reader	pv	['v_pv']
+view	d	[]
+view	j	[]
+view	pv	[]
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+rename database
+reader	d	['v']
+reader	j	['v']
+reader	pv	['v_pv']
+view	d	[]
+view	j	[]
+view	pv	[]
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+HAVE_DEPENDENT_OBJECTS
+reader	reader
+reader

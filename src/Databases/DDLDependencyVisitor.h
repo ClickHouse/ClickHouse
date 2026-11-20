@@ -26,8 +26,9 @@ struct CreateQueryDependencies
 /// @param validate_current_database - if false, skips validation that database exists when setting current database (for bootstrap/restore scenarios)
 /// @param max_expanded_ast_elements - bounds the expansion of `WITH` elements in the query of a materialized view, zero means no limit
 /// @param current_database - the database against which the unqualified names of the query of a view are resolved
-/// @param execution_database - the database against which the unqualified names in the column expressions and in the table engine
-///     with its arguments are resolved: they are evaluated in the context of a query. `current_database` if not set
+/// @param execution_database - the database against which the unqualified names in the column expressions, in the table engine
+///     with its arguments, and the names of `joinGet`, `dictGet` and the calls of parameterized views in the query of a view
+///     are resolved: they are evaluated in the context of a query. `current_database` if not set
 /// @param enable_global_with_statement - the value of `enable_global_with_statement` the query runs with where its `SETTINGS`
 ///     clauses do not set it. If not set, the value is the one of the session which reads the query, so a name is a table
 ///     if it is a table with either value. Set it to check what the query reads in a given session.
