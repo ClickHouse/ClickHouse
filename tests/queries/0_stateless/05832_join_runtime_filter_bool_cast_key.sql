@@ -5,6 +5,7 @@
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0, join_algorithm = 'hash';
+SET date_time_overflow_behavior = 'ignore';
 
 DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;
@@ -13,12 +14,14 @@ DROP TABLE IF EXISTS probe_u16;
 DROP TABLE IF EXISTS probe_time;
 DROP TABLE IF EXISTS probe_dec;
 DROP TABLE IF EXISTS probe_tuple;
+DROP TABLE IF EXISTS probe_date32;
 DROP TABLE IF EXISTS build_true;
 DROP TABLE IF EXISTS build_false;
 DROP TABLE IF EXISTS build_u8;
 DROP TABLE IF EXISTS build_tokyo;
 DROP TABLE IF EXISTS build_dec;
 DROP TABLE IF EXISTS build_tuple;
+DROP TABLE IF EXISTS build_overflow;
 
 CREATE TABLE probe_u8 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 8;
 INSERT INTO probe_u8 SELECT intDiv(number, 16) FROM numbers(4096);
@@ -47,6 +50,10 @@ INSERT INTO probe_dec SELECT intDiv(number, 16) FROM numbers(4096);
 CREATE TABLE probe_tuple (t Tuple(UInt8)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 8;
 INSERT INTO probe_tuple SELECT tuple(intDiv(number, 16)) FROM numbers(4096);
 
+CREATE TABLE probe_date32 (id UInt64, d Date32, INDEX idx_d d TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO probe_date32 SELECT number, if(number < 256, toDate32('2106-02-08'), toDate32('2000-01-01')) FROM numbers(512);
+
 CREATE TABLE build_true (flag Bool) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_true VALUES (true);
 
@@ -64,6 +71,9 @@ INSERT INTO build_dec VALUES (5);
 
 CREATE TABLE build_tuple (t Tuple(Bool)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_tuple VALUES (tuple(true));
+
+CREATE TABLE build_overflow (t DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_overflow SELECT CAST(toDate32('2106-02-08') AS DateTime('UTC'));
 
 -- Primary key, read-time pruning.
 SELECT 'bool_read', count() FROM probe_u8 AS p JOIN build_true AS b ON CAST(p.x AS Bool) = b.flag
@@ -115,6 +125,11 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_dat
 SELECT 'date_utc_tokyo_build', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.d AS DateTime('UTC')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
 
+-- A `CAST` out of the `DateTime` range follows `date_time_overflow_behavior`, unlike the internal `_CAST`.
+SELECT 'date32_overflow', count() FROM probe_date32 AS p JOIN build_overflow AS b ON CAST(p.d AS DateTime('UTC')) = b.t
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+    enable_join_seal_gated_reading = 0, log_comment = '05832_date32_overflow';
+
 -- Casts that keep the values still prune: a time zone change, with a `bloom_filter` index, and a `Decimal` precision change.
 SELECT 'datetime_time_zone', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.t AS DateTime('Asia/Tokyo')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
@@ -128,7 +143,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RuntimeFilterGranulesDropped'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05832_bool_read', '05832_datetime_time_zone', '05832_decimal_precision')
+    AND log_comment IN ('05832_bool_read', '05832_date32_overflow', '05832_datetime_time_zone', '05832_decimal_precision')
 ORDER BY log_comment;
 
 DROP TABLE probe_u8;
@@ -138,9 +153,11 @@ DROP TABLE probe_u16;
 DROP TABLE probe_time;
 DROP TABLE probe_dec;
 DROP TABLE probe_tuple;
+DROP TABLE probe_date32;
 DROP TABLE build_true;
 DROP TABLE build_false;
 DROP TABLE build_u8;
 DROP TABLE build_tokyo;
 DROP TABLE build_dec;
 DROP TABLE build_tuple;
+DROP TABLE build_overflow;

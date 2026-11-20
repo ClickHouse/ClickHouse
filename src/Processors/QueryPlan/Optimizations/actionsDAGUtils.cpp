@@ -1032,7 +1032,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         /// predicate applies only one cast, so the inner cast would be lost.
         const auto * key_arg = node->children[1];
         size_t casts = 0;
-        DataTypePtr cast_type;
+        FunctionBasePtr cast;
         while (!key_arg->children.empty())
         {
             if (key_arg->type == ActionsDAG::ActionType::ALIAS)
@@ -1041,7 +1041,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
                      && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
             {
                 ++casts;
-                cast_type = key_arg->result_type;
+                cast = key_arg->function_base;
                 key_arg = key_arg->children.front();
             }
             else
@@ -1076,7 +1076,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
                 && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
             {
                 res.push_back(
-                    {std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true, cast_type});
+                    {std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true, cast});
             }
             continue;
         }
@@ -1084,7 +1084,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast_type});
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast});
     }
 
     return res;

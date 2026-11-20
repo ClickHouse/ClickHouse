@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -33,6 +34,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -1299,6 +1301,17 @@ static bool isIdentityCast(const DataTypePtr & from, const DataTypePtr & to)
     return same_custom_name && from->equals(*to);
 }
 
+/// The function of the recorded cast is reused, so that it converts with the settings it was resolved with, e.g.
+/// `date_time_overflow_behavior`.
+static const ActionsDAG::Node & addKeyCast(ActionsDAG & dag, const ActionsDAG::Node & key, const FunctionBasePtr & cast)
+{
+    Field type_name = cast->getResultType()->getName();
+    auto string_type = std::make_shared<DataTypeString>();
+    const auto & type_name_node
+        = dag.addColumn(string_type->createColumnConst(0, type_name), string_type, calculateConstantActionNodeName(type_name));
+    return dag.addFunction(cast, {&key, &type_name_node}, {});
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const RuntimeFilter & filter,
     const RuntimeFilterIndexAnalysisDescriptor & descriptor,
@@ -1331,8 +1344,9 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
     /// A cast that keeps the values (e.g. a `DateTime` time zone change) is left out, so the indexes can use the key.
-    const bool apply_cast = descriptor.key_cast_type && !isIdentityCast(key_node.result_type, descriptor.key_cast_type);
-    const auto & key_casted = apply_cast ? dag.addCast(key_node, descriptor.key_cast_type, {}, context) : key_node;
+    const auto & cast = descriptor.key_cast;
+    const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
+    const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
     chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)
