@@ -950,68 +950,71 @@ struct ConverterDecimal
     size_t fixedStringSize() { return sizeof(T); }
 };
 
-/// Returns either `source` or `scratch`.
-PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method, int level)
+/// Appends the `size` bytes at `source` compressed with `method` to `out`. `method` must not be `None`.
+/// `source` is not const because the streaming path uses it as the working memory of its buffer.
+void compressAppend(char * source, size_t size, PODArray<char> & out, CompressionMethod method, int level)
 {
+    const size_t offset = out.size();
+
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
     switch (method)
     {
         case CompressionMethod::None:
-            return source;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "compressAppend called without a compression method");
 
         case CompressionMethod::Lz4:
         {
             #pragma clang diagnostic push
             #pragma clang diagnostic ignored "-Wold-style-cast"
 
-            size_t max_dest_size = LZ4_COMPRESSBOUND(source.size());
+            size_t max_dest_size = LZ4_COMPRESSBOUND(size);
 
             #pragma clang diagnostic pop
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(size));
 
-            scratch.resize(max_dest_size);
+            out.resize(offset + max_dest_size);
 
             int compressed_size = LZ4_compress_default(
-                source.data(),
-                scratch.data(),
-                static_cast<int>(source.size()),
+                source,
+                out.data() + offset,
+                static_cast<int>(size),
                 static_cast<int>(max_dest_size));
 
-            scratch.resize(static_cast<size_t>(compressed_size));
-            return scratch;
+            out.resize(offset + static_cast<size_t>(compressed_size));
+            return;
         }
         /// One-shot path for zstd: the page is already fully in memory and of known size, and zstd is faster
         /// and less memory better than the streaming zstd path especially at higher compression levels.
         case CompressionMethod::Zstd:
         {
-            const size_t max_dest_size = ZSTD_compressBound(source.size());
-            scratch.resize(max_dest_size);
-            const size_t compressed_size = ZSTD_compress(scratch.data(), max_dest_size, source.data(), source.size(), level);
+            const size_t max_dest_size = ZSTD_compressBound(size);
+            out.resize(offset + max_dest_size);
+            const size_t compressed_size = ZSTD_compress(out.data() + offset, max_dest_size, source, size, level);
             if (ZSTD_isError(compressed_size))
                 throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
 
-            scratch.resize(compressed_size);
-            return scratch;
+            out.resize(offset + compressed_size);
+            return;
         }
 
 #if USE_SNAPPY
         case CompressionMethod::Snappy:
         {
-            size_t max_dest_size = snappy::MaxCompressedLength(source.size());
+            size_t max_dest_size = snappy::MaxCompressedLength(size);
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(size));
 
-            scratch.resize(max_dest_size);
+            out.resize(offset + max_dest_size);
 
             size_t compressed_size = 0;
-            snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
+            snappy::RawCompress(source, size, out.data() + offset, &compressed_size);
 
-            scratch.resize(compressed_size);
-            return scratch;
+            out.resize(offset + compressed_size);
+            return;
         }
 #endif
 
@@ -1022,10 +1025,11 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
         case CompressionMethod::Gzip: {
             if (level >= 1 && level <= 12)
             {
-                scratch.resize(Libdeflate::compressBound(method, level, source.size()));
-                size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
-                scratch.resize(compressed_size);
-                return scratch;
+                const size_t max_dest_size = Libdeflate::compressBound(method, level, size);
+                out.resize(offset + max_dest_size);
+                size_t compressed_size = Libdeflate::compress(method, level, source, size, out.data() + offset, max_dest_size);
+                out.resize(offset + compressed_size);
+                return;
             }
             [[fallthrough]];
         }
@@ -1033,7 +1037,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
         default:
         {
-            auto dest_buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(scratch);
+            auto dest_buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(out, AppendModeTag{});
             auto compressed_buf = wrapWriteBufferWithCompressionMethod(
                 std::move(dest_buf),
                 method,
@@ -1042,15 +1046,25 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
                 /// this dispatch never sees it, so the snappy mode here is irrelevant.
                 SnappyMode::Basic,
-                source.size(),
-                /*existing_memory*/ source.data());
-            chassert(compressed_buf->position() == source.data());
-            chassert(compressed_buf->available() == source.size());
-            compressed_buf->position() += source.size();
+                size,
+                /*existing_memory*/ source);
+            chassert(compressed_buf->position() == source);
+            chassert(compressed_buf->available() == size);
+            compressed_buf->position() += size;
             compressed_buf->finalize();
-            return scratch;
+            return;
         }
     }
+}
+
+/// Returns either `source` or `scratch`.
+PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method, int level)
+{
+    if (method == CompressionMethod::None)
+        return source;
+    scratch.clear();
+    compressAppend(source.data(), source.size(), scratch, method, level);
+    return scratch;
 }
 
 /// The most bytes the RLE / bit-packed hybrid encoding of `size` values of `bit_width` bits can take,
@@ -1247,11 +1261,14 @@ size_t maxEncodedRepDefLevelsSize(size_t size, UInt8 max_level)
     return sizeof(Int32) + maxRLESize(bit_width, size);
 }
 
-void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
+/// Appends the RLE-encoded levels to `out`, with their length as a 4-byte prefix if `length_prefix`:
+/// a V1 data page has the prefix, a `DataPageV2` has the length in its header instead.
+/// Returns the number of bytes appended.
+size_t encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, bool length_prefix, PODArray<char> & out)
 {
     chassert(max_level > 0);
     size_t offset = out.size();
-    size_t prefix_size = sizeof(Int32);
+    size_t prefix_size = length_prefix ? sizeof(Int32) : 0;
 
     size_t bit_width = bitScanReverse(max_level) + 1;
     out.reserve(offset + maxEncodedRepDefLevelsSize(size, max_level));
@@ -1265,7 +1282,9 @@ void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, POD
     size_t len = out.size() - offset - prefix_size;
     if (len > INT32_MAX)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Encoded levels are too big: {}", len);
-    unalignedStoreLittleEndian<Int32>(out.data() + offset, static_cast<Int32>(len));
+    if (length_prefix)
+        unalignedStoreLittleEndian<Int32>(out.data() + offset, static_cast<Int32>(len));
+    return prefix_size + len;
 }
 
 /// Appends the PLAIN encoding of the values to `out`.
@@ -1542,7 +1561,7 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     size_t compressed_page_size = header.compressed_page_size + header_size;
 
     /// Remember first data page and first dictionary page.
-    if (header.__isset.data_page_header && s.column_chunk.meta_data.data_page_offset == -1)
+    if ((header.__isset.data_page_header || header.__isset.data_page_header_v2) && s.column_chunk.meta_data.data_page_offset == -1)
         s.column_chunk.meta_data.__set_data_page_offset(s.column_chunk.meta_data.total_compressed_size);
     if (header.__isset.dictionary_page_header && !s.column_chunk.meta_data.__isset.dictionary_page_offset)
         s.column_chunk.meta_data.__set_dictionary_page_offset(s.column_chunk.meta_data.total_compressed_size);
@@ -1705,9 +1724,8 @@ void writeColumnImpl(
 
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
-    /// If we ever use DataPageV2, enable this flag in that case too:
-    /// bool pages_change_on_record_boundaries = options.write_page_index || options.data_page_v2;
-    bool pages_change_on_record_boundaries = options.write_page_index;
+    /// `DataPageV2` requires it: its header counts rows, and a row must not span pages.
+    bool pages_change_on_record_boundaries = options.write_page_index || options.use_data_page_v2;
     /// If there are no arrays, record boundaries are everywhere.
     pages_change_on_record_boundaries &= s.max_rep > 0;
 
@@ -1851,18 +1869,28 @@ void writeColumnImpl(
 
         /// Unless the next value starts a record, the record is split, and pages no longer start
         /// where the page index says they do.
-        if (pages_change_on_record_boundaries && def_offset + def_count < num_values && s.rep[def_offset + def_count] != 0)
+        const bool page_ends_record = s.max_rep == 0 || def_offset + def_count == num_values || s.rep[def_offset + def_count] == 0;
+        if (pages_change_on_record_boundaries && !page_ends_record)
         {
             s.indexes.column_index_valid = false;
             s.indexes.offset_index_valid = false;
         }
 
-        /// Concatenate encoded rep, def, and data.
+        /// A `DataPageV2` must hold whole records. The pages around a record that is split anyway,
+        /// because it doesn't fit a page at all (see `max_record_bytes`), are written as V1.
+        const bool page_starts_record = s.max_rep == 0 || s.rep[def_offset] == 0;
+        const bool data_page_v2 = options.use_data_page_v2 && page_starts_record && page_ends_record;
 
+        /// Concatenate encoded rep, def, and data. A V1 page compresses all of it, with the length of
+        /// the levels in front of them. A `DataPageV2` compresses only the data, and has the lengths
+        /// of the levels in its header.
+
+        size_t rep_size = 0;
+        size_t def_size = 0;
         size_t row_count = def_count;
         if (s.max_rep > 0)
         {
-            encodeRepDefLevelsRLE(s.rep.data() + def_offset, def_count, s.max_rep, encoded);
+            rep_size = encodeRepDefLevelsRLE(s.rep.data() + def_offset, def_count, s.max_rep, /*length_prefix*/ !data_page_v2, encoded);
 
             row_count = 0;
             for (size_t i = def_offset; i < def_offset + def_count; ++i)
@@ -1874,11 +1902,13 @@ void writeColumnImpl(
 
         if (s.max_def > 0)
         {
-            encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
+            def_size = encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, /*length_prefix*/ !data_page_v2, encoded);
 
             for (size_t i = def_offset; i < def_offset + def_count; ++i)
                 ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
         }
+
+        const size_t levels_size = encoded.size();
 
         /// Append the values, and reset the encoder for the next page.
         with_encoder([&](auto & encoder) { encoder.flush(encoded); });
@@ -1895,21 +1925,31 @@ void writeColumnImpl(
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
 
         size_t uncompressed_size = encoded.size();
-        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
+        PODArray<char> * compressed_ptr = &encoded;
+        /// Only for a `DataPageV2`: whether its values are compressed. As in Arrow, values that the
+        /// compression doesn't make smaller are stored uncompressed, so that the reader doesn't spend
+        /// time on decompressing them. A page without values (all nulls) has nothing to compress.
+        bool values_compressed = false;
+        if (!data_page_v2)
+        {
+            compressed_ptr = &compress(encoded, compressed_maybe, s.compression, s.compression_level);
+        }
+        else if (s.compression != CompressionMethod::None && encoded.size() > levels_size)
+        {
+            compressed_maybe.assign(encoded.begin(), encoded.begin() + levels_size);
+            compressAppend(encoded.data() + levels_size, encoded.size() - levels_size, compressed_maybe, s.compression, s.compression_level);
+            values_compressed = compressed_maybe.size() < encoded.size();
+            if (values_compressed)
+                compressed_ptr = &compressed_maybe;
+        }
+        auto & compressed = *compressed_ptr;
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed page is too big: {}", compressed.size());
 
         parq::PageHeader header;
-        header.__set_type(parq::PageType::DATA_PAGE);
         header.__set_uncompressed_page_size(static_cast<int>(uncompressed_size));
         header.__set_compressed_page_size(static_cast<int>(compressed.size()));
-        header.__isset.data_page_header = true;
-        auto & d = header.data_page_header;
-        d.__set_num_values(static_cast<Int32>(def_count));
-        d.__set_encoding(page_encoding);
-        d.__set_definition_level_encoding(parq::Encoding::RLE);
-        d.__set_repetition_level_encoding(parq::Encoding::RLE);
 
         if (options.write_checksums)
         {
@@ -1922,8 +1962,36 @@ void writeColumnImpl(
         if (has_null_count)
             page_stats.__set_null_count(static_cast<Int64>(def_count - data_count));
 
-        if (options.write_page_statistics)
-            d.__set_statistics(page_stats);
+        if (data_page_v2)
+        {
+            header.__set_type(parq::PageType::DATA_PAGE_V2);
+            header.__isset.data_page_header_v2 = true;
+            auto & d = header.data_page_header_v2;
+            d.__set_num_values(static_cast<Int32>(def_count));
+            /// Every level below the maximum definition level, also of an empty or null array:
+            /// `num_values - num_nulls` is the number of values in the page.
+            d.__set_num_nulls(static_cast<Int32>(def_count - data_count));
+            d.__set_num_rows(static_cast<Int32>(row_count));
+            d.__set_encoding(page_encoding);
+            d.__set_definition_levels_byte_length(static_cast<Int32>(def_size));
+            d.__set_repetition_levels_byte_length(static_cast<Int32>(rep_size));
+            /// Set even if true, which is the default, as Arrow and arrow-rs do.
+            d.__set_is_compressed(values_compressed);
+            if (options.write_page_statistics)
+                d.__set_statistics(page_stats);
+        }
+        else
+        {
+            header.__set_type(parq::PageType::DATA_PAGE);
+            header.__isset.data_page_header = true;
+            auto & d = header.data_page_header;
+            d.__set_num_values(static_cast<Int32>(def_count));
+            d.__set_encoding(page_encoding);
+            d.__set_definition_level_encoding(parq::Encoding::RLE);
+            d.__set_repetition_level_encoding(parq::Encoding::RLE);
+            if (options.write_page_statistics)
+                d.__set_statistics(page_stats);
+        }
 
         if (options.write_page_index)
         {
