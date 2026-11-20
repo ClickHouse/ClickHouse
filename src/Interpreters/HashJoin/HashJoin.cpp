@@ -1543,9 +1543,9 @@ HashJoin::~HashJoin()
             if (stats_collecting_params.build.isCollectionAndUseEnabled() && keyType() != Type::two_level_key8
                 && keyType() != Type::two_level_key16)
             {
-                /// An empty build is recorded too: the next run takes `source_rows` as the row estimate of the right side.
-                getHashTablesStatistics<HashJoinEntry>().update(
-                    {.ht_size = getTotalRowCount(), .source_rows = data->rows_to_join}, stats_collecting_params.build);
+                if (const auto ht_size = getTotalRowCount())
+                    getHashTablesStatistics<HashJoinEntry>().update(
+                        {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
