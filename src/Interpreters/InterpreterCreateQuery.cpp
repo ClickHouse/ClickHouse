@@ -56,8 +56,8 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SubcolumnCodecs.h>
@@ -1131,12 +1131,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         StoragePtr as_storage = resolveStorageProxyLoading(
             DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
-        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
-        /// target that describing the target requires.
-        if (const auto * alias = as_storage->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                            StorageID{as_database_name, create.as_table}.getNameForLogs());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -2126,6 +2120,31 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
         checkXGBoostLayoutIsAllowed(create, getContext());
+
+    /// An `Alias` table always runs with definer rights: it forwards every operation to its target under
+    /// the definer's context, so the invoker only needs rights on the alias itself. Synthesize a
+    /// `SQL SECURITY DEFINER DEFINER = CURRENT_USER` clause when none was written, and reject any other
+    /// mode. This runs only for a genuine `CREATE`: a stored definition without the clause is a legacy
+    /// alias that must stay loadable and is rejected at use time instead, and a stored clause already
+    /// carries a concrete definer that is replayed as-is.
+    if (create.isAliasEngine() && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        if (!create.sql_security)
+        {
+            auto alias_sql_security = make_intrusive<ASTSQLSecurity>();
+            alias_sql_security->type = SQLSecurityType::DEFINER;
+            alias_sql_security->is_definer_current_user = true;
+            create.set(create.sql_security, std::move(alias_sql_security));
+        }
+        else
+        {
+            auto & alias_sql_security = create.sql_security->as<ASTSQLSecurity &>();
+            if (!alias_sql_security.type)
+                alias_sql_security.type = SQLSecurityType::DEFINER;
+            if (alias_sql_security.type != SQLSecurityType::DEFINER)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The Alias table engine only supports SQL SECURITY DEFINER");
+        }
+    }
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
@@ -4211,6 +4230,20 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         throwIfEngineIsUnknownAndNotGranted(
             create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
+
+    /// An `Alias` forwards operations to its target with the definer's rights, so its creator must already hold all of
+    /// them on the target. Required here, not only where the table is built: `ON CLUSTER` and `Replicated` databases
+    /// build it with full access. A short `ATTACH` replays an already accepted definition.
+    if (create.isAliasEngine() && !create.attach_short_syntax)
+    {
+        ASTs engine_args;
+        if (create.storage->engine->arguments)
+            for (const auto & arg : create.storage->engine->arguments->children)
+                engine_args.push_back(arg->clone());
+        auto target_id = StorageAlias::resolveTargetFromEngineArgs(
+            engine_args, getContext()->resolveDatabase(create.getDatabase()), getContext());
+        required_access.emplace_back(StorageAlias::getForwardedTargetAccess(), target_id.database_name, target_id.table_name);
     }
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.

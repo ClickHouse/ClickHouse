@@ -24,7 +24,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
@@ -576,7 +575,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 }
 
 NameSet getColumnsSelectableByTrivialQuery(
-    const StoragePtr & storage,
     const StorageID & storage_id,
     const ColumnsDescription & columns,
     const ContextPtr & query_context)
@@ -587,16 +585,6 @@ NameSet getColumnsSelectableByTrivialQuery(
     /// readable even without a grant on its column, and it is enough for a trivial query too.
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     const auto access_rights = access->getAccessRightsWithImplicit();
-    const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-
-    /// Through an `Alias` the exact subcolumn grant can also be on a table of its chain, while the alias grants
-    /// its column or the whole table, so candidates are collected from every table of the chain.
-    std::vector<std::pair<String, String>> tables_to_probe{{storage_id.database_name, storage_id.table_name}};
-    if (alias)
-    {
-        auto chain = alias->getTargetChain();
-        tables_to_probe.insert(tables_to_probe.end(), chain.begin(), chain.end());
-    }
 
     Names candidates;
     NameSet seen;
@@ -604,15 +592,15 @@ NameSet getColumnsSelectableByTrivialQuery(
     {
         if (seen.insert(column.name).second)
             candidates.push_back(column.name);
-        for (const auto & [database, table] : tables_to_probe)
-            for (auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, AccessType::SELECT, database, table, column.name))
-                if (seen.insert(subcolumn).second)
-                    candidates.push_back(std::move(subcolumn));
+        for (auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
+                 *access_rights, AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            if (seen.insert(subcolumn).second)
+                candidates.push_back(std::move(subcolumn));
     }
 
-    /// A candidate must be readable on the table itself, checked like a query that reads it, and an `Alias` also requires
-    /// it to be readable on every table of its chain, decided separately on each hop like `StorageAlias::read` does.
+    /// A candidate must be readable on the table itself, checked like a query that reads it. An `Alias` runs with
+    /// definer rights, so the user's grants on the tables of its chain do not matter: `StorageAlias::read` checks the
+    /// definer.
     NameSet selectable;
     for (const auto & name : candidates)
         if (access->isGranted(
@@ -621,9 +609,6 @@ NameSet getColumnsSelectableByTrivialQuery(
                 storage_id.table_name,
                 columns.getColumnNamesForSelectAccessCheck({name}, query_context, storage_id).front()))
             selectable.insert(name);
-
-    if (alias && !selectable.empty())
-        selectable = alias->filterColumnsSelectableThroughChain(query_context, columns, Names(selectable.begin(), selectable.end()));
 
     return selectable;
 }
@@ -648,7 +633,7 @@ NameSet checkAccessRights(
           * one table column is accessible.
           */
         auto accessible_columns = getColumnsSelectableByTrivialQuery(
-            storage, storage_id, storage_snapshot->metadata->getColumns(), query_context);
+            storage_id, storage_snapshot->metadata->getColumns(), query_context);
 
         if (accessible_columns.empty())
         {

@@ -96,7 +96,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
@@ -436,7 +435,6 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
 void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
-    const StoragePtr & storage,
     const StorageMetadataPtr & table_metadata,
     const TreeRewriterResult & syntax_analyzer_result)
 {
@@ -447,7 +445,7 @@ void checkAccessRightsForSelect(
         /// In this case just checking access for `required_columns` doesn't work correctly
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
-        if (!getColumnsSelectableByTrivialQuery(storage, table_id, table_metadata->getColumns(), context).empty())
+        if (!getColumnsSelectableByTrivialQuery(table_id, table_metadata->getColumns(), context).empty())
             return;
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
@@ -481,7 +479,7 @@ void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & ta
 {
     ASTPtr query_ast = makeSelectFromTable(table_id, {filter_ast->clone()});
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
-    checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_result);
+    checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_result);
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
@@ -1088,7 +1086,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_analyzer_result);
+        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
 
         const auto filter_tables_with_columns = getTablesWithColumnsForFilter(joined_tables);
 

@@ -3,7 +3,6 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -27,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
 }
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
@@ -64,15 +62,6 @@ void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
-}
-
-void ITableFunction::checkSourceStorageAccess(
-    const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
-{
-    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        alias && !alias->isTargetTableGranted(context, access_type, {}))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
 }
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const

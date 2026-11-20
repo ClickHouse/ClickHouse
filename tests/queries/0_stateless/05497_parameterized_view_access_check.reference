@@ -28,8 +28,8 @@ ok
 pv_definer
 ok
 secret_base
--- a grant on a virtual column of an Alias also needs the target
-denied
+-- a grant on a virtual column of an Alias is enough: it runs with definer rights
+ok
 ok
 -- SHOW COLUMNS also makes the structure visible, but reading is still denied
 ok

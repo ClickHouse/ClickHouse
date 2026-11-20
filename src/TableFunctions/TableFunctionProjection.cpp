@@ -2,6 +2,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/IAST.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -14,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 class TableFunctionMergeTreeProjection : public ITableFunction
@@ -31,10 +33,6 @@ public:
     void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
     {
         checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
-        /// The alias target is authorized here too: `executeImpl` can run lazily under the global
-        /// context, which has no user and therefore full access.
-        if (auto source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, context))
-            checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
     }
 
 private:
@@ -79,7 +77,6 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     if (!metadata_snapshot->getProjections().has(projection_name))
@@ -100,9 +97,12 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
+
+    /// The metadata of an `Alias` is its target's, so the projection is found, but its parts are not the alias's.
+    if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} expected MergeTree table, got: {}", getName(), source_table->getName());
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageFromMergeTreeProjection>(

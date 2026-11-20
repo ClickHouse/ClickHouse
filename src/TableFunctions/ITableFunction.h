@@ -199,11 +199,6 @@ protected:
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
 
-    /// Metadata of an `Alias` is its target's, so reading it also needs `access_type` on the target,
-    /// the way `DESCRIBE` of that name does. Takes the resolved storage so the check binds to the
-    /// object whose metadata is consumed.
-    void checkSourceStorageAccess(
-        const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const;
 
 private:
     virtual StoragePtr executeImpl(

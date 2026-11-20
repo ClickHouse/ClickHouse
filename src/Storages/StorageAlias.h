@@ -9,6 +9,9 @@
 namespace DB
 {
 
+class ASTSQLSecurity;
+class AccessFlags;
+
 class StorageAlias final : public IStorage, WithContext
 {
 public:
@@ -22,9 +25,16 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const String & target_database_,
-        const String & target_table_);
+        const String & target_table_,
+        const ASTSQLSecurity * sql_security_ = nullptr);
 
     std::string getName() const override { return "Alias"; }
+
+    /// Privileges on the target that an alias forwards with its definer's rights. Its creator must hold all of them.
+    static AccessFlags getForwardedTargetAccess();
+
+    /// Resolves the target of `ENGINE = Alias(...)` from its arguments, evaluating them in place.
+    static StorageID resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & query_context);
 
     bool isMergeTree() const override;
 
@@ -51,30 +61,6 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
-
-    /// Returns whether the current user has the specified access to every table this alias resolves
-    /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
-    /// An empty `column_name` represents table-level access.
-    bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
-
-    /// Same, for the target named in this alias's own definition only. For callers that expose that
-    /// definition and resolve nothing through it.
-    bool isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
-
-    /// Returns the subset of `column_names` the current user has this access to on every table this
-    /// alias resolves through. Resolves the chain once, whatever the grants look like.
-    NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
-
-    /// Returns the subset of `column_names` the current user can read with `SELECT` through every table this alias
-    /// resolves through. Each name is decided separately at each table, as `read` decides it on each hop: a subcolumn is
-    /// checked against its column unless that table has a grant or revoke on the exact subcolumn name (see
-    /// `ColumnsDescription::getColumnNamesForSelectAccessCheck`). `columns` is the metadata of the chain's last table.
-    NameSet filterColumnsSelectableThroughChain(
-        ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const;
-
-    /// Returns the database and table names of every table this alias resolves through, in order, i.e. the whole
-    /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
-    std::vector<std::pair<String, String>> getTargetChain() const;
 
     /// Read from target table
     void read(
@@ -330,7 +316,7 @@ public:
 
     /// These operations are not proxied (executed on alias itself)
     /// Drop alias, not the target table
-    void drop() override {}
+    void drop() override;
 
     /// Rename alias, not the target table
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
@@ -338,6 +324,25 @@ public:
 protected:
     String target_database;
     String target_table;
+
+private:
+    /// Holds this alias's SQL security (always `DEFINER` for a freshly created alias; unset for a legacy
+    /// alias created before definer rights existed). The alias stores no column metadata of its own, so
+    /// this is kept separately from the target metadata returned by `getInMemoryMetadataPtr`.
+    StorageInMemoryMetadata security_metadata;
+
+    /// A legacy alias (no stored definer) cannot run any forwarded operation; it can only be dropped.
+    void checkUsable() const;
+
+    /// Context that runs a forwarded operation with the alias's definer rights. Throws for a legacy alias.
+    ContextMutablePtr getDefinerContext(ContextPtr local_context) const;
+
+    /// Whether `SELECT` on the target is authorized under this alias's security, i.e. whether a read
+    /// would be allowed to proceed. False for a legacy alias (no stored definer) and when the definer
+    /// (or the invoker, for an `INVOKER` alias) lacks `SELECT` on the target. Paths that return rows or
+    /// row counts without going through `read` (trivial count, `totalRows`/`totalBytes`) consult this so
+    /// they authorize exactly as `read` does instead of leaking a count the security does not allow.
+    bool isTargetSelectAuthorized(ContextPtr query_context) const;
 };
 
 }

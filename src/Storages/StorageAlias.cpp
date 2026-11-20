@@ -11,6 +11,8 @@
 #include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Access/DefinerDependencies.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -59,12 +61,45 @@ StorageAlias::StorageAlias(
     const StorageID & table_id_,
     ContextPtr context_,
     const String & target_database_,
-    const String & target_table_)
+    const String & target_table_,
+    const ASTSQLSecurity * sql_security_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , target_database(target_database_)
     , target_table(target_table_)
 {
+    /// A freshly created alias always carries a `DEFINER` clause; a legacy alias has none and stays
+    /// unusable. Record the definer so forwarded operations can run with its rights, and pin the definer
+    /// user against being dropped while this alias exists.
+    if (sql_security_)
+    {
+        security_metadata.setSQLSecurity(*sql_security_);
+        if (security_metadata.sql_security_type == SQLSecurityType::DEFINER && security_metadata.definer)
+            DefinerDependencies::instance().addDependency(*security_metadata.definer, table_id_);
+    }
+}
+
+void StorageAlias::checkUsable() const
+{
+    if (!security_metadata.sql_security_type.has_value())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Alias table {} was created by an older version without a security definer and can no longer be used. "
+            "Please DROP and re-CREATE it.",
+            getStorageID().getNameForLogs());
+}
+
+ContextMutablePtr StorageAlias::getDefinerContext(ContextPtr local_context) const
+{
+    checkUsable();
+    return security_metadata.getSQLSecurityOverriddenContext(local_context);
+}
+
+void StorageAlias::drop()
+{
+    /// Drops the alias only, not the target table. Release the definer pin.
+    if (security_metadata.sql_security_type == SQLSecurityType::DEFINER && security_metadata.definer)
+        DefinerDependencies::instance().removeDependencies(getStorageID());
 }
 
 bool StorageAlias::isMergeTree() const
@@ -83,119 +118,14 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
-{
-    if (!query_context)
-        return false;
-
-    auto access = query_context->getAccess();
-    if (column_name.empty())
-        return access->isGranted(access_type, target_database, target_table);
-
-    return access->isGranted(access_type, target_database, target_table, column_name);
-}
-
-NameSet StorageAlias::filterColumnsGrantedThroughChain(
-    ContextPtr query_context, AccessType access_type, const Names & column_names) const
-{
-    /// `getInMemoryMetadataPtr` forwards through nested aliases, so a caller reads the metadata of the
-    /// chain's last table, and `read` authorizes every hop by re-entering `read` on each one.
-    NameSet granted(column_names.begin(), column_names.end());
-    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> authorized;
-    const StorageAlias * alias = this;
-    /// Owns the storage `alias` points into, from the second hop on.
-    StoragePtr alias_holder;
-
-    while (!granted.empty())
-    {
-        /// A table-level grant covers every column of that table, so one table-level question answers
-        /// the whole per-column pass. Asking it is only a saving where it replaces more than one check.
-        const bool whole_table_granted
-            = granted.size() > 1 && alias->isDeclaredTargetGranted(query_context, access_type, {});
-
-        if (!whole_table_granted)
-        {
-            std::erase_if(granted, [&](const String & column_name)
-            { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
-            if (granted.empty())
-                break;
-        }
-
-        /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
-        /// reach, and every name in the chain is authorized.
-        if (!authorized.emplace(alias->target_database, alias->target_table).second)
-            break;
-
-        alias_holder = alias->tryGetTargetTable();
-        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
-        if (!alias)
-            break;
-    }
-
-    return granted;
-}
-
-std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
-{
-    std::vector<std::pair<String, String>> chain;
-    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
-    const StorageAlias * alias = this;
-    /// Owns the storage `alias` points into, from the second hop on.
-    StoragePtr alias_holder;
-
-    while (alias && visited.emplace(alias->target_database, alias->target_table).second)
-    {
-        chain.emplace_back(alias->target_database, alias->target_table);
-        alias_holder = alias->tryGetTargetTable();
-        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
-    }
-
-    return chain;
-}
-
-NameSet StorageAlias::filterColumnsSelectableThroughChain(
-    ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const
-{
-    NameSet selectable(column_names.begin(), column_names.end());
-    auto access = query_context->getAccess();
-    for (const auto & [database, table] : getTargetChain())
-    {
-        if (selectable.empty())
-            break;
-        const StorageID table_id(database, table);
-        std::erase_if(selectable, [&](const String & column_name)
-        {
-            return !access->isGranted(
-                AccessType::SELECT,
-                database,
-                table,
-                columns.getColumnNamesForSelectAccessCheck({column_name}, query_context, table_id).front());
-        });
-    }
-    return selectable;
-}
-
-bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
-{
-    return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();
-}
-
 std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
 {
+    /// Visibility through an alias follows the grant on the alias itself (definer rights), so the sizes are not filtered
+    /// by the target's grants of the user.
     auto target = tryGetTargetTable();
     if (!target)
         return std::nullopt;
-
-    auto sizes = target->tryGetColumnSizes(query_context);
-    if (sizes)
-    {
-        Names names;
-        for (const auto & [name, _] : *sizes)
-            names.push_back(name);
-        auto granted = filterColumnsGrantedThroughChain(query_context, AccessType::SHOW_COLUMNS, names);
-        std::erase_if(*sizes, [&](const auto & column_size) { return !granted.contains(column_size.first); });
-    }
-    return sizes;
+    return target->tryGetColumnSizes(query_context);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -211,6 +141,7 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
+        , context_holder(context_)
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
         , async_insert(async_insert_)
     {
@@ -329,6 +260,10 @@ public:
 
 private:
     StorageAlias & storage;
+    /// `WithContext` keeps only a weak reference. The sink runs the nested INSERT with the alias's
+    /// definer context, which `write()` creates fresh and nobody else owns, so keep it alive here for
+    /// the sink's whole lifetime (onStart runs after write() has returned).
+    ContextPtr context_holder;
     Block non_materialized_header;
     bool async_insert;
     BlockIO block_io;
@@ -348,42 +283,52 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    /// Any grant on the target implies `SHOW_TABLES` on it, so this denies a user with no access to the target before
-    /// the lookup, which could otherwise tell them whether the target exists or fail to load its metadata.
+    auto definer_context = getDefinerContext(local_context);
+    /// Any grant on the target implies `SHOW_TABLES` on it, so this denies a definer with no access to the target before
+    /// the lookup, which could otherwise tell whether the target exists or fail to load its metadata.
     /// The column-level check below needs the target's metadata, so it is done once the target is known.
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SHOW_TABLES});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_storage = getTargetTable(TargetAccess{definer_context, AccessType::SHOW_TABLES});
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(definer_context, false);
 
     /// Resolve subcolumns against the same target metadata snapshot the read below uses, so the
     /// authorized columns are exactly the ones that are read.
     if (column_names.empty())
-        local_context->checkAccess(AccessType::SELECT, target_database, target_table);
+        definer_context->checkAccess(AccessType::SELECT, target_database, target_table);
     else
-        local_context->checkAccess(
+        definer_context->checkAccess(
             AccessType::SELECT,
             target_database,
             target_table,
             target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
-                column_names, local_context, StorageID(target_database, target_table)));
+                column_names, definer_context, StorageID(target_database, target_table)));
 
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, definer_context);
 
+    /// Forward the read with the definer's identity so a target that authorizes during read - a
+    /// `SQL SECURITY INVOKER` view building its inner query, a `Merge` enumerating its children - runs
+    /// with the alias's rights, not the invoker's. The invoker's row policies on the alias and its
+    /// target are collected by the planner (through `getUnderlyingStorages`) before this call and
+    /// injected into the plan, so they still apply regardless of the identity used here. For an
+    /// `INVOKER` alias the definer context is the invoker's, so this is transparent.
     target_storage->read(
         query_plan,
         column_names,
         target_snapshot,
         query_info,
-        local_context,
+        definer_context,
         processed_stage,
         max_block_size,
         num_streams);
 
     query_plan.addStorageHolder(target_storage);
     query_plan.addTableLock(std::move(lock));
+    /// `getDefinerContext` creates the context fresh and nothing else owns it; keep it alive for the
+    /// pipeline the forwarded read just built.
+    query_plan.addInterpreterContext(definer_context);
 }
 
 SinkToStoragePtr StorageAlias::write(
@@ -392,12 +337,15 @@ SinkToStoragePtr StorageAlias::write(
     ContextPtr local_context,
     bool async_insert)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
+    /// The sink builds a nested INSERT interpreter that re-checks INSERT access on the target, so it must
+    /// run with the alias's definer rights. The invoker was already authorized against the alias itself.
+    auto definer_context = getDefinerContext(local_context);
+    auto target_storage = getTargetTable(TargetAccess{definer_context, AccessType::INSERT});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
+    return std::make_shared<AliasSink>(*this, definer_context, target_metadata, async_insert);
 }
 
 void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -426,7 +374,7 @@ void StorageAlias::alter(
     AlterLockHolder & /*table_lock_holder*/,
     DDLGuardPtr & ddl_guard)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
 
     /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
     auto alias_database_name = getStorageID().database_name;
@@ -476,7 +424,7 @@ void StorageAlias::truncate(
     ContextPtr local_context,
     TableExclusiveLockHolder & /*table_lock_holder*/)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::TRUNCATE});
 
     /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
     /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
@@ -504,7 +452,7 @@ bool StorageAlias::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::OPTIMIZE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
@@ -515,7 +463,7 @@ Pipe StorageAlias::alterPartition(
     const PartitionCommands & commands,
     ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
@@ -533,13 +481,13 @@ void StorageAlias::checkAlterPartitionIsPossible(
 
 void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     target_storage->mutate(commands, local_context);
 }
 
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::ALTER_TABLE});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -593,7 +541,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
 
 IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
 {
-    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto target = getTargetTable(TargetAccess{getDefinerContext(query_context), AccessType::CHECK});
     auto inner = target->getCheckTaskList(filter, query_context);
     return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
 }
@@ -616,7 +564,18 @@ void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_contex
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
-    return getTargetTable(TargetAccess{local_context, AccessType::INSERT})->distributedWrite(query, local_context);
+    auto definer_context = getDefinerContext(local_context);
+    auto pipeline = getTargetTable(TargetAccess{definer_context, AccessType::INSERT})->distributedWrite(query, definer_context);
+
+    /// The returned pipeline runs after this call returns, but `getSQLSecurityOverriddenContext` created
+    /// the definer context fresh and nothing else owns it. Keep it alive for the pipeline's lifetime.
+    if (pipeline)
+    {
+        QueryPlanResourceHolder resources;
+        resources.interpreter_context.emplace_back(definer_context);
+        pipeline->addResources(std::move(resources));
+    }
+    return pipeline;
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
@@ -636,22 +595,25 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return snapshot->withStorageHolder(std::move(target));
 }
 
-bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+bool StorageAlias::isTargetSelectAuthorized(ContextPtr query_context) const
 {
-    if (!storage_snapshot)
+    /// A legacy alias (no stored definer) is unusable, so nothing is authorized through it.
+    if (!query_context || !security_metadata.sql_security_type.has_value())
         return false;
 
-    bool has_select_access = false;
-    for (const auto & column : storage_snapshot->metadata->getColumns())
-    {
-        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
-        {
-            has_select_access = true;
-            break;
-        }
-    }
+    /// Resolve the security the same way `read` does - as the definer for a `DEFINER` alias, as the
+    /// invoker for an `INVOKER` one - and ask whether that principal may `SELECT` the target.
+    auto security_context = security_metadata.getSQLSecurityOverriddenContext(query_context);
+    return security_context->getAccess()->isGranted(AccessType::SELECT, target_database, target_table);
+}
 
-    if (!has_select_access)
+bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// The trivial-count shortcut returns a row count without going through `read`, so it must authorize
+    /// exactly as `read` does. When it is not authorized, decline the shortcut: the query then falls back
+    /// to `read`, which raises the proper error (a legacy alias is refused, a missing `SELECT` is denied
+    /// against the definer).
+    if (!storage_snapshot || !isTargetSelectAuthorized(query_context))
         return false;
 
     /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
@@ -663,11 +625,9 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     return target.supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
-/// The delegation below re-enters this method on an Alias target, so each hop asks for its own declared
-/// target and the conjunction of those answers is the whole chain.
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isTargetSelectAuthorized(query_context))
         return {};
 
     auto target = tryGetTargetTable();
@@ -676,7 +636,7 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isTargetSelectAuthorized(query_context))
         return {};
 
     auto target = tryGetTargetTable();
@@ -695,10 +655,60 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     const StorageSnapshotPtr & /* storage_snapshot */,
     SelectQueryInfo & query_info) const
 {
+    /// Resolve the stage with the identity the read will use (the definer, or the invoker for an
+    /// `INVOKER` alias), so a `Merge` target enumerates its children with the same rights read does.
+    /// Unlike the read path this does not reject a legacy alias: that is left to `read`.
+    auto security_context = security_metadata.getSQLSecurityOverriddenContext(local_context);
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
-    return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(security_context, false);
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, security_context);
+    return target_storage->getQueryProcessingStage(security_context, to_stage, target_snapshot, query_info);
+}
+
+AccessFlags StorageAlias::getForwardedTargetAccess()
+{
+    return AccessFlags(AccessType::SELECT) | AccessType::INSERT | AccessType::ALTER_TABLE | AccessType::TRUNCATE
+        | AccessType::OPTIMIZE | AccessType::CHECK;
+}
+
+StorageID StorageAlias::resolveTargetFromEngineArgs(ASTs & engine_args, const String & default_database, const ContextPtr & query_context)
+{
+    // Supported syntaxes:
+    //  CREATE TABLE t2 ENGINE = Alias(t)
+    //  CREATE TABLE t2 ENGINE = Alias(db, t)
+    //  CREATE TABLE t2 ENGINE = Alias('t')
+    //  CREATE TABLE t2 ENGINE = Alias('db', 't')
+    //  CREATE TABLE t2 ENGINE = Alias('db.t')
+    if (engine_args.empty())
+    {
+        // Note: CREATE TABLE ... AS ... syntax is not supported
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage Alias requires target table name in ENGINE arguments. "
+            "Use: ENGINE = Alias('table_name') or ENGINE = Alias('database', 'table_name').");
+    }
+
+    if (engine_args.size() == 1)
+    {
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], query_context);
+        String table_arg = checkAndGetLiteralArgument<String>(engine_args[0], "table_name");
+
+        auto dot_pos = table_arg.find('.');
+        if (dot_pos != String::npos)
+            return StorageID(table_arg.substr(0, dot_pos), table_arg.substr(dot_pos + 1));
+        return StorageID(default_database, table_arg);
+    }
+
+    if (engine_args.size() == 2)
+    {
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], query_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], query_context);
+        return StorageID(
+            checkAndGetLiteralArgument<String>(engine_args[0], "database_name"),
+            checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
+    }
+
+    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Storage Alias requires at most 2 arguments: database name and table name");
 }
 
 void registerStorageAlias(StorageFactory & factory);
@@ -706,55 +716,11 @@ void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
     {
-        // Supported syntaxes:
-        //  CREATE TABLE t2 ENGINE = Alias(t)
-        //  CREATE TABLE t2 ENGINE = Alias(db, t)
-        //  CREATE TABLE t2 ENGINE = Alias('t')
-        //  CREATE TABLE t2 ENGINE = Alias('db', 't')
-
         auto local_context = args.getLocalContext();
 
-        String target_database;
-        String target_table;
-
-        if (args.engine_args.empty())
-        {
-            // Note: CREATE TABLE ... AS ... syntax is not supported
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires target table name in ENGINE arguments. "
-                "Use: ENGINE = Alias('table_name') or ENGINE = Alias('database', 'table_name').");
-        }
-        else if (args.engine_args.size() == 1)
-        {
-            // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String table_arg = checkAndGetLiteralArgument<String>(args.engine_args[0], "table_name");
-
-            auto dot_pos = table_arg.find('.');
-            if (dot_pos != String::npos)
-            {
-                target_database = table_arg.substr(0, dot_pos);
-                target_table = table_arg.substr(dot_pos + 1);
-            }
-            else
-            {
-                target_table = table_arg;
-                target_database = args.table_id.database_name;
-            }
-        }
-        else if (args.engine_args.size() == 2)
-        {
-            // Syntax: ENGINE = Alias(database_name, table_name)
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            args.engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
-            target_database = checkAndGetLiteralArgument<String>(args.engine_args[0], "database_name");
-            target_table = checkAndGetLiteralArgument<String>(args.engine_args[1], "table_name");
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Alias requires at most 2 arguments: database name and table name");
-        }
+        auto target_id = StorageAlias::resolveTargetFromEngineArgs(args.engine_args, args.table_id.database_name, local_context);
+        const String & target_database = target_id.database_name;
+        const String & target_table = target_id.table_name;
 
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
@@ -765,8 +731,12 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
+        /// An alias runs with definer rights, so the creator must already hold every privilege it can forward
+        /// on the target. `InterpreterCreateQuery::getRequiredAccess` requires it on the initiator, which also covers
+        /// `ON CLUSTER` and `Replicated` databases, whose hosts build the table with full access; this repeats it for
+        /// the other callers. Skipped when loading an already-accepted definition, which must stay loadable.
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
-            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
+            local_context->checkAccess(StorageAlias::getForwardedTargetAccess(), target_database, target_table);
 
         /// The restrictions below read the catalog, so they may only judge freshly supplied input:
         /// an already accepted definition must stay loadable, because a rejection while loading
@@ -776,7 +746,6 @@ void registerStorageAlias(StorageFactory & factory)
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         if (fresh_user_definition)
         {
-            StorageID target_id(target_database, target_table);
             if (args.table_id == target_id)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
 
@@ -789,17 +758,29 @@ void registerStorageAlias(StorageFactory & factory)
             args.table_id,
             local_context,
             target_database,
-            target_table);
+            target_table,
+            args.query.sql_security ? args.query.sql_security->as<ASTSQLSecurity>() : nullptr);
     },
     SecretArgumentsSpec{},
     {
-        .supports_schema_inference = true
+        .supports_schema_inference = true,
+        .supports_sql_security = true,
     },
     Documentation{
         .description = R"DOCS_MD(
 # Alias table engine
 
 The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
+
+## Access control {#access-control}
+
+An `Alias` table runs with **definer rights**, like a view declared with `SQL SECURITY DEFINER`. The definer is the user who creates the alias, recorded in the stored `CREATE` statement. Consequently:
+
+- To use an alias, a user needs the privilege for the operation **on the alias itself** (for example `SELECT ON db.alias_name`); the target table is not re-checked against that user. Operations forwarded to the target run with the definer's rights.
+- To **create** an alias, the creator must already hold every privilege the alias can forward on the target (`SELECT`, `INSERT`, `ALTER`, `TRUNCATE`, `OPTIMIZE`, `CHECK`). This ensures an alias can never grant its creator more access than they already had.
+- Granting someone access to an alias without granting them the same access on the target is allowed and is the intended way to delegate access through an alias. Keeping the two sets of grants consistent is the administrator's responsibility.
+
+An alias created by an older version that predates definer rights has no stored definer and cannot be used; `DROP` and re-`CREATE` it.
 
 ## Creating a Table {#creating-a-table}
 

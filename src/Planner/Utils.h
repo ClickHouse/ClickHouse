@@ -101,10 +101,8 @@ NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryT
 
 /// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
 /// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
-/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
-/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
+/// subcolumns with a grant on their exact name. Each name is checked like a query that reads it.
 NameSet getColumnsSelectableByTrivialQuery(
-    const StoragePtr & storage,
     const StorageID & storage_id,
     const ColumnsDescription & columns,
     const ContextPtr & query_context);
