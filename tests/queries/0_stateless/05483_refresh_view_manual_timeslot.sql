@@ -79,5 +79,21 @@ SELECT dateDiff('second', last_success_time, next_refresh_time) = 20
 FROM system.view_refreshes
 WHERE database = currentDatabase() AND view = 'refresh_progress_mv';
 
+-- A manual refresh soon after an early one with an absurd spread. The offsets of the scheduled refreshes are random,
+-- so only the outcome of the refreshes is checked, not the number of rows.
+SYSTEM STOP VIEW refresh_progress_mv;
+ALTER TABLE refresh_progress_mv MODIFY REFRESH EVERY 1 MINUTE RANDOMIZE FOR 10000000000000000000 SECOND APPEND;
+SYSTEM TEST VIEW refresh_progress_mv SET FAKE TIME '2050-01-02 00:01:05';
+SYSTEM REFRESH VIEW refresh_progress_mv;
+SYSTEM START VIEW refresh_progress_mv;
+SYSTEM WAIT VIEW refresh_progress_mv;
+SYSTEM STOP VIEW refresh_progress_mv;
+SYSTEM TEST VIEW refresh_progress_mv SET FAKE TIME '2050-01-02 00:00:55';
+SYSTEM REFRESH VIEW refresh_progress_mv;
+SYSTEM START VIEW refresh_progress_mv;
+SYSTEM WAIT VIEW refresh_progress_mv;
+SYSTEM STOP VIEW refresh_progress_mv;
+SELECT exception = '' FROM system.view_refreshes WHERE database = currentDatabase() AND view = 'refresh_progress_mv';
+
 DROP TABLE refresh_progress_mv;
 DROP TABLE refresh_progress_dst;
