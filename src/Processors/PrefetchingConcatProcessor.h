@@ -67,7 +67,7 @@ private:
 
         /// A buffered virtual row has no rows, but it announces the boundary of everything that
         /// follows it, so nothing may be read behind it until it is forwarded.
-        bool hasRoom(size_t max_rows, size_t max_bytes) const
+        [[nodiscard]] bool hasRoom(size_t max_rows, size_t max_bytes) const
         {
             return num_virtual_rows == 0 && (num_rows < max_rows || num_bytes < max_bytes);
         }
