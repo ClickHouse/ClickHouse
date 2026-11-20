@@ -335,7 +335,12 @@ void SerializationNullable::serializeNullRaw(DB::WriteBuffer & ostr, const DB::F
 
 bool SerializationNullable::tryDeserializeNullRaw(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
 {
-    return checkString(settings.tsv.null_representation, istr);
+    if (!checkString(settings.tsv.null_representation, istr))
+        return false;
+    /// A raw field read with `readString` keeps the trailing CRLF terminator, so consume it to reach the field end.
+    if (settings.tsv.crlf_end_of_line_input && !istr.eof() && *istr.position() == '\r')
+        ++istr.position();
+    return true;
 }
 
 template<typename ReturnType, bool escaped>

@@ -4,10 +4,15 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
+#include <Common/findExtreme.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/castColumn.h>
+
+#include <limits>
 
 
 namespace DB
@@ -20,6 +25,7 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -561,5 +567,54 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 input_rows_count,
                 current_size);
     }
+}
+
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
+{
+    const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
+    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+        return argument;
+
+    return {castColumn(argument, target_type), target_type, argument.name};
+}
+
+void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
+{
+    const IColumn * values = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
+        values = &column_const->getDataColumn();
+
+    /// Only UInt64 can exceed Int64, which `IColumn::getInt` returns: 2^63 or more would be read as a negative number
+    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
+    if (!column_uint64)
+        return;
+
+    const auto & data = column_uint64->getData();
+    const auto max_value = findExtremeMax(data.data(), 0, data.size());
+    if (max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(
+            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "The {} argument of function {} is out of range for Int64: {}",
+            argument_name,
+            function_name,
+            *max_value);
+}
+
+bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
+{
+    bool has_uint64 = false;
+    bool has_nullable = false;
+    for (const auto & argument : arguments)
+    {
+        if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64())
+        {
+            /// The dictionary of a `LowCardinality` column may keep values that no row references, e.g. after a filter.
+            if (argument.type->lowCardinality())
+                return true;
+            has_uint64 = true;
+        }
+        has_nullable |= isNullableOrLowCardinalityNullable(argument.type);
+    }
+    return has_uint64 && has_nullable;
 }
 }
