@@ -209,7 +209,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
         String next();
         size_t size();
@@ -409,6 +409,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 

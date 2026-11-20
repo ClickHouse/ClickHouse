@@ -256,7 +256,8 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const
@@ -572,7 +573,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /*skip_object_metadata=*/true,
+        /*with_tags=*/false,
+        format_settings);
 
     if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
     {

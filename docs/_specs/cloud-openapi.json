@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422629",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1451325",
       "email": "support@clickhouse.com"
     }
   },
@@ -708,7 +708,7 @@
     "/v1/organizations/{organizationId}/roles": {
       "get": {
         "summary": "List all available roles for an organization",
-        "description": "Returns all available roles (system + custom) for an organization.",
+        "description": "Returns available roles (system + custom) for an organization, ordered by unique role ID ascending. Results are capped at `limit` (default and maximum 250) per page. Pass `nextCursor` as the `cursor` query parameter to fetch the next page until it is null.",
         "operationId": "organizationRolesGetList",
         "parameters": [
           {
@@ -719,6 +719,24 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 250
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -745,6 +763,17 @@
                       "items": {
                         "$ref": "#/components/schemas/RBACRole"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -808,7 +837,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Returns all available roles (system + custom) for an organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Returns available roles (system + custom) for an organization, ordered by unique role ID ascending. Results are capped at `limit` (default and maximum 250) per page. Pass `nextCursor` as the `cursor` query parameter to fetch the next page until it is null.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -4418,7 +4447,7 @@
       },
       "post": {
         "summary": "Create service JWT provider",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a valid RS256 key set, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a key set with a supported signing key, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
         "operationId": "jwtProviderCreate",
         "parameters": [
           {
@@ -4668,7 +4697,7 @@
       },
       "put": {
         "summary": "Update service JWT provider",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a valid RS256 key set.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a key set with a supported signing key.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
         "operationId": "jwtProviderUpdate",
         "parameters": [
           {
@@ -10835,7 +10864,7 @@
       },
       "put": {
         "summary": "Update ClickPipe settings",
-        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.",
+        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.",
         "operationId": "clickPipeSettingsUpdate",
         "parameters": [
           {
@@ -10961,7 +10990,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -15700,7 +15729,7 @@
       },
       "get": {
         "summary": "List of organization Postgres services",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of all Postgres services in the organization.",
+        "description": "Returns a list of all Postgres services in the organization.",
         "operationId": "postgresServiceGetList",
         "parameters": [
           {
@@ -15799,18 +15828,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns a list of all Postgres services in the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/prometheus": {
       "get": {
         "summary": "Get organization PostgreSQL metrics",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns Prometheus metrics for all PostgreSQL services in an organization. Maximum 100 services supported.",
+        "description": "Returns Prometheus metrics for all PostgreSQL services in an organization. Maximum 100 services supported.",
         "operationId": "postgresOrgPrometheusGet",
         "parameters": [
           {
@@ -15891,18 +15917,15 @@
         "tags": [
           "Prometheus"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns Prometheus metrics for all PostgreSQL services in an organization. Maximum 100 services supported.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}": {
       "get": {
         "summary": "Get PostgreSQL service details",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a Postgres service that belongs to the organization",
+        "description": "Returns a Postgres service that belongs to the organization",
         "operationId": "postgresServiceGet",
         "parameters": [
           {
@@ -16008,16 +16031,13 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns a Postgres service that belongs to the organization\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "delete": {
         "summary": "Delete a PostgreSQL service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.",
+        "description": "Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.",
         "operationId": "postgresServiceDelete",
         "parameters": [
           {
@@ -16120,16 +16140,13 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       },
       "patch": {
         "summary": "Update a PostgreSQL service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Update a Postgres service that belongs to the organization. **WARNING:** Changing the name also updates the host name and certificates for the service.",
+        "description": "Update a Postgres service that belongs to the organization. **WARNING:** Changing the name also updates the host name and certificates for the service.",
         "operationId": "postgresServicePatch",
         "parameters": [
           {
@@ -16244,18 +16261,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Update a Postgres service that belongs to the organization. **WARNING:** Changing the name also updates the host name and certificates for the service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates": {
       "get": {
         "summary": "Get Postgres CA certs",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Download CA certificates for a PostgreSQL service",
+        "description": "Download CA certificates for a PostgreSQL service",
         "operationId": "postgresServiceCertsGet",
         "parameters": [
           {
@@ -16354,18 +16368,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Download CA certificates for a PostgreSQL service\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/restoredService": {
       "post": {
         "summary": "Restore a Postgres service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Restore a Postgres database from continuous backup, optionally at a specific point in time.",
+        "description": "Restore a Postgres database from continuous backup, optionally at a specific point in time.",
         "operationId": "postgresInstanceRestore",
         "parameters": [
           {
@@ -16480,18 +16491,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Restore a Postgres database from continuous backup, optionally at a specific point in time.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permissions</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage`, `control-plane:organization:create-service` permissions.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/password": {
       "patch": {
         "summary": "Update Postgres superuser password",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Sets a new password for a Postgres service's superuser account.",
+        "description": "Sets a new password for a Postgres service's superuser account.",
         "operationId": "postgresServiceSetPassword",
         "parameters": [
           {
@@ -16606,18 +16614,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Sets a new password for a Postgres service's superuser account.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/state": {
       "patch": {
         "summary": "Update Postgres service state",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby. If there is no standby, replace the primary with a newly provisioned server and switch over to it.\n",
+        "description": "Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby. If there is no standby, replace the primary with a newly provisioned server and switch over to it.\n",
         "operationId": "postgresServicePatchState",
         "parameters": [
           {
@@ -16732,18 +16737,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby. If there is no standby, replace the primary with a newly provisioned server and switch over to it.\n\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/readReplica": {
       "post": {
         "summary": "Create a read replica for a Postgres service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate the process to create a new read replica for a Postgres service.",
+        "description": "Initiate the process to create a new read replica for a Postgres service.",
         "operationId": "postgresInstanceCreateReadReplica",
         "parameters": [
           {
@@ -16858,18 +16860,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Initiate the process to create a new read replica for a Postgres service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permissions</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage`, `control-plane:organization:create-service` permissions.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/config": {
       "get": {
         "summary": "Get PostgreSQL service configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the configuration data for a Postgres service and its PgBouncer service.",
+        "description": "Returns the configuration data for a Postgres service and its PgBouncer service.",
         "operationId": "postgresInstanceConfigGet",
         "parameters": [
           {
@@ -16975,16 +16974,13 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns the configuration data for a Postgres service and its PgBouncer service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "post": {
         "summary": "Replace Postgres service configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replace the existing Postgres service and pgBouncer configuration.",
+        "description": "Replace the existing Postgres service and pgBouncer configuration.",
         "operationId": "postgresInstanceConfigPost",
         "parameters": [
           {
@@ -17099,16 +17095,13 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Replace the existing Postgres service and pgBouncer configuration.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       },
       "patch": {
         "summary": "Update Postgres service configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Update the existing Postgres service and pgBouncer configuration.",
+        "description": "Update the existing Postgres service and pgBouncer configuration.",
         "operationId": "postgresInstanceConfigPatch",
         "parameters": [
           {
@@ -17223,18 +17216,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Update the existing Postgres service and pgBouncer configuration.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/prometheus": {
       "get": {
         "summary": "Get PostgreSQL service metrics",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns Prometheus metrics for a PostgreSQL service.",
+        "description": "Returns Prometheus metrics for a PostgreSQL service.",
         "operationId": "postgresInstancePrometheusGet",
         "parameters": [
           {
@@ -17325,18 +17315,15 @@
         "tags": [
           "Prometheus"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns Prometheus metrics for a PostgreSQL service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/metrics": {
       "get": {
         "summary": "Get Postgres time-series metrics",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.",
+        "description": "Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.",
         "operationId": "postgresInstanceMetricsGet",
         "parameters": [
           {
@@ -17471,6 +17458,480 @@
         "tags": [
           "Postgres"
         ],
+        "x-mint": {
+          "content": "Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
+      }
+    },
+    "/v1/organizations/{organizationId}/postgres/{postgresId}/privateEndpoint": {
+      "get": {
+        "summary": "Get the PostgreSQL private endpoint",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the AWS private endpoint service of a Postgres service, or 404 if it has not been created. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
+        "operationId": "postgresPrivateEndpointGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PostgresPrivateEndpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create the PostgreSQL private endpoint",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
+        "operationId": "postgresPrivateEndpointPost",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostgresPrivateEndpointPostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PostgresPrivateEndpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update the PostgreSQL private endpoint",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Approves VPC endpoints by ID and sets the supported regions. At least one of `allowedVpcEndpoints` and `supportedRegions` is required, and each one provided replaces the existing list in full, so include every entry to keep. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
+        "operationId": "postgresPrivateEndpointPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostgresPrivateEndpointPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PostgresPrivateEndpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Delete the PostgreSQL private endpoint",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes the AWS private endpoint service of a Postgres service. Connections through approved VPC endpoints stop working. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
+        "operationId": "postgresPrivateEndpointDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
         "x-badges": [
           {
             "name": "Beta",
@@ -17482,7 +17943,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/backups": {
       "get": {
         "summary": "List of Postgres service backups",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.",
+        "description": "Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.",
         "operationId": "postgresServiceBackupGetList",
         "parameters": [
           {
@@ -17628,18 +18089,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns": {
       "get": {
         "summary": "List Postgres slow query patterns",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns aggregate metrics for the slowest query patterns observed on a Postgres service during the given time window. Use this to discover which queries dominate total execution time, CPU, I/O, or WAL generation.",
+        "description": "Returns aggregate metrics for the slowest query patterns observed on a Postgres service during the given time window. Use this to discover which queries dominate total execution time, CPU, I/O, or WAL generation.",
         "operationId": "slowQueryPatternsGetList",
         "parameters": [
           {
@@ -17858,18 +18316,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns aggregate metrics for the slowest query patterns observed on a Postgres service during the given time window. Use this to discover which queries dominate total execution time, CPU, I/O, or WAL generation.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}": {
       "get": {
         "summary": "Get a Postgres slow query pattern with recent executions",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns aggregate metrics for a single slow query pattern together with its most recent individual executions.",
+        "description": "Returns aggregate metrics for a single slow query pattern together with its most recent individual executions.",
         "operationId": "slowQueryPatternGet",
         "parameters": [
           {
@@ -18028,18 +18483,15 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns aggregate metrics for a single slow query pattern together with its most recent individual executions.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/logs": {
       "get": {
         "summary": "List Postgres server logs",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns PostgreSQL server log entries for a Postgres service within the given time window, most recent first by default (override with `sort_order`). Results are paginated with `limit`/`offset`; advance `offset` until a page returns fewer than `limit` entries to read the full window. The time range must not exceed 30 days, and `to_date` must be after `from_date`.",
+        "description": "Returns PostgreSQL server log entries for a Postgres service within the given time window, most recent first by default (override with `sort_order`). Results are paginated with `limit`/`offset`; advance `offset` until a page returns fewer than `limit` entries to read the full window. The time range must not exceed 30 days, and `to_date` must be after `from_date`.",
         "operationId": "postgresLogsGetList",
         "parameters": [
           {
@@ -18228,12 +18680,9 @@
         "tags": [
           "Postgres"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns PostgreSQL server log entries for a Postgres service within the given time window, most recent first by default (override with `sort_order`). Results are paginated with `limit`/`offset`; advance `offset` until a page returns fewer than `limit` entries to read the full window. The time range must not exceed 30 days, and `to_date` must be after `from_date`.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:postgres-service:view` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/privateEndpointConfig": {
@@ -22966,7 +23415,7 @@
           }
         },
         "x-mint": {
-          "content": "Creates an org-scoped presigned application/zip upload URL. Callers must use an upload ID for only one create or version attempt and request a new upload URL when retrying.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Creates an org-scoped presigned application/zip upload URL. Callers must use an upload ID for only one create or version attempt and request a new upload URL when retrying.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -23184,7 +23633,7 @@
           }
         },
         "x-mint": {
-          "content": "Returns the latest version of each UDF in the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the latest version of each UDF in the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-udfs` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -23454,7 +23903,7 @@
           }
         },
         "x-mint": {
-          "content": "Creates a new UDF. See [User-defined functions in Cloud](https://clickhouse.com/docs/products/cloud/features/sql-console-features/user-defined-functions).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Creates a new UDF. See [User-defined functions in Cloud](https://clickhouse.com/docs/products/cloud/features/sql-console-features/user-defined-functions).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -23691,7 +24140,7 @@
           }
         },
         "x-mint": {
-          "content": "Deletes every version of a UDF and detaches it from all services. Removal from services completes asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Deletes every version of a UDF and detaches it from all services. Removal from services completes asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       },
       "get": {
@@ -23897,7 +24346,7 @@
           }
         },
         "x-mint": {
-          "content": "Returns the latest version of a UDF.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the latest version of a UDF.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -24159,7 +24608,7 @@
           }
         },
         "x-mint": {
-          "content": "Returns the current service attachments for a UDF, with at most one attachment per service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the current service attachments for a UDF, with at most one attachment per service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -24408,7 +24857,7 @@
           }
         },
         "x-mint": {
-          "content": "Detaches a UDF from a service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Detaches a UDF from a service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       },
       "get": {
@@ -24626,7 +25075,7 @@
           }
         },
         "x-mint": {
-          "content": "Returns the current attachment of a UDF to one service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the current attachment of a UDF to one service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-udfs` permission.\n\n</div>\n</div>"
         }
       },
       "put": {
@@ -24959,7 +25408,7 @@
           }
         },
         "x-mint": {
-          "content": "Attaches one UDF version to a service, replacing the current version when necessary. When version is omitted, the latest ready version is attached.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Attaches one UDF version to a service, replacing the current version when necessary. When version is omitted, the latest ready version is attached.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -25221,7 +25670,7 @@
           }
         },
         "x-mint": {
-          "content": "Returns all versions of a UDF.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns all versions of a UDF.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-udfs` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -25535,7 +25984,7 @@
           }
         },
         "x-mint": {
-          "content": "Consumes a source archive, assigns a version, and starts the UDF build. Optional configuration fields omitted from the request use the defaults documented in the request schema; values are not inherited from the previous version. Retry by requesting a new upload URL and re-uploading.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Consumes a source archive, assigns a version, and starts the UDF build. Optional configuration fields omitted from the request use the defaults documented in the request schema; values are not inherited from the previous version. Retry by requesting a new upload URL and re-uploading.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -25784,7 +26233,7 @@
           }
         },
         "x-mint": {
-          "content": "Deletes a UDF version. The UDF must not be attached to any services.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
+          "content": "Deletes a UDF version. The UDF must not be attached to any services.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage-udfs` permission.\n\n</div>\n</div>"
         }
       }
     }
@@ -26425,7 +26874,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Present when deletion protection is enabled for the organization or the service is protected.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -28087,7 +28536,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -28206,7 +28655,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -28316,7 +28765,7 @@
       "ClickPipePatchKafkaSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": [
               "string",
               "null"
@@ -29037,7 +29486,8 @@
             "description": "Number of parallel workers to use per table in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -29049,6 +29499,7 @@
             "description": "Number of tables to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "enableFailoverSlots": {
@@ -29058,6 +29509,11 @@
           },
           "deleteOnMerge": {
             "description": "Enable hard delete behavior in ReplacingMergeTree for PostgreSQL DELETE operations.",
+            "type": "boolean",
+            "example": false
+          },
+          "useJsonNativeFormat": {
+            "description": "Store json and jsonb columns in native ClickHouse JSON format (requires ClickHouse 25.3+). Non-object values are wrapped as {\"_value\": ...}, and json[]/jsonb[] become Array(JSON). When disabled, JSON data is stored as String. Can only be set at creation. Must be enabled for your organization.",
             "type": "boolean",
             "example": false
           }
@@ -29517,7 +29973,8 @@
             "description": "Number of parallel workers to use per table in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -29529,10 +29986,16 @@
             "description": "Number of tables to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "deleteOnMerge": {
             "description": "Enable hard delete behavior in ReplacingMergeTree for MySQL DELETE operations.",
+            "type": "boolean",
+            "example": false
+          },
+          "useJsonNativeFormat": {
+            "description": "Store JSON columns in native ClickHouse JSON format (requires ClickHouse 25.3+). Non-object values are wrapped as {\"_value\": ...}. When disabled, JSON data is stored as String. Can only be set at creation. Must be enabled for your organization.",
             "type": "boolean",
             "example": false
           }
@@ -30046,7 +30509,9 @@
           },
           "initialLoadParallelism": {
             "description": "Number of parallel workers during initial load.",
-            "type": "number"
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows to snapshot per partition.",
@@ -30054,7 +30519,9 @@
           },
           "snapshotNumberOfParallelTables": {
             "description": "Number of parallel tables to snapshot.",
-            "type": "number"
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
           }
         },
         "required": [
@@ -30317,7 +30784,8 @@
             "description": "Number of parallel workers to use per collection in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -30329,6 +30797,7 @@
             "description": "Number of collections to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "deleteOnMerge": {
@@ -31585,37 +32054,6 @@
           "database"
         ]
       },
-      "ClickPipePatchDestination": {
-        "properties": {
-          "columns": {
-            "type": "array",
-            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
-            "items": {
-              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
-            }
-          }
-        }
-      },
-      "ClickPipesCdcScaling": {
-        "properties": {
-          "replicaCpuMillicores": {
-            "description": "CPU in millicores for DB ClickPipes.",
-            "type": "integer",
-            "minimum": 1000,
-            "maximum": 32000,
-            "multipleOf": 1000,
-            "example": 2000
-          },
-          "replicaMemoryGb": {
-            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
-            "type": "number",
-            "minimum": 4,
-            "maximum": 128,
-            "multipleOf": 4,
-            "example": 8
-          }
-        }
-      },
       "ClickPipeSettingsPutRequest": {
         "properties": {
           "streaming_max_insert_wait_ms": {
@@ -31712,6 +32150,37 @@
           }
         }
       },
+      "ClickPipePatchDestination": {
+        "properties": {
+          "columns": {
+            "type": "array",
+            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
+            }
+          }
+        }
+      },
+      "ClickPipesCdcScaling": {
+        "properties": {
+          "replicaCpuMillicores": {
+            "description": "CPU in millicores for DB ClickPipes.",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 32000,
+            "multipleOf": 1000,
+            "example": 2000
+          },
+          "replicaMemoryGb": {
+            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
+            "type": "number",
+            "minimum": 4,
+            "maximum": 128,
+            "multipleOf": 4,
+            "example": 8
+          }
+        }
+      },
       "ClickPipeSchemaDiscoverySource": {
         "properties": {
           "kafka": {
@@ -31803,7 +32272,7 @@
             "format": "date-time"
           },
           "type": {
-            "description": "Type of the activity. One of 'create_organization', 'delete_organization', 'organization_update_name', 'transfer_service_in', 'transfer_service_out', 'save_payment_method', 'marketplace_subscription', 'migrate_marketplace_billing_details_in', 'migrate_marketplace_billing_details_out', 'organization_update_tier', 'organization_invite_create', 'organization_invite_delete', 'organization_member_join', 'organization_member_add', 'organization_member_leave', 'organization_member_delete', 'organization_member_update_role', 'organization_member_update_roles', 'organization_member_update_mfa_method', 'organization_saml_connection_create', 'organization_saml_connection_update', 'user_login', 'user_login_failed', 'user_logout', 'key_create', 'key_delete', 'openapi_key_update', 'service_create', 'service_start', 'service_stop', 'service_awaken', 'service_idle', 'service_running', 'service_partially_running', 'service_delete', 'service_update_name', 'service_update_ip_access_list', 'service_update_autoscaling_memory', 'service_update_autoscaling_idling', 'service_update_password', 'service_update_autoscaling_replicas', 'service_update_max_allowable_replicas', 'service_update_backup_configuration', 'service_restore_backup', 'service_update_release_channel', 'service_update_gpt_usage_consent', 'service_update_private_endpoints', 'service_import_to_organization', 'service_export_from_organization', 'service_maintenance_start', 'service_maintenance_end', 'service_update_core_dump', 'service_update_deletion_protection', 'service_update_autoscaling_schedule', 'service_update_query_endpoints', 'service_update_direct_connection', 'service_update_sql_console_jwt_auth', 'service_update_snapshot_configuration', 'service_update_collector_ip_access_list', 'service_update_mysql_interface', 'service_update_upgrade_window', 'service_delete_upgrade_window', 'service_trigger_failover', 'service_trigger_recovery', 'service_mcp_enabled', 'service_mcp_disabled', 'service_upgrade', 'service_scaled_down_for_tier_change', 'service_encryption_key_check_failed', 'service_encryption_key_rotation_failed', 'service_encryption_key_rotated', 'service_stop_encryption_key_inaccessible', 'service_restart_encryption_key_rotation', 'backup_delete', 'backup_bucket_create', 'backup_bucket_update', 'backup_bucket_delete', 'backup_bucket_archive', 'warehouse_update_name', 'warehouse_update_release_channel', 'role_create', 'role_update', 'role_delete', 'role_resources_delete', 'organization_member_remove_roles', 'scim_user_profile_update', 'scim_group_create', 'scim_group_update', 'scim_group_delete', 'organization_saml_connection_delete', 'organization_update_saml_query_ownership_migration', 'organization_approved_domain_verify', 'organization_approved_domain_update', 'organization_approved_domain_delete', 'organization_approved_domain_auto_join', 'organization_approved_domain_auto_invite', 'datadog_integration_create', 'datadog_integration_delete', 'organization_update_spend_alert', 'organization_update_core_dumps', 'organization_update_private_endpoints', 'organization_update_pci_compliance', 'organization_update_hipaa_status', 'organization_security_contact_add', 'organization_security_contact_remove', 'organization_security_contact_replace', 'organization_update_public_preview', 'byoc_infrastructure_update_customer_authorized_access', 'transfer_credits_in', 'transfer_credits_out', 'promo_code_claim', 'schema_advisor_seed', 'schema_advisor_generate_plan', 'schema_advisor_approve_plan', 'schema_advisor_start_deployment', 'schema_advisor_start_benchmark', 'schema_advisor_run_benchmark', 'schema_advisor_start_promotion', 'schema_advisor_exchange_tables', 'schema_advisor_drop_sandbox', 'udf_create', 'udf_update', 'udf_delete', 'udf_version_create', 'udf_version_delete', 'udf_attach', 'udf_detach', 'udf_update_services', 'udf_redeploy', 'udf_rebuild', 'postgres_action'. New values may be added; treat unknown values as valid.",
+            "description": "Type of the activity. One of 'create_organization', 'delete_organization', 'organization_update_name', 'transfer_service_in', 'transfer_service_out', 'save_payment_method', 'marketplace_subscription', 'migrate_marketplace_billing_details_in', 'migrate_marketplace_billing_details_out', 'organization_update_tier', 'organization_invite_create', 'organization_invite_delete', 'organization_member_join', 'organization_member_add', 'organization_member_leave', 'organization_member_delete', 'organization_member_update_role', 'organization_member_update_roles', 'organization_member_update_mfa_method', 'organization_saml_connection_create', 'organization_saml_connection_update', 'user_login', 'user_login_failed', 'user_logout', 'key_create', 'key_delete', 'openapi_key_update', 'service_create', 'service_start', 'service_stop', 'service_awaken', 'service_idle', 'service_running', 'service_partially_running', 'service_delete', 'service_update_name', 'service_update_ip_access_list', 'service_update_autoscaling_memory', 'service_update_autoscaling_idling', 'service_update_password', 'service_update_autoscaling_replicas', 'service_update_max_allowable_replicas', 'service_update_backup_configuration', 'service_restore_backup', 'service_update_release_channel', 'service_update_gpt_usage_consent', 'service_update_private_endpoints', 'service_import_to_organization', 'service_export_from_organization', 'service_maintenance_start', 'service_maintenance_end', 'service_update_core_dump', 'service_update_deletion_protection', 'service_update_autoscaling_schedule', 'service_update_query_endpoints', 'service_update_direct_connection', 'service_update_sql_console_jwt_auth', 'service_update_snapshot_configuration', 'service_update_collector_ip_access_list', 'service_update_mysql_interface', 'service_update_upgrade_window', 'service_delete_upgrade_window', 'service_trigger_failover', 'service_trigger_recovery', 'service_mcp_enabled', 'service_mcp_disabled', 'service_upgrade', 'service_scaled_down_for_tier_change', 'service_encryption_key_check_failed', 'service_encryption_key_rotation_failed', 'service_encryption_key_rotated', 'service_stop_encryption_key_inaccessible', 'service_restart_encryption_key_rotation', 'backup_delete', 'backup_bucket_create', 'backup_bucket_update', 'backup_bucket_delete', 'backup_bucket_archive', 'warehouse_update_name', 'warehouse_update_release_channel', 'role_create', 'role_update', 'role_delete', 'role_resources_delete', 'organization_member_remove_roles', 'scim_user_profile_update', 'scim_group_create', 'scim_group_update', 'scim_group_delete', 'organization_saml_connection_delete', 'organization_update_saml_query_ownership_migration', 'organization_approved_domain_verify', 'organization_approved_domain_update', 'organization_approved_domain_delete', 'organization_approved_domain_auto_join', 'organization_approved_domain_auto_invite', 'datadog_integration_create', 'datadog_integration_delete', 'organization_update_spend_alert', 'organization_update_core_dumps', 'organization_update_ai_support', 'organization_update_ai_data_sharing', 'organization_update_private_endpoints', 'organization_update_pci_compliance', 'organization_update_hipaa_status', 'organization_security_contact_add', 'organization_security_contact_remove', 'organization_security_contact_replace', 'organization_update_public_preview', 'byoc_infrastructure_update_customer_authorized_access', 'transfer_credits_in', 'transfer_credits_out', 'promo_code_claim', 'schema_advisor_seed', 'schema_advisor_generate_plan', 'schema_advisor_approve_plan', 'schema_advisor_start_deployment', 'schema_advisor_start_benchmark', 'schema_advisor_run_benchmark', 'schema_advisor_start_promotion', 'schema_advisor_exchange_tables', 'schema_advisor_drop_sandbox', 'udf_create', 'udf_update', 'udf_delete', 'udf_version_create', 'udf_version_delete', 'udf_attach', 'udf_detach', 'udf_update_services', 'udf_redeploy', 'udf_rebuild', 'postgres_action'. New values may be added; treat unknown values as valid.",
             "type": "string",
             "example": "service_create"
           },
@@ -36809,6 +37278,76 @@
           "variableName"
         ]
       },
+      "ClickStackSqlQueryFilterInput": {
+        "properties": {
+          "type": {
+            "description": "Discriminator. Must be \"SQL_QUERY\".",
+            "type": "string",
+            "enum": [
+              "SQL_QUERY"
+            ],
+            "example": "SQL_QUERY"
+          },
+          "name": {
+            "description": "Display name for the dashboard filter",
+            "type": "string",
+            "example": "Environment"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection the query runs on.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "Query whose first column populates the dropdown. May use the time macros and other filters' variables, but not `$__sourceTable` or `$__filters`, since the filter has no source.",
+            "type": "string",
+            "example": "SELECT DISTINCT env FROM default.envs ORDER BY env"
+          },
+          "isBroadcastEnabled": {
+            "description": "Must be false or omitted. Allowed values: false.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Must be true if provided, and is true when omitted. Tiles reference the selection as `$variableName`. Allowed values: true.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token that tiles reference this filter's selected value by, as `$variableName`. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed. Must be unique across a dashboard's variable-enabled filters.",
+            "type": "string",
+            "example": "env"
+          },
+          "minSelections": {
+            "description": "Set to 1 to make the filter required.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Set to 1 to make the filter single-select.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "connectionId",
+          "sqlTemplate"
+        ]
+      },
       "ClickStackFilterInput": {
         "oneOf": [
           {
@@ -36822,6 +37361,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackSourceFilterInput"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilterInput"
           }
         ]
       },
@@ -36901,6 +37443,25 @@
           }
         ]
       },
+      "ClickStackSqlQueryFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
       "ClickStackFilter": {
         "oneOf": [
           {
@@ -36914,6 +37475,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackSourceFilter"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilter"
           }
         ]
       },
@@ -38125,6 +38689,14 @@
             ],
             "example": "Timestamp, Body, ServiceName"
           },
+          "rowKeyExpression": {
+            "description": "Comma-separated expressions that together identify one row, e.g. the partition key, primary key, _block_number and _block_offset. When set, row details are looked up by these columns only. Leave blank to detect keys from table metadata.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toDate(Timestamp), ServiceName, Timestamp, _block_number, _block_offset"
+          },
           "useTextIndexForImplicitColumn": {
             "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
             "type": [
@@ -38405,6 +38977,14 @@
               "null"
             ],
             "example": "Timestamp, Body, ServiceName"
+          },
+          "rowKeyExpression": {
+            "description": "Comma-separated expressions that together identify one row, e.g. the partition key, primary key, _block_number and _block_offset. When set, row details are looked up by these columns only. Leave blank to detect keys from table metadata.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toDate(Timestamp), SpanName, Timestamp, _block_number, _block_offset"
           },
           "useTextIndexForImplicitColumn": {
             "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
@@ -38694,6 +39274,16 @@
             "description": "Floor for the auto-inferred chart granularity, and the scrape interval that `$__rate_interval` is computed from. Set it to the Prometheus scrape interval so a short time range does not produce buckets smaller than that interval. Only constrains \"Auto\" granularity; an explicit granularity picked on a tile is never overridden. Omit for no minimum. Uses the SQL interval format (a positive integer followed by second, minute, hour, or day), not the short form of the materialized view granularity fields.",
             "type": "string",
             "example": "1 minute"
+          },
+          "promqlBackend": {
+            "description": "How PromQL is evaluated on a ClickHouse connection. \"clickhouse-http\" uses ClickHouse's Prometheus HTTP API, which needs ClickHouse 26.6+ with the prometheus_api_v1 handler configured; queries fail with an error when the server does not serve it. \"table-function\" uses the prometheusQuery table functions. \"auto\" (the default when omitted) checks the server and prefers the HTTP API. Ignored when the connection is a Prometheus-compatible endpoint.",
+            "type": "string",
+            "enum": [
+              "auto",
+              "clickhouse-http",
+              "table-function"
+            ],
+            "example": "auto"
           }
         },
         "required": [
@@ -41688,7 +42278,7 @@
           },
           "io_method": {
             "type": "string",
-            "description": "Selects the method used to perform asynchronous I/O.",
+            "description": "Selects the method used to perform asynchronous I/O. Postgres 18 and later.",
             "externalDocs": {
               "url": "https://postgresqlco.nf/doc/en/param/io_method/"
             },
@@ -41704,11 +42294,37 @@
               "string",
               "integer"
             ],
-            "description": "Number of I/O worker processes used when io_method is worker.",
+            "description": "Number of I/O worker processes used when io_method is worker. Postgres 18 only.",
             "externalDocs": {
               "url": "https://postgresqlco.nf/doc/en/param/io_workers/"
             },
             "example": 3,
+            "minimum": 1,
+            "maximum": 32
+          },
+          "io_min_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of I/O worker processes kept running when io_method is worker. Postgres 19 and later.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_min_workers/"
+            },
+            "example": 2,
+            "minimum": 1,
+            "maximum": 32
+          },
+          "io_max_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of I/O worker processes started when io_method is worker. Postgres 19 and later.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_max_workers/"
+            },
+            "example": 8,
             "minimum": 1,
             "maximum": 32
           },
@@ -41963,6 +42579,19 @@
             "minimum": 0,
             "maximum": 262143
           },
+          "max_repack_replication_slots": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Replication slots reserved for REPACK CONCURRENTLY, separate from max_replication_slots. Postgres 19 and later.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_repack_replication_slots/"
+            },
+            "example": 5,
+            "minimum": 0,
+            "maximum": 262143
+          },
           "max_sync_workers_per_subscription": {
             "type": [
               "string",
@@ -41999,6 +42628,19 @@
             },
             "example": 8,
             "minimum": 1
+          },
+          "autovacuum_max_parallel_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of parallel workers a single autovacuum worker can use. 0 (the default) turns parallel autovacuum off. Postgres 19 and later.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_max_parallel_workers/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 1024
           },
           "autovacuum_naptime": {
             "type": [
@@ -42474,6 +43116,7 @@
         "type": "string",
         "title": "Postgres major version",
         "enum": [
+          "19",
           "18",
           "17"
         ]
@@ -42876,6 +43519,154 @@
           "pgConfig",
           "pgBouncerConfig"
         ]
+      },
+      "PostgresPrivateEndpointVpcEndpoint": {
+        "properties": {
+          "vpcEndpointId": {
+            "description": "ID of the AWS VPC endpoint that is allowed to connect.",
+            "type": "string",
+            "example": "vpce-0123456789abcdef0",
+            "pattern": "^vpce-[0-9a-f]{17}$"
+          },
+          "description": {
+            "description": "Optional description of the VPC endpoint.",
+            "type": "string",
+            "example": "Production VPC",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "vpcEndpointId"
+        ]
+      },
+      "PostgresPrivateEndpointPort": {
+        "properties": {
+          "port": {
+            "description": "Port exposed by the endpoint service.",
+            "type": "integer",
+            "example": 5432
+          },
+          "targetPort": {
+            "description": "Port on the Postgres service it forwards to.",
+            "type": "integer",
+            "example": 5432
+          }
+        },
+        "required": [
+          "port",
+          "targetPort"
+        ]
+      },
+      "PostgresPrivateEndpoint": {
+        "properties": {
+          "state": {
+            "description": "State of the private endpoint service: one of 'creating', 'available', 'deleting'. More states may be added. It is `creating` for about 5 to 10 minutes after creation, then `available`.",
+            "type": "string",
+            "example": "available"
+          },
+          "endpointServiceName": {
+            "description": "Name of the AWS endpoint service. Use it as the service name when creating a VPC endpoint. Omitted until the service is created.",
+            "type": "string",
+            "example": "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0"
+          },
+          "endpointServiceId": {
+            "description": "ID of the AWS endpoint service. Omitted until the service is created.",
+            "type": "string",
+            "example": "vpce-svc-0123456789abcdef0"
+          },
+          "privateHostname": {
+            "description": "Hostname that resolves to the Postgres service from an approved VPC endpoint. Omitted until the service is available.",
+            "type": "string"
+          },
+          "privateDnsName": {
+            "description": "Private DNS name of the endpoint service. Omitted until it is assigned.",
+            "type": "string"
+          },
+          "privateDnsVerificationState": {
+            "description": "Verification state of the private DNS name. Omitted until it is assigned.",
+            "type": "string"
+          },
+          "ipAddressType": {
+            "description": "IP address type of the endpoint service.",
+            "type": "string",
+            "example": "dual"
+          },
+          "ports": {
+            "type": "array",
+            "description": "Ports the endpoint service forwards.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresPrivateEndpointPort"
+            }
+          },
+          "supportedRegions": {
+            "type": "array",
+            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "us-west-2"
+            ]
+          },
+          "allowedVpcEndpoints": {
+            "type": "array",
+            "description": "VPC endpoints approved to connect.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresPrivateEndpointVpcEndpoint"
+            }
+          }
+        },
+        "required": [
+          "state",
+          "ipAddressType",
+          "ports",
+          "supportedRegions",
+          "allowedVpcEndpoints"
+        ]
+      },
+      "PostgresPrivateEndpointPostRequest": {
+        "properties": {
+          "supportedRegions": {
+            "type": "array",
+            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "us-west-2"
+            ],
+            "uniqueItems": true
+          }
+        }
+      },
+      "PostgresPrivateEndpointPatchRequest": {
+        "properties": {
+          "allowedVpcEndpoints": {
+            "type": "array",
+            "description": "Full replacement of the approved VPC endpoints: endpoints not listed are no longer allowed to connect. Each endpoint ID must be unique.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresPrivateEndpointVpcEndpoint"
+            },
+            "example": [
+              {
+                "vpcEndpointId": "vpce-0123456789abcdef0",
+                "description": "Production VPC"
+              }
+            ],
+            "maxItems": 50
+          },
+          "supportedRegions": {
+            "type": "array",
+            "description": "Full replacement of the supported regions. AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "us-west-2"
+            ],
+            "uniqueItems": true
+          }
+        }
       },
       "PostgresBackup": {
         "properties": {
@@ -43424,7 +44215,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43464,7 +44255,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43497,7 +44288,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43793,7 +44584,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Default is false. Setting it to true requires the `control-plane:service:delete` permission granted for all services in the organization (not service by service), in addition to `control-plane:organization:create-service`, and deletion protection to be enabled for the organization.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Default is false. Setting it to true requires the `control-plane:service:delete` permission granted for all services in the organization (not service by service), in addition to `control-plane:organization:create-service`.",
             "type": "boolean"
           }
         },
@@ -43846,7 +44637,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Changing it in either direction requires the `control-plane:service:delete` permission on the service, in addition to `control-plane:service:manage`; sending the current value changes nothing and needs no extra permission. Turning it on also requires deletion protection to be enabled for the organization; turning it off does not. ClickStack services can't be updated through the API; manage their deletion protection in the console.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Changing it in either direction requires the `control-plane:service:delete` permission on the service, in addition to `control-plane:service:manage`; sending the current value changes nothing and needs no extra permission. ClickStack services can't be updated through the API; manage their deletion protection in the console.",
             "type": "boolean"
           }
         }
@@ -44185,7 +44976,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Present when deletion protection is enabled for the organization or the service is protected.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -44560,7 +45351,7 @@
             "$ref": "#/components/schemas/ClickPipeScaling"
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           },
           "startPaused": {
             "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
@@ -44603,7 +45394,7 @@
             }
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           }
         }
       },

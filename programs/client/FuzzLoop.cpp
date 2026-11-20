@@ -1,5 +1,7 @@
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
+#include "config.h"
+
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -165,10 +167,10 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     /// crashes the server before the message can even propagate back here.
     if (have_error
         && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-        exitOnOracleMismatch(parsed_query->formatForErrorMessage(), exception->message());
+        exitOnOracleMismatch(parsed_query->formatWithSecretsOneLine(), exception->message());
     if (have_error)
     {
-        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatForErrorMessage(), exception->message());
+        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatWithSecretsOneLine(), exception->message());
     }
     return tryToReconnect(1, 10);
 }
@@ -281,7 +283,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         ASTPtr ast_to_process;
         try
         {
-            auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+            auto base_before_fuzz = fuzz_base->formatWithSecretsOneLine();
 
             ast_to_process = fuzz_base->clone();
             // Run the original query as well.
@@ -298,7 +300,8 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     query_parameters.insert_or_assign(name, value);
             }
 
-            query_to_execute = ast_to_process->formatForErrorMessage();
+            /// The fuzzer runs the text it formats, so the secrets stay in it.
+            query_to_execute = ast_to_process->formatWithSecretsOneLine();
             if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
             {
                 fmt::print(stderr, "Got boring AST\n");
@@ -338,7 +341,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     /// Dump into /dev/null, we are not interested in sending the results back to the client
                     insert_into->select = ast_to_process;
                     ast_to_process = insert_into;
-                    query_to_execute = ast_to_process->formatForErrorMessage();
+                    query_to_execute = ast_to_process->formatWithSecretsOneLine();
                 }
                 else
                 {
@@ -351,7 +354,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             /// `base_after_fuzz` should format from `ast_to_process`
             WriteBufferFromOwnString dump_before_fuzz;
             fuzz_base->dumpTree(dump_before_fuzz);
-            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
+            auto base_after_fuzz = fuzz_base->formatWithSecretsOneLine();
 
             // Check that the source AST didn't change after fuzzing. This
             // helps debug AST cloning errors, where the cloned AST doesn't
@@ -390,7 +393,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 /// Print insert data
                 String bytes;
-                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
+                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process, client_context);
                 WriteBufferFromString write_buf(bytes);
                 copyData(*read_buf, write_buf);
                 fmt::print(stdout, "{}\n", bytes);
@@ -483,7 +486,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             fuzzer.notifyQueryFailed(ast_to_process);
             have_error = false;
         }
-        else if (ast_to_process->formatForErrorMessage().size() > 2000)
+        else if (ast_to_process->formatWithSecretsOneLine().size() > 2000)
         {
             // ast too long, start from original ast
             fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
@@ -508,7 +511,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 String bytes;
                 {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    auto read_buf = getReadBufferFromASTInsertQuery(query, client_context);
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
@@ -519,7 +522,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
         try
         {
-            query_to_execute = query->formatForErrorMessage();
+            query_to_execute = query->formatWithSecretsOneLine();
             const auto res = processASTFuzzerStep(query_to_execute, query);
             if (!res)
                 return res;
