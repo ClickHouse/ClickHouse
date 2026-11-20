@@ -3323,7 +3323,7 @@ void PartMergerWriter::createBuildTextIndexesTask()
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
         ctx->mrk_extension,
-        *ctx->data->getSettings());
+        ctx->data->getSettings());
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
