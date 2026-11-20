@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!--
         A FINAL query with a selective condition on columns outside the sorting key, on a table where most of the data is
         in a merged part that no other part intersects. `optimize_move_to_prewhere_if_final_non_intersecting` applies the
