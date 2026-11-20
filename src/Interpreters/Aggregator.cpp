@@ -1345,17 +1345,19 @@ void dispatchDirectIndexKey(size_t size, bool is_signed, F && f)
     }
 }
 
+/// Rows per chunk of the passes over the keys, so that a block is given up after the chunk that decides it.
+constexpr size_t direct_index_chunk_rows = 4096;
+
 /// The smallest key of `data[begin, end)` and the number of values from it to the largest, unless that number exceeds
 /// `max_range`. Checked after every chunk, so that a block of wide keys is given up early.
 template <typename T>
 bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UInt64 max_range, UInt64 & min_out, UInt64 & range_out)
 {
-    static constexpr size_t chunk_rows = 4096;
     T min_value = data[begin];
     T max_value = data[begin];
-    for (size_t chunk_begin = begin; chunk_begin < end; chunk_begin += chunk_rows)
+    for (size_t chunk_begin = begin; chunk_begin < end; chunk_begin += direct_index_chunk_rows)
     {
-        const size_t chunk_end = std::min(end, chunk_begin + chunk_rows);
+        const size_t chunk_end = std::min(end, chunk_begin + direct_index_chunk_rows);
         for (size_t i = chunk_begin; i < chunk_end; ++i)
         {
             min_value = std::min(min_value, data[i]);
@@ -1435,41 +1437,57 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
     }
 
     /// The cell of a row: the offsets of its keys from the smallest ones, the last key varying fastest.
-    PaddedPODArray<UInt32> row_cells_array(rows);
+    std::array<UInt32, 16> strides{};
     UInt32 stride = 1;
     for (size_t j = keys_size; j-- > 0;)
     {
-        const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
-        dispatchDirectIndexKey(direct_index_keys[j].size, direct_index_keys[j].is_signed, [&]<typename T>()
-        {
-            addDirectIndexKey(reinterpret_cast<const T *>(data) + row_begin, rows, mins[j], stride, row_cells_array.data(), j + 1 == keys_size);
-        });
+        strides[j] = stride;
         stride *= static_cast<UInt32>(ranges[j]);
     }
 
-    /// The rows of each cell, the first of them, and the cells that the block uses, in the order of their first rows.
+    /// The cell of each row, the rows of each cell, the first of them, and the cells that the block uses, in the order of
+    /// their first rows.
+    PaddedPODArray<UInt32> row_cells_array(rows);
     PaddedPODArray<UInt32> counts_array;
     counts_array.resize_fill(cells, 0);
     PaddedPODArray<UInt32> first_rows_array(cells);
     const size_t max_used_cells = rows / min_rows_per_key;
     PaddedPODArray<UInt32> used_cells_array(max_used_cells);
-    const UInt32 * __restrict row_cells = row_cells_array.data();
+    UInt32 * __restrict row_cells = row_cells_array.data();
     UInt32 * __restrict counts = counts_array.data();
     UInt32 * __restrict first_rows = first_rows_array.data();
     UInt32 * __restrict used_cells = used_cells_array.data();
     size_t num_used_cells = 0;
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t chunk_begin = 0; chunk_begin < rows; chunk_begin += direct_index_chunk_rows)
     {
-        const UInt32 cell = row_cells[i];
-        if (counts[cell]++ == 0)
+        const size_t chunk_size = std::min(rows - chunk_begin, direct_index_chunk_rows);
+        for (size_t j = keys_size; j-- > 0;)
         {
-            if (num_used_cells == max_used_cells)
+            const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
+            dispatchDirectIndexKey(direct_index_keys[j].size, direct_index_keys[j].is_signed, [&]<typename T>()
             {
-                ++backoff.failed_blocks;
-                return false;
+                addDirectIndexKey(
+                    reinterpret_cast<const T *>(data) + row_begin + chunk_begin,
+                    chunk_size,
+                    mins[j],
+                    strides[j],
+                    row_cells + chunk_begin,
+                    j + 1 == keys_size);
+            });
+        }
+        for (size_t i = chunk_begin; i < chunk_begin + chunk_size; ++i)
+        {
+            const UInt32 cell = row_cells[i];
+            if (counts[cell]++ == 0)
+            {
+                if (num_used_cells == max_used_cells)
+                {
+                    ++backoff.failed_blocks;
+                    return false;
+                }
+                first_rows[cell] = static_cast<UInt32>(i);
+                used_cells[num_used_cells++] = cell;
             }
-            first_rows[cell] = static_cast<UInt32>(i);
-            used_cells[num_used_cells++] = cell;
         }
     }
     backoff.failed_blocks = 0;
