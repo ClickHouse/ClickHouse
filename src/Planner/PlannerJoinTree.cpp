@@ -1839,7 +1839,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     if (right_table_has_row_policy)
         prepared_join_storage = {};
     else
-        trySetStorageInTableJoin(right_table_expression, table_join);
+        trySetStorageInTableJoin(right_table_expression, table_join, query_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     JoinAlgorithmParams params(*planner_context->getQueryContext());
     params.hash_table_key_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
