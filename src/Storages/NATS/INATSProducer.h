@@ -49,6 +49,10 @@ private:
 
     /// A message whose publish failed with a retryable status: it is published again before the next one is popped.
     std::optional<String> pending_payload;
+    size_t pending_payload_retries = 0;
+
+    /// Set by `cancel`: the INSERT has already failed, so a failed publish is not retried.
+    std::atomic<bool> cancelled = false;
 
     /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
     String publish_error;

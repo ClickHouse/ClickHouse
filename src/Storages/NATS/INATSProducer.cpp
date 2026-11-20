@@ -13,6 +13,10 @@ namespace DB
 static const auto BATCH = 1000;
 static const auto MAX_BUFFERED = 131072;
 
+/// A publish failing with any other status (e.g. a timeout during a leader change of the stream) is retried with backoff.
+static constexpr size_t MAX_PUBLISH_RETRIES = 5;
+static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100);
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -52,6 +56,7 @@ void INATSProducer::finishImpl()
 
 void INATSProducer::cancel() noexcept
 {
+    cancelled = true;
     try
     {
         finish();
@@ -93,14 +98,20 @@ void INATSProducer::publish()
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
             /// A retry cannot succeed: the client rejects a message over max_payload before sending it, and NATS_ERR is
-            /// the stream rejecting the message. Once `payloads` is finished, the INSERT waits for the task to end.
+            /// the stream rejecting the message.
             if (status == NATS_NO_RESPONDERS)
                 publish_error = "there is no JetStream stream for this subject";
-            else if (status == NATS_MAX_PAYLOAD || status == NATS_ERR || payloads.isFinished())
+            else if (status == NATS_MAX_PAYLOAD || status == NATS_ERR || pending_payload_retries == MAX_PUBLISH_RETRIES || cancelled)
                 publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
+            else
+            {
+                std::this_thread::sleep_for(PUBLISH_RETRY_INITIAL_WAIT * (1 << pending_payload_retries));
+                ++pending_payload_retries;
+            }
             break;
         }
         pending_payload.reset();
+        pending_payload_retries = 0;
     }
 }
 
