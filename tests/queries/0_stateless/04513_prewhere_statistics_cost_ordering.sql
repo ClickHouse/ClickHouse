@@ -179,3 +179,31 @@ SELECT count() FROM t_prewhere_cost_functions WHERE arrayExists(x -> toUInt64OrZ
 
 DROP TABLE t_prewhere_cost_functions;
 DROP TABLE t_prewhere_cost_join_attr;
+
+-- `Compact` parts report no column sizes, so the sizes of the wide part are per its own rows.
+SET max_insert_threads = 1, max_block_size = 65536, materialize_statistics_on_insert = 1;
+DROP TABLE IF EXISTS t_prewhere_cost_mixed_parts;
+CREATE TABLE t_prewhere_cost_mixed_parts (s String CODEC(NONE), u UInt64 CODEC(NONE))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 10000, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2', string_serialization_version = 'single_stream';
+SYSTEM STOP MERGES t_prewhere_cost_mixed_parts;
+INSERT INTO t_prewhere_cost_mixed_parts SELECT concat('k', toString(cityHash64(number, 13) % 100), repeat('x', 96)), cityHash64(number, 14) FROM numbers(10000);
+INSERT INTO t_prewhere_cost_mixed_parts SELECT concat('k', toString(cityHash64(number, 15) % 100), repeat('x', 96)), cityHash64(number, 16) FROM numbers(9999);
+SELECT part_type, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_prewhere_cost_mixed_parts' AND active ORDER BY rows DESC;
+
+SELECT '-- one wide and one compact part order the conditions as one wide part';
+SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+SYSTEM START MERGES t_prewhere_cost_mixed_parts;
+OPTIMIZE TABLE t_prewhere_cost_mixed_parts FINAL;
+SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+DROP TABLE t_prewhere_cost_mixed_parts;

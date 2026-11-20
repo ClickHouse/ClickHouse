@@ -37,3 +37,8 @@
 1
 83
 83
+Wide	10000
+Compact	9999
+-- one wide and one compact part order the conditions as one wide part
+1
+1

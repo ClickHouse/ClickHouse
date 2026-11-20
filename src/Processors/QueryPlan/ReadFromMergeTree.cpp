@@ -7121,20 +7121,31 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     return res;
 }
 
-IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
+ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPrewhere(
     const Names & columns, const RangesInDataParts & parts) const
 {
     const bool calculate_subcolumn_sizes
         = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+
+    auto add_rows = [](ColumnSizesForPrewhere & sizes, const MergeTreeDataPartPtr & part)
+    {
+        if (!isCompactPart(part))
+            sizes.rows += part->rows_count;
+    };
 
     /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
     /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
     /// of measuring every part and column again, exactly as before pruned parts were taken into account.
     const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
     if (parts.size() == parts_before_pruning)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+    {
+        ColumnSizesForPrewhere result{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
+        for (const auto & part : parts)
+            add_rows(result, part.data_part);
+        return result;
+    }
 
-    IStorage::ColumnSizeByName result;
+    ColumnSizesForPrewhere result;
     for (const auto & part : parts)
     {
         for (const auto & column_name : columns)
@@ -7146,16 +7157,22 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
             const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
                 ? part.data_part->getSubcolumnSize(column_name)
                 : part.data_part->getColumnSize(column->getNameInStorage());
-            result[column_name].add(size);
+            result.sizes[column_name].add(size);
         }
+        add_rows(result, part.data_part);
     }
 
     /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
     /// while the wide parts that were pruned away would still describe the relative column sizes.
     /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
-    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
+    const bool nothing_measured = std::ranges::all_of(result.sizes, [](const auto & entry) { return entry.second.data_compressed == 0; });
     if (!parts.empty() && nothing_measured)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+    {
+        ColumnSizesForPrewhere table_wide{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
+        for (const auto & part : data.getDataPartsVectorForInternalUsage())
+            add_rows(table_wide, part);
+        return table_wide;
+    }
 
     return result;
 }

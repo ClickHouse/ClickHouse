@@ -206,6 +206,7 @@ bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet &
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+    UInt64 column_sizes_rows_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
@@ -222,6 +223,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , column_sizes_rows{column_sizes_rows_}
 {
     for (const auto & name : queried_columns)
     {
@@ -911,7 +913,7 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     chassert(total_rows > 0);
 
     if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
-        return static_cast<double>(it->second) / static_cast<double>(total_rows);
+        return static_cast<double>(it->second) / static_cast<double>(column_sizes_rows ? column_sizes_rows : total_rows);
 
     const auto * virtual_column
         = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
