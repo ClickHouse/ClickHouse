@@ -949,7 +949,12 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
         {
             const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
+            bool has_set_without_keys = params.keys_size == 0
+                || std::ranges::any_of(
+                    aggregation->getGroupingSetsParamsList(),
+                    [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); });
+            if (has_set_without_keys && !params.empty_result_for_aggregation_by_empty_set)
             {
                 /// Subquery will always produce at least one row
                 return true;

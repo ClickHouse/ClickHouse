@@ -1,0 +1,14 @@
+empty input	1
+empty input, aggregate	1
+empty input, LIMIT	1
+empty input, NOT EXISTS	0
+empty input, keyed sets	0
+empty input, suppressed	0
+empty input, arrayJoin above	0
+correlated	3
+correlated, NOT EXISTS	0
+correlated, projection	0	1
+correlated, projection	1	1
+correlated, projection	2	1
+correlated, keyed sets	1
+correlated, suppressed	1
