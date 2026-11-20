@@ -243,7 +243,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         if (!res.has(col_name))
             continue;
         size_t column_idx = res.getPositionByName(col_name);
-        if (block_missing_values->hasDefaultBits(column_idx))
+        /// A column added after the input format, e.g. a Hive partition column, has no missing values.
+        if (column_idx < block_missing_values->getNumColumns() && block_missing_values->hasDefaultBits(column_idx))
             columns_needing_defaults.emplace_back(col_name, column_idx);
     }
 

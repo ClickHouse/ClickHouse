@@ -9,6 +9,7 @@ namespace DB
 {
 
 class Chunk;
+class QueryPipelineBuilder;
 
 namespace HivePartitioningUtils
 {
@@ -39,6 +40,14 @@ FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & for
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
+
+/// Appends `columns` with their values from `path` to the pipeline, for the `DEFAULT` expressions that read them.
+void addPartitionColumnsForDefaults(
+    QueryPipelineBuilder & builder,
+    const NamesAndTypesList & columns,
     const std::string & path,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context);
