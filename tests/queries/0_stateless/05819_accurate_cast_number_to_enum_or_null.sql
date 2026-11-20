@@ -28,3 +28,18 @@ SELECT accurateCastOrNull(tuple(materialize(map('k', toUInt8(1)))), 'Nullable(Tu
 SELECT accurateCastOrNull(tuple(materialize([toUInt8(2)])), 'Nullable(Tuple(Array(Enum8(\'a\' = 1))))'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT accurateCastOrNull(tuple(materialize(toUInt8(2))), 'Nullable(Tuple(Enum8(\'a\' = 1)))');
 SELECT accurateCastOrNull(tuple(materialize(toUInt8(1))), 'Nullable(Tuple(Enum8(\'a\' = 1)))');
+
+-- Both accurate modes reject a fractional number, `CAST` truncates it.
+SELECT accurateCast(materialize(toFloat64(1.5)), 'Enum8(\'a\' = 1)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(materialize(toFloat32(1.5)), 'Enum16(\'a\' = 1)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(tuple(materialize([toFloat64(1.5)])), 'Nullable(Tuple(Array(Enum8(\'a\' = 1))))'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(tuple(materialize(map('k', toFloat64(1.5)))), 'Nullable(Tuple(Map(String, Enum8(\'a\' = 1))))'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(materialize(toFloat64(1)), 'Enum8(\'a\' = 1)'), CAST(materialize(toFloat64(1.5)), 'Enum8(\'a\' = 1)');
+
+-- `accurateCastOrNull` does not depend on `check_conversion_from_numbers_to_enum`.
+SELECT accurateCastOrNull(materialize(toUInt16(257)), 'Enum8(\'a\' = 1)') SETTINGS check_conversion_from_numbers_to_enum = 0;
+
+-- A number that is not a value of the `Enum` key of a set is not a member.
+SELECT materialize(toUInt16(257)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)')), materialize(toUInt16(1)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)'));
+SELECT tuple(materialize(toUInt16(257))) IN (SELECT tuple(CAST('a', 'Enum8(\'a\' = 1)'))), tuple(materialize(toUInt16(1))) IN (SELECT tuple(CAST('a', 'Enum8(\'a\' = 1)')));
+SELECT materialize(toFloat64(1.5)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)')), materialize(nan) IN (SELECT CAST('a', 'Enum16(\'a\' = 1)'));

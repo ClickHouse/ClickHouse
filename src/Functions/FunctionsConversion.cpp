@@ -2724,7 +2724,7 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(
         return createStringToEnumWrapper<ColumnFixedString, EnumType>(requested_result_is_nullable);
     else if (isNativeNumber(from_type))
     {
-        if (!settings.check_conversion_from_numbers_to_enum)
+        if (!settings.check_conversion_from_numbers_to_enum && cast_type != CastType::accurateOrNull)
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
@@ -2858,10 +2858,12 @@ template <typename ColumnNumberType, typename EnumType>
 FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested_result_is_nullable) const
 {
     using FieldType = EnumType::FieldType;
+    using ValueType = typename ColumnNumberType::ValueType;
 
     const bool accurate_or_null = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
+    const bool strict = cast_type != CastType::nonAccurate;
 
-    return [function_name = cast_name, accurate_or_null] (
+    return [function_name = cast_name, accurate_or_null, strict] (
         ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
@@ -2915,7 +2917,11 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested
             else
             {
                 FieldType converted_value;
-                if (!isFinite(in_data[i]) || !accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
+                const bool converted = isFinite(in_data[i])
+                    && (strict
+                        ? accurate::convertNumeric(in_data[i], converted_value)
+                        : accurate::convertNumeric<ValueType, FieldType, false>(in_data[i], converted_value));
+                if (!converted)
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
                 /// Validate that value exists in Enum (throws if not found)
