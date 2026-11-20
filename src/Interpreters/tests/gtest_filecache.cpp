@@ -1946,17 +1946,20 @@ try
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
+        /// The protected queue has an unused element, so the probationary queue borrows it instead of evicting.
         add_range(28, 3);
-        assertEqual(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30), Range(0, 9), Range(10, 14) });
+        assertEqual(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27), Range(28, 30), Range(0, 9), Range(10, 14) });
 
-        assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertProbationary(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27), Range(28, 30) });
         assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
 
         check_covering_range(4, 1, { Range(0, 9) });
 
-        assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertProbationary(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27), Range(28, 30) });
         assertProtected(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
 
+        /// [27, 27] takes the borrowed element back to protected; then protected is full, so promoting
+        /// [28, 30] downgrades [10, 14], and probationary evicts [17, 20] to make room for it.
         check_covering_range(27, 3, { Range(27, 27), Range(28, 30) });
 
         assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(10, 14) });
@@ -2062,6 +2065,94 @@ try
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
+}
+catch (...)
+{
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    throw;
+}
+
+TEST_F(FileCacheTest, SLRUProbationaryUsesUnusedProtectedCapacity)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    std::string query_id = "query_id";
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    /// 15 bytes and 5 elements in each queue.
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+
+    const size_t file_size = -1;
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto cache = DB::FileCache("slru_lend", settings);
+    cache.initialize();
+    auto key = FileCacheKey::fromPath("key1");
+
+    auto add_range = [&](size_t offset, size_t size)
+    {
+        auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
+        assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
+        download(*holder->begin());
+        assertEqual(holder, { Range(offset, offset + size - 1) }, { State::DOWNLOADED });
+    };
+
+    auto check_covering_range = [&](size_t offset, size_t size, Ranges covering_ranges)
+    {
+        auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
+        std::vector<State> states(covering_ranges.size(), State::DOWNLOADED);
+        assertEqual(holder, covering_ranges, states);
+        increasePriority(holder);
+    };
+
+    /// While the protected queue is empty, a working set larger than the probationary share stays cached.
+    add_range(0, 5);
+    add_range(5, 5);
+    add_range(10, 5);
+    add_range(15, 5);
+    add_range(20, 5);
+    assertProbationary(cache.dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14), Range(15, 19), Range(20, 24) });
+    assertProtected(cache.dumpQueue(), Ranges{});
+    ASSERT_EQ(cache.getUsedCacheSize(), 25);
+
+    /// So its second reads are hits, and the entries move to protected, which takes the capacity back.
+    check_covering_range(0, 5, { Range(0, 4) });
+    check_covering_range(5, 5, { Range(5, 9) });
+    check_covering_range(10, 5, { Range(10, 14) });
+    assertProbationary(cache.dumpQueue(), { Range(15, 19), Range(20, 24) });
+    assertProtected(cache.dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Protected is full now: a promotion downgrades as before.
+    check_covering_range(15, 5, { Range(15, 19) });
+    assertProbationary(cache.dumpQueue(), { Range(20, 24), Range(0, 4) });
+    assertProtected(cache.dumpQueue(), { Range(5, 9), Range(10, 14), Range(15, 19) });
+
+    /// And once the cache is full, a new entry evicts from probationary only.
+    add_range(25, 5);
+    add_range(30, 5);
+    assertProbationary(cache.dumpQueue(), { Range(0, 4), Range(25, 29), Range(30, 34) });
+    assertProtected(cache.dumpQueue(), { Range(5, 9), Range(10, 14), Range(15, 19) });
+    ASSERT_EQ(cache.getUsedCacheSize(), 30);
 }
 catch (...)
 {

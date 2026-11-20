@@ -11,6 +11,8 @@ namespace DB
 /// There are two queues: "protected" and "probationary".
 /// All cache entries which have been accessed only once, would lie in probationary queue.
 /// When entry is accessed more than once, it would go to the protected queue.
+/// While the protected queue does not use all of its share, the probationary queue
+/// can use the rest (see `lendProtectedCapacity`), so a cache which is not full does not evict.
 class SLRUFileCachePriority : public IFileCachePriority
 {
 public:
@@ -166,6 +168,23 @@ private:
     SharedEvictionCursor promotion_cursor{EvictionCursor::Promotion};
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
+
+    /// The protected queue fills only by promotions, so until then its share of the cache is unused,
+    /// and a probationary queue that has to evict while the cache is not full would never keep a
+    /// working set larger than the probationary share: it would be evicted before its second access.
+    /// So the probationary queue borrows the unused capacity of the protected queue instead of evicting,
+    /// and a promoted entry takes the capacity back to the protected queue together with its own size.
+    /// The limits of the two queues always add up to the cache limits, and each queue stays within its limit.
+    void lendProtectedCapacity(size_t size, size_t elements, const CacheStateGuard::Lock & lock);
+    bool canFitInProbationary(size_t size, size_t elements, const CacheStateGuard::Lock & lock) const;
+    /// Unused capacity of the protected queue that it can lend.
+    size_t getLendableSize(const CacheStateGuard::Lock & lock) const;
+    size_t getLendableElements(const CacheStateGuard::Lock & lock) const;
+    /// Capacity that the probationary queue currently borrows from the protected queue.
+    size_t getLentSize(const CacheStateGuard::Lock & lock) const;
+    size_t getLentElements(const CacheStateGuard::Lock & lock) const;
+    /// Whether an entry of `size` can be promoted by taking back lent capacity, without evicting from protected.
+    bool canPromoteWithLentCapacity(size_t size, const CacheStateGuard::Lock & lock) const;
 
     /// With `wait_for_priority_lock` false, returns false as soon as a walk finds a writer
     /// holding or waiting for the priority guard, instead of queueing behind it.

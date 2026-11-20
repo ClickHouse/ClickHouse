@@ -97,6 +97,72 @@ SLRUFileCachePriority::SLRUFileCachePriority(
     probationary_queue.setPriorityGuard(guard);
 }
 
+size_t SLRUFileCachePriority::getLendableSize(const CacheStateGuard::Lock & lock) const
+{
+    /// Keep the protected limit non-zero: zero means unlimited.
+    const size_t used = std::max<size_t>(protected_queue.getSize(lock), 1);
+    const size_t limit = protected_queue.max_size;
+    return limit > used ? limit - used : 0;
+}
+
+size_t SLRUFileCachePriority::getLendableElements(const CacheStateGuard::Lock & lock) const
+{
+    const size_t used = std::max<size_t>(protected_queue.getElementsCount(lock), 1);
+    const size_t limit = protected_queue.max_elements;
+    return limit > used ? limit - used : 0;
+}
+
+size_t SLRUFileCachePriority::getLentSize(const CacheStateGuard::Lock &) const
+{
+    const size_t share = getRatio(max_size, size_ratio);
+    const size_t limit = protected_queue.max_size;
+    return share > limit ? share - limit : 0;
+}
+
+size_t SLRUFileCachePriority::getLentElements(const CacheStateGuard::Lock &) const
+{
+    const size_t share = getRatio(max_elements, size_ratio);
+    const size_t limit = protected_queue.max_elements;
+    return share > limit ? share - limit : 0;
+}
+
+bool SLRUFileCachePriority::canFitInProbationary(size_t size, size_t elements, const CacheStateGuard::Lock & lock) const
+{
+    return probationary_queue.getSize(lock) + size <= probationary_queue.max_size + getLendableSize(lock)
+        && probationary_queue.getElementsCount(lock) + elements <= probationary_queue.max_elements + getLendableElements(lock);
+}
+
+void SLRUFileCachePriority::lendProtectedCapacity(size_t size, size_t elements, const CacheStateGuard::Lock & lock)
+{
+    const size_t probationary_size = probationary_queue.getSize(lock);
+    const size_t probationary_max_size = probationary_queue.max_size;
+    if (size && probationary_size + size > probationary_max_size)
+    {
+        const size_t lend = std::min(probationary_size + size - probationary_max_size, getLendableSize(lock));
+        protected_queue.max_size -= lend;
+        probationary_queue.max_size += lend;
+    }
+
+    const size_t probationary_elements = probationary_queue.getElementsCount(lock);
+    const size_t probationary_max_elements = probationary_queue.max_elements;
+    if (elements && probationary_elements + elements > probationary_max_elements)
+    {
+        const size_t lend = std::min(probationary_elements + elements - probationary_max_elements, getLendableElements(lock));
+        protected_queue.max_elements -= lend;
+        probationary_queue.max_elements += lend;
+    }
+}
+
+bool SLRUFileCachePriority::canPromoteWithLentCapacity(size_t size, const CacheStateGuard::Lock & lock) const
+{
+    const size_t take_size = std::min(size, getLentSize(lock));
+    const size_t take_elements = std::min<size_t>(1, getLentElements(lock));
+    if (!take_size && !take_elements)
+        return false;
+    return protected_queue.getSize(lock) + size <= protected_queue.max_size + take_size
+        && protected_queue.getElementsCount(lock) + 1 <= protected_queue.max_elements + take_elements;
+}
+
 FileCachePriorityPtr SLRUFileCachePriority::copy() const
 {
     return std::make_unique<SLRUFileCachePriority>(
@@ -139,9 +205,9 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
         const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
         if (slru_iterator->is_protected)
             return protected_queue.canFit(size, elements, lock);
-        return probationary_queue.canFit(size, elements, lock);
+        return canFitInProbationary(size, elements, lock);
     }
-    return probationary_queue.canFit(size, elements, lock);
+    return canFitInProbationary(size, elements, lock);
 }
 
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
@@ -196,6 +262,17 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
     /// Restore to the original queue: protected entries go back to protected,
     /// everything else goes to probationary.
     bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
+
+    /// The queue limits could have moved since the entry was removed (see `lendProtectedCapacity`),
+    /// so an entry which does not fit its original queue goes to probationary, which can borrow.
+    if (state_lock && size)
+    {
+        const size_t accounted_size = key_metadata->useRealDiskSize() ? key_metadata->alignFileSize(size) : size;
+        if (is_protected && !protected_queue.canFit(accounted_size, /* elements */1, *state_lock))
+            is_protected = false;
+        if (!is_protected)
+            lendProtectedCapacity(accounted_size, /* elements */1, *state_lock);
+    }
 
     auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
     return std::make_shared<SLRUIterator>(
@@ -296,6 +373,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo( /// NOLINT
             size, elements, reservee, is_total_space_cleanup, origin_info, lock);
     }
 
+    /// Do not evict from probationary while the protected queue has unused capacity.
+    lendProtectedCapacity(size, elements, lock);
     return probationary_queue.collectEvictionInfo(
         size, elements, reservee, is_total_space_cleanup, origin_info, lock);
 }
@@ -684,12 +763,16 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// Check if there is enough space in protected queue to move entry there.
     /// If not - we need to "downgrade" lowest priority entries from protected
     /// queue to probationary queue.
+    /// If the probationary queue borrows capacity of the protected queue (see `lendProtectedCapacity`),
+    /// the entry takes it back to the protected queue, which then needs neither space nor downgrades.
+    bool take_back_lent_capacity = false;
     std::unique_ptr<EvictionInfo> downgrade_info;
     {
         auto lock = state_guard.lock();
+        take_back_lent_capacity = canPromoteWithLentCapacity(prev_entry->size, lock);
         downgrade_info = protected_queue.collectEvictionInfo(
-            prev_entry->size,
-            /* elements */1,
+            take_back_lent_capacity ? 0 : prev_entry->size.load(),
+            /* elements */take_back_lent_capacity ? 0 : 1,
             /* reservee */nullptr,
             /* is_total_space_cleanup */false,
             FileCache::getInternalOrigin(),
@@ -759,19 +842,39 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     auto prev_iterator = iterator.lru_iterator;
     {
         auto lock = state_guard.lock();
+        size_t taken_size = 0;
+        size_t taken_elements = 0;
         try
         {
             downgrade_info->releaseHoldSpace(lock);
             eviction_candidates.afterEvictState(lock);
+            if (take_back_lent_capacity)
+            {
+                /// The lent capacity could have been taken back or reset concurrently.
+                if (!canPromoteWithLentCapacity(prev_entry->size, lock))
+                {
+                    new_iterator->invalidate();
+                    return false;
+                }
+                taken_size = std::min<size_t>(prev_entry->size, getLentSize(lock));
+                taken_elements = std::min<size_t>(1, getLentElements(lock));
+                protected_queue.max_size += taken_size;
+                protected_queue.max_elements += taken_elements;
+            }
             new_iterator->incrementSize(prev_entry->size, lock);
         }
         catch (...)
         {
+            protected_queue.max_size -= taken_size;
+            protected_queue.max_elements -= taken_elements;
             new_iterator->invalidate();
             throw;
         }
         iterator.setIterator(std::move(*new_iterator), /* is_protected */true, lock);
         prev_iterator.invalidate();
+        /// The entry has left the probationary queue, so it can return the capacity.
+        probationary_queue.max_size -= taken_size;
+        probationary_queue.max_elements -= taken_elements;
         reset_evicting_flag_for_prev_entry = false;
         check(lock);
     }
