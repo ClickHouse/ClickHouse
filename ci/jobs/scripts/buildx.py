@@ -187,6 +187,7 @@ def apt_mirror_variants(apt_mirror_region: str) -> List[List[str]]:
     in_region = [
         f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com",
         f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com",
+        f"--build-arg=apt_security_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com",
     ]
     return [in_region, canonical]
 

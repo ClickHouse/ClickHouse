@@ -5,9 +5,10 @@ FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ARG for quick switch to a given ubuntu mirror.
-# amd64 base images use archive.ubuntu.com, arm64 uses ports.ubuntu.com.
+# amd64 base images use archive.ubuntu.com and security.ubuntu.com, arm64 uses ports.ubuntu.com.
 ARG apt_archive="http://archive.ubuntu.com"
 ARG apt_ports_archive="http://ports.ubuntu.com"
+ARG apt_security_archive="http://security.ubuntu.com"
 
 # We shouldn't use `apt upgrade` to not change the upstream image. It's updated biweekly
 
@@ -18,8 +19,8 @@ ARG apt_ports_archive="http://ports.ubuntu.com"
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
 # apt does not retry a mirror in mid-sync, so apt_update falls back to Canonical once.
-RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
-    && sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
+RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" -e "s|${apt_security_archive}|http://security.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
+    && sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" -e "s|http://security.ubuntu.com|${apt_security_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     # `apt-get update` reports a failed repository index fetch as a warning and exits 0,
@@ -116,7 +117,7 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
 # `--tmp` keeps `clickhouse local` from creating its default data directory in the home inside the image.
 # The check goes first, so that the whole `RUN` is a no-op when the packages are already installed.
 RUN clickhouse local --tmp -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
-    ; apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
+    ; apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" -e "s|${apt_security_archive}|http://security.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
     ; apt_update \
     && apt-get install --yes --no-install-recommends \
         dirmngr \
