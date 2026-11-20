@@ -245,7 +245,8 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 /// a set's plan are checked recursively.
 static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited);
 
-static bool foldedLambdaReferencesUnshippableSubquerySet(const IColumn & column, std::unordered_set<const FutureSetFromSubquery *> & visited)
+static bool foldedLambdaReferencesUnshippableSubquerySet(
+    const IColumn & column, std::unordered_set<const FutureSetFromSubquery *> & visited)
 {
     const auto * column_function = typeid_cast<const ColumnFunction *>(&column);
     if (!column_function)
