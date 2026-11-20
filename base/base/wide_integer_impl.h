@@ -559,6 +559,34 @@ struct integer<Bits, Signed>::_impl
         return is_negative(n) ? integer<B, S>(operator_unary_minus(n)) : n;
     }
 
+    /// Whether the value equals its lowest item, sign-extended for a signed type or zero-extended for an unsigned one.
+    constexpr static bool fits_in_lowest_item(const integer<Bits, Signed> & n) noexcept
+    {
+        base_type extension = 0;
+        if constexpr (std::is_same_v<Signed, signed>)
+            extension = static_cast<signed_base_type>(n.items[little(0)]) < 0 ? base_type(-1) : base_type(0);
+
+        base_type mismatch = 0;
+        for (unsigned i = 1; i < item_count; ++i)
+            mismatch |= n.items[little(i)] ^ extension;
+        return mismatch == 0;
+    }
+
+    /// An x87 extended or IEEE binary128 `long double` holds every 64-bit integer exactly and in one representation, so for
+    /// a value that fits in the lowest item the general conversion yields exactly `static_cast<long double>` of the item, and
+    /// converting the item directly to the target type rounds the same way. Other formats keep the general conversion.
+    static constexpr bool lowest_item_converts_directly
+        = std::numeric_limits<long double>::digits == 64 || std::numeric_limits<long double>::digits == 113;
+
+    template <typename T>
+    constexpr static T lowest_item_to_floating_point(const integer<Bits, Signed> & n) noexcept
+    {
+        if constexpr (std::is_same_v<Signed, signed>)
+            return static_cast<T>(static_cast<signed_base_type>(n.items[little(0)]));
+        else
+            return static_cast<T>(n.items[little(0)]);
+    }
+
     template <typename T>
     constexpr static auto to_Integral(T f) noexcept
     {
@@ -1716,6 +1744,9 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator long double() const noexcept
 {
+    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<long double>(*this);
+
     if (_impl::operator_eq(*this, 0))
         return 0;
 
@@ -1741,12 +1772,18 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
+    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<double>(*this);
+
     return static_cast<double>(static_cast<long double>(*this));
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
+    if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<float>(*this);
+
     return static_cast<float>(static_cast<long double>(*this));
 }
 
