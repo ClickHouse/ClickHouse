@@ -24,5 +24,7 @@ $CLICKHOUSE_CLIENT -q "DETACH TABLE v_alias_udf; ATTACH TABLE v_alias_udf; SELEC
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_setting AS SELECT 7 AS {a:Identifier} SETTINGS parameterize_view_by_alias_parameter = 0, param_a = 'x'"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_compatibility AS SELECT 7 AS {a:Identifier} SETTINGS compatibility = '26.11', param_a = 'x'"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_bound_setting AS (SELECT 7 AS {a:Identifier}) SETTINGS max_threads = {threads:UInt64}, param_threads = '1', param_a = 'x'"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_bound_flag AS (SELECT 7 AS {a:Identifier}) SETTINGS parameterize_view_by_alias_parameter = {flag:Bool}, param_flag = '0', param_a = 'x'"
 $CLICKHOUSE_CLIENT -q "SELECT name, parameterized_view_parameters FROM system.tables WHERE database = currentDatabase() AND name LIKE 'v_alias_query_%' ORDER BY name"
-$CLICKHOUSE_CLIENT -q "SELECT x FROM v_alias_query_setting; SELECT x FROM v_alias_query_compatibility"
+$CLICKHOUSE_CLIENT -q "SELECT x FROM v_alias_query_setting; SELECT x FROM v_alias_query_compatibility; SELECT x FROM v_alias_query_bound_setting; SELECT x FROM v_alias_query_bound_flag"

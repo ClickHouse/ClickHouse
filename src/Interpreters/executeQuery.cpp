@@ -2926,8 +2926,11 @@ static BlockIO executeQueryImpl(
             bool alias_parameterizes_view = settings[Setting::parameterize_view_by_alias_parameter];
             if (const auto * create = out_ast->as<ASTCreateQuery>(); create && create->is_ordinary_view && create->select)
             {
+                /// Setting values can be placeholders bound by the statement's own `param_*` settings: substitute a copy first.
+                ASTPtr settings_ast = out_ast->clone();
+                ReplaceQueryParameterVisitor(context->getQueryParameters()).visit(settings_ast);
                 auto query_settings_context = Context::createCopy(context);
-                InterpreterSetQuery::applySettingsFromQuery(out_ast, query_settings_context);
+                InterpreterSetQuery::applySettingsFromQuery(settings_ast, query_settings_context);
                 alias_parameterizes_view = query_settings_context->getSettingsRef()[Setting::parameterize_view_by_alias_parameter];
             }
 
