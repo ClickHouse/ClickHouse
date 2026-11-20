@@ -35,5 +35,7 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a virtual column of the table resolves, so other columns are free
 virtual column policy	[1]
+-- a standalone scalar subquery reads no column of the table
+scalar subquery policy	[1]
 -- a database-wide policy counts too
 ALTER_OF_COLUMN_IS_FORBIDDEN

@@ -120,6 +120,16 @@ ALTER TABLE tv RENAME COLUMN misc TO misc2;
 SELECT 'virtual column policy', arraySort(groupArray(id)) FROM tv;
 "
 
+echo "-- a standalone scalar subquery reads no column of the table"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE ts (id UInt32, extra UInt8, misc UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ts VALUES (1, 0, 0);
+CREATE ROW POLICY ps ON $DB.ts FOR SELECT USING (SELECT 1) TO CURRENT_USER;
+ALTER TABLE ts DROP COLUMN extra;
+ALTER TABLE ts RENAME COLUMN misc TO misc2;
+SELECT 'scalar subquery policy', arraySort(groupArray(id)) FROM ts;
+"
+
 echo "-- a database-wide policy counts too"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 refused "ALTER TABLE t RENAME COLUMN tenant TO tenant2" ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -135,6 +145,7 @@ DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
 DROP ROW POLICY pf ON $DB.tf;
 DROP ROW POLICY pv ON $DB.tv;
+DROP ROW POLICY ps ON $DB.ts;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -146,4 +157,5 @@ DROP TABLE tu;
 DROP TABLE ta;
 DROP TABLE tf;
 DROP TABLE tv;
+DROP TABLE ts;
 "

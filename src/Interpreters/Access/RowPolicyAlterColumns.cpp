@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Planner/Utils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/expressionSourceColumns.h>
@@ -43,7 +44,7 @@ Names columnsReadByFilter(const String & filter, const String & policy_name, con
     try
     {
         ParserExpression parser;
-        auto ast = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        auto ast = wrapStandaloneSubqueryFilter(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         return expressionSourceColumns(ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot);
     }
     catch (Exception & e)
