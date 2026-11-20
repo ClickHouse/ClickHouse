@@ -25,6 +25,8 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <algorithm>
+#include <array>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -39,12 +41,17 @@ namespace DB
 
 static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
 
-static const NameSet exit_strings
+constexpr std::array<std::string_view, 20> exit_strings
 {
     "exit", "quit", "logout", "учше", "йгше", "дщпщге",
     "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
+
+inline bool isExitString(std::string_view text)
+{
+    return std::ranges::find(exit_strings, text) != exit_strings.end();
+}
 
 namespace ErrorCodes
 {
@@ -290,7 +297,7 @@ private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
-    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update);
     bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
@@ -472,6 +479,8 @@ protected:
     std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Set when a buffer the query output ends in (`std_out_wrapper`, the `INTO OUTFILE` file) is canceled.
+    std::atomic<bool> output_buffer_canceled = false;
     /// Wrapper for hooking into the flush event.
     std::unique_ptr<WriteBuffer> std_out_wrapper;
 

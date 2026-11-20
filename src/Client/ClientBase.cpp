@@ -305,6 +305,15 @@ bool isTableNameArgument(std::string_view argument)
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
+String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
+{
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
+        return parsed_query->formatForErrorMessage();
+    return String(query);
+}
+
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
@@ -520,6 +529,28 @@ public:
 
 private:
     std::function<void()> on_flush_callback;
+};
+
+/// Sets the flag when the buffer is canceled, e.g. on a write error. Unlike `isCanceled`, the flag can be read
+/// while a background formatting thread may still write into the buffer.
+template <typename Base>
+class CancellationReportingWriteBuffer : public Base
+{
+public:
+    template <typename... Args>
+    explicit CancellationReportingWriteBuffer(std::atomic<bool> & canceled_flag_, Args &&... args)
+        : Base(std::forward<Args>(args)...), canceled_flag(canceled_flag_)
+    {
+    }
+
+private:
+    void cancelImpl() noexcept override
+    {
+        canceled_flag.store(true);
+        Base::cancelImpl();
+    }
+
+    std::atomic<bool> & canceled_flag;
 };
 
 ClientBase::~ClientBase() = default;
@@ -1081,6 +1112,8 @@ try
 {
     if (!output_format)
     {
+        output_buffer_canceled = false;
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1114,7 +1147,8 @@ try
         const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
 
         /// Use the flush callback wrapper to prevent progress flickering
-        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
+        std_out_wrapper = std::make_unique<CancellationReportingWriteBuffer<FlushCallbackWriteBuffer>>(
+            output_buffer_canceled,
             underlying_buf,
             [this, output_goes_to_terminal]()
             {
@@ -1187,7 +1221,9 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
-                auto file_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                /// A canceled compression buffer or ForkWriteBuffer above cancels the file too.
+                auto file_buf = std::make_unique<CancellationReportingWriteBuffer<WriteBufferFromFile>>(
+                    output_buffer_canceled, out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
                 if ((flags & O_APPEND) && file_buf->size() > 0)
                     non_empty_appended_file = out_file;
 
@@ -1747,12 +1783,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+            e.addMessage("(in query: {})", queryTextForErrorMessage(full_query, parsed_query));
         throw;
     }
 
     if (have_error)
-        processError(full_query);
+        processError(queryTextForErrorMessage(full_query, parsed_query));
     return !have_error;
 }
 
@@ -2508,7 +2544,8 @@ void ClientBase::resetOutput()
 
     try
     {
-        if (output_format)
+        /// The format takes no more writes once a buffer it writes into is canceled, e.g. after the terminal of the embedded client is gone.
+        if (output_format && !output_buffer_canceled)
             output_format->finalize();
     }
     catch (...)
@@ -2525,8 +2562,8 @@ void ClientBase::resetOutput()
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
     if (out_file_buf)
     {
-        if (out_file_buf->isCanceled())
-            out_file_buf.reset();
+        if (out_file_buf->isCanceled() || output_buffer_canceled)
+            out_file_buf->cancel();
         else
             out_file_buf->finalize();
     }
@@ -2566,8 +2603,9 @@ void ClientBase::resetOutput()
 
 
 /// Receive the block that serves as an example of the structure of table where data will be inserted.
-bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query)
+bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update)
 {
+    bool received_sample = false;
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -2576,7 +2614,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
         {
             case Protocol::Server::Data:
                 out = packet.block;
-                return true;
+                if (!wait_for_timezone_update)
+                    return true;
+                received_sample = true;
+                break;
 
             case Protocol::Server::Exception:
                 onReceiveExceptionFromServer(std::move(packet.exception));
@@ -2588,10 +2629,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.columns_description);
-                return receiveSampleBlock(out, columns_description, parsed_query);
+                return receiveSampleBlock(out, columns_description, parsed_query, wait_for_timezone_update);
 
             case Protocol::Server::TimezoneUpdate:
                 onTimezoneUpdate(packet.server_timezone);
+                if (received_sample)
+                    return true;
+                wait_for_timezone_update = false;
                 break;
 
             /// A subquery executed while the server is still analysing the query reports progress and
@@ -2725,10 +2769,19 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         startKeystrokeInterceptorIfExists();
         SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
+        /// The server sends its `session_timezone` with the structure of the data it reads through `input`
+        /// (also for RETURNING); it must be applied before the data is parsed in other threads.
+        ASTPtr input_function;
+        if (parsed_insert_query.select)
+            parsed_insert_query.tryFindInputFunction(input_function);
+        const bool wait_for_timezone_update = (input_function || parsed_insert_query.returning)
+            && connection->getConnectionType() != IServerConnection::Type::LOCAL
+            && connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES;
+
         /// Receive description of table structure.
         Block sample;
         ColumnsDescription columns_description;
-        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        if (receiveSampleBlock(sample, columns_description, parsed_query, wait_for_timezone_update))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
@@ -4194,7 +4247,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
-                    processError(full_query);
+                    processError(queryTextForErrorMessage(full_query, parsed_query));
 
                 // Stop processing queries if needed.
                 if (have_error && stdout_is_broken)
@@ -4215,7 +4268,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.contains(trimmed_input))
+    if (isExitString(trimmed_input))
         return false;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
@@ -5020,6 +5073,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+        ("vim", "Use emulated vim editing mode.")
     ;
 }
 
@@ -5077,6 +5131,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
+    if (options.contains("vim"))
+        getClientConfiguration().setBool("vim", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
@@ -5465,6 +5521,7 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,
+        .vim = getClientConfiguration().getBool("vim", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

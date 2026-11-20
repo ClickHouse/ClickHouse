@@ -11,6 +11,10 @@
 -- in the constant comparison instead of getField().
 
 SET explain_query_plan_default = 'legacy';
+-- With plan-based parallel replicas, `ReadFromParallelReplicas` prints the shipped fragment in its description,
+-- and the fragment reads the main table before a replica chooses the projection. Cut descriptions short, so that
+-- only the `ReadFromMergeTree` lines of the local plan are seen.
+SET query_plan_max_step_description_length = 50;
 
 DROP TABLE IF EXISTS t_sumif_proj;
 
