@@ -1315,10 +1315,12 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
-    /// The cast the filter is applied through: `equals` cannot tell whether it changes values, e.g. from `UInt8` to `Bool`.
-    const auto & key_casted = descriptor.key_cast_type ? dag.addCast(key_node, descriptor.key_cast_type, {}, context)
-        : key_node.result_type->equals(*target_type)   ? key_node
-                                                       : dag.addCast(key_node, target_type, {}, context);
+    /// A cast to a type that `equals` the key's keeps the values (e.g. a `DateTime` time zone) and is left out, so the indexes
+    /// can use the key. Except a cast to `Bool`, which converts 2 to 1.
+    const auto & cast_type = descriptor.key_cast_type;
+    const bool apply_cast = cast_type && (!key_node.result_type->equals(*cast_type) || isBool(removeLowCardinalityAndNullable(cast_type)));
+    const auto & key_casted = apply_cast ? dag.addCast(key_node, cast_type, {}, context) : key_node;
+    chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)
     {

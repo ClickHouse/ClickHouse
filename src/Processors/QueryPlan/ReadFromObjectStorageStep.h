@@ -96,7 +96,7 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
-    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
+    /// Registers a JOIN runtime filter on `descriptor.key_column_name` that every row of this read passes.
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
 
 private:
