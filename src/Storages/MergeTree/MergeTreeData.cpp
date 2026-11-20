@@ -63,11 +63,13 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <Disks/supportWritingWithAppend.h>
+#include <IO/MMappedFileCache.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/UncompressedCache.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
@@ -5680,7 +5682,8 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
-    if (!getStorageID().hasUUID())
+    /// A table that moves to a database without UUIDs gives its UUID up.
+    if (!getStorageID().hasUUID() || !new_table_id.hasUUID())
         getContext()->clearCaches();
 
     /// TODO: remove const_cast
@@ -5692,6 +5695,30 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
+}
+
+void MergeTreeData::clearCachesOfTable() const
+{
+    auto context = getContext();
+    const UUID uuid = getStorageID().uuid;
+    if (uuid != UUIDHelpers::Nil)
+    {
+        if (auto cache = context->getQueryConditionCache())
+            cache->removeTable(uuid);
+        if (auto cache = context->getColumnsCache())
+            cache->removeTable(uuid);
+    }
+
+    Strings paths = getDataPaths();
+    for (auto & path : paths)
+        if (!path.ends_with('/'))
+            path += '/';
+    if (auto cache = context->getUncompressedCache())
+        cache->removeEntriesUnderPaths(paths);
+    if (auto cache = context->getIndexUncompressedCache())
+        cache->removeEntriesUnderPaths(paths);
+    if (auto cache = context->getMMappedFileCache())
+        cache->removeEntriesUnderPaths(paths);
 }
 
 void MergeTreeData::renameInMemory(const StorageID & new_table_id)
@@ -5747,8 +5774,7 @@ void MergeTreeData::dropAllData()
     if (skipped_parts > 0)
         LOG_WARNING(log, "dropAllData: {} parts had been skipped", skipped_parts);
 
-    /// Tables in atomic databases have UUID and stored in persistent locations.
-    /// No need to clear caches (that are keyed by filesystem path) because collision is not possible.
+    /// The path of a table without UUID can be taken by another table at once.
     if (!getStorageID().hasUUID())
         getContext()->clearCaches();
 
@@ -5767,10 +5793,7 @@ void MergeTreeData::dropAllData()
         /// done only after all part removal has succeeded: on failure the
         /// table remains usable and the per-part invalidations must stay.
         if (getStorageID().hasUUID())
-        {
-            if (auto columns_cache = getContext()->getColumnsCache())
-                columns_cache->removeTable(getStorageID().uuid);
-        }
+            clearCachesOfTable();
 
         all_data_dropped = true;
     }

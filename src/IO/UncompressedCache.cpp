@@ -1,6 +1,8 @@
 #include <IO/UncompressedCache.h>
 #include <Common/SipHash.h>
 
+#include <algorithm>
+
 namespace DB
 {
 template class CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
@@ -21,5 +23,14 @@ UInt128 UncompressedCache::hash(const String & path_to_file, size_t offset)
     hash.update(path_to_file.data(), path_to_file.size());
     hash.update(offset);
     return hash.get128();
+}
+
+void UncompressedCache::removeEntriesUnderPaths(const Strings & prefixes)
+{
+    std::function<bool(const Key &, const MappedPtr &)> predicate = [&](const Key &, const MappedPtr & cell)
+    {
+        return std::ranges::any_of(prefixes, [&](const String & prefix) { return cell->path.starts_with(prefix); });
+    };
+    Base::remove(predicate);
 }
 }

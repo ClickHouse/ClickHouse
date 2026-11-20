@@ -53,10 +53,11 @@ private:
 
     struct Entry
     {
+        const UUID table_id;
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
         /// Store extended information only in Debug builds.
         /// Having them in release builds is too costly.
-        const UUID table_id;
         const String part_name;
         const UInt64 condition_hash = 42;
         const String condition;
@@ -65,7 +66,7 @@ private:
         MatchingMarks matching_marks;
         SharedMutex mutex; /// (*)
 
-        explicit Entry(size_t mark_count); /// (**)
+        Entry(size_t mark_count, const UUID & table_id_); /// (**)
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
         Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
@@ -143,6 +144,9 @@ public:
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
     void clear();
+
+    /// Remove all entries of the table.
+    void removeTable(const UUID & table_id);
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
     size_t maxSizeInBytes() const;

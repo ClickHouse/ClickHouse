@@ -118,3 +118,67 @@ query "${DB}.tab"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${DB} SYNC"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${DB}_broken_tables SYNC"
+
+# A table created again through ON CLUSTER.
+for verb in CREATE ATTACH; do
+    uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+    create "$uuid"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number + 100 FROM numbers(100)"
+    query tab
+    $CLICKHOUSE_CLIENT --send_logs_level=error --distributed_ddl_output_mode=none -q "
+        DROP TABLE tab SYNC;
+        $verb TABLE tab UUID '$uuid' ON CLUSTER test_shard_localhost (a UInt64) ENGINE = MergeTree ORDER BY tuple()
+            SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number FROM numbers(100)"
+    query tab
+done
+
+# The mmap cache, which is keyed by the file size too: CODEC(NONE) keeps it the same.
+function create_mmap()
+{
+    $CLICKHOUSE_CLIENT -q "
+        DROP TABLE IF EXISTS tab SYNC;
+        CREATE TABLE tab UUID '$1' (a UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple()
+            SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';"
+}
+
+function query_mmap()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE a < 50
+        SETTINGS use_query_condition_cache = 0, use_statistics_for_part_pruning = 0, use_uncompressed_cache = 0,
+            use_columns_cache = 0, local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1"
+}
+
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+create_mmap "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number + 100 FROM numbers(100)"
+query_mmap
+create_mmap "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number FROM numbers(100)"
+query_mmap
+
+# The text index caches.
+function create_text()
+{
+    $CLICKHOUSE_CLIENT -q "
+        DROP TABLE IF EXISTS tab SYNC;
+        CREATE TABLE tab UUID '$1' (k UInt64, s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha))
+            ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';"
+}
+
+function query_text()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE hasToken(s, 'apple')
+        SETTINGS use_query_condition_cache = 0, use_skip_indexes = 1, use_text_index_tokens_cache = 1,
+            use_text_index_header_cache = 1, use_text_index_postings_cache = 1"
+}
+
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+create_text "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number, if(number < 10, 'apple', 'pear') FROM numbers(1000)"
+query_text
+create_text "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number, if(number = 999, 'apple', 'pear') FROM numbers(1000)"
+query_text
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"
