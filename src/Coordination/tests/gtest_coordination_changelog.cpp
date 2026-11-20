@@ -6199,6 +6199,74 @@ TYPED_TEST(CoordinationChangelogTest, FailedStartupPlacementMoveRemovesUnpublish
     EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
 }
 
+TYPED_TEST(CoordinationChangelogTest, StartupPlacementMoveSourceThatFailedToBeRemovedIsRetiredBySupersedingRewrite)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    /// Startup moves an inactive changelog to the regular disk and publishes it there, but the removal
+    /// of its source on the latest disk fails. A rewrite in an earlier changelog supersedes the range,
+    /// and its removal must also retire the surviving source: otherwise restart replays its obsolete
+    /// entries after the rewritten range.
+    ChangelogDirTest regular("./logs_startup_placement_source_regular");
+    ChangelogDirTest latest("./logs_startup_placement_source_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    auto latest_disk = std::make_shared<SourceRemovalFailingDisk>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view first_path = "changelog_1_5.bin";
+    constexpr std::string_view superseded_path = "changelog_6_10.bin";
+
+    auto coordination_settings = std::make_shared<DB::CoordinationSettings>();
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    this->keeper_context = std::make_shared<DB::KeeperContext>(true, coordination_settings);
+    this->keeper_context->setLocalLogsPreprocessed();
+
+    /// All changelogs are written on the latest disk, then the first one is placed on the regular disk.
+    this->keeper_context->setLogDisk(latest_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog changelog(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 12; ++index)
+            changelog.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        changelog.flush();
+    }
+    fs::rename(fs::path(latest.path) / first_path, fs::path(regular.path) / first_path);
+
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        /// Startup moves only the second changelog: the first one is already on the regular disk, and the
+        /// active one stays on the latest disk.
+        latest_disk->remaining_failures = 1;
+        DB::Changelog changelog(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(changelog.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(latest_disk->failed_removals.load(), 1);
+        EXPECT_TRUE(regular_disk->existsFile(String(superseded_path)));
+        EXPECT_TRUE(latest_disk->existsFile(String(superseded_path)));
+
+        changelog.writeAt(3, getLogEntry("rewritten_3", 2));
+        changelog.appendEntry(4, getLogEntry("rewritten_4", 2));
+        changelog.appendEntry(5, getLogEntry("rewritten_5", 2));
+        changelog.flush();
+    }
+    EXPECT_FALSE(regular_disk->existsFile(String(superseded_path)));
+    EXPECT_FALSE(latest_disk->existsFile(String(superseded_path)));
+
+    DB::Changelog restarted(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 6);
+    EXPECT_EQ(restarted.entryAt(2)->get_term(), 1);
+    EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
+    EXPECT_EQ(restarted.entryAt(5)->get_term(), 2);
+}
+
 TYPED_TEST(CoordinationChangelogTest, FailedCleanupOfStartupPlacementMoveFailsRewrite)
 {
     if (this->enable_compression)

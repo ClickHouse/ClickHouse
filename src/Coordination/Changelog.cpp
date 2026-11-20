@@ -215,6 +215,21 @@ std::optional<std::pair<DiskPtr, std::string>> moveChangelogBetweenDisksForAppen
     return std::nullopt;
 }
 
+/// A recovery copy for the source of a changelog that was moved to another disk, but whose source
+/// could not be removed. It is a stale copy of the range that must be retired with the range.
+ChangelogFileDescriptionPtr makeLeftoverSourceCopy(const ChangelogFileDescription & description, DiskPtr disk, std::string path)
+{
+    auto copy = std::make_shared<ChangelogFileDescription>();
+    copy->prefix = description.prefix;
+    copy->from_log_index = description.from_log_index;
+    copy->to_log_index = description.to_log_index;
+    copy->extension = description.extension;
+    copy->is_compressed = description.is_compressed;
+    copy->disk = std::move(disk);
+    copy->path = std::move(path);
+    return copy;
+}
+
 constexpr auto DEFAULT_PREFIX = "changelog";
 
 Checksum computeRecordChecksum(const ChangelogRecord & record)
@@ -4417,6 +4432,12 @@ void Changelog::finalizeChangelogsAfterRead(
     }
     if (!placement_moves.empty())
     {
+        /// Sources that a move published to `disk` but could not remove. They are registered as recovery
+        /// copies after the pool finishes, so that `writeAt` retires them with their range: otherwise a
+        /// rewrite that supersedes the range would remove only the registered changelog, and restart
+        /// would replay the obsolete entries of the surviving source.
+        std::mutex leftover_sources_mutex;
+        std::vector<ChangelogFileDescriptionPtr> leftover_sources;
         ThreadPool pool(
             CurrentMetrics::KeeperChangelogStartupReadThreads,
             CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
@@ -4433,12 +4454,25 @@ void Changelog::finalizeChangelogsAfterRead(
                     const auto source_path = description->path;
                     /// A failed move is logged, and the changelog stays where it is.
                     const auto move_result = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+                    if (!move_result && move_result.error() == KeeperMoveError::DestinationPublishedSourceRemovalFailed)
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Changelog {} was moved to disk {} at startup, but its source remained on disk {}; retiring it as a "
+                            "recovery copy",
+                            source_path,
+                            disk->getName(),
+                            source_disk->getName());
+                        auto copy = makeLeftoverSourceCopy(*description, source_disk, source_path);
+                        std::lock_guard lock(leftover_sources_mutex);
+                        leftover_sources.push_back(std::move(copy));
+                        return;
+                    }
                     /// As in the background moves, the unpublished destination must not survive: it may
                     /// be complete and match its move marker, so it would resurrect the range on restart
                     /// after `writeAt` rewrites or supersedes it. If it cannot be removed, the failure is
                     /// kept on the changelog, and `writeAt` rejects a rewrite that would touch the range.
-                    if (!move_result && move_result.error() != KeeperMoveError::DestinationPublishedSourceRemovalFailed
-                        && description->withReadLock([&] { return description->disk != disk; }))
+                    if (!move_result && description->withReadLock([&] { return description->disk != disk; }))
                     {
                         try
                         {
@@ -4460,6 +4494,12 @@ void Changelog::finalizeChangelogsAfterRead(
                 });
         }
         pool.wait();
+
+        for (auto & copy : leftover_sources)
+        {
+            const auto from_log_index = copy->from_log_index;
+            retained_duplicate_changelogs[from_log_index].push_back(std::move(copy));
+        }
     }
 }
 
@@ -4574,15 +4614,8 @@ void Changelog::prepareChangelogForAppend(const ChangelogFileDescriptionPtr & de
                 description->path,
                 latest_log_disk->getName(),
                 leftover_source->first->getName());
-            auto copy = std::make_shared<ChangelogFileDescription>();
-            copy->prefix = description->prefix;
-            copy->from_log_index = description->from_log_index;
-            copy->to_log_index = description->to_log_index;
-            copy->extension = description->extension;
-            copy->is_compressed = description->is_compressed;
-            copy->disk = std::move(leftover_source->first);
-            copy->path = std::move(leftover_source->second);
-            retained_duplicate_changelogs[description->from_log_index].push_back(std::move(copy));
+            retained_duplicate_changelogs[description->from_log_index].push_back(
+                makeLeftoverSourceCopy(*description, std::move(leftover_source->first), std::move(leftover_source->second)));
         }
     }
 
