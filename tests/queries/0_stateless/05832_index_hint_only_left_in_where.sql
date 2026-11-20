@@ -70,10 +70,10 @@ SELECT count(), sum(b) FROM t_index_hint_left
 CREATE TABLE t_index_hint_left_proj (k UInt64, a UInt64, b UInt64, c UInt64, PROJECTION p (SELECT * ORDER BY a))
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64, index_granularity_bytes = '10Mi';
 
-INSERT INTO t_index_hint_left_proj SELECT number, number % 10000, number % 10000 + 1, number FROM numbers(100000);
+INSERT INTO t_index_hint_left_proj SELECT number, number % 1024, number % 1024 + 1, number FROM numbers(10240);
 OPTIMIZE TABLE t_index_hint_left_proj FINAL;
 
-SELECT countIf(explain LIKE '%ReadFromMergeTree (p)%'), countIf(explain LIKE '%Granules: 79/1563%')
+SELECT countIf(explain LIKE '%ReadFromMergeTree (p)%'), countIf(explain LIKE '%Granules: 79/160%')
 FROM (EXPLAIN indexes = 1 SELECT sum(c) FROM t_index_hint_left_proj WHERE a < b AND b < 500);
 SELECT sum(c), count() FROM t_index_hint_left_proj WHERE a < b AND b < 500;
 SELECT sum(c), count() FROM t_index_hint_left_proj WHERE a < b AND b < 500 SETTINGS optimize_and_compare_chain = 0;
@@ -84,8 +84,8 @@ SELECT count() FROM (EXPLAIN SELECT sum(c) FROM t_index_hint_left_proj WHERE a <
 
 -- A written hint stays visible to projections too: `p` reads the 8 granules (512 rows) that `indexHint(a < 50)` selects.
 SELECT countIf(explain LIKE '%ReadFromMergeTree (p)%')
-FROM (EXPLAIN SELECT count(), sum(c % 10000) FROM t_index_hint_left_proj WHERE indexHint(a < 50) AND b < 300);
-SELECT count(), sum(c % 10000) FROM t_index_hint_left_proj WHERE indexHint(a < 50) AND b < 300;
+FROM (EXPLAIN SELECT count(), sum(c % 1024) FROM t_index_hint_left_proj WHERE indexHint(a < 50) AND b < 300);
+SELECT count(), sum(c % 1024) FROM t_index_hint_left_proj WHERE indexHint(a < 50) AND b < 300;
 
 -- `EXPLAIN WHATIF` weighs a hypothetical projection the same way: the derived bound selects as many marks as the
 -- same bound written in the query.
