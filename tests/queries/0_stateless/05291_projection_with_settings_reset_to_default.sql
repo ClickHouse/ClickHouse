@@ -2,6 +2,8 @@
 -- the projection must not inherit the table's `add_minmax_index_for_*` policy for that setting.
 -- It is kept apart from the other settings in the AST, so the allow-list of projection settings
 -- must be checked for it too.
+-- Only the reads of projections are kept: with plan-based parallel replicas the plan also contains
+-- a read of the parent table.
 
 SET optimize_use_projections = 1, force_optimize_projection = 1, enable_analyzer = 1;
 
@@ -17,11 +19,11 @@ INSERT INTO t_proj_reset SELECT number, number * 2, toString(number) FROM number
 
 SELECT 'projection inherits the opt-out';
 SELECT extract(explain, 'ReadFromMergeTree \\(.*\\)|Name: auto_minmax_index.*') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_proj_reset WHERE s = '777' AND c = 1554 SETTINGS preferred_optimize_projection_name = 'p_inherit')
-WHERE explain LIKE '%ReadFromMergeTree (%' OR explain LIKE '%Name: auto_minmax_index%';
+WHERE match(explain, 'ReadFromMergeTree \\(p_|Name: auto_minmax_index');
 
 SELECT 'projection reset to its own default';
 SELECT extract(explain, 'ReadFromMergeTree \\(.*\\)|Name: auto_minmax_index.*') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_proj_reset WHERE s = '777' AND c = 1554 SETTINGS preferred_optimize_projection_name = 'p_reset')
-WHERE explain LIKE '%ReadFromMergeTree (%' OR explain LIKE '%Name: auto_minmax_index%';
+WHERE match(explain, 'ReadFromMergeTree \\(p_|Name: auto_minmax_index');
 
 -- The same after the projection metadata is rebuilt from the stored definition.
 DETACH TABLE t_proj_reset;
@@ -29,7 +31,7 @@ ATTACH TABLE t_proj_reset;
 
 SELECT 'after reattach';
 SELECT extract(explain, 'ReadFromMergeTree \\(.*\\)|Name: auto_minmax_index.*') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_proj_reset WHERE s = '777' AND c = 1554 SETTINGS preferred_optimize_projection_name = 'p_reset')
-WHERE explain LIKE '%ReadFromMergeTree (%' OR explain LIKE '%Name: auto_minmax_index%';
+WHERE match(explain, 'ReadFromMergeTree \\(p_|Name: auto_minmax_index');
 
 -- A setting that is not allowed for projections is rejected with `= DEFAULT` as well.
 ALTER TABLE t_proj_reset ADD PROJECTION p_bad (SELECT a ORDER BY c) WITH SETTINGS (merge_with_ttl_timeout = DEFAULT); -- { serverError BAD_ARGUMENTS }

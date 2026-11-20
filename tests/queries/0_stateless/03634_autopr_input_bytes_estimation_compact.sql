@@ -28,7 +28,10 @@ DROP TABLE IF EXISTS t;
 -- serializes a sample with `getDefaultCodec`, so the actually-read compressed bytes must use the
 -- same codec for the estimate to stay within the test's 2x tolerance. Pinning it explicitly also
 -- prevents the test harness from injecting `default_compression_codec='LZ4'` for `no-random-*` tests.
-CREATE TABLE t(a UInt64, s String, d Date) ENGINE=MergeTree PARTITION BY toYYYYMM(d) ORDER BY a SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part = 1e18, default_compression_codec='ZSTD(3)';
+-- No implicit min-max index on `a`: it makes `query_8` take the skip-index top-K path even when reading
+-- in order, which keeps the read local with plan-based parallel replicas, so no statistics are collected
+-- for it: https://github.com/ClickHouse/ClickHouse/issues/131858
+CREATE TABLE t(a UInt64, s String, d Date) ENGINE=MergeTree PARTITION BY toYYYYMM(d) ORDER BY a SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part = 1e18, default_compression_codec='ZSTD(3)', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t SELECT number, toString(number), today() - INTERVAL (number % 30) DAY FROM numbers(1e6);
 

@@ -3,10 +3,13 @@
 SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS test;
 
+-- No implicit min-max index on `k`: a skip index over the sort column makes `tryOptimizeTopK` pick the
+-- skip-index top-K path for `ORDER BY k LIMIT`, and plan-based parallel replicas keep such a read local,
+-- so no replicas would be used. An explicit `INDEX k TYPE minmax` has the same effect.
 CREATE TABLE test (k UInt64, v String)
 ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test SELECT number, toString(number) FROM numbers(10_000);
 
