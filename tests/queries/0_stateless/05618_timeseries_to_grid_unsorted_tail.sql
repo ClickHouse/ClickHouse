@@ -39,6 +39,14 @@ FROM numbers(2000);
 -- Case 6: the tail lies entirely before the prefix.
 INSERT INTO ts_tail SELECT 6, number, toDateTime64(if(number < 2000, 30000 + (number + 1) * 10, ((number - 2000) * 37 % 500 + 1) * 10), 3, 'UTC'), if(number < 2000, number % 13, (number - 2000) % 11)
 FROM numbers(2500);
+-- Case 7: the tail lies entirely before the prefix and repeats its own timestamps with different values (500 timestamps twice).
+INSERT INTO ts_tail SELECT 7, number, toDateTime64(if(number < 2000, 30000 + (number + 1) * 10, ((number - 2000) * 37 % 500 + 1) * 10), 3, 'UTC'), if(number < 2000, number % 13, (number - 2000) * 7 % 17)
+FROM numbers(3000);
+-- Case 8: the tail starts with the last timestamp of the prefix and goes on in order (20000, 20010, ..., 20990), then interleaves with the prefix.
+INSERT INTO ts_tail SELECT 8, number,
+    toDateTime64(multiIf(number < 2000, (number + 1) * 10, number < 2100, 20000 + (number - 2000) * 10, ((number - 2100) * 37 % 400) * 10 + 5), 3, 'UTC'),
+    if(number < 2000, number % 13, (number - 2000) % 11)
+FROM numbers(2500);
 
 -- The reference input: sorted by timestamp, one sample per timestamp.
 INSERT INTO ts_tail_sorted SELECT c, ts, max(v) FROM ts_tail GROUP BY c, ts;
@@ -55,7 +63,7 @@ GROUP BY c
 SETTINGS max_threads = 1;
 
 -- The reference must be non-trivial: all cases have a result and the cases differ from each other.
-SELECT 'reference is non-trivial (6 6 1):';
+SELECT 'reference is non-trivial (8 7 1):';
 SELECT count(), uniqExact(r.1), min(r.2[1] > 0) FROM ts_tail_expected;
 
 -- (a, b, c) Scalar adds, one row at a time in arrival order, in one block and split into small blocks

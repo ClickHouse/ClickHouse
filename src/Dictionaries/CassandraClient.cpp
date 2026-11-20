@@ -195,7 +195,7 @@ public:
 
     void writeBytes(std::string_view s) { writeLongString(s); }
 
-    std::string_view str() const { return body; }
+    [[nodiscard]] std::string_view str() const { return body; }
 
 private:
     StringWithMemoryTracking body;
@@ -208,8 +208,8 @@ class BodyReader
 public:
     BodyReader(std::string_view body_, size_t offset) : body(body_), pos(offset) {}
 
-    size_t position() const { return pos; }
-    size_t remaining() const { return body.size() - pos; }
+    [[nodiscard]] size_t position() const { return pos; }
+    [[nodiscard]] size_t remaining() const { return body.size() - pos; }
 
     UInt16 readShort()
     {

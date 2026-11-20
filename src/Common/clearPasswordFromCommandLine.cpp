@@ -6,16 +6,30 @@ using namespace std::literals;
 
 void clearPasswordFromCommandLine(int argc, char ** argv)
 {
-    for (int arg = 1; arg < argc; ++arg)
+    /// Options of the programs calling this function whose values are credentials.
+    static constexpr std::string_view secret_options[]
+        = {"--password"sv, "--jwt"sv, "--ssh-key-passphrase"sv, "--one-time-password"sv, "--oauth-client-secret"sv, "--identity"sv};
+
+    /// Backwards, so that an option is recognized before a preceding `--password` without a value zeroes it.
+    for (int arg = argc - 1; arg >= 1; --arg)
     {
-        if (arg + 1 < argc && argv[arg] == "--password"sv)
+        const std::string_view argument = argv[arg];
+        for (const auto option : secret_options)
         {
-            ++arg;
-            memset(argv[arg], 0, strlen(argv[arg]));
-        }
-        else if (0 == strncmp(argv[arg], "--password=", strlen("--password=")))
-        {
-            memset(argv[arg] + strlen("--password="), 0, strlen(argv[arg]) - strlen("--password="));
+            if (argument == option)
+            {
+                /// clickhouse-client also accepts `--option = value`.
+                const int value = (arg + 2 < argc && argv[arg + 1] == "="sv) ? arg + 2 : arg + 1;
+                if (value < argc)
+                    memset(argv[value], 0, strlen(argv[value]));
+                break;
+            }
+            if (argument.size() > option.size() && argument.starts_with(option)
+                && (argument[option.size()] == '=' || argument[option.size()] == ':'))
+            {
+                memset(argv[arg] + option.size() + 1, 0, argument.size() - option.size() - 1);
+                break;
+            }
         }
     }
 }
