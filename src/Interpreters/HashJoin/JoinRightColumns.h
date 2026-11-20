@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/AmacRing.h>
 #include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/LookupMethod.h>
@@ -25,6 +26,10 @@ namespace DB::JoinProbe
   *    rest of the block.
   * The key search is in `FindKeys.h`, and what a lookup method implements is in `LookupMethod.h`. The pass, the match steps
   * and `selectFunctions` are in `JoinRightColumnsImpl.h`.
+  * The AMAC ring of `AmacLookup.h` does the key search of a disjunct whose table passes `ringTakes`, and in the pass of one
+  * disjunct it searches the keys in row order. The ring does not build keys.
+  * For a key type whose key is built from the key columns, a prepare step (`PrepareKeys.h`) builds the keys of the rows
+  * before the ring searches them.
   */
 
 class JoinRightColumns;
@@ -54,10 +59,19 @@ public:
     {
         /// Several disjuncts or an additional filter: the key search, [later disjunct][fast_path].
         FindKeysFn find_keys[2][2]{};
+        /// The same searches by the AMAC ring (`AmacLookup.h`), [buckets in the Robin Hood mode][later disjunct][fast_path].
+        /// Null where the ring has none.
+        FindKeysFn find_keys_ring[2][2][2]{};
+        /// The prepare step before a search by the ring (`PrepareKeys.h`), [later disjunct][fast_path]. Null for a key type
+        /// whose key is read from the key column.
+        PrepareKeysFn prepare_keys[2][2]{};
         /// Several disjuncts or an additional filter: the match step, [need_filter].
         AddMatchesFn add_matches[2]{};
         /// One disjunct and no additional filter: the pass that finds the keys and adds the matches, [fast_path].
         AddMatchesFn find_keys_and_add_matches[2]{};
+        /// The same pass with the AMAC ring in row order, for a block that the ring takes, [buckets in the Robin Hood
+        /// mode][fast_path]. Null where the ring has none.
+        AddMatchesFn find_keys_and_add_matches_ring[2][2]{};
         /// The most rows of a batch, or 0 for a single batch of the whole block. With a value other than 0, the row limit
         /// applies: the first batch of a call has at most as many rows as the limit, and each later batch twice as many as the
         /// one before, up to this value. So a call that stops early at the limit wastes few lookups.
@@ -111,6 +125,14 @@ public:
 
     [[nodiscard]] MatchWord * matchWordsOf(size_t k) const { return match_words + k * batch_rows; }
 
+    /// Before a search of the first disjunct by the ring: the prepare step of the rows of `args`, if the key type builds its
+    /// keys.
+    void prepareKeysOfFirstDisjunct(const FindKeysArgs & args) const
+    {
+        if (prepare_keys_fns[0])
+            prepare_keys_fns[0](args);
+    }
+
     const Functions & functions;
     const Tables tables;
     AddedColumns & added_columns;
@@ -142,17 +164,33 @@ private:
     /// The rows of the batch, or for a join that stops at the first match, the rows that no disjunct before `k` matched.
     [[nodiscard]] ProbeRows rowsToProbe(size_t k) const;
 
+    /// The key search of disjunct `k` by the AMAC ring, for the mode of the buckets of its table. Null where the ring has none.
+    [[nodiscard]] FindKeysFn ringFn(size_t k) const { return find_keys_ring_fns[tables[k]->bucketsAreRobinHood()][k != 0]; }
+
+    /// Whether the ring may search `probe_rows` rows of disjunct `k`.
+    [[nodiscard]] bool ringTakes(size_t k, size_t probe_rows) const
+    {
+        return probe_rows >= amac_min_rows && added_columns.enable_prefetch && tables[k]->takesAmacLookup();
+    }
+
     size_t findKeys(size_t k)
     {
-        return find_keys_fns[k != 0](
-            {*tables[k],
-             added_columns.join_on_keys[k],
-             rowsToProbe(k),
-             added_columns.enable_prefetch,
-             batch_first_row,
-             matchWordsOf(k),
-             functions.records_key_offsets ? key_offsets.data() : nullptr,
-             max_joined_rows - std::min<size_t>(added_rows, max_joined_rows)});
+        const ProbeRows probe_rows = rowsToProbe(k);
+        const FindKeysArgs args{
+            *tables[k],
+            added_columns.join_on_keys[k],
+            probe_rows,
+            added_columns.enable_prefetch,
+            batch_first_row,
+            matchWordsOf(k),
+            functions.records_key_offsets ? key_offsets.data() : nullptr,
+            max_joined_rows - std::min<size_t>(added_rows, max_joined_rows)};
+        const FindKeysFn ring = ringTakes(k, probe_rows.size) ? ringFn(k) : nullptr;
+        if (!ring)
+            return find_keys_fns[k != 0](args);
+        if (const PrepareKeysFn prepare_keys = prepare_keys_fns[k != 0])
+            prepare_keys(args);
+        return ring(args);
     }
 
     /// For a join that stops at the first match: removes the rows that disjunct `k` matched from `unmatched_rows`. The match
@@ -162,6 +200,8 @@ private:
 
     /// What `run` calls: [later disjunct]. Unused with `words_in_row_refs`.
     FindKeysFn find_keys_fns[2]{};
+    FindKeysFn find_keys_ring_fns[2][2]{}; /// [buckets in the Robin Hood mode][later disjunct]
+    PrepareKeysFn prepare_keys_fns[2]{}; /// [later disjunct]
     AddMatchesFn add_matches_fn = nullptr;
 
     PaddedPODArray<MatchWord> disjunct_match_words;

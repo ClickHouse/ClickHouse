@@ -298,6 +298,8 @@ template <typename Maps>
 BuildResult
 HashJoinTable::insert(const InsertSettings & settings, const InsertRows & rows, size_t stream, absl::FunctionRef<void(size_t)> add_bytes)
 {
+    /// An insert may move the cells of a bucket, and the AMAC lookup reads them from where `freezeForProbing` listed them.
+    chassert(!takes_amac_lookup, "A hash join table that the AMAC lookup may take got an insert after `freezeForProbing`");
     return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes); });
 }
 
