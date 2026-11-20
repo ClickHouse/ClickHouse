@@ -17,3 +17,12 @@ FROM
     ORDER BY c2, c1
     LIMIT 196227
 );
+
+-- With equal re-merge and spill thresholds, a useful re-merge must run before the sort spills to disk.
+SELECT sum(k) FROM (SELECT sipHash64(number) AS k FROM numbers(1000000) ORDER BY k LIMIT 8192)
+SETTINGS max_block_size = 4096, max_bytes_before_remerge_sort = 1048576, max_bytes_before_external_sort = 1048576,
+    use_top_k_dynamic_filtering = 0, log_comment = '05828_remerge_before_spill';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['ExternalSortWritePart'] FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05828_remerge_before_spill' AND type = 'QueryFinish';

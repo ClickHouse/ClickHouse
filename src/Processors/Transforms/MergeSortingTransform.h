@@ -90,6 +90,8 @@ private:
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
+    bool isSpillDue() const;
+
     /// Prepare the same sorted run for pipeline-driven or synchronous spilling.
     std::shared_ptr<BufferingToFileSink> prepareSpill();
 
