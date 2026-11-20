@@ -41,6 +41,10 @@ public:
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        underlying->setMapColumnsReadByOneSide(by_keys, by_values);
+    }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void prefetch(const InputFormatStreamMemoryPtr & stream_memory, bool start_reading_data) override { underlying->prefetch(stream_memory, start_reading_data); }
