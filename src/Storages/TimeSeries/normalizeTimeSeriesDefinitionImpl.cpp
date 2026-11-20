@@ -38,6 +38,8 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <base/EnumReflection.h>
 #include <algorithm>
+#include <ranges>
+#include <unordered_set>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -720,6 +722,20 @@ namespace
     {
         return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
             ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
+    }
+
+    /// Keeps only the last occurrence of each setting, the one the table applies, so that lookups and merges by name see it.
+    void keepLastOccurrenceOfEachSetting(SettingsChanges & changes)
+    {
+        std::unordered_set<String> seen;
+        SettingsChanges last_occurrences;
+        for (auto & change : changes | std::views::reverse)
+        {
+            if (seen.insert(change.name).second)
+                last_occurrences.push_back(std::move(change));
+        }
+        std::ranges::reverse(last_occurrences);
+        changes = std::move(last_occurrences);
     }
 
     /// Removes the settings copied from the old table which this table must not inherit. `new_settings` is
@@ -2440,6 +2456,7 @@ namespace
                 create_query.set(create_query.storage, make_intrusive<ASTStorage>());
 
             auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(old_create_query.storage->settings->clone());
+            keepLastOccurrenceOfEachSetting(merged_settings->changes);
 
             /// Some settings of the old table are not copied because the settings written in this query disable them.
             removeOldSettingsDisabledByNewSettings(merged_settings->changes, create_query.storage->settings);

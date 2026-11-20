@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-replicated-database
 # no-ordinary-database: an ATTACH with an explicit UUID needs an Atomic database
+# no-replicated-database: ON CLUSTER is not allowed for a Replicated database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

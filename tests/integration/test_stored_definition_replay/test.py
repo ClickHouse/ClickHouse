@@ -9,7 +9,8 @@ from helpers.cluster import ClickHouseCluster
 # test stores such a definition by editing the metadata file of a detached object and attaching it back with the
 # short `ATTACH`, which replays the stored definition.
 
-KEEPER_FEATURE_FLAGS = ["filtered_list", "multi_read", "list_with_stat_and_data", "check_stat"]
+# UNIQUE KEY transactions need the first four, a refreshable view in a `Replicated` database also `create_if_not_exists`.
+KEEPER_FEATURE_FLAGS = ["filtered_list", "multi_read", "list_with_stat_and_data", "check_stat", "create_if_not_exists"]
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
