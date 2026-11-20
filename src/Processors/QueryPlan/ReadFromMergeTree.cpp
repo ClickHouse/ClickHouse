@@ -2712,7 +2712,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             /// Named distinctly from the outer `split_parts_and_ranges` (used only by the
             /// parallel-replicas initiator branch above) to avoid `-Wshadow`.
-            std::vector<RangesInDataParts> fallback_split_parts_and_ranges;
+            VectorWithMemoryTracking<RangesInDataParts> fallback_split_parts_and_ranges;
             fallback_split_parts_and_ranges.reserve(num_streams);
 
             for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
@@ -5406,7 +5406,7 @@ bool ReadFromMergeTree::canOutputEachPartitionThroughSeparatePortForWindow() con
     /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
     /// `supportsBucketedRead`).
     if (distributed_read_bucket_count)
-        return;
+        return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With window-by-partitions optimisation we might create a separate pool for each partition.
