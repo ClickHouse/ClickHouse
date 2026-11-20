@@ -26,7 +26,6 @@ public:
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
     std::optional<size_t> takeCompressedBytesRead() override;
-    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
     void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override

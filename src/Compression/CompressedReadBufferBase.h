@@ -7,8 +7,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <city.h>
 
-#include <utility>
-
 
 namespace DB
 {

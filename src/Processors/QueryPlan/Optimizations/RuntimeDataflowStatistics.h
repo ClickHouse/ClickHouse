@@ -193,10 +193,7 @@ public:
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
     /// Records the compressed size of the blocks a reader loaded from a part, which is what a replica reading the same
-    /// granules loads: measured rather than estimated, it needs no sample of the read columns and no compression ratio,
-    /// and it covers what the columns do not show, e.g. the values a scan-time string filter replaced, the stream of a
-    /// column that a subcolumn is read from, or a stream several columns share. `nullopt` is for a reader that cannot
-    /// tell, and drops the statistics.
+    /// granules loads. `nullopt` is for a reader that cannot tell, and drops the statistics.
     void recordInputBytesRead(std::optional<size_t> compressed_bytes_read);
 
     /// Shared by the readers of the updater's reads, see `IMergeTreeReader::countCompressedBytesRead`.

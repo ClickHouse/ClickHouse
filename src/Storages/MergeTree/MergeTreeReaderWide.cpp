@@ -1186,15 +1186,7 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
 
 void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
 {
-    /// A reader gets the same object for each of its tasks.
-    const bool same_counted = counted == counted_compressed_blocks;
     IMergeTreeReader::countCompressedBytesRead(std::move(counted));
-    if (!same_counted)
-    {
-        std::lock_guard lock(ranges_read_mutex);
-        for (auto & [_, stream_ranges] : ranges_read)
-            stream_ranges.counted = nullptr;
-    }
     /// The streams created later get their sink in `getOrAddStream`.
     streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
 }
@@ -1245,11 +1237,9 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
             continue;
 
         const auto & name_and_type = columns_to_read[pos];
-        /// The streams are enumerated without a deserialization state, so those listed in the prefixes are missed: the
-        /// structure of dynamic types, and the buckets of a `Map`, whose info stream is enumerated in their place.
-        /// A `Quantized` column enumerates its codes and codebook, which reading the vectors skips, and the single value
-        /// of the codebook is read from the beginning of its file for any granule, not from the granule's mark. The
-        /// columns of a reloaded part lose its serialization, which is then taken from the requested column.
+        /// Without a deserialization state the streams listed in the prefixes (dynamic structure, `Map` buckets) are not
+        /// enumerated. A `Quantized` column enumerates streams the read skips, and reads its codebook from the start of the
+        /// file; a reloaded part loses that serialization, so check the requested column too.
         const auto & type_in_storage = name_and_type.getTypeInStorage();
         if (type_in_storage->hasDynamicStructure() || is_quantized(type_in_storage) || is_quantized(requested_column->getTypeInStorage()))
         {

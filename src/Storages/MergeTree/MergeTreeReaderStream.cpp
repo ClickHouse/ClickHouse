@@ -681,13 +681,9 @@ void MergeTreeReaderStream::addRangeOfMark(size_t mark, bool shared_with_next_gr
             return;
 
         end = next_mark.offset_in_compressed_file;
-        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
-        /// it shares the data written after it, like a `LowCardinality` dictionary: then the next mark is the same, at the
-        /// start of the block.
-        /// A dictionary is written at the end of the call that fills it, so a granule written in one call needs none after
-        /// the next mark. A merge may write a granule in several calls and start the next dictionary in the middle of it.
-        /// The marks don't tell these apart, so unlike `MergeTreeReaderStreamSingleColumn::getRightOffset`, which bounds
-        /// what reading may need, the next dictionary is not counted for the granule.
+        /// Unlike `MergeTreeReaderStreamSingleColumn::getRightOffset`, which bounds what reading may need, the dictionary
+        /// after the next mark is not counted: a granule written in one call needs none. Only a merge may write a granule
+        /// in several calls and start the next dictionary in the middle of it, which the marks don't show.
         if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
         {
             /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.

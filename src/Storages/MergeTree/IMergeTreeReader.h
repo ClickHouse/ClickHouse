@@ -105,16 +105,18 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    /// Returns the compressed size of the blocks the reader loaded from the part since the previous call, the blocks
-    /// served from the uncompressed cache included, but not those counted already in the `CountedCompressedBlocks` given
-    /// to `countCompressedBytesRead`. `nullopt` if the reader cannot tell.
+    /// Returns the compressed size of the blocks loaded since the previous call (from the uncompressed cache too) that the
+    /// `CountedCompressedBlocks` of `countCompressedBytesRead` has not counted yet. `nullopt` if the reader cannot tell.
     virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
 
-    /// For a caller that takes `takeCompressedBytesRead`: makes it count the granules served from the columns cache as well,
-    /// as the compressed size of the data reading them from the part would load. Costs loading the marks of the columns
-    /// served, and keeping the granules until they are taken, so a reader whose caller does not take them does not count them.
-    /// The readers of a read share `counted`, so a block that several of them load is counted once, as it is one replica's.
-    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted) { counted_compressed_blocks = std::move(counted); }
+    /// Enables `takeCompressedBytesRead`, which then also prices the granules served from the columns cache as the blocks
+    /// reading them from the part would load (this loads their marks). The readers of a read share `counted`, so a block
+    /// several of them load is counted once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
+    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+    {
+        chassert(!counted_compressed_blocks || counted_compressed_blocks == counted);
+        counted_compressed_blocks = std::move(counted);
+    }
 
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -173,7 +175,7 @@ protected:
     /// Returns the string value filter to apply during deserialization of the column, or nullptr.
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
-    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
+    [[nodiscard]] StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
