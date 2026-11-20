@@ -16,6 +16,8 @@ SET enable_cascades_optimizer = 0, max_rows_to_group_by = 0, enable_parallel_rep
 SELECT 'without aggregates', count() FROM (SELECT k FROM t GROUP BY k LIMIT 5 SETTINGS make_distributed_plan = 0);
 SELECT 'without aggregates, DEFAULT', count() FROM (SELECT k FROM t GROUP BY k LIMIT 5 SETTINGS make_distributed_plan = DEFAULT);
 SELECT 'with aggregates', count(), sum(c) FROM (SELECT k, count() AS c FROM t GROUP BY k LIMIT 5 SETTINGS make_distributed_plan = 0);
+-- Without the `GROUP BY` top-K heap, which otherwise takes the place of the cap.
+SELECT 'with aggregates, without top-K', count(), sum(c) FROM (SELECT k, count() AS c FROM t GROUP BY k LIMIT 5 SETTINGS make_distributed_plan = 0, enable_group_by_top_k_optimization = 0);
 SELECT 'view', count(), sum(c) FROM v;
 
 DROP VIEW v;
