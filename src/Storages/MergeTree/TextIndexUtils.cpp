@@ -67,6 +67,7 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     return CompressionCodecFactory::instance().get(marks_compression_codec);
 }
 
+/// With `storage_settings`, long stream names are replaced with hashes, as the part writer does.
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -74,7 +75,8 @@ makeOutputStreams(
     const MutableDataPartStoragePtr & data_part_storage,
     const CompressionCodecPtr & default_codec,
     const String & marks_file_extension,
-    const MergeTreeWriterSettings & settings)
+    const MergeTreeWriterSettings & settings,
+    const MergeTreeSettings * storage_settings)
 {
     auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
@@ -83,6 +85,8 @@ makeOutputStreams(
     for (const auto & index_substream : index_substreams)
     {
         auto stream_name = index_name + index_substream.suffix;
+        if (storage_settings)
+            stream_name = replaceFileNameToHashIfNeeded(stream_name, *storage_settings, data_part_storage.get());
 
         auto stream = std::make_unique<MergeTreeIndexWriterStream>(
             stream_name,
@@ -229,7 +233,8 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         temporary_storage,
         default_codec,
         marks_file_extension,
-        writer_settings);
+        writer_settings,
+        /*storage_settings=*/ nullptr);
 
     writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams);
@@ -517,6 +522,8 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    const auto storage_settings = new_data_part->storage.getSettings();
+
     /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
     /// segments into a different directory and must claim nothing in this part.
     if (writer_settings.stream_base_manifest)
@@ -524,7 +531,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         const String index_file_name = index_ptr->getFileName();
         for (const auto & substream : index_ptr->getSubstreams())
             writer_settings.stream_base_manifest->registerStreamBase(
-                index_file_name + substream.suffix,
+                replaceFileNameToHashIfNeeded(index_file_name + substream.suffix, *storage_settings, &new_data_part->getDataPartStorage()),
                 {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
     }
 
@@ -534,7 +541,8 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
         new_data_part->getMarksFileExtension(),
-        writer_settings);
+        writer_settings,
+        storage_settings.get());
 
     auto substreams = index_ptr->getSubstreams();
 
