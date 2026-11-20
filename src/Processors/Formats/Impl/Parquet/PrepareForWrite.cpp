@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
@@ -472,6 +473,64 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             t.__set_TIMESTAMP(tt);
             types(T::INT64, converted, t);
             state.datetime_multiplier = DataTypeDateTime64::getScaleMultiplier(converted_scale - scale);
+            break;
+        }
+
+        /// Parquet `TIME` is a time-of-day without date or timezone -> `Time`/`Time64`.
+        /// `Time` is scaled up to milliseconds because parquet has no second-precision time
+        /// type; INT32 is only allowed for `TIME` with `MILLIS` unit (max 86'399'000 fits).
+        case TypeIndex::Time:
+        {
+            parq::TimeUnit unit;
+            unit.__set_MILLIS({});
+            parq::TimeType tt;
+            /// `Time`/`Time64` are timezone-unaware, so the values are not adjusted to UTC.
+            tt.__set_isAdjustedToUTC(false);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIME(tt);
+            types(T::INT32, C::TIME_MILLIS, t);
+            state.datetime_multiplier = 1000;
+            break;
+        }
+
+        case TypeIndex::Time64:
+        {
+            parq::TimeUnit unit;
+            const auto & t64 = assert_cast<const DataTypeTime64 &>(*type);
+            UInt32 scale = t64.getScale();
+            UInt32 converted_scale = 0;
+            std::optional<C::type> converted;
+            if (scale <= 3)
+            {
+                converted = C::TIME_MILLIS;
+                unit.__set_MILLIS({});
+                converted_scale = 3;
+            }
+            else if (scale <= 6)
+            {
+                converted = C::TIME_MICROS;
+                unit.__set_MICROS({});
+                converted_scale = 6;
+            }
+            else if (scale <= 9)
+            {
+                unit.__set_NANOS({});
+                converted_scale = 9;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Time64 scale: {}", scale);
+            }
+
+            parq::TimeType tt;
+            /// `Time`/`Time64` are timezone-unaware, so the values are not adjusted to UTC.
+            tt.__set_isAdjustedToUTC(false);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIME(tt);
+            types(converted_scale == 3 ? T::INT32 : T::INT64, converted, t);
+            state.datetime_multiplier = t64.getScaleMultiplier(converted_scale - scale);
             break;
         }
 
