@@ -244,6 +244,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_keyword("FOR TABLE");
+                ostr << ' ';
+                print_database_table();
+                if (!index.empty())
+                {
+                    ostr << ' ';
+                    print_keyword("INDEX");
+                    ostr << ' ';
+                    print_identifier(index);
+                }
+            }
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -753,6 +771,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
+    if (!index.empty())
+        w.writeString("index", index);
     if (!target_function.empty())
         w.writeString("target_function", target_function);
     if (!replica.empty())
@@ -931,6 +951,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
+    index = r.getString("index");
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");
@@ -1091,6 +1112,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::CANCEL:
         case Type::REFRESH:
         case Type::CLEAR_TIME_SERIES_CACHES:
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
             if (!table)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
             break;

@@ -31,6 +31,7 @@ public:
         CLEAR_CONNECTIONS_CACHE,
         PREWARM_MARK_CACHE,
         PREWARM_PRIMARY_INDEX_CACHE,
+        PREWARM_VECTOR_SIMILARITY_INDEX_CACHE,
         CLEAR_MARK_CACHE,
         CLEAR_PRIMARY_INDEX_CACHE,
         CLEAR_STATISTICS_CACHE,
@@ -188,6 +189,9 @@ public:
 
     void setDatabase(const String & name);
     void setTable(const String & name);
+
+    /// Optional `INDEX name` for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE`.
+    String index;
 
     String target_function;
     String replica;

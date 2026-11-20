@@ -1,0 +1,8 @@
+after insert	0
+after prewarm t1	1
+after prewarm t1 and t2	1
+prewarm idx_a	['idx_a']
+prewarm both indexes	['idx_a','idx_b']
+prewarm keys before ann	1
+1
+prewarm keys after ann	1

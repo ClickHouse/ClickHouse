@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -126,6 +127,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsDouble statistics_cache_prewarm_ratio;
+    extern const ServerSettingsDouble vector_similarity_index_cache_prewarm_ratio;
 }
 
 namespace MergeTreeSetting
@@ -165,6 +167,7 @@ namespace FailPoints
 {
     extern const char remove_merge_tree_part_delay[];
     extern const char merge_tree_load_statistics_throw[];
+    extern const char vector_similarity_index_cache_prewarm_pause[];
 }
 
 void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
@@ -750,6 +753,79 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
         return;
 
     vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
+}
+
+void IMergeTreeDataPart::loadVectorSimilarityIndexToCache(const MergeTreeIndexPtr & skip_index, VectorSimilarityIndexCache & cache) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadVectorSimilarityIndexToCache");
+    /// The prewarm thread pool exists only while this runs. Pausing here keeps
+    /// `MergeTreePrewarmVectorSimilarityIndexCacheThreads`, `MergeTreePrewarmVectorSimilarityIndexCacheThreadsActive` and
+    /// `MergeTreePrewarmVectorSimilarityIndexCacheThreadsScheduled` visible to `system.metrics`.
+    FailPointInjection::pauseFailPoint(FailPoints::vector_similarity_index_cache_prewarm_pause);
+
+    const auto context = storage.getContext();
+    const double ratio_to_prewarm = context->getServerSettings()[ServerSetting::vector_similarity_index_cache_prewarm_ratio];
+    auto enough_space = [&cache, ratio_to_prewarm]()
+    {
+        return static_cast<double>(cache.sizeInBytes()) < static_cast<double>(cache.maxSizeInBytes()) * ratio_to_prewarm;
+    };
+
+    if (!enough_space())
+        return;
+
+    auto alter_conversions = std::make_shared<AlterConversions>();
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    if (!skip_index->getDeserializedFormat(*part_info, skip_index->getFileName()))
+        return;
+
+    const auto skip_index_granularity = skip_index->getGranularity();
+    const size_t skip_marks = index_granularity->getMarksCountForSkipIndex(skip_index_granularity);
+    if (skip_marks == 0)
+        return;
+
+    MarkRanges ranges{MarkRange(0, skip_marks)};
+    auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
+    MergeTreeIndexReader reader(
+        skip_index,
+        part_info,
+        skip_marks,
+        ranges,
+        context->getIndexMarkCache().get(),
+        context->getIndexUncompressedCache().get(),
+        /*vector_similarity_index_cache=*/ nullptr,
+        reader_settings,
+        /*interruptible_marks_read=*/ true);
+
+    const String path_to_data_part = getPathForCacheKey();
+    const UUID table_uuid = storage.getStorageID().uuid;
+
+    for (size_t mark = 0; mark < skip_marks; ++mark)
+    {
+        VectorSimilarityIndexCacheKey key{path_to_data_part, skip_index->getFileName(), mark};
+        if (cache.contains(key))
+            continue;
+
+        /// A granule loaded earlier in this loop may already have reached the ratio.
+        /// Do not start another read after that.
+        if (!enough_space())
+            break;
+
+        MergeTreeIndexGranulePtr granule;
+        reader.read(mark, /*condition=*/ nullptr, granule, /*readable_ranges=*/ nullptr);
+        if (!granule)
+            continue;
+
+        auto cell = std::make_shared<VectorSimilarityIndexCacheCell>(
+            std::move(granule), table_uuid, name, skip_index->index.name);
+        /// `cache.set` evicts down to the configured limit. A granule larger than the room under the
+        /// ratio can be evicted back below it, which would make the next `enough_space` check succeed
+        /// and keep the loop reading. Stop once this insert itself reaches the ratio.
+        const bool reached_ratio = static_cast<double>(cache.sizeInBytes()) + static_cast<double>(cell->memory_bytes)
+            >= static_cast<double>(cache.maxSizeInBytes()) * ratio_to_prewarm;
+        cache.set(key, cell);
+        if (reached_ratio)
+            break;
+    }
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)

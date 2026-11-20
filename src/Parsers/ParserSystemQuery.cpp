@@ -561,6 +561,30 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            if (!ParserKeyword{Keyword::FOR}.ignore(pos, expected)
+                || !ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+            {
+                expected.add(pos, "FOR TABLE");
+                return false;
+            }
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            if (ParserKeyword{Keyword::INDEX}.ignore(pos, expected))
+            {
+                ASTPtr index_ast;
+                if (!ParserIdentifier{}.parse(pos, index_ast, expected))
+                    return false;
+                if (!tryGetIdentifierNameInto(index_ast, res->index))
+                    return false;
+            }
+            break;
+        }
+
         case Type::SYNC_DATABASE_REPLICA:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
@@ -1408,6 +1432,14 @@ SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR T
 With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed.
 
 Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a single table.
+
+## SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE {#prewarm-vector-similarity-index-cache}
+
+Loads deserialized HNSW granules of a `MergeTree` table into the [vector similarity index cache](#drop-vector-similarity-index-cache). `INDEX name` limits the load to one vector similarity index. Loading stops starting new loads once the cache reaches `vector_similarity_index_cache_prewarm_ratio` of its configured size. The check is repeated before each granule of a part, so granules of the same part are not read after the ratio is reached. A load that has already started may exceed that ratio, and the cache then evicts down to `vector_similarity_index_cache_size` and `vector_similarity_index_cache_max_entries`.
+
+```sql
+SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] FOR TABLE [db.]table [INDEX index_name]
+```
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 

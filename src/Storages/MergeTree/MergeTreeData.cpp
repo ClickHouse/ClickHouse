@@ -10,6 +10,8 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -148,7 +150,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
@@ -433,6 +434,7 @@ namespace ServerSetting
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
     extern const ServerSettingsDouble statistics_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
+    extern const ServerSettingsDouble vector_similarity_index_cache_prewarm_ratio;
 }
 
 namespace FailPoints
@@ -4754,6 +4756,107 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
     runner.waitForAllToFinishAndRethrowFirstError();
     LOG_TRACE(log, "Prewarmed caches in {:.3f} seconds", watch.elapsedSeconds());
+}
+
+void MergeTreeData::prewarmVectorSimilarityIndexCache(
+    ThreadPool & pool,
+    VectorSimilarityIndexCache & cache,
+    const std::optional<String> & index_name)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto & indices = metadata_snapshot->getSecondaryIndices();
+
+    MergeTreeIndices indexes;
+    if (index_name)
+    {
+        /// A missing name and a name of another index type are different mistakes. Filtering the
+        /// vector indexes first would report both as "no vector similarity index named ...".
+        if (!indices.has(*index_name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table {} has no index {}{}",
+                getStorageID().getNameForLogs(),
+                backQuote(*index_name),
+                indices.getHintsMessage(*index_name));
+
+        const auto & index = indices.getByName(*index_name);
+        if (index.type != "vector_similarity")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Index {} of table {} is not a vector similarity index, its type is {}",
+                backQuote(*index_name),
+                getStorageID().getNameForLogs(),
+                index.type);
+
+        indexes.push_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *getSettings()));
+    }
+    else
+    {
+        for (const auto & desc : indices)
+        {
+            if (desc.type != "vector_similarity")
+                continue;
+            indexes.push_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, desc, *getSettings()));
+        }
+
+        if (indexes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table {} has no vector similarity index",
+                getStorageID().getNameForLogs());
+    }
+
+    Stopwatch watch;
+    LOG_TRACE(log, "Prewarming vector similarity index cache");
+
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    auto to_tuple = [](const auto & part)
+    {
+        return std::make_tuple(part->getMinMaxDate().second, part->getMinMaxTime().second, part->modification_time);
+    };
+    std::sort(data_parts.begin(), data_parts.end(), [&to_tuple](const auto & lhs, const auto & rhs)
+    {
+        return to_tuple(lhs) > to_tuple(rhs);
+    });
+
+    const double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::vector_similarity_index_cache_prewarm_ratio];
+
+    auto enough_space = [&cache, ratio_to_prewarm]()
+    {
+        return static_cast<double>(cache.sizeInBytes()) < static_cast<double>(cache.maxSizeInBytes()) * ratio_to_prewarm;
+    };
+
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
+    /// `enqueueAndKeepTrack` schedules before it records the task. Reserving every part/index
+    /// job up front keeps that recording from reallocating, so a throw cannot leave an accepted
+    /// job outside the list the runner joins.
+    runner.reserve(data_parts.size() * indexes.size());
+
+    for (const auto & part : data_parts)
+    {
+        if (!enough_space())
+            break;
+
+        for (const auto & index : indexes)
+        {
+            if (!enough_space())
+                break;
+
+            runner.enqueueAndKeepTrack(
+                [part, index, &cache, &enough_space, current_component = Coordination::getCurrentComponent()]
+                {
+                    auto component_guard = Coordination::setCurrentComponent(current_component);
+                    /// Check again, because another task may have filled the cache while this task was waiting.
+                    if (!enough_space())
+                        return;
+
+                    part->loadVectorSimilarityIndexToCache(index, cache);
+                });
+        }
+    }
+
+    runner.waitForAllToFinishAndRethrowFirstError();
+    LOG_TRACE(log, "Prewarmed vector similarity index cache in {:.3f} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.

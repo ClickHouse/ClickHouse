@@ -73,6 +73,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
@@ -102,6 +103,7 @@
 #include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
 #include <Common/formatReadable.h>
+#include <Common/quoteString.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -154,6 +156,9 @@ namespace CurrentMetrics
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
+    extern const Metric MergeTreePrewarmVectorSimilarityIndexCacheThreads;
+    extern const Metric MergeTreePrewarmVectorSimilarityIndexCacheThreadsActive;
+    extern const Metric MergeTreePrewarmVectorSimilarityIndexCacheThreadsScheduled;
 }
 
 namespace DB
@@ -530,6 +535,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             prewarmPrimaryIndexCache();
+            break;
+        }
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            prewarmVectorSimilarityIndexCache();
             break;
         }
         case Type::CLEAR_TIME_SERIES_CACHES:
@@ -3066,6 +3076,39 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
     merge_tree->prewarmCaches(pool, caches);
 }
 
+void InterpreterSystemQuery::prewarmVectorSimilarityIndexCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM VECTOR SIMILARITY INDEX CACHE command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+
+    auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    auto * merge_tree = castStorage<MergeTreeData>(table_ptr, DeferredTable::Load).get();
+    if (!merge_tree)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Command PREWARM VECTOR SIMILARITY INDEX CACHE is supported only for MergeTree table, but got: {}",
+            table_ptr->getName());
+
+    auto cache = getContext()->getVectorSimilarityIndexCache();
+    if (!cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Vector similarity index cache is not configured");
+
+    const auto & query = query_ptr->as<const ASTSystemQuery &>();
+    std::optional<String> index_name;
+    if (!query.index.empty())
+        index_name = query.index;
+
+    getContext()->onQueryExecutionStarted();
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePrewarmVectorSimilarityIndexCacheThreads,
+        CurrentMetrics::MergeTreePrewarmVectorSimilarityIndexCacheThreadsActive,
+        CurrentMetrics::MergeTreePrewarmVectorSimilarityIndexCacheThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmVectorSimilarityIndexCache(pool, *cache, index_name);
+}
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -3432,6 +3475,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::CLEAR_TIME_SERIES_CACHES:

@@ -110,6 +110,7 @@ private:
 
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
+    void prewarmVectorSimilarityIndexCache();
     void clearTimeSeriesCaches();
 
     void stopReplicatedDDLQueries();
