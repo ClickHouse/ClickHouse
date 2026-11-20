@@ -2,6 +2,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <utility>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
@@ -125,13 +126,16 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
     std::atomic<int> * threshold_top_k_verdict,
     size_t * merged_group_count) const
 {
-    /// The plan never requests the threshold merge for nullable or low-cardinality keys (their
-    /// tables carry a special null-key cell the walk below does not visit), but the dispatch
-    /// above instantiates this template for every two-level method.
-    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    /// The plan never requests the threshold merge for low-cardinality keys, but the dispatch above
+    /// instantiates this template for every two-level method.
+    if constexpr (Method::low_cardinality_optimization)
         return std::nullopt;
     else
     {
+        /// The caller never passes a lone `count`, which keeps its count in the cell instead of a state (see
+        /// `mergeAndConvertOneBucketToChunk`): the merge reads and merges states only.
+        chassert(!is_simple_count);
+
         auto & merged_data = *variants[0];
         const auto & top_k = *params.threshold_top_k;
         const size_t k = top_k.k;
@@ -407,8 +411,10 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         struct Candidate
         {
             TableKey key;
-            AggregateDataPtr place;    /// nullptr for the inline-count path
+            AggregateDataPtr place;
             UInt64 value;
+            /// The group of the NULL key, which has no key in the table (see `process_null_key`).
+            bool null_key = false;
         };
 
         std::vector<Candidate> candidates;
@@ -490,106 +496,54 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         size_t consumed_cells = 0;
         size_t popped_cells = 0;
 
-        /// Fagin's random access for one cell: collect and merge the group's states from every
-        /// other table, zeroing the consumed cells so later encounters of the group are skipped,
-        /// and rank the exact merged value in the bounded candidate heap.
-        const auto process_cell = [&](const Entry & entry, Table * entry_table)
+        /// Merges the states of `other`, a group's cell detached from its table, into `place`, the group's
+        /// merged states, and destroys them. It owns `other`, which nothing else can reach: it destroys it
+        /// also when an aggregate's merge throws, which leaves it whole.
+        const auto merge_detached = [&](AggregateDataPtr place, AggregateDataPtr other)
         {
-            /// Consumed by an earlier random access for the same group.
-            if (is_simple_count ? (getInlineCountState(*entry.slot) == 0) : (*entry.slot == nullptr))
-                return;
-
-            ++consumed_cells;
-            ++merged_groups;
-            Candidate candidate{entry.key, nullptr, 0};
-
-            if (is_simple_count)
+            /// Always the interpreted merge, even when the accumulation was JIT-compiled: the
+            /// compiled and the interpreted code share the state layout by contract (spilling and
+            /// distributed aggregation rely on the same interoperability), and only the few
+            /// candidate groups pay for it. The batch entry point handles the functions whose merge
+            /// may use the thread pool (e.g. `uniqExact`). The merge is not the destructive
+            /// `mergeAndDestroyBatch`: a composite aggregate (e.g. the `Tuple` combinator) destroys
+            /// its source substates one by one, so a failure in the middle would leave a state that
+            /// cannot be destroyed as a whole without destroying the consumed substates a second time.
+            try
             {
-                UInt64 count = getInlineCountState(*entry.slot);
-                getInlineCountState(*entry.slot) = 0;
-                for (Table * table : tables)
+                for (size_t f = 0; f < params.aggregates_size; ++f)
                 {
-                    if (table == entry_table)
-                        continue;
-                    auto it = find_in(*table, entry.key);
-                    if (!it)
-                        continue;
-                    ++consumed_cells;
-                    count += getInlineCountState(it->getMapped());
-                    getInlineCountState(it->getMapped()) = 0;
+                    const size_t state_offset = offsets_of_aggregate_states[f];
+                    AggregateDataPtr other_state = other + state_offset;
+                    aggregate_functions[f]->mergeBatch(0, 1, &place, state_offset, &other_state, *thread_pool, is_cancelled, arena);
                 }
-                candidate.value = count;
             }
-            else
+            catch (...)
             {
-                AggregateDataPtr place = *entry.slot;
-                *entry.slot = nullptr;
-                /// The source cell of the pair being merged, while it is detached from its table:
-                /// it is still whole and nothing else can reach it if an aggregate's merge throws.
-                AggregateDataPtr other_in_flight = nullptr;
-                try
-                {
-                    for (Table * table : tables)
-                    {
-                        if (table == entry_table)
-                            continue;
-                        auto it = find_in(*table, entry.key);
-                        if (!it)
-                            continue;
-                        AggregateDataPtr & other_slot = it->getMapped();
-                        if (!other_slot)
-                            continue;
-                        ++consumed_cells;
-                        /// Detach the source state from the table before merging it: from here on
-                        /// it is owned by this pair and destroyed exactly once, either after all
-                        /// the merges succeeded or by the unwinding.
-                        AggregateDataPtr other = other_slot;
-                        other_slot = nullptr;
-                        other_in_flight = other;
-                        /// Always the interpreted merge, even when the accumulation was
-                        /// JIT-compiled: the compiled and the interpreted code share the
-                        /// state layout by contract (spilling and distributed aggregation
-                        /// rely on the same interoperability), and only the few candidate
-                        /// groups pay for it. The batch entry point handles the functions whose
-                        /// merge may use the thread pool (e.g. `uniqExact`). The merge is not the
-                        /// destructive `mergeAndDestroyBatch`: a composite aggregate (e.g. the
-                        /// `Tuple` combinator) destroys its source substates one by one, so a
-                        /// failure in the middle would leave a state that cannot be destroyed as
-                        /// a whole without destroying the consumed substates a second time.
-                        for (size_t f = 0; f < params.aggregates_size; ++f)
-                        {
-                            const size_t state_offset = offsets_of_aggregate_states[f];
-                            AggregateDataPtr other_state = other + state_offset;
-                            aggregate_functions[f]->mergeBatch(0, 1, &place, state_offset, &other_state, *thread_pool, is_cancelled, arena);
-                        }
-                        other_in_flight = nullptr;
-                        destroy_place(other);
-                    }
-
-                    /// The exact merged value of the group.
-                    if (values_are_uint64)
-                    {
-                        order_by_function->insertResultInto(place + order_by_offset, *exact_value_scratch, arena);
-                        candidate.value = assert_cast<const ColumnUInt64 &>(*exact_value_scratch).getData().back();
-                        exact_value_scratch->popBack(1);
-                    }
-                    else
-                    {
-                        order_by_function->insertResultInto(place + order_by_offset, *exact_values_column, arena);
-                        candidate.value = exact_values_column->size() - 1;
-                    }
-                }
-                catch (...)
-                {
-                    /// The detached source cell is still whole and the table cannot reach it anymore.
-                    if (other_in_flight)
-                        destroy_place(other_in_flight);
-                    destroy_place(place);
-                    throw;
-                }
-                candidate.place = place;
+                destroy_place(other);
+                throw;
             }
+            destroy_place(other);
+        };
 
+        /// The exact merged value of the group whose states `place` holds: the value itself on the
+        /// `UInt64` path, otherwise its row in `exact_values_column`.
+        const auto exact_value = [&](AggregateDataPtr place) -> UInt64
+        {
+            if (values_are_uint64)
+            {
+                order_by_function->insertResultInto(place + order_by_offset, *exact_value_scratch, arena);
+                const UInt64 value = assert_cast<const ColumnUInt64 &>(*exact_value_scratch).getData().back();
+                exact_value_scratch->popBack(1);
+                return value;
+            }
+            order_by_function->insertResultInto(place + order_by_offset, *exact_values_column, arena);
+            return exact_values_column->size() - 1;
+        };
+
+        /// Ranks a group by its exact merged value in the bounded candidate heap.
+        const auto rank_candidate = [&](const Candidate & candidate)
+        {
             if (candidates.size() < k)
             {
                 candidates.push_back(candidate);
@@ -601,16 +555,88 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             else if (candidate_worse(candidate, candidates.front()))
             {
                 std::pop_heap(candidates.begin(), candidates.end(), candidate_worse);
-                if (candidates.back().place)
-                    destroy_place(candidates.back().place);
+                destroy_place(candidates.back().place);
                 candidates.back() = candidate;
                 std::push_heap(candidates.begin(), candidates.end(), candidate_worse);
             }
             else
             {
                 /// The group's exact value is final; once rejected it can never enter.
-                if (candidate.place)
-                    destroy_place(candidate.place);
+                destroy_place(candidate.place);
+            }
+        };
+
+        /// Fagin's random access for one group, whose states `place` holds, detached from `source_table`:
+        /// merges into them the states of the group that `take_from(table)` detaches from every other table,
+        /// so later encounters of the group find nothing, and ranks the exact merged value in the bounded
+        /// candidate heap. `take_from` returns null for a table that does not hold the group. A detached
+        /// state belongs to the random access, which destroys it exactly once: after its merge, or when a
+        /// merge throws.
+        const auto resolve_group
+            = [&](AggregateDataPtr place, const Table * source_table, const auto & take_from, const TableKey & key, bool null_key)
+        {
+            UInt64 value = 0;
+            try
+            {
+                for (Table * table : tables)
+                {
+                    if (table == source_table)
+                        continue;
+                    if (AggregateDataPtr other = take_from(*table))
+                    {
+                        ++consumed_cells;
+                        merge_detached(place, other);
+                    }
+                }
+                value = exact_value(place);
+            }
+            catch (...)
+            {
+                destroy_place(place);
+                throw;
+            }
+            ++merged_groups;
+            rank_candidate(Candidate{key, place, value, null_key});
+        };
+
+        /// Resolves the group of a popped cell, unless an earlier random access for its group consumed it.
+        const auto process_cell = [&](const Entry & entry, Table * entry_table)
+        {
+            if (*entry.slot == nullptr)
+                return;
+            ++consumed_cells;
+            const auto take_key = [&](Table & table) -> AggregateDataPtr
+            {
+                auto it = find_in(table, entry.key);
+                return it ? std::exchange(it->getMapped(), nullptr) : nullptr;
+            };
+            resolve_group(std::exchange(*entry.slot, nullptr), entry_table, take_key, entry.key, /*null_key=*/false);
+        };
+
+        /// The NULL key of a method that keeps it in a slot of its own is a group outside the cells, so no
+        /// list holds it: the tables of bucket 0 keep the slot (see `AggregationDataWithNullKeyTwoLevel`).
+        /// It is resolved before the walk, by random access to the slot of every table, and its exact merged
+        /// value takes part in the threshold check like the value of any candidate.
+        const auto process_null_key = [&]
+        {
+            if constexpr (Method::one_key_nullable_optimization)
+            {
+                const auto take_null_key = [](Table & table) -> AggregateDataPtr
+                {
+                    if (!table.hasNullKeyData())
+                        return nullptr;
+                    table.hasNullKeyData() = false;
+                    return std::exchange(table.getNullKeyData(), nullptr);
+                };
+                for (Table * table : tables)
+                {
+                    if (AggregateDataPtr place = take_null_key(*table))
+                    {
+                        ++consumed_cells;
+                        resolve_group(place, table, take_null_key, TableKey{}, /*null_key=*/true);
+                        return;
+                    }
+                }
             }
         };
 
@@ -626,6 +652,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 
         try
         {
+            process_null_key();
+
             while (!lists.empty())
             {
                 /// Pick the list whose head ranks first: that head is the next sorted access,
@@ -736,24 +764,21 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             places.reserve(keep);
             for (const Candidate & candidate : candidates)
             {
-                method_object.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
-                if (is_simple_count)
-                    assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
+                if (candidate.null_key)
+                    out_cols.key_columns[0]->insertDefault();
                 else
-                    places.push_back(candidate.place);
+                    method_object.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+                places.push_back(candidate.place);
             }
             /// The states now belong to `insertResultsIntoColumns` (it destroys them after
             /// inserting the results); nothing to roll back from here on.
             candidates.clear();
 
-            Chunk chunk;
-            if (is_simple_count)
-                chunk = finalizeChunk(params, std::move(out_cols), /*final=*/true);
-            else
-                chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, /*use_compiled_functions=*/false);
+            Chunk chunk = insertResultsIntoColumns(
+                places, std::move(out_cols), arena, /*has_null_key_data=*/false, /*use_compiled_functions=*/false);
 
             /// The unseen groups were never merged: destroy their states right in the tables.
-            if (!all_aggregates_has_trivial_destructor && !is_simple_count)
+            if (!all_aggregates_has_trivial_destructor)
             {
                 for (Table * table : tables)
                 {
