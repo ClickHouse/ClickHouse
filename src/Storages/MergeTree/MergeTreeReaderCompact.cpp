@@ -622,9 +622,6 @@ size_t MergeTreeReaderCompact::readGranules(
     const size_t num_columns = columns_to_read.size();
     checkNumberOfColumns(num_columns);
 
-    /// Columns created by the data type alone may not match the part's serializations,
-    /// see MergeTreeReaderWide::readRows. A shared column is adopted as-is
-    /// (see takeColumnForAppending), so check both carriers.
     auto checkDestination = [&](size_t pos, const IColumn & column)
     {
         if (!serializations[pos]->isColumnCompatible(column))
