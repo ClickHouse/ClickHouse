@@ -1392,7 +1392,7 @@ private:
     /// The loop of `executeArray` many rows at a time: per chunk, each element position is combined at once into the rows
     /// that have an element there. Returns whether it did that.
     template <bool first>
-    static bool combineManyArrays(
+    static NO_INLINE bool combineManyArrays(
         const ColumnArray::Offsets & offsets,
         const typename ColumnVector<ToType>::Container & element_hashes,
         typename ColumnVector<ToType>::Container & vec_to)
