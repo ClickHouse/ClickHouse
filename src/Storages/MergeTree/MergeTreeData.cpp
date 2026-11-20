@@ -6551,8 +6551,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             };
 
             /// Whether the prefix column can resolve names under the name of the column with the dotted name: `a.x.y`
-            /// through a `JSON` column `a`, or a `Tuple` column `a` with an element `x.y`, but not through an `Array`
-            /// column `a` for a column `a.size0`.
+            /// through a `JSON` column `a`, a `Tuple` column `a` with an element `x.y`, or a `Map(String, ...)` column
+            /// `a` for a column `a.key_x` (`a.key_x.y` is the key `x.y`), but not through an `Array` column `a` for a
+            /// column `a.size0`. The names generated dynamically by the prefix type (paths of `JSON`, keys of `Map`) are
+            /// not listed, so a name under `subcolumn` that no type defines statically is probed.
             auto resolves_deeper_names = [](const DataTypePtr & type, const String & subcolumn)
             {
                 if (auto subcolumn_type = type->tryGetSubcolumnType(subcolumn))
@@ -6560,6 +6562,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     if (subcolumn_type->hasDynamicSubcolumns() || !subcolumn_type->getSubcolumnNames().empty())
                         return true;
                 }
+                if (type->tryGetSubcolumnType(subcolumn + ".__shadowing_probe__"))
+                    return true;
                 String subcolumn_prefix = subcolumn + ".";
                 return std::ranges::any_of(type->getSubcolumnNames(), [&](const String & name) { return name.starts_with(subcolumn_prefix); });
             };

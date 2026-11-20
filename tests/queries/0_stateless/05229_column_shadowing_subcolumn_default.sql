@@ -259,3 +259,32 @@ ALTER TABLE t_shadow_dropped DROP PROJECTION p, DROP COLUMN `a.x`, DROP COLUMN a
 SELECT id FROM t_shadow_dropped ORDER BY id;
 
 DROP TABLE t_shadow_dropped;
+
+-- The same for a `Map(String, ...)` prefix column: `a.key_x.y` is the key `x.y` of the map `a`, a name that the map
+-- generates dynamically, so dropping `a.key_x` would move `a.key_x.y` to the map.
+SELECT 'ALTER that drops the column with the dotted name next to a Map prefix column is refused';
+DROP TABLE IF EXISTS t_shadow_map_dropped;
+CREATE TABLE t_shadow_map_dropped (id UInt64, a Map(String, UInt64), `a.key_x` Tuple(y UInt64))
+ENGINE = MergeTree ORDER BY id SETTINGS share_nested_offsets = 0;
+INSERT INTO t_shadow_map_dropped VALUES (1, map('x.y', 11), tuple(55)), (2, map('x.y', 22), tuple(44));
+ALTER TABLE t_shadow_map_dropped ADD PROJECTION p (SELECT sum(`a.key_x.y`));
+ALTER TABLE t_shadow_map_dropped MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_shadow_map_dropped DROP COLUMN `a.key_x` SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_map_dropped RENAME COLUMN `a.key_x` TO `b` SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+OPTIMIZE TABLE t_shadow_map_dropped FINAL;
+SELECT sum(`a.key_x.y`) FROM t_shadow_map_dropped SETTINGS optimize_use_projections = 0;
+SELECT sum(`a.key_x.y`) FROM t_shadow_map_dropped SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_shadow_map_dropped;
+
+-- Nor may the column with the dotted name change its subcolumns next to a `Map` prefix column: `a.key_x.y` would move
+-- from the key `x.y` of the map to the element `y` of `a.key_x`, while the primary key was computed from the map.
+SELECT 'ALTER that changes the subcolumns of the column with the dotted name next to a Map prefix column is refused';
+DROP TABLE IF EXISTS t_shadow_map_modified;
+CREATE TABLE t_shadow_map_modified (id UInt64, a Map(String, UInt64), `a.key_x` String)
+ENGINE = MergeTree ORDER BY `a.key_x.y` SETTINGS share_nested_offsets = 0;
+INSERT INTO t_shadow_map_modified VALUES (1, map('x.y', 11), '(55)'), (2, map('x.y', 22), '(44)');
+ALTER TABLE t_shadow_map_modified MODIFY COLUMN `a.key_x` Tuple(y UInt64) SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT count() FROM t_shadow_map_modified WHERE `a.key_x.y` = 22;
+SELECT countIf(`a.key_x.y` = 22) FROM t_shadow_map_modified;
+SELECT `a.key_x.y` FROM t_shadow_map_modified ORDER BY `a.key_x.y`;
+DROP TABLE t_shadow_map_modified;

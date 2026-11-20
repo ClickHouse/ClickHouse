@@ -72,3 +72,11 @@ ALTER that drops the column with the dotted name next to the prefix column is re
 99
 1
 2
+ALTER that drops the column with the dotted name next to a Map prefix column is refused
+99
+99
+ALTER that changes the subcolumns of the column with the dotted name next to a Map prefix column is refused
+1
+1
+11
+22
