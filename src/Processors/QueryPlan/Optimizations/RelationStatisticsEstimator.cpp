@@ -867,7 +867,8 @@ RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const Act
         return estimateRelationStatsUnderFilter(*reference->getSubplanReferenceRoot(), filter, options);
 
     const auto kind = classifyUnaryStepStats(*node.step);
-    /// Unsupported steps must stop before their children are visited: the result is unknown anyway.
+    /// Unsupported steps are not estimated from their children: the result is unknown anyway. Only an unestimated filter
+    /// below them is looked up.
     if (node.children.size() != 1 || kind == UnaryStepStatsKind::Unsupported)
         return unknownRowsOf(node, options.for_runtime_filter_transport);
 
