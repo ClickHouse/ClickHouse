@@ -811,6 +811,19 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
         {
+            const DataTypes bound_types = WindowFunctionFactory::instance().bindArgumentTypes(function_node.name, window_function.argument_types);
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (window_function.argument_types[i]->equals(*bound_types[i]))
+                    continue;
+
+                String cast_name = fmt::format("_CAST({}, '{}')", window_function.argument_names[i], bound_types[i]->getName());
+                const auto & argument_node = actions.findInOutputs(window_function.argument_names[i]);
+                actions.addOrReplaceInOutputs(actions.addCast(argument_node, bound_types[i], cast_name, current_context));
+                window_function.argument_types[i] = bound_types[i];
+                window_function.argument_names[i] = std::move(cast_name);
+            }
+
             window_function.general_function = WindowFunctionFactory::instance().get(
                 function_node.name,
                 function_node.getNullsAction(),
@@ -1557,16 +1570,19 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
         getRootActionsNoMakeSet(ast->clone(), step.actions()->dag);
-
-        // (2b) Required function argument columns.
-        for (const auto & a : typeid_cast<const ASTFunction &>(*ast).arguments->children)
-        {
-            step.addRequiredOutput(a->getColumnName());
-        }
     }
 
     for (const auto & [_, w] : window_descriptions)
     {
+        // (2b) Required function argument columns.
+        for (const auto & f : w.window_functions)
+        {
+            for (const auto & name : f.argument_names)
+            {
+                step.addRequiredOutput(name);
+            }
+        }
+
         // (2a) Required PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
