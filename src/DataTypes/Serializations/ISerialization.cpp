@@ -173,7 +173,7 @@ bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
     return std::find(kind_stack.begin(), kind_stack.end(), kind) != kind_stack.end();
 }
 
-const std::set<SubstreamType> ISerialization::Substream::named_types
+[[clang::no_destroy]] const std::set<SubstreamType> ISerialization::Substream::named_types
 {
     StringSizes,
     InlinedStringSizes,
@@ -289,13 +289,16 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column.size();
+        /// The hint is the expected size of a value, so it is of no use for values of a fixed size. The callbacks
+        /// look the hint up by the name of the stream, which is too much work to do for every granule for nothing.
+        const bool use_avg_value_size_hint = !column.valuesHaveFixedSize();
         double avg_value_size_hint = 0.0;
-        if (settings.get_avg_value_size_hint_callback)
+        if (use_avg_value_size_hint && settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
         deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
-        if (settings.update_avg_value_size_hint_callback)
+        if (use_avg_value_size_hint && settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, column);
     }
 
