@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -113,9 +114,38 @@ bool StackTrace::showAddresses()
     return show_addresses.load(std::memory_order_relaxed);
 }
 
+static void * getCallerAddress(const ucontext_t & context);
+
+/// Whether the faulting instruction is the trap that Clang emits for a failed CFI check: `llvm.ubsantrap` with the
+/// `CFICheckFail` kind (2), which is `ud1l 2(%eax), %eax` on x86-64 (SIGILL) and `brk #0x5502` on AArch64 (SIGTRAP).
+/// See `EmitTrapCheck` in clang/lib/CodeGen/CGExpr.cpp, the kinds in clang/lib/CodeGen/SanitizerHandler.h, `UBSAN_UD1` in
+/// llvm/lib/Target/X86/X86MCInstLower.cpp and `ubsan_trap_xform` in llvm/lib/Target/AArch64/AArch64InstrInfo.td.
+static bool isCFICheckTrap([[maybe_unused]] int sig, [[maybe_unused]] const ucontext_t & context)
+{
+    [[maybe_unused]] static constexpr uint8_t cfi_check_fail_kind = 2;
+    [[maybe_unused]] const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+#if defined(__x86_64__)
+    static constexpr uint8_t trap[] = {0x67, 0x0f, 0xb9, 0x40, cfi_check_fail_kind};
+    return sig == SIGILL && pc && memcmp(pc, trap, sizeof(trap)) == 0;
+#elif defined(__aarch64__)
+    static constexpr uint32_t trap = 0xd4200000 | ((0x5500 | cfi_check_fail_kind) << 5);
+    uint32_t instruction = 0;
+    if (sig != SIGTRAP || !pc)
+        return false;
+    memcpy(&instruction, pc, sizeof(instruction));
+    return instruction == trap;
+#else
+    return false;
+#endif
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
+
+    if (isCFICheckTrap(sig, context))
+        return "Failed Clang CFI check: an indirect call, a virtual call or a cast reached a function or object of an "
+               "unexpected type. " + message;
 
     if (sig == SIGSEGV || sig == SIGBUS)
     {
@@ -128,7 +158,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             address = resolved->object.empty()
                 ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
                 : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
-        std::string access = getFaultMemoryAccessType(sig, context);
+        std::string_view access = getFaultMemoryAccessType(sig, info, context);
         if (access.empty())
             access = "<not available>";
         return fmt::format("Address: {}. Access: {}. {}", address, access, message);
@@ -162,14 +192,45 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     return reinterpret_cast<UInt64>(resolved->address);
 }
 
-std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
+std::string_view getFaultMemoryAccessType(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     /// Only SIGSEGV and SIGBUS have meaningful memory access types
     if (sig != SIGSEGV && sig != SIGBUS)
         return "";
 
+    /// Ignore explicit kill(SIGSEGV)
+    if (info.si_code <= 0)
+        return "";
+
 #if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#elif defined(__aarch64__) && defined(OS_LINUX)
+    const auto * records = reinterpret_cast<const char *>(context.uc_mcontext.__reserved);
+    constexpr size_t records_size = sizeof(context.uc_mcontext.__reserved);
+    for (size_t offset = 0; offset + sizeof(_aarch64_ctx) <= records_size;)
+    {
+        _aarch64_ctx head{};
+        memcpy(&head, records + offset, sizeof(head));
+        if (head.size < sizeof(head) || head.size > records_size - offset)
+            return "";
+
+        if (head.magic == ESR_MAGIC && head.size >= sizeof(esr_context))
+        {
+            esr_context record{};
+            memcpy(&record, records + offset, sizeof(record));
+            constexpr UInt64 ESR_ELx_EC_SHIFT = 26;
+            constexpr UInt64 ESR_ELx_EC_MASK = 0x3FULL << ESR_ELx_EC_SHIFT;
+            constexpr UInt64 ESR_ELx_EC_DABT_LOW = 0x24;
+            constexpr UInt64 ESR_ELx_CM = 1ULL << 8;
+            constexpr UInt64 ESR_ELx_WNR = 1ULL << 6;
+            if ((record.esr & ESR_ELx_EC_MASK) >> ESR_ELx_EC_SHIFT != ESR_ELx_EC_DABT_LOW || (record.esr & ESR_ELx_CM))
+                return "";
+
+            return (record.esr & ESR_ELx_WNR) ? "write" : "read";
+        }
+        offset += head.size;
+    }
+    return "";
 #else
     return "";  // Not available on this platform
 #endif

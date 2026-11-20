@@ -137,7 +137,10 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
             else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
             {
-                return AggregationEntry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
+                return AggregationEntry{
+                    .sum_of_sizes = hint->sum_of_sizes,
+                    .median_size = std::max(lower_limit, hint->median_size),
+                    .sum_of_sizes_with_empty_string = hint->sum_of_sizes_with_empty_string};
             }
         }
     }
