@@ -16,6 +16,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -885,8 +886,11 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         if (table_infos.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Table exists and it already exists
-        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+        /// Only a database with its own tables answers from memory. Any other one resolves a name on access, and checking
+        /// it reaches the data (a path, a remote server), which can be unavailable or not allowed.
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+        const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
+        if (!database || (database_with_own_tables && !database_with_own_tables->isTableExist(table_id.table_name, context)))
         {
             LOG_WARNING(
                 log,

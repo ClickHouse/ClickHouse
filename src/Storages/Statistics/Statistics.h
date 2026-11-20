@@ -170,6 +170,12 @@ struct Estimate
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
     std::optional<Field> estimated_sum;
+
+    /// False when `estimated_min` and `estimated_max` can miss some non-NULL values, see
+    /// `StatisticsBasic::minMaxCoversAllValues`.
+    bool min_max_covers_all_values = true;
+    /// False when `estimated_null_count` can miss some NULLs, see `StatisticsBasic::nullCountCoversAllRows`.
+    bool null_count_covers_all_rows = true;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -184,9 +190,10 @@ public:
     /// `version` is `V4` or later.
     void serialize(WriteBuffer & buf, StatisticsFileVersion version) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
-    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
+    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read; nullopt for an unknown
+    /// NULL count.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
-        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);

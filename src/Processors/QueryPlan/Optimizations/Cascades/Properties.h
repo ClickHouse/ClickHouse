@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Columns/Collator.h>
 #include <base/types.h>
@@ -12,7 +13,7 @@ namespace DB
 {
 
 /// A set of columns, but each column can also have multiple equivalent names derived from equality predicates
-using DistributionColumns = std::vector<NameSet>;
+using DistributionColumns = VectorWithMemoryTracking<NameSet>;
 
 struct DistributionDescription
 {
@@ -22,6 +23,12 @@ struct DistributionDescription
     Names hash_type_names;
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
     size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for a shuffle exchange or a partitioned read.
+    /// In a requirement: the input must have this distribution already, `DistributionEnforcer` must not add
+    /// an exchange to make it. In the properties of an expression: the expression has its distribution
+    /// without such an exchange, so it satisfies such a requirement. Exchanges that an operator below
+    /// needs for its own work, for example the shuffles of a shuffle join, do not count.
+    /// Only a requirement with distribution columns can have it: without columns nothing gets the mark.
+    bool without_enforcer = false;
 
     bool operator==(const DistributionDescription & other) const = default;
 
@@ -44,6 +51,11 @@ struct ExpressionProperties
     DistributionDescription distribution;
     StreamLayout stream_layout = StreamLayout::Unknown;
     DistributionColumns stream_disjoint_columns;    /// Nonempty exactly for `Disjoint`; set via `setDisjointStreams`
+    /// The sorting is required by a window (`SortingStep::isWindowSorting`). The enforced `SortingStep` carries it, so that
+    /// reading in order applies the restrictions of a window sorting to it. Every rule that passes a required sorting on
+    /// to an input passes this mark with it, and the expressions that deliver such a sorting keep it in their properties.
+    /// It does not take part in `isSatisfiedBy`.
+    bool sorting_for_window = false;
 
     /// Marks the streams disjoint on the columns (must be nonempty sets). Orders the column
     /// sets canonically, so equal layouts compare and hash equal (disjointness has no key order).
@@ -67,6 +79,7 @@ struct ExpressionPropertiesHash
     {
         size_t h = std::hash<size_t>()(props.distribution.node_count);
         boost::hash_combine(h, props.distribution.is_replicated);
+        boost::hash_combine(h, props.distribution.without_enforcer);
         for (const auto & col_set : props.distribution.columns)
         {
             /// Equal sets must hash equally regardless of insertion order.
@@ -78,6 +91,7 @@ struct ExpressionPropertiesHash
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
         boost::hash_combine(h, static_cast<UInt8>(props.stream_layout));
+        boost::hash_combine(h, props.sorting_for_window);
         for (const auto & col_set : props.stream_disjoint_columns)
         {
             /// Equal sets must hash equally regardless of insertion order.
