@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -11,6 +12,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -207,6 +211,22 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         }
 
         return false;
+    }
+}
+
+bool missingMapKeyEquals(const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context)
+{
+    try
+    {
+        ColumnsWithTypeAndName arguments{
+            {ColumnConst::create(createColumnWithInsertedDefault(*map_value_type), 1), map_value_type, ""},
+            {constant_type->createColumnConst(1, constant), constant_type, ""}};
+        const auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
+        return equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/ false)->getBool(0);
+    }
+    catch (const Exception &)
+    {
+        return true;
     }
 }
 

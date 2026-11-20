@@ -163,16 +163,21 @@ CREATE TABLE t_scalar_tbf_idx
     b Map(String, Bool),
     s Map(String, String),
     f Map(String, FixedString(3)),
+    ts Map(String, Tuple(String, Enum8('x' = 1, 'y' = 2))),
     INDEX i_u mapKeys(u) TYPE tokenbf_v1(512, 3, 0),
     INDEX i_d mapKeys(d) TYPE tokenbf_v1(512, 3, 0),
     INDEX i_b mapKeys(b) TYPE tokenbf_v1(512, 3, 0),
     INDEX i_bbf mapKeys(b) TYPE bloom_filter,
     INDEX i_s mapKeys(s) TYPE tokenbf_v1(512, 3, 0),
-    INDEX i_f mapKeys(f) TYPE ngrambf_v1(1, 512, 3, 0)
+    INDEX i_f mapKeys(f) TYPE ngrambf_v1(1, 512, 3, 0),
+    INDEX i_sbf mapKeys(s) TYPE bloom_filter,
+    INDEX i_fbf mapKeys(f) TYPE bloom_filter,
+    INDEX i_tsbf mapKeys(ts) TYPE bloom_filter
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
-INSERT INTO t_scalar_tbf_idx VALUES (1, {'k': 1}, {'k': '2020-01-01'}, {'k': true}, {'k': 'abc'}, {'k': 'abc'}), (2, {'o': 1}, {'o': '2020-01-01'}, {'o': true}, {'o': 'abc'}, {'o': 'abc'});
+INSERT INTO t_scalar_tbf_idx VALUES (1, {'k': 1}, {'k': '2020-01-01'}, {'k': true}, {'k': 'abc'}, {'k': 'abc'}, {'k': ('abc', 'y')}),
+    (2, {'o': 1}, {'o': '2020-01-01'}, {'o': true}, {'o': 'abc'}, {'o': 'abc'}, {'o': ('abc', 'y')});
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '0' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE d['k'] = '1970-01-01' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
@@ -185,6 +190,12 @@ SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE match(f['k'], 'a*') SETTINGS o
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = '\0\0\0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE startsWith(f['k'], '\0') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, optimize_rewrite_like_perfect_affix = 0;
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE endsWith(f['k'], '\0') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, optimize_rewrite_like_perfect_affix = 0;
+-- `=` ignores the trailing zeros of a `FixedString`, so these match the missing key too.
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE ts['k'] = tuple(toFixedString('', 3), 'x') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE ts['k'] = tuple(toFixedString('', 3), 'x') SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] = toFixedString('', 3) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_s';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = '\0\0\0\0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_fbf';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = '\0\0\0\0' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, ignore_data_skipping_indices = 'i_f';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE u['k'] = '1' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_u';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE d['k'] = '2020-01-01' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_d';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE b['k'] = 'true' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_b';
@@ -194,6 +205,10 @@ SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] LIKE 'a%' SETTINGS opti
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE match(f['k'], 'abc') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, optimize_rewrite_regexp_functions = 0, force_data_skipping_indices = 'i_f';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE startsWith(f['k'], 'a') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, optimize_rewrite_like_perfect_affix = 0, force_data_skipping_indices = 'i_f';
 SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE endsWith(f['k'], 'c') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, optimize_rewrite_like_perfect_affix = 0, force_data_skipping_indices = 'i_f';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE ts['k'] = tuple(toFixedString('abc', 3), 'y') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_tsbf';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE s['k'] = toFixedString('abc', 3) SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_sbf';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = 'abc\0' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_f';
+SELECT groupArray(id) FROM t_scalar_tbf_idx WHERE f['k'] = 'abc\0' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_fbf';
 
 DROP TABLE t_enum_elem;
 DROP TABLE t_enum_elem_buckets;

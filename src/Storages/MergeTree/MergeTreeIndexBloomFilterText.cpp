@@ -582,14 +582,18 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
 /// of an `Enum` or 1970-01-01 for `Date32`. Returns whether the predicate may hold on it: `NULL` matches nothing, `[]` no
 /// `has`, a string is checked for each function that can hold on it, and any other value can match anything but (in)equality.
 bool missingKeyValueBreaksIndex(
-    const String & function_name, const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type)
+    const String & function_name,
+    const DataTypePtr & map_value_type,
+    const Field & constant,
+    const DataTypePtr & constant_type,
+    const ContextPtr & context)
 {
     const auto value_type = removeLowCardinality(map_value_type);
     const auto missing = createColumnWithInsertedDefault(*value_type);
     if (isArray(value_type) || missing->isNullAt(0))
         return false;
     if (function_name == "equals" || function_name == "notEquals")
-        return isInsertedDefault(tryConvertFieldToType(constant, *value_type, constant_type.get(), {}, /*strict=*/ true), *value_type);
+        return missingMapKeyEquals(value_type, constant, constant_type, context);
     if (!isStringOrFixedString(value_type))
         return true;
     if (constant.getType() != Field::Types::String)
@@ -679,7 +683,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             auto first_argument = key_function_node.getArgumentAt(0);
             const auto * map_type = typeid_cast<const DataTypeMap *>(first_argument.getDAGNode()->result_type.get());
             if (const_value == value_type->getDefault()
-                || (map_type && missingKeyValueBreaksIndex(function_name, map_type->getValueType(), const_value, value_type)))
+                || (map_type
+                    && missingKeyValueBreaksIndex(function_name, map_type->getValueType(), const_value, value_type, key_node.getContext())))
                 return false;
 
             const auto map_column_name = first_argument.getColumnName();
@@ -725,7 +730,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
             if (const_value == value_type->getDefault()
-                || missingKeyValueBreaksIndex(function_name, key_node.getDAGNode()->result_type, const_value, value_type))
+                || missingKeyValueBreaksIndex(
+                    function_name, key_node.getDAGNode()->result_type, const_value, value_type, key_node.getContext()))
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))

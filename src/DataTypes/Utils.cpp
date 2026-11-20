@@ -395,10 +395,4 @@ MutableColumnPtr createColumnWithInsertedDefault(const IDataType & type)
     return column;
 }
 
-bool isInsertedDefault(const Field & value, const IDataType & type)
-{
-    auto column = createColumnWithInsertedDefault(type);
-    return column->tryInsert(value) && column->compareAt(0, 1, *column, /*nan_direction_hint=*/ 1) == 0;
-}
-
 }
