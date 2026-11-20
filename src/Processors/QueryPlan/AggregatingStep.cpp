@@ -1335,20 +1335,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
     const auto & input_header = *ctx.input_headers.front();
-    if (only_merge)
-    {
-        /// The step merges the states only for an aggregate projection, which is never combined with grouping sets
-        /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
-        if (has_grouping_sets)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
-        /// `AggregatingInOrderTransform` addresses the whole input with a mask built for the keys and the states only.
-        checkDeserializedMergeOnlyInput(keys, aggregates, input_header);
-    }
-    else
-    {
-        checkDeserializedAggregateOutputNames(keys, aggregates);
-        checkDeserializedAggregateArguments(aggregates, input_header);
-    }
+    /// The serialized step never merges the states only (it is deserialized with `only_merge = false`),
+    /// so the arguments of the aggregates must be present in its input.
+    checkDeserializedAggregateOutputNames(keys, aggregates);
+    checkDeserializedAggregateArguments(aggregates, input_header);
 
     /// `AggregatingInOrderTransform` takes the first columns of `group_by_sort_description` as the ones the input
     /// is sorted by and looks them up among the keys of its output, and `less` compares the key columns at those positions.

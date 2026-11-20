@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
