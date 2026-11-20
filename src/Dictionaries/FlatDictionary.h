@@ -117,10 +117,10 @@ private:
         size_t capacity() const { return key_to_row.capacity(); }
         ColumnAttributeValue<Value> operator[](size_t key) const { return values[key_to_row[key]]; }
 
-        /// A key loaded again appends a new row, so remove the rows no key points to anymore.
-        void removeReplacedRows(const VectorWithMemoryTracking<bool> & is_key_loaded, size_t loaded_keys_count)
+        /// A key loaded again appends a new row, so remove the rows no key points to anymore if there are more than `max_rows`.
+        void removeReplacedRows(const VectorWithMemoryTracking<bool> & is_key_loaded, size_t max_rows)
         {
-            if (values.size() == loaded_keys_count)
+            if (values.size() <= max_rows)
                 return;
 
             IColumn::Filter mask(values.size(), 0);
@@ -191,6 +191,9 @@ private:
     void createAttributes();
 
     void blockToAttributes(const Block & block);
+
+    template <typename GetMaxRows>
+    void removeReplacedRows(GetMaxRows && get_max_rows);
 
     void updateData();
 

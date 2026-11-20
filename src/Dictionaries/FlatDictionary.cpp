@@ -470,6 +470,22 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
         keys_extractor.reset();
     }
+
+    /// Bound the replaced rows kept while loading.
+    removeReplacedRows([](const auto & container) { return 2 * container.key_to_row.size(); });
+}
+
+template <typename GetMaxRows>
+void FlatDictionary::removeReplacedRows(GetMaxRows && get_max_rows)
+{
+    for (auto & attribute : attributes)
+    {
+        std::visit([&](auto & container)
+        {
+            if constexpr (requires { container.removeReplacedRows(loaded_keys, 0); })
+                container.removeReplacedRows(loaded_keys, get_max_rows(container));
+        }, attribute.container);
+    }
 }
 
 void FlatDictionary::updateData()
@@ -543,14 +559,7 @@ void FlatDictionary::loadData()
     for (size_t i = 0; i < loaded_keys_size; ++i)
         element_count += loaded_keys[i];
 
-    for (auto & attribute : attributes)
-    {
-        std::visit([&](auto & container)
-        {
-            if constexpr (requires { container.removeReplacedRows(loaded_keys, element_count); })
-                container.removeReplacedRows(loaded_keys, element_count);
-        }, attribute.container);
-    }
+    removeReplacedRows([&](const auto &) { return element_count; });
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());

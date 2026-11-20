@@ -286,14 +286,28 @@ public:
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
+    /// A dynamic path of `JSON` has a value for every row, so rows with different paths would cost rows x paths.
+    /// Without dynamic paths, all paths go to the shared data, which keeps only the paths of each row.
+    static void removeDynamicPathsOfJSON(IColumn & column)
+    {
+        auto remove = [](IColumn & subcolumn)
+        {
+            if (auto * object = typeid_cast<ColumnObject *>(&subcolumn))
+                object->setMaxDynamicPaths(0);
+        };
+        remove(column);
+        column.forEachMutableSubcolumnRecursively(remove);
+    }
+
     static ColumnPtr getColumn(const DictionaryAttribute & dictionary_attribute, size_t size)
     {
         if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
         {
             if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
             {
-                auto nested_column = array_type->getNestedType()->createColumn();
-                return ColumnArray::create(std::move(nested_column));
+                auto column = ColumnArray::create(array_type->getNestedType()->createColumn());
+                removeDynamicPathsOfJSON(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
@@ -301,7 +315,11 @@ public:
         if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
         {
             if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
-                return ColumnMap::create(map_type->getNestedType()->createColumn());
+            {
+                auto column = ColumnMap::create(map_type->getNestedType()->createColumn());
+                removeDynamicPathsOfJSON(*column);
+                return column;
+            }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
         }
@@ -315,9 +333,9 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                /// A dynamic path has a value for every row, so rows with different paths would cost rows x paths.
-                /// Without dynamic paths, all paths go to the shared data, which keeps only the paths of each row.
-                return ColumnObject::create(std::move(typed_path_columns), 0, object_type->getMaxDynamicTypes());
+                auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+                removeDynamicPathsOfJSON(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");

@@ -73,3 +73,14 @@ SELECT ip,
     toString(dictGetOrDefault('json_ip_trie', 'j', ip, CAST('{"c":0}', 'JSON'))),
     toString(dictGetOrDefault('json_ip_trie', 'j', ip, CAST(concat('{"d":"', toString(ip), '"}'), 'JSON')))
 FROM (SELECT arrayJoin([toIPv4('10.1.1.1'), toIPv4('192.168.1.1'), toIPv4('8.8.8.8')]) AS ip);
+
+-- `JSON` nested in `Array` and `Map`, with a different path in every row.
+CREATE TABLE json_nested_source (id UInt64, a Array(JSON), m Map(String, JSON)) ENGINE = Memory;
+INSERT INTO json_nested_source SELECT number, [concat('{"p', toString(number), '":', toString(number), '}')::JSON], map('k', concat('{"q', toString(number), '":', toString(number), '}')::JSON) FROM numbers(3);
+
+CREATE DICTIONARY json_nested_hashed (id UInt64, a Array(JSON), m Map(String, JSON))
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'json_nested_source')) LAYOUT(HASHED()) LIFETIME(0);
+
+SELECT 'nested';
+SELECT id, toString(dictGet('json_nested_hashed', 'a', id)), toString(dictGet('json_nested_hashed', 'm', id))
+FROM (SELECT number AS id FROM numbers(4));
