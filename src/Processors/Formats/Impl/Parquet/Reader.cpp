@@ -206,6 +206,26 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
     return uncompressed_size == 0;
 }
 
+/// Decodes the ZSTD frames at the start of the page until `uncompressed_size` bytes are produced; the rest of the page
+/// is not read. Returns the produced size or a zstd error code.
+static size_t decompressZSTDFramesUntilFull(const char * data, size_t compressed_size, char * out, size_t uncompressed_size)
+{
+    size_t consumed = 0;
+    size_t produced = 0;
+    while (produced < uncompressed_size && consumed < compressed_size)
+    {
+        size_t frame_size = ZSTD_findFrameCompressedSize(data + consumed, compressed_size - consumed);
+        if (ZSTD_isError(frame_size))
+            return frame_size;
+        size_t res = decompressZSTDWithPooledContext(data + consumed, frame_size, out + produced, uncompressed_size - produced);
+        if (ZSTD_isError(res))
+            return res;
+        consumed += frame_size;
+        produced += res;
+    }
+    return produced;
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
@@ -255,6 +275,8 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         case parq::CompressionCodec::ZSTD:
         {
             size_t res = decompressZSTDWithPooledContext(data, compressed_size, out, uncompressed_size);
+            if (ZSTD_isError(res))
+                res = decompressZSTDFramesUntilFull(data, compressed_size, out, uncompressed_size);
             if (ZSTD_isError(res))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ZSTD compressed page: {}", ZSTD_getErrorName(res));
             if (res != uncompressed_size)
