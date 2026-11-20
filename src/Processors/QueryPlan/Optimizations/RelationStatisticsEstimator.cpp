@@ -156,6 +156,17 @@ bool applyRowLimit(RelationStats & stats, UInt64 limit, UInt64 offset, bool with
     return true;
 }
 
+/// The statistics of `filter_step` over `input_stats`. With `input_records_filter` the column statistics of the input
+/// already record the rows the predicate drops (see `ReadCoverage::recordIn`), so the filter does not record them again.
+RelationStats estimateFilterStepStats(const FilterStep & filter_step, RelationStats input_stats, bool input_records_filter)
+{
+    remapColumnStats(input_stats.column_stats, filter_step.getExpression());
+    if (!input_records_filter)
+        input_stats.addTransformation(RowSubset);
+    input_stats.rows_exact = false;
+    return input_stats;
+}
+
 /// How `estimateUnaryStepStats` derives the statistics of a step from those of its only input.
 enum class UnaryStepStatsKind : UInt8
 {
@@ -306,13 +317,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             return input_stats;
         }
         case UnaryStepStatsKind::Filter:
-        {
-            const auto & filter_step = static_cast<const FilterStep &>(step);
-            remapColumnStats(input_stats.column_stats, filter_step.getExpression());
-            input_stats.addTransformation(RowSubset);
-            input_stats.rows_exact = false;
-            return input_stats;
-        }
+            return estimateFilterStepStats(static_cast<const FilterStep &>(step), std::move(input_stats), /*input_records_filter=*/false);
         case UnaryStepStatsKind::Aggregating: {
             const auto & aggregating_step = static_cast<const AggregatingStep &>(step);
             return estimateAggregatingStepStats(aggregating_step.getAggregatorParameters(), aggregating_step.isGroupingSets(), input_stats);
@@ -892,14 +897,8 @@ estimateRelationStatsUnderFilter(QueryPlan::Node & node, FilterAbove filter, Rel
     bool child_filter_recorded = false;
     auto input_stats = estimateRelationStatsUnderFilter(*node.children.front(), child_filter, options, child_filter_recorded);
     std::optional<RelationStats> stats;
-    if (filter_step && child_filter_recorded)
-    {
-        /// The column statistics of the read already record the rows this predicate drops (`FilterOnOtherColumns` on the
-        /// columns it does not read if it is attributed, `RowSubset` otherwise), see `ReadCoverage::recordIn`.
-        remapColumnStats(input_stats.column_stats, filter_step->getExpression());
-        input_stats.rows_exact = false;
-        stats = std::move(input_stats);
-    }
+    if (filter_step)
+        stats = estimateFilterStepStats(*filter_step, std::move(input_stats), /*input_records_filter=*/child_filter_recorded);
     else
         stats = estimateUnaryStepStats(*node.step, std::move(input_stats));
     if (stats && kind == UnaryStepStatsKind::ArrayJoin && filter.predicate)
