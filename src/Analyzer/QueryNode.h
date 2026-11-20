@@ -723,7 +723,6 @@ public:
         return projection_names_before_override.empty() ? projection_columns[index].name : projection_names_before_override[index];
     }
 
-    /// True if the query is written back as SQL with its own projection names and the renamed ones as a column alias list.
     [[nodiscard]] bool hasProjectionNamesBeforeOverride() const { return !projection_names_before_override.empty(); }
 
     /// Returns true if query node is resolved, false otherwise

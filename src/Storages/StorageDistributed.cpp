@@ -1144,8 +1144,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
-/// At `Complete` a shard names its result columns by the projection names the query is written with, so a query that keeps
-/// its names before a column alias list is read under them; the planner renames the read's columns by position.
+/// At `Complete` a shard names its result columns by the projection names it is sent with; the planner renames them by position.
 /// The shard's result is matched by name, so a column whose name a different column already has gets a unique one.
 void useProjectionNamesBeforeOverride(const QueryTreeNodePtr & query_tree)
 {

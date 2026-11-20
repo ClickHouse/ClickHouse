@@ -475,7 +475,6 @@ Names getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
             if (!query_node->isResolved())
                 return query_node->getProjectionAliasesToOverride();
 
-            /// A resolved query is written with the renamed projection names, unless it keeps its own (INTERPOLATE).
             /// The stored list can be longer than the pruned projection, so the names come from the projection columns.
             Names column_aliases;
             if (query_node->hasProjectionNamesBeforeOverride())
