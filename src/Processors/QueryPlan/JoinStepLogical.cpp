@@ -2075,7 +2075,7 @@ static void outputFromProbe(
     const JoinOperator & join_operator, JoinExpressionActions & expression_actions, ActionsDAG::NodeRawConstPtrs & actions_after_join)
 {
     /// For each build side column, find the probe side column that its key compares it with.
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> probe_column_for;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> probe_column_for;
     for (const auto & key : join_operator.expression)
     {
         auto [op, left, right] = key.asBinaryPredicate();
