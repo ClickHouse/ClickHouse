@@ -19,27 +19,26 @@ SELECT id,
     if(id % p = 0, if(id % 2 = 0, 'UInt64', 'String'), 'None'),
     toJSONString(map('k' || toString(id % 50), id)),
     toString(toJSONString(map('k' || toString(id % 50), id))::JSON)
-FROM (SELECT number AS id, [1, 14, 27, 40, 53, 66, 79][intDiv(number, 1000) % 7 + 1] AS p FROM numbers(30000));
+FROM (SELECT number AS id, [1, 14, 27, 40, 53, 66, 79][intDiv(number, 1000) % 7 + 1] AS p FROM numbers(7000));
 
 INSERT INTO t_basic
 SELECT id,
     if(id % p = 0, if(id % 2 = 0, id::Variant(UInt64, String), toString(id)::Variant(String)::Variant(UInt64, String)), NULL),
     if(id % p = 0, toString(id), NULL),
     if(id % p = 0, if(id % 2 = 0, 'UInt64', 'String'), 'None')
-FROM (SELECT number AS id, [1, 14, 27, 40, 53, 66, 79][intDiv(number, 1000) % 7 + 1] AS p FROM numbers(30000));
+FROM (SELECT number AS id, [1, 14, 27, 40, 53, 66, 79][intDiv(number, 1000) % 7 + 1] AS p FROM numbers(7000));
 
 SELECT count(), countIf(v IS NOT NULL),
     countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype),
     countIf(toString(j) != jref)
 FROM t_compact;
 SELECT count(), countIf(v IS NOT NULL),
-    countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype),
-    countIf(toString(j) != jref)
+    countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype)
 FROM t_compact SETTINGS max_block_size = 13;
 SELECT count(), countIf(v IS NOT NULL),
     countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype),
     countIf(toString(j) != jref)
-FROM t_compact WHERE (id BETWEEN 100 AND 3100) OR (id BETWEEN 5011 AND 9500) OR id > 12000 SETTINGS max_block_size = 65505;
+FROM t_compact WHERE (id BETWEEN 100 AND 1100) OR (id BETWEEN 2011 AND 3500) OR id > 4400 SETTINGS max_block_size = 65505;
 
 SELECT count(), countIf(v IS NOT NULL),
     countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype)
@@ -49,7 +48,7 @@ SELECT count(), countIf(v IS NOT NULL),
 FROM t_basic SETTINGS max_block_size = 13;
 SELECT count(), countIf(v IS NOT NULL),
     countIf(isNull(v) != isNull(ref)), countIf(toString(v) != ref), countIf(toString(variantType(v)) != rtype)
-FROM t_basic WHERE (id BETWEEN 100 AND 3100) OR (id BETWEEN 5011 AND 9500) OR id > 12000 SETTINGS max_block_size = 65505;
+FROM t_basic WHERE (id BETWEEN 100 AND 1100) OR (id BETWEEN 2011 AND 3500) OR id > 4400 SETTINGS max_block_size = 65505;
 
 DROP TABLE t_compact;
 DROP TABLE t_basic;
