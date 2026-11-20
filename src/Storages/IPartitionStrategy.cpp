@@ -28,8 +28,18 @@ namespace
 {
     using PartitionExpressionActionsAndColumnName = IPartitionStrategy::PartitionExpressionActionsAndColumnName;
 
+    /// Builds AST for the text of a partition value in a hive path: `toString(value)` with `%` and `/` escaped as
+    /// `%25` and `%2F`, so that it reads back unchanged (the reader percent-decodes values and splits the path at `/`).
+    /// Other characters stay as they are, so the paths of other values do not change.
+    ASTPtr buildHivePartitionValueAST(ASTPtr value)
+    {
+        auto text = makeASTFunction("toString", std::move(value));
+        text = makeASTFunction("replaceAll", text, make_intrusive<ASTLiteral>("%"), make_intrusive<ASTLiteral>("%25"));
+        return makeASTFunction("replaceAll", text, make_intrusive<ASTLiteral>("/"), make_intrusive<ASTLiteral>("%2F"));
+    }
+
     /// Builds AST for hive partition path format
-    ///  `partition_column_1=toString(partition_value_expr_1)/ ... /partition_column_N=toString(partition_value_expr_N)/`
+    ///  `partition_column_1=value_1/ ... /partition_column_N=value_N/`, each value built by `buildHivePartitionValueAST`,
     /// for given partition columns list and a partition by AST.
     ASTPtr buildHivePartitionAST(
         ASTPtr partition_by,
@@ -56,7 +66,7 @@ namespace
 
                 concat_args.push_back(make_intrusive<ASTLiteral>(partition_column.name + "="));
 
-                concat_args.push_back(makeASTFunction("toString", child));
+                concat_args.push_back(buildHivePartitionValueAST(child));
 
                 concat_args.push_back(make_intrusive<ASTLiteral>("/"));
             }
@@ -70,9 +80,8 @@ namespace
                     "Expected partition expression to contain a single argument, got {} instead", partition_columns.size());
             }
 
-            ASTs to_string_args = {1, partition_by};
             concat_args.push_back(make_intrusive<ASTLiteral>(partition_columns.front().name + "="));
-            concat_args.push_back(makeASTFunction("toString", std::move(to_string_args)));
+            concat_args.push_back(buildHivePartitionValueAST(partition_by));
             concat_args.push_back(make_intrusive<ASTLiteral>("/"));
         }
 
