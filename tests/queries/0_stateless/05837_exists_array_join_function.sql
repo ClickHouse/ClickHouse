@@ -1,3 +1,4 @@
+-- Random settings limits: execute_exists_as_scalar_subquery=(1, 1)
 -- `EXISTS` must see the rows an `arrayJoin` in its subquery produces.
 
 DROP TABLE IF EXISTS t;
