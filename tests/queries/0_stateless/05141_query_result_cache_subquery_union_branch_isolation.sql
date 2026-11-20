@@ -19,6 +19,9 @@ SET enable_reads_from_query_cache = 1;
 -- `make_distributed_plan` rejects an aggregation with a `max_rows_to_group_by` limit, which some CI
 -- profiles set.
 SET max_rows_to_group_by = 0;
+-- Plan-based parallel replicas (a CI profile) distribute the whole query, so the subquery cache is
+-- not probed there by design; the test is about the local branch.
+SET enable_parallel_replicas = 0;
 
 -- The first branch enables `make_distributed_plan` for itself only; the second branch is a plain
 -- local query with a cacheable `IN` subquery, so its subquery must probe the cache.
