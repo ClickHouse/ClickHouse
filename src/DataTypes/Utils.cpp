@@ -393,7 +393,8 @@ bool readKeepsStoredValues(const DataTypePtr & stored_type, const DataTypePtr & 
     auto read = removeLowCardinality(read_type);
     if (!stored->isNullable())
         read = removeNullable(read);
-    return stored->equals(*read);
+    /// Not `equals`: it ignores the time zone of `DateTime` and `DateTime64`.
+    return stored->getName() == read->getName();
 }
 
 }

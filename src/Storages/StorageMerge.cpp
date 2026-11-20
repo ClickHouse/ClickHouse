@@ -1976,7 +1976,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     /// The query reads the column under the type the `Merge` table declares.
                     auto merge_column = merge_storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column);
                     if (merge_column && !readKeepsStoredValues(column_type, merge_column->type))
-                        column_name_to_node.emplace(column, buildCastFunction(column_node, merge_column->type, modified_context));
+                    {
+                        /// The alias moves to the cast, so a re-analyzed query does not define it twice.
+                        auto expression = column_node->clone();
+                        expression->removeAlias();
+                        auto cast_node = buildCastFunction(expression, merge_column->type, modified_context);
+                        cast_node->setAlias(column_node->getAlias());
+                        column_name_to_node.emplace(column, std::move(cast_node));
+                    }
                     else
                         column_name_to_node.emplace(column, column_node);
                     /// `aliases` keeps the child's type: `convertAndFilterSourceStream` converts the output to the `Merge` type.
