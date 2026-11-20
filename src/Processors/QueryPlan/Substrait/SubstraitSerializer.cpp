@@ -454,6 +454,8 @@ SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read
 {
     NodeState out;
 
+    if (&read.getStorageSnapshot()->storage != &read.getMergeTreeData())
+        return blocked("reading from a projection is not supported");
     if (read.isQueryWithFinal())
         return blocked("FINAL is not supported");
     if (read.isQueryWithSampling())
