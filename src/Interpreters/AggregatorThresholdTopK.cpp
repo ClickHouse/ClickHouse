@@ -143,7 +143,6 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         /// bounds only compare values, so any comparable type works through the column.
         const bool values_are_uint64 = top_k.bound == MergedValueBound::Subadditive;
         chassert(order_by_index < params.aggregates_size);
-        chassert(!is_simple_count || values_are_uint64);
         /// `Subadditive` is a one-sided upper bound (see `MergedValueBound`), which serves the
         /// descending order alone - the ascending order would need the lower half, which the
         /// modular `UInt64` accumulators of `count` and `sum` do not provide. The plan pass
@@ -225,10 +224,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             std::vector<Entry> entries;
             /// The cells' states in the entries' order, for the batch peek of their values.
             PaddedPODArray<AggregateDataPtr> places;
-            /// The peeked partial values: a column for the generic path, a plain array when the
-            /// values are known to be UInt64 (the inline count has no state to peek from).
+            /// The peeked partial values, and a view of their data when the values are known to be
+            /// UInt64.
             MutableColumnPtr values_column;
-            PaddedPODArray<UInt64> inline_counts;
             const UInt64 * values_uint = nullptr;
             size_t heap_size = 0;
         };
@@ -242,42 +240,29 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             list.table = tables[i];
             const size_t cells = tables[i]->size();
             list.entries.reserve(cells);
-            if (is_simple_count)
-            {
-                list.inline_counts.reserve(cells);
-                tables[i]->forEachValue(
-                    [&](const auto & key, auto & mapped)
-                    {
-                        list.inline_counts.push_back(getInlineCountState(mapped));
-                        list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
-                    });
-                list.values_uint = list.inline_counts.data();
-            }
-            else
-            {
-                list.places.reserve(cells);
-                tables[i]->forEachValue(
-                    [&](const auto & key, auto & mapped)
-                    {
-                        list.places.push_back(mapped);
-                        list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
-                    });
-            }
+            list.places.reserve(cells);
+            tables[i]->forEachValue(
+                [&](const auto & key, auto & mapped)
+                {
+                    list.places.push_back(mapped);
+                    list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
+                });
             list.heap_size = list.entries.size();
         }
 
-        /// Peek the partial values of every cell (the inline count already collected them).
-        if (!is_simple_count)
+        /// A table of bucket 0 that holds only the NULL key has no cells to list (see `process_null_key`),
+        /// and every step below reads the values of every list.
+        std::erase_if(lists, [](const List & list) { return list.heap_size == 0; });
+
+        /// Peek the partial values of every cell.
+        for (List & list : lists)
         {
-            for (List & list : lists)
-            {
-                list.values_column = order_by_function->getResultType()->createColumn();
-                list.values_column->reserve(list.places.size());
-                order_by_function->insertResultIntoBatchWithoutDestroying(
-                    0, list.places.size(), list.places.data(), order_by_offset, *list.values_column, arena);
-                if (values_are_uint64)
-                    list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
-            }
+            list.values_column = order_by_function->getResultType()->createColumn();
+            list.values_column->reserve(list.places.size());
+            order_by_function->insertResultIntoBatchWithoutDestroying(
+                0, list.places.size(), list.places.data(), order_by_offset, *list.values_column, arena);
+            if (values_are_uint64)
+                list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
         }
 
         /// The summing walk over a dominant table with leftovers elsewhere converges only if the
@@ -431,10 +416,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         MutableColumnPtr exact_values_column;
         MutableColumnPtr exact_value_scratch;
         if (values_are_uint64)
-        {
-            if (!is_simple_count)
-                exact_value_scratch = ColumnUInt64::create();
-        }
+            exact_value_scratch = ColumnUInt64::create();
         else
             exact_values_column = order_by_function->getResultType()->createColumn();
 
@@ -447,7 +429,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 
         const auto destroy_place = [&](AggregateDataPtr place)
         {
-            if (all_aggregates_has_trivial_destructor || is_simple_count)
+            if (all_aggregates_has_trivial_destructor)
                 return;
             for (size_t i = 0; i < params.aggregates_size; ++i)
                 if (!aggregate_functions[i]->hasTrivialDestructor())
@@ -457,8 +439,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         const auto destroy_candidates = [&]
         {
             for (const Candidate & candidate : candidates)
-                if (candidate.place)
-                    destroy_place(candidate.place);
+                destroy_place(candidate.place);
             candidates.clear();
         };
 

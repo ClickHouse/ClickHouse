@@ -3509,9 +3509,11 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
     /// groups that can rank among them, and counts only those for the group limit. It is not used when:
     /// - dataflow statistics are collected (`updater`): they must describe the merge of every group;
-    /// - the only aggregate is `count` (`bucket_top_k`): the ordinary conversion selects it cheaper;
+    /// - the only aggregate is the rank of the bucket conversion (`bucket_top_k`), which selects it cheaper;
+    /// - the only aggregate is `count` without that conversion, as in a distributed plan: its count lives in
+    ///   the cell instead of a state, and the merge reads and merges states only;
     /// - the HAVING pre-filter is enabled: only the ordinary conversion applies it.
-    if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
+    if (final && params.threshold_top_k && !is_simple_count && (!params.bucket_top_k || params.aggregates_size > 1)
         && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater)
         if (auto threshold_chunk = tryMergeAndConvertOneBucketToChunkThresholdTopK(
                 variants, arena, bucket, is_cancelled, threshold_top_k_verdict, merged_group_count))
