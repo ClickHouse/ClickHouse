@@ -268,12 +268,17 @@ void recomputeImplicitIndexPolicy(
 /// The global context in which a projection of an `ALTER` is analyzed. Positional arguments are the exception: they are
 /// resolved once, when the projection is created, as the issuer of the `ALTER` asked with
 /// `enable_positional_arguments_for_projections` (see `05401_projection_positional_arguments_calculating_context`).
+/// The marker of `isAnalyzingBackgroundExpressions` is carried over as well: it does not change the analyzed types,
+/// and without it the rebuild of an existing projection would accept functions that cannot run in the background,
+/// e.g. after `MODIFY COLUMN y ALIAS aiGenerate(x)` of a column the projection uses.
 ContextPtr getProjectionAnalysisContext(const ContextPtr & context)
 {
     auto projection_context = Context::createCopy(context->getGlobalContext());
     projection_context->setSetting(
         "enable_positional_arguments_for_projections",
         context->getSettingsRef()[Setting::enable_positional_arguments_for_projections].value);
+    if (context->isAnalyzingBackgroundExpressions())
+        projection_context->setAnalyzingBackgroundExpressions(true);
     return projection_context;
 }
 
