@@ -173,8 +173,6 @@ private:
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
-    /// Per-disk on purpose: reservations and the statvfs() taken under this lock
-    /// in tryReserve()/getUnreservedSpace() must not contend across disks.
     mutable std::mutex reservation_mutex;
 
     std::atomic<bool> broken{false};
