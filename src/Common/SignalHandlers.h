@@ -96,7 +96,7 @@ private:
     sigset_t saved_mask{};
 };
 
-/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
+/// Reset the deadly signal handlers to their previous actions (like HandledSignals::reset(false)), idempotently.
 /// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
 void resetHandledSignals();
 
@@ -155,7 +155,10 @@ private:
 
 struct HandledSignals
 {
-    std::vector<int> handled_signals;
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Each registered signal with the action its handler replaced, given back by `reset` in reverse order.
+    std::vector<std::pair<int, struct sigaction>> handled_signals;
+#endif
     DB::PipeFDs signal_pipe;
     std::atomic_flag fatal_error_printed;
 
