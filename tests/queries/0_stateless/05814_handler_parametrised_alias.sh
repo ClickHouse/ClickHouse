@@ -23,6 +23,6 @@ $CLICKHOUSE_CLIENT -q "SELECT parameterized_view_parameters FROM system.tables W
 $CLICKHOUSE_CLIENT -q "DETACH TABLE v_alias_udf; ATTACH TABLE v_alias_udf; SELECT * FROM v_alias_udf(a = 'z') FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_setting AS SELECT 7 AS {a:Identifier} SETTINGS parameterize_view_by_alias_parameter = 0, param_a = 'x'"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_compatibility AS SELECT 7 AS {a:Identifier} SETTINGS compatibility = '26.10', param_a = 'x'"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "CREATE VIEW v_alias_query_compatibility AS SELECT 7 AS {a:Identifier} SETTINGS compatibility = '26.11', param_a = 'x'"
 $CLICKHOUSE_CLIENT -q "SELECT name, parameterized_view_parameters FROM system.tables WHERE database = currentDatabase() AND name LIKE 'v_alias_query_%' ORDER BY name"
 $CLICKHOUSE_CLIENT -q "SELECT x FROM v_alias_query_setting; SELECT x FROM v_alias_query_compatibility"

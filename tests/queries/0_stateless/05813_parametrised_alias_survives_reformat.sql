@@ -81,7 +81,7 @@ DROP VIEW v_alias_param;
 
 -- With an older `compatibility`, a view whose only parameters are aliases is not parameterized: CREATE substitutes them.
 SET param_a = 'from_session';
-SET compatibility = '26.10';
+SET compatibility = '26.11';
 DROP VIEW IF EXISTS v_alias_compatibility;
 DROP VIEW IF EXISTS v_alias_compatibility_in;
 CREATE VIEW v_alias_compatibility AS SELECT 7 AS {a:Identifier};
