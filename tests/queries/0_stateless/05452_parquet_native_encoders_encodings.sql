@@ -6,7 +6,8 @@
 -- encodings under test: dictionary, `PLAIN`, and the fallback from dictionary to `PLAIN`.
 
 SET engine_file_truncate_on_insert = 1;
-SET output_format_parquet_row_group_size = 1000000;
+-- One row group, so each column chunk has one dictionary.
+SET output_format_parquet_row_group_size = 1000000, output_format_parquet_row_group_size_bytes = 536870912;
 SET output_format_parquet_batch_size = 13;
 SET output_format_parquet_data_page_size = 4096;
 
