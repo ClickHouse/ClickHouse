@@ -5,9 +5,9 @@
 #include <base/sort.h>
 #if defined(__ELF__)
 #include <Common/CompactSymbols.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #endif
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
