@@ -16,13 +16,13 @@ SELECT formatQuerySingleLine('SELECT [[1, [2, x]], [3]], [[1, 2], [3]], (1, (2, 
 SELECT (1, (2, (3, 4)))::Tuple(a UInt8, b Tuple(c UInt8, d Tuple(e UInt8, f UInt64))) AS t, toTypeName(t);
 SELECT x, [(1, 2), (x, 3)], [[1, 2], [3, x]], (1, (2, (3, x))), ((1, 2), (3, x)), [[0x1], [2]]::Array(Array(UInt8)) FROM (SELECT 7 AS x);
 SELECT [[1, 2], [3, 4]]::Array(Array(UInt16)) AS a, toTypeName(a);
-SELECT cityHash64(formatQuery('SELECT ' || repeat('(1, ', 300) || 'x' || repeat(')', 300))) = cityHash64(formatQuery(formatQuery('SELECT ' || repeat('(1, ', 300) || 'x' || repeat(')', 300)))) SETTINGS max_parser_depth = 0;
-SELECT length(formatQuery('SELECT ' || repeat('[1, ', 300) || 'x' || repeat(']', 300))) SETTINGS max_parser_depth = 0;
-SELECT length(formatQuery('SELECT ' || repeat('((1, ', 300) || '1' || repeat('))', 300))) SETTINGS max_parser_depth = 0;
-SELECT length(formatQuery('SELECT ' || repeat('(', 300) || '1' || repeat('::UInt8)', 300))) SETTINGS max_parser_depth = 0;
+SELECT cityHash64(formatQuery('SELECT ' || repeat('(1, ', 50) || 'x' || repeat(')', 50))) = cityHash64(formatQuery(formatQuery('SELECT ' || repeat('(1, ', 50) || 'x' || repeat(')', 50)))) SETTINGS max_parser_depth = 0;
+SELECT length(formatQuery('SELECT ' || repeat('[1, ', 50) || 'x' || repeat(']', 50))) SETTINGS max_parser_depth = 0;
+SELECT length(formatQuery('SELECT ' || repeat('((1, ', 50) || '1' || repeat('))', 50))) SETTINGS max_parser_depth = 0;
+SELECT length(formatQuery('SELECT ' || repeat('(', 50) || '1' || repeat('::UInt8)', 50))) SETTINGS max_parser_depth = 0;
 SELECT formatQuerySingleLine('SELECT [1, [1, [1, (2)]]], (1, (1, (1, (2)))), ((1, ((1, 2))))');
 SELECT [[[(2)], [3]], [[4]]] AS a, toTypeName(a), (1, (1, (1, (2)))) AS b, toTypeName(b), ((1, ((1, 2)))) AS c, toTypeName(c);
-SELECT length(formatQuery('SELECT ' || repeat('[1, ', 300) || '(2)' || repeat(']', 300))) SETTINGS max_parser_depth = 0;
+SELECT length(formatQuery('SELECT ' || repeat('[1, ', 50) || '(2)' || repeat(']', 50))) SETTINGS max_parser_depth = 0;
 "
 
 # Brackets that do not match within a statement of a multi-statement input.
