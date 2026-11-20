@@ -1,7 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
@@ -40,8 +37,6 @@
 #include <set>
 #include <tuple>
 #include <unordered_set>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -232,9 +227,9 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 
 /// `calculateHashTableCacheKeys` keys by plan node; `ExplainPlanOptions` keys by step, so that it
 /// does not have to know about `QueryPlan::Node`. One node owns one step, so this is a rekeying.
-UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> hashesByStep(const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & by_node)
+std::unordered_map<const IQueryPlanStep *, UInt64> hashesByStep(const std::unordered_map<const QueryPlan::Node *, UInt64> & by_node)
 {
-    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> by_step;
+    std::unordered_map<const IQueryPlanStep *, UInt64> by_step;
     by_step.reserve(by_node.size());
     for (const auto & [node, hash] : by_node)
         by_step.emplace(node->step.get(), hash);
@@ -245,7 +240,7 @@ UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> hashesByStep(cons
 /// when two plans that should match do not, the deepest level at which the two dumps stop agreeing
 /// is where they actually diverge - the one thing a failed match needs that a single line cannot
 /// carry, which is why this sits at the test level and the summary stays at trace.
-String explainWithHashes(const QueryPlan & plan, const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & hashes)
+String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
 {
     const auto by_step = hashesByStep(hashes);
     ExplainPlanOptions options;
@@ -255,7 +250,7 @@ String explainWithHashes(const QueryPlan & plan, const UnorderedMapWithMemoryTra
     return buffer.str();
 }
 
-using NodeHashes = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64>;
+using NodeHashes = std::unordered_map<const QueryPlan::Node *, UInt64>;
 
 template <typename... Args>
 UInt64 sipHash64Of(const Args &... args)
@@ -372,7 +367,7 @@ struct CoordinatedReads
 /// rather than silently missed.
 void collectLazyReads(const QueryPlan::Node & branch_root, CoordinatedReads & reads)
 {
-    VectorWithMemoryTracking<const QueryPlan::Node *> to_visit{&branch_root};
+    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
     while (!to_visit.empty())
     {
         const auto * node = to_visit.back();
@@ -573,10 +568,10 @@ ReadFromMergeTree * findCoordinatedReadByHash(QueryPlan::Node & boundary, UInt64
 
 /// Unlike `collectReadingSteps` it also returns `LazilyReadFromMergeTree`: a lazy half reads as much as the
 /// step it belongs to, often more, and under parallel replicas every replica performs it.
-VectorWithMemoryTracking<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
+std::vector<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
 {
     Stack stack;
-    VectorWithMemoryTracking<IQueryPlanStep *> read_steps;
+    std::vector<IQueryPlanStep *> read_steps;
     traverseQueryPlan(
         stack,
         root,
@@ -589,10 +584,10 @@ VectorWithMemoryTracking<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & ro
     return read_steps;
 }
 
-VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
     Stack stack;
-    VectorWithMemoryTracking<ReadFromMergeTree *> reading_steps;
+    std::vector<ReadFromMergeTree *> reading_steps;
     traverseQueryPlan(
         stack,
         root,
@@ -819,7 +814,7 @@ bool transplantAnalysisToAllReads(
 /// counterpart; the caller then keeps the single-replica plan.
 bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    SetWithMemoryTracking<FutureSet::Hash> single_replica_hashes;
+    std::set<FutureSet::Hash> single_replica_hashes;
     forEachSubquerySet(
         &single_replica_plan,
         [&](FutureSetFromSubquery & future_set)
@@ -843,7 +838,7 @@ bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
     if (!all_sets_paired)
         return false;
 
-    MapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr> sets_map;
+    std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
     /// Shared, not detached: the single-replica plan is dropped, but its sets outlive it. The replicas
@@ -1341,15 +1336,9 @@ static bool decideAtBoundary(
             const auto max_threads = optimization_settings.max_threads;
             // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
             // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
-            /// Ignoring the cap makes both sides of the comparison divide by the real thread counts.
-            /// Otherwise a read too small to occupy `max_threads` clamps both sides to the same value,
-            /// the comparison collapses to `0 > output_bytes / replicas`, and the query is decided here
-            /// rather than by the cost model - which is the point of the cap outside of testing.
-            const auto effective_max_reading_threads
-                = (optimization_settings.automatic_parallel_replicas_ignore_thresholds
-                   || !optimization_settings.min_bytes_per_task_for_reading)
-                ? SIZE_MAX
-                : stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1;
+            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
+                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
+                : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
             /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
             /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a

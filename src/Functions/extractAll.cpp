@@ -57,7 +57,6 @@ private:
     Pos end{};
 public:
     static constexpr auto name = "extractAll";
-    static constexpr auto signature = "(String, const String) -> Array(String)";
     static String getName() { return name; }
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 2; }
@@ -125,7 +124,7 @@ public:
             const auto * subject_begin = reinterpret_cast<const uint8_t *>(begin);
             const auto * subject_end = reinterpret_cast<const uint8_t *>(end);
             const auto * search_from = reinterpret_cast<const uint8_t *>(pos);
-            if (callJITFunction(matcher.func, subject_begin, subject_end, search_from, capture_starts.data(), capture_ends.data()) != 1)
+            if (matcher.func(subject_begin, subject_end, search_from, capture_starts.data(), capture_ends.data()) != 1)
                 return false;
             if (capture_ends[0] == capture_starts[0]) /// empty whole match - stop, like the RE2 path
                 return false;

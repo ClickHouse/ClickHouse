@@ -6,6 +6,8 @@ keywords: ['jeu de données d’exemple', 'antennes-relais', 'OpenCelliD', 'géo
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Dans ce tutoriel, vous allez découvrir comment exploiter des données géographiques avec ClickHouse à partir du jeu de données des antennes-relais.
 Vous chargerez le jeu de données dans ClickHouse Cloud, examinerez son schéma et exécuterez des requêtes d&#39;agrégation sur des dizaines de millions de lignes.
 Vous enrichirez ensuite les données à l&#39;aide d&#39;un dictionnaire, utiliserez la fonction `pointInPolygon` pour compter les antennes situées en Allemagne, puis vous servirez de ClickHouse Agents pour visualiser le résultat sur une carte.
@@ -224,23 +226,15 @@ Pour ce tutoriel, vous aurez besoin de :
 
   <Step title="Facultatif : visualiser les données avec ClickHouse Agents">
     Nous allons maintenant visualiser ces données. Il s&#39;agit d&#39;un exemple d&#39;exécution facultatif : ClickHouse Agents est une fonctionnalité bêta pilotée par un modèle, si bien que son plan, sa trace d&#39;outils et sa sortie peuvent varier d&#39;une exécution à l&#39;autre.
-    [ClickHouse Agents](/fr/agents) vous permet d&#39;interroger et d&#39;explorer facilement vos données ClickHouse sous forme de conversation, sans avoir à écrire vous-même de SQL ni de logique d&#39;orchestration.
+    [ClickHouse Agents](/fr/products/cloud/features/ai-ml/agents) vous permet d&#39;interroger et d&#39;explorer facilement vos données ClickHouse sous forme de conversation, sans avoir à écrire vous-même de SQL ni de logique d&#39;orchestration.
     L&#39;agent interprète votre intention, planifie les étapes, appelle les outils que vous avez configurés et vous renvoie les résultats.
 
     Cliquez sur **ClickHouse agents** sous le nom de votre organisation, en bas du menu de gauche, pour ouvrir ClickHouse Agents.
-    Vous pouvez envoyer des messages à l&#39;agent ClickHouse via le [chat](/fr/agents/chat).
+    Vous pouvez envoyer des messages à l&#39;agent ClickHouse via le [chat](/fr/products/cloud/features/ai-ml/agents/chat).
     Saisissez « Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables » et envoyez le message.
     Lors d&#39;une exécution, l&#39;agent a effectué les étapes suivantes :
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Chat de l'agent ClickHouse montrant les étapes suivies pour construire une grille de densité des antennes-relais en Allemagne](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="Chat de l'agent ClickHouse montrant les étapes suivies pour construire une grille de densité des antennes-relais en Allemagne" />
 
     * Il a recherché le Mobile Country Code de l&#39;Allemagne dans `mcc_country_dict` et a trouvé le MCC `262`.
     * Il a compté les antennes avec `mcc = 262` situées à l&#39;intérieur du polygone de `germany` à l&#39;aide de `pointInPolygon`, soit 2 588 635 antennes. Ce nombre est légèrement inférieur au décompte précédent, car le filtre supplémentaire sur `mcc` exclut les antennes situées dans le polygone mais enregistrées dans un autre pays.
@@ -249,15 +243,7 @@ Pour ce tutoriel, vous aurez besoin de :
 
     Ouvrez le fichier généré pour voir le résultat. Les zones les plus lumineuses correspondent aux grandes agglomérations : Berlin, Hambourg, Munich et Francfort.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Carte de densité des antennes-relais en Allemagne sur une grille de 0,1 degré avec une échelle de couleurs logarithmique](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Carte de densité des antennes-relais en Allemagne sur une grille de 0,1 degré avec une échelle de couleurs logarithmique" />
   </Step>
 </Steps>
 
@@ -269,7 +255,7 @@ Enfin, vous avez utilisé ClickHouse Agents pour transformer cette question en c
 
 Pour aller plus loin, vous pouvez :
 
-* **Poser des questions complémentaires à l’agent.** Demandez-lui par exemple comment la densité varie selon les types de radio, comme `LTE` et `GSM`, ou quelles villes comptent le plus d’antennes `NR`. Enregistrez les prompts que vous réutilisez dans la [bibliothèque de prompts](/fr/agents/prompts), ou créez un agent spécialisé dans l’[Agent Builder](/fr/agents/builder).
+* **Poser des questions complémentaires à l’agent.** Demandez-lui par exemple comment la densité varie selon les types de radio, comme `LTE` et `GSM`, ou quelles villes comptent le plus d’antennes `NR`. Enregistrez les prompts que vous réutilisez dans la [bibliothèque de prompts](/fr/products/cloud/features/ai-ml/agents/prompts), ou créez un agent spécialisé dans l’[Agent Builder](/fr/products/cloud/features/ai-ml/agents/builder).
 * **Comparer des pays.** Insérez des polygones pour d’autres pays et exécutez la même requête `pointInPolygon` sur chacun d’eux. Le dictionnaire que vous avez créé vous permet d’associer les noms de pays aux résultats.
 * **Regrouper les antennes avec H3 ou geohash.** L’agent a utilisé une simple grille d’arrondi. ClickHouse propose également les fonctions [H3](/fr/reference/functions/regular-functions/geo/h3) et [geohash](/fr/reference/functions/regular-functions/geo/geohash), qui produisent des cellules hiérarchiques adaptées aux cartes zoomables.
 * **Explorer d’autres jeux de données.** Le jeu de données [NYC taxi](/fr/get-started/sample-datasets/nyc-taxi) contient également des coordonnées de prise en charge et de dépose, et l’index des [jeux de données d’exemple](/fr/get-started/sample-datasets) en répertorie bien d’autres.

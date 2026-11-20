@@ -70,7 +70,6 @@ private:
             0,
             settings_,
             settings_.defaults_for_omitted_fields ? &block_missing_values_ : nullptr,
-            /*type_cache_=*/ nullptr,
             ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     }
 
@@ -134,7 +133,7 @@ void registerInputFormatNative(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    }, /*supports_reset_parser=*/ true);
+    });
     factory.markFormatSupportsSubsetOfColumns("Native");
 
     factory.setDocumentation("Native", Documentation{

@@ -1,5 +1,4 @@
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
-#include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
 #include <ranges>
 #include <IO/copyData.h>
@@ -7,7 +6,6 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -30,7 +28,6 @@ const DB::Strings codecs
        "LZ4HC",
        "ZSTD",
        "ZXC",
-       "GDeflate",
        "Delta",
        "DoubleDelta",
        "Gorilla",
@@ -38,7 +35,6 @@ const DB::Strings codecs
        "FPC",
        "GCD",
        "ALP",
-       "PCO",
        "AES_128_GCM_SIV",
        "AES_256_GCM_SIV",
        "NONE"};
@@ -387,12 +383,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"arrowflight", allow_arrowflight},
            {"alias", allow_alias},
            {"kafka", allow_kafka},
-           {"backup", allow_backup},
-           {"clusterdatabase", allow_cluster_database},
-           {"remotedatabase", allow_remote_database},
-           {"overlay", allow_overlay_database},
-           {"timeseries", allow_time_series},
-           {"filelog", allow_filelog}};
+           {"backup", allow_backup}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
@@ -450,7 +441,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
         {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
-        {"has_distributed_cache", [&](const JSONObjectType & value) { has_distributed_cache = value.getBool(); }},
         {"allow_query_oracles", [&](const JSONObjectType & value) { allow_query_oracles = value.getBool(); }},
         {"allow_health_check", [&](const JSONObjectType & value) { allow_health_check = value.getBool(); }},
         {"enable_compatibility_settings", [&](const JSONObjectType & value) { enable_compatibility_settings = value.getBool(); }},
@@ -492,7 +482,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
         {"hot_table_settings", [&](const JSONObjectType & value) { hot_table_settings = loadArray(value); }},
-        {"hot_formats", [&](const JSONObjectType & value) { hot_formats = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
@@ -752,15 +741,6 @@ ORDER BY f.name)sql";
            "quantilesExactWeightedInterpolated",
            "quantilesInterpolatedWeighted",
            "rankCorr",
-           "regr_avgx",
-           "regr_avgy",
-           "regr_count",
-           "regr_intercept",
-           "regr_r2",
-           "regr_slope",
-           "regr_sxx",
-           "regr_sxy",
-           "regr_syy",
            "sequenceNextNode",
            "simpleLinearRegression",
            "sparkBar",
@@ -942,14 +922,6 @@ void FuzzConfig::loadServerConfigurations()
             DB::ErrorCodes::BUZZHOUSE,
             "No {} formats were loaded from the server; cannot continue fuzzing",
             this->in_formats.empty() ? "input" : (this->out_formats.empty() ? "output" : "input and output"));
-    }
-    for (const auto & entry : this->hot_formats)
-    {
-        if (std::ranges::find(this->in_formats, entry) == this->in_formats.end()
-            && std::ranges::find(this->out_formats, entry) == this->out_formats.end())
-        {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown format: {}", entry);
-        }
     }
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
@@ -1226,30 +1198,6 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     return res;
 }
 
-/// The value of `key` in a random row of the table, as a literal for `PARTITION <expr>`
-String FuzzConfig::tableGetRandomKeyValue(const String & database, const String & table, const String & key)
-{
-    String res;
-
-    /// The Values format writes the row as a parenthesized tuple of SQL literals
-    if (processServerQuery(
-            true,
-            fmt::format(
-                "SELECT {} FROM {}.{} ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT Values;",
-                key,
-                DB::backQuote(database),
-                DB::backQuote(table),
-                fuzzer_out_file.generic_string())))
-    {
-        std::ifstream infile(fuzzer_out_file, std::ios::in);
-
-        std::getline(infile, res);
-        if (!res.empty() && res.back() == '\r')
-            res.pop_back();
-    }
-    return res;
-}
-
 String FuzzConfig::tableGetRandomPartitionValue(const uint64_t rand_val, const String & database, const String & table)
 {
     String res;
@@ -1376,43 +1324,6 @@ uint32_t FuzzConfig::tableCountConstraints(const String & database, const String
 String FuzzConfig::tableGetRandomConstraint(const uint64_t rand_val, const String & database, const String & table)
 {
     return tableGetRandomSystemName(rand_val, "constraints", database, table);
-}
-
-String FuzzConfig::pickFormat(RandomGenerator & rg, const DB::Strings & formats) const
-{
-    if (!this->hot_formats.empty() && rg.nextSmallNumber() < 4)
-    {
-        DB::Strings hot;
-
-        std::ranges::copy_if(
-            this->hot_formats, std::back_inserter(hot), [&](const String & f) { return std::ranges::find(formats, f) != formats.end(); });
-        if (!hot.empty())
-        {
-            return rg.pickRandomly(hot);
-        }
-    }
-    return rg.pickRandomly(formats);
-}
-
-String FuzzConfig::getRandomDistributedCacheServer(const uint64_t rand_val)
-{
-    String res;
-
-    if (processServerQuery(
-            false,
-            fmt::format(
-                "SELECT \"distributed_cache_server\" FROM \"system\".\"distributed_cache_registry\" ORDER BY "
-                "\"distributed_cache_server\" LIMIT 1 OFFSET {} % max2((SELECT count() FROM \"system\".\"distributed_cache_registry\"), 1) "
-                "INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                rand_val,
-                fuzzer_out_file.generic_string())))
-    {
-        std::ifstream infile(fuzzer_out_file, std::ios::in);
-        std::getline(infile, res);
-        if (!res.empty() && res.back() == '\r')
-            res.pop_back();
-    }
-    return res;
 }
 
 void FuzzConfig::validateClickHouseHealth()

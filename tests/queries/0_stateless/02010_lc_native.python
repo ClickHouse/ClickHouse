@@ -8,7 +8,6 @@ import uuid
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
-SOCKET_TIMEOUT = float(os.environ.get("CLICKHOUSE_TEST_TIMEOUT", "600"))
 CLIENT_NAME = "simple native protocol"
 
 
@@ -226,7 +225,7 @@ def readException(s):
 
 def insertValidLowCardinalityRow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(SOCKET_TIMEOUT)
+        s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -269,7 +268,7 @@ def insertValidLowCardinalityRow():
 
 def insertLowCardinalityRowWithIndexOverflow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(SOCKET_TIMEOUT)
+        s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -310,7 +309,7 @@ def insertLowCardinalityRowWithIndexOverflow():
 
 def insertLowCardinalityRowWithIncorrectDictType():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(SOCKET_TIMEOUT)
+        s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -351,7 +350,7 @@ def insertLowCardinalityRowWithIncorrectDictType():
 
 def insertLowCardinalityRowWithIncorrectAdditionalKeys():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(SOCKET_TIMEOUT)
+        s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)

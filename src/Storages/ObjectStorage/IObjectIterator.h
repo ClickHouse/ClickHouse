@@ -7,12 +7,8 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
-#include <condition_variable>
 #include <limits>
-#include <mutex>
-#include <queue>
 
 namespace DB
 {
@@ -24,7 +20,6 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-class RuntimeFilterPruningPredicate;
 
 struct ObjectInfo
 {
@@ -46,48 +41,27 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    [[nodiscard]] virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
+    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    virtual bool isArchive() const { return false; }
+    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    [[nodiscard]] virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
-    [[nodiscard]] virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
-    [[nodiscard]] virtual bool isArchive() const { return false; }
-    [[nodiscard]] virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    [[nodiscard]] virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    [[nodiscard]] virtual std::string getPathOrPathToArchiveIfArchive() const;
-    [[nodiscard]] virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+    virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    /// The exact size of the object as the table metadata records it, if it records a positive one.
-    [[nodiscard]] virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
-
-    [[nodiscard]] virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
-
-    /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
-    /// It is only an estimate used to report the progress of a query, not to compute any result.
-    [[nodiscard]] virtual std::optional<size_t> getNumRowsHint() const
-    {
-        if (data_lake_metadata)
-            return data_lake_metadata->num_rows;
-        return std::nullopt;
-    }
-
-    [[nodiscard]] std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
+    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
-    /// Whether `file_bucket_info` only leaves out row groups the query condition cache proved to have no
-    /// match, rather than splitting the file between readers: only then does reading the buckets tell
-    /// which row groups of the whole file match.
-    bool file_bucket_info_from_query_condition_cache = false;
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
 
-    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
-    std::optional<size_t> archive_entry_index;
-
-    [[nodiscard]] String getIdentifier(bool include_file_bucket_info = true) const;
-    [[nodiscard]] String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+    String getIdentifier(bool include_file_bucket_info = true) const;
+    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -99,7 +73,7 @@ struct IObjectIterator
     virtual ~IObjectIterator() = default;
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
-    [[nodiscard]] virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
+    virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
 
     /// When false, the iterator should not emit ProfileEvents.
     /// Used when the iterator is created for metadata purposes (e.g. `getPathSample`)
@@ -108,10 +82,6 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
-
-    /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
-    /// An iterator may skip the objects that cannot contain any of their keys once it is built.
-    virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -130,17 +100,12 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
         emit_profile_events = value;
         iterator->setEmitProfileEvents(value);
-    }
-
-    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
-    {
-        iterator->setJoinRuntimeFilters(std::move(predicate));
     }
 
 private:
@@ -185,7 +150,7 @@ public:
         return (peeked_objects.size() - next_peeked_object) + delegate_count;
     }
 
-    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
@@ -218,7 +183,7 @@ public:
     }
 
     size_t estimatedKeysCount() override { return 1; }
-    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
 
 private:
     const ObjectInfoPtr object;
@@ -231,7 +196,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -239,24 +204,18 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
-    [[nodiscard]] ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
-
     const ObjectIterator iterator;
-    StorageObjectStorageConfigurationPtr configuration;
+    String format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;
     FormatFilterInfoPtr format_filter_info;
     QueryConditionCachePtr query_condition_cache;
 
-    std::mutex mutex;
-    std::condition_variable objects_split_cv;
     std::queue<ObjectInfoPtr> pending_objects_info;
-    size_t objects_being_split = 0;
-    bool iterator_exhausted = false;
     const LoggerPtr log = getLogger("GlobIterator");
 };
 

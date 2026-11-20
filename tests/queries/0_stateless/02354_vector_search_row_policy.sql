@@ -9,6 +9,7 @@
 -- fetched only `LIMIT` neighbours without the `vector_search_index_fetch_multiplier` compensation, which the
 -- policy can then discard.
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP ROW POLICY IF EXISTS rp_04814 ON t_04814;
@@ -109,7 +110,7 @@ DROP TABLE IF EXISTS t_04814_final;
 
 CREATE TABLE t_04814_final (id UInt32, vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2))
-ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 4, allow_vector_similarity_index_in_specialized_merge_tree = 1;
+ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 4;
 
 INSERT INTO t_04814_final SELECT number, [toFloat32(number), toFloat32(number + 1)] FROM numbers(64);
 

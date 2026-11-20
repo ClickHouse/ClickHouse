@@ -16,7 +16,8 @@ if (NOT ENABLE_CHDIG OR NOT ENABLE_RUST)
     return()
 endif()
 
-clickhouse_add_rust_member(_ch_rust_chdig FEATURE chdig)
+clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
+clickhouse_config_crate_flags(_ch_rust_chdig)
 add_library(ch_rust::chdig ALIAS _ch_rust_chdig)
 
 if (OS_DARWIN)

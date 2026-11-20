@@ -1,5 +1,3 @@
-import os
-
 from praktika import Job, Secret, Workflow
 
 from ci.defs.defs import SECRETS
@@ -39,7 +37,7 @@ workflow = Workflow.Config(
     enable_concurrency_queue=True,
     enable_slack_feed=True,
     # Uploads the job's `Result.files` (the reprepro, createrepo_c and geesefs logs) to S3
-    enable_report=os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse",
+    enable_report=True,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",

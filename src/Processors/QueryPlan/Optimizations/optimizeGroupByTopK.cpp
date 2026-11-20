@@ -1,8 +1,6 @@
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -102,8 +100,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     const AggregatingStep & aggregating_step,
     size_t limit,
     size_t num_key_columns,
-    const VectorWithMemoryTracking<int> & directions,
-    const VectorWithMemoryTracking<int> & nulls_directions,
+    const std::vector<int> & directions,
+    const std::vector<int> & nulls_directions,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
@@ -131,7 +129,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// part of the query condition cache key.
     bool has_non_deterministic_filter = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
-    VectorWithMemoryTracking<const ActionsDAG *> path_expressions;
+    std::vector<const ActionsDAG *> path_expressions;
 
     while (!read_step)
     {
@@ -215,10 +213,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
 
     const auto & key_column = header.getByName(key_name);
 
-    /// The same type restrictions as `tryOptimizeTopK`: no Dynamic, Variant or JSON anywhere in the key, no empty
-    /// tuples, and comparing variable-length values row by row may cost more than it saves.
+    /// The same type restrictions as `tryOptimizeTopK`: `__topKFilter` cannot compare `Dynamic`, `Variant`
+    /// and empty tuples, and comparing variable-length values row by row may cost more than it saves.
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_column.type.get());
-    if (hasRuntimeTypedType(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
+    if (isDynamic(key_column.type) || isVariant(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
         || (!key_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
     {
         LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
@@ -433,8 +431,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             return 0;
     }
 
-    VectorWithMemoryTracking<int> directions;
-    VectorWithMemoryTracking<int> nulls_directions;
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
     size_t num_key_columns = 0;
 
     if (sorting_step)

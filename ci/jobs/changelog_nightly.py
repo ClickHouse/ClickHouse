@@ -1236,9 +1236,8 @@ def prepare_repo():
     #
     # Not `--filter=tree:0`: fetching only the commit graph takes 12 seconds
     # instead of half an hour, but it turns the checkout into a partial clone,
-    # and the git commands of this job and of changelog.py then fetch missing
-    # objects lazily, which hung changelog.py's own `git fetch --tags`, since
-    # replaced with `--no-fetch` (observed in
+    # and changelog.py runs its own `git fetch --tags` in the container, which
+    # then hangs (observed in
     # https://github.com/ClickHouse/ClickHouse/actions/runs/32747225427: the
     # job sat in `Fetching all tags` for five hours until it was killed).
     master_refspec = "'+refs/heads/master:refs/remotes/origin/master'"
@@ -1346,15 +1345,8 @@ def generate_raw_entries(version, from_ref, to_sha):
     # gets logged, only carries the unexpanded expressions): the host shell
     # exports it to the docker CLI and the in-container shell expands it for
     # changelog.py's --gh-user-or-token.
-    # `--no-fetch`: prepare_repo already fetched the master history and the
-    # tags. A `git fetch` in the container has no credentials (actions/checkout
-    # keeps them in a file included only for the host path of `.git`, which
-    # differs from `/wd/.git`) and uses the default refspec, so it fetched
-    # every branch of the repository anonymously. That took 16 minutes on
-    # 2026-11-02 and exceeded GENERATE_TIMEOUT_SEC every night since
-    # 2026-11-03 (e.g. https://github.com/ClickHouse/ClickHouse/actions/runs/44444590723).
     cmd = (
-        f"./ci/tools/changelog.py -v --jobs=5 --no-fetch "
+        f"./ci/tools/changelog.py -v --jobs=5 "
         f'--gh-user-or-token "$GH_TOKEN" '
         f"--from {shlex.quote(from_ref)} --output {shlex.quote(RAW_OUTPUT)} {to_sha}"
     )
