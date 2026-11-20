@@ -13,7 +13,7 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -625,3 +625,152 @@ def test_missing_covered_part_on_start(start_cluster):
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+# Keeper lists a merge result that is missing after a restart (as after a host reset that lost
+# un-flushed files) and no replica can produce it. The merge sources are still present, so the
+# replicas must recover by themselves: the queue drains, no rows are lost, the part is merged
+# again and mutations complete.
+LOST_MERGE_RESULT_SETTINGS = (
+    "old_parts_lifetime=100500, merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000, "
+    "max_postpone_time_for_failed_replicated_fetches_ms=0"
+)
+
+
+def create_merged_table(nodes, table):
+    zk_path = f"/clickhouse/tables/{table}"
+    for node in nodes:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    for i, node in enumerate(nodes, 1):
+        node.query(
+            f"CREATE TABLE {table} (n int, v int DEFAULT 0) ENGINE=ReplicatedMergeTree('{zk_path}', '{i}') ORDER BY n "
+            f"SETTINGS {LOST_MERGE_RESULT_SETTINGS}"
+        )
+    for v in (1, 2):
+        nodes[0].query(
+            f"INSERT INTO {table} (n) VALUES ({v})",
+            settings={"insert_keeper_fault_injection_probability": 0},
+        )
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+    nodes[0].query(f"OPTIMIZE TABLE {table} FINAL")
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+
+def assert_recovered_from_lost_merge_result(node, table, empty_parts_before):
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.replication_queue WHERE database = 'default' AND table = '{table}'",
+        "0",
+        retry_count=120,
+        sleep_time=1,
+    )
+    node.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
+    assert node.query(f"SELECT count(), sum(n) FROM {table}") == "2\t3\n"
+    assert (
+        node.query(
+            f"SELECT lost_part_count FROM system.replicas WHERE database = 'default' AND table = '{table}'"
+        )
+        == "0\n"
+    )
+    # The log is shared by the tests of this module, so compare against the count before the damage.
+    assert count_in_log(node, "Created empty part") == empty_parts_before
+
+    # The sources can be merged again into a part covering the lost one.
+    node.query(f"OPTIMIZE TABLE {table} FINAL", settings={"alter_sync": 2}, timeout=120)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' "
+        "AND active AND min_block_number = 0 AND max_block_number = 1",
+        "1",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+
+def assert_mutation_works(nodes, table):
+    nodes[0].query(
+        f"ALTER TABLE {table} UPDATE v = v + 10 WHERE 1 SETTINGS mutations_sync = 2"
+    )
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
+        assert node.query(f"SELECT count(), sum(n), sum(v) FROM {table}") == "2\t3\t20\n"
+
+
+@pytest.mark.parametrize("damage", ["remove_dir", "remove_files"])
+def test_missing_merge_result_on_start_single_replica(start_cluster, damage):
+    table = f"rmt_missing_merge_result_single_{damage}"
+    try:
+        create_merged_table([node1], table)
+        empty_parts_before = count_in_log(node1, "Created empty part")
+        assert (
+            node1.query(
+                f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' "
+                "AND active AND name = 'all_0_1_1'"
+            )
+            == "1\n"
+        )
+
+        if damage == "remove_dir":
+            remove_part_dir_from_disk(node1, table, "all_0_1_1")
+        else:
+            remove_part_from_disk(node1, table, "all_0_1_1")
+        node1.restart_clickhouse()
+
+        assert_recovered_from_lost_merge_result(node1, table, empty_parts_before)
+        assert_mutation_works([node1], table)
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_missing_merge_result_on_start_both_replicas(start_cluster):
+    # Both replicas lose the merge result, so each one hopes on the other.
+    table = "rmt_missing_merge_result_both"
+    try:
+        create_merged_table([node1, node2], table)
+        empty_parts_before = {n: count_in_log(n, "Created empty part") for n in (node1, node2)}
+
+        remove_part_dir_from_disk(node1, table, "all_0_1_1")
+        remove_part_dir_from_disk(node2, table, "all_0_1_1")
+        node1.stop_clickhouse()
+        node2.stop_clickhouse()
+        node1.start_clickhouse()
+        node2.start_clickhouse()
+
+        for node in (node1, node2):
+            assert_recovered_from_lost_merge_result(node, table, empty_parts_before[node])
+        assert_mutation_works([node1, node2], table)
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_missing_merge_result_and_source_on_start(start_cluster):
+    # A source of the lost merge result is lost as well. The sources cannot be merged again,
+    # and the lost source is replaced with an empty part like any lost insert.
+    table = "rmt_missing_merge_result_and_source"
+    try:
+        create_merged_table([node1], table)
+
+        remove_part_dir_from_disk(node1, table, "all_0_1_1")
+        remove_part_dir_from_disk(node1, table, "all_0_0_0")
+        node1.restart_clickhouse()
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.replication_queue WHERE database = 'default' AND table = '{table}'",
+            "0",
+            retry_count=180,
+            sleep_time=1,
+        )
+        node1.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
+        assert node1.query(f"SELECT count(), sum(n) FROM {table}") == "1\t2\n"
+        assert (
+            node1.query(
+                f"SELECT lost_part_count FROM system.replicas WHERE database = 'default' AND table = '{table}'"
+            )
+            == "1\n"
+        )
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")

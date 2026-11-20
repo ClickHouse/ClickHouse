@@ -12257,6 +12257,132 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     return true;
 }
 
+bool StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
+{
+    if (is_readonly)
+        return false;
+
+    auto lost_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
+    if (lost_info.level == 0 || lost_info.isPatch())
+        return false;
+
+    /// The parts that the lost part consisted of. Everything in its range must be among them, and each of them must have
+    /// the data version of the lost part, otherwise it was not (only) a merge result and we do not know what it contained.
+    std::vector<MergeTreePartInfo> local_sources;
+    {
+        auto lock = readLockParts();
+        for (const auto & part : getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active}, lost_info.getPartitionId(), lock))
+        {
+            if (!lost_info.contains(part->info))
+                continue;
+            if (part->info == lost_info || part->info.isPatch() || part->info.mutation != lost_info.mutation)
+                return false;
+            local_sources.push_back(part->info);
+        }
+    }
+
+    /// The sources must tile the lost part exactly. A gap may be a legitimate gap in block numbers,
+    /// but it may also be data that nobody has any more, and we cannot tell the difference.
+    std::sort(local_sources.begin(), local_sources.end());
+    if (local_sources.empty() || local_sources.front().min_block != lost_info.min_block || local_sources.back().max_block != lost_info.max_block)
+        return false;
+    for (size_t i = 1; i < local_sources.size(); ++i)
+        if (local_sources[i].min_block != local_sources[i - 1].max_block + 1)
+            return false;
+
+    if (zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "status"))
+        return false;
+
+    /// No replica may have the lost part or a covering one, and every part of the range that any replica
+    /// lists must be a source that we have.
+    auto replicas_path = fs::path(zookeeper_path) / "replicas";
+    Coordination::Stat replicas_stat;
+    Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
+    for (const String & replica : replicas)
+    {
+        size_t sources_listed = 0;
+        for (const String & part_on_replica : zookeeper->getChildren(replicas_path / replica / "parts"))
+        {
+            auto info = MergeTreePartInfo::fromPartName(part_on_replica, format_version);
+            if (info.contains(lost_info))
+                return false;
+            if (!lost_info.contains(info))
+                continue;
+            if (std::find(local_sources.begin(), local_sources.end(), info) == local_sources.end())
+                return false;
+            ++sources_listed;
+        }
+
+        if ((replicas_path / replica).string() == replica_path && sources_listed != local_sources.size())
+            return false;
+    }
+
+    /// Some replica may be about to produce the lost part (or a covering one): a merge that is in its queue,
+    /// or in the log and not pulled by it yet. Merging the sources differently here would make replicas diverge.
+    /// `GET_PART` entries without a source replica are what we are getting rid of: they produce nothing.
+    auto produces_lost_part = [&](const String & entry_data)
+    {
+        auto entry = ReplicatedMergeTreeLogEntry::parse(entry_data, Coordination::Stat{}, format_version);
+        if (entry->type == ReplicatedMergeTreeLogEntry::GET_PART && entry->source_replica.empty())
+            return false;
+        for (const auto & name : entry->getVirtualPartNames(format_version))
+            if (MergeTreePartInfo::fromPartName(name, format_version).contains(lost_info))
+                return true;
+        return false;
+    };
+
+    UInt64 min_log_pointer = std::numeric_limits<UInt64>::max();
+    for (const String & replica : replicas)
+    {
+        String log_pointer = zookeeper->get(replicas_path / replica / "log_pointer");
+        min_log_pointer = std::min(min_log_pointer, log_pointer.empty() ? 0 : parse<UInt64>(log_pointer));
+
+        for (const String & queue_entry : zookeeper->getChildren(replicas_path / replica / "queue"))
+        {
+            String data;
+            if (zookeeper->tryGet(replicas_path / replica / "queue" / queue_entry, data) && produces_lost_part(data))
+                return false;
+        }
+    }
+
+    for (const String & log_entry : zookeeper->getChildren(fs::path(zookeeper_path) / "log"))
+    {
+        if (!log_entry.starts_with("log-") || parse<UInt64>(log_entry.substr(strlen("log-"))) < min_log_pointer)
+            continue;
+        String data;
+        if (zookeeper->tryGet(fs::path(zookeeper_path) / "log" / log_entry, data) && produces_lost_part(data))
+            return false;
+    }
+
+    auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{lost_info.getPartitionId()});
+    if (merge_predicate->isGoingToBeDropped(lost_info))
+        return false;
+
+    /// Something that produces the lost part may have appeared in the queue since the part check looked.
+    Strings source_parts;
+    if (queue.checkPartInQueueAndGetSourceParts(lost_part_name, source_parts) && !source_parts.empty())
+        return false;
+
+    Coordination::Stat is_lost_stat;
+    String is_lost_value = zookeeper->get(fs::path(replica_path) / "is_lost", &is_lost_stat);
+    if (is_lost_value != "0")
+        return false;
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_predicate->getVersion()));
+    ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
+    /// Bump the version of `is_lost` to race with `cloneReplica` the same way `removePartAndEnqueueFetch` does.
+    ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "is_lost", is_lost_value, is_lost_stat.version));
+
+    if (!queue.removeGetPartOfLostMergeResult(zookeeper, lost_part_name, local_sources, std::move(ops)))
+        return false;
+
+    LOG_WARNING(log, "Merge result {} is lost, but all {} parts it was made of are intact. "
+                     "Dropped the entry that fetches it, the parts will be merged again", lost_part_name, local_sources.size());
+    merge_selecting_task->schedule();
+    return true;
+}
+
 void StorageReplicatedMergeTree::getZeroCopyLockNodeCreateOps(
     const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
     int32_t mode, bool replace_existing_lock,

@@ -1440,6 +1440,58 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
     return number_of_covered_parts == entry_ptr->replace_range_entry->new_part_names.size();
 }
 
+bool ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
+    zkutil::ZooKeeperPtr zookeeper, const String & part_name, const std::vector<MergeTreePartInfo> & source_parts, Coordination::Requests ops)
+{
+    std::optional<time_t> min_unprocessed_insert_time_changed;
+    std::optional<time_t> max_processed_insert_time_changed;
+    String znode_name;
+    size_t queue_size = 0;
+
+    {
+        std::unique_lock lock(state_mutex);
+
+        auto it = std::find_if(queue.begin(), queue.end(), [&](const LogEntryPtr & entry)
+        {
+            return entry->type == LogEntry::GET_PART && entry->new_part_name == part_name && entry->source_replica.empty();
+        });
+        if (it == queue.end() || (*it)->currently_executing)
+            return false;
+
+        znode_name = (*it)->znode_name;
+        ops.emplace_back(zkutil::makeRemoveRequest(fs::path(replica_path) / "queue" / znode_name, -1));
+
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
+        if (code == Coordination::Error::ZBADVERSION)
+        {
+            LOG_INFO(log, "Log, replicas or replica state changed, will not remove entry {} for {}", znode_name, part_name);
+            return false;
+        }
+        zkutil::KeeperMultiException::check(code, ops, responses);
+
+        updateStateOnQueueEntryRemoval(
+            *it, /* is_successful = */ false, min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
+
+        LogEntryPtr removing_entry = std::move(*it);
+        removing_entry->removed_by_other_entry = true;
+        queue.erase(it);
+        queue_size = queue.size();
+
+        /// `virtual_parts` = `current_parts` + `queue`. The lost part replaced its sources in both sets; put them back.
+        current_parts.remove(part_name);
+        for (const auto & source_part_info : source_parts)
+        {
+            current_parts.tryAddPart(source_part_info);
+            virtual_parts.tryAddPart(source_part_info);
+        }
+    }
+
+    notifySubscribers(queue_size, &znode_name);
+    updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
+    return true;
+}
+
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,

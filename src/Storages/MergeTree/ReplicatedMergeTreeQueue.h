@@ -417,6 +417,15 @@ public:
                                        const MergeTreePartInfo & part_info,
                                        const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
+    /** Remove our `GET_PART` entry (the one with an empty source replica, created by `removePartAndEnqueueFetch`)
+      * for `part_name`, which will never appear. `ops` are committed to ZooKeeper atomically with the removal of the queue node.
+      * In memory, `part_name` is dropped from `virtual_parts` and `current_parts`, and `source_parts` (the local parts it was made of) are put back,
+      * so that they can be merged again.
+      * Returns false, changing nothing, if there is no such entry, it is being executed, or ZooKeeper rejected `ops`.
+      */
+    bool removeGetPartOfLostMergeResult(
+        zkutil::ZooKeeperPtr zookeeper, const String & part_name, const std::vector<MergeTreePartInfo> & source_parts, Coordination::Requests ops);
+
     /// Wait for the execution of currently executing actions with virtual parts intersecting with part_info
     void waitForCurrentlyExecutingOpsInRange(const MergeTreePartInfo & part_info) const;
 
