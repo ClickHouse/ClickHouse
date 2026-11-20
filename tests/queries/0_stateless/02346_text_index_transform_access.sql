@@ -87,19 +87,21 @@ SELECT '8. Existing index stays readable without the privilege.';
 
 SET allow_introspection_functions = 0;
 
-SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
+-- Plan-based parallel replicas ships the index transform in the read's filter, and a replica refuses to build it
+-- without the privilege: https://github.com/ClickHouse/ClickHouse/issues/133090
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']) SETTINGS parallel_replicas_plan_based = 0;
 
 SELECT '9. Unrelated ALTER does not re-authorize.';
 
 ALTER TABLE tab ADD COLUMN extra UInt8 DEFAULT 0;
 ALTER TABLE tab RENAME COLUMN val TO val2;
-SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
+SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']) SETTINGS parallel_replicas_plan_based = 0;
 
 SELECT '10. Neither does DETACH/ATTACH.';
 
 DETACH TABLE tab;
 ATTACH TABLE tab;
-SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
+SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']) SETTINGS parallel_replicas_plan_based = 0;
 
 SELECT '11. An ALIAS column hiding a privileged function is denied.';
 
