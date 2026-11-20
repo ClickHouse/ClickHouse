@@ -54,9 +54,9 @@ SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON(a String), 'JSON(a Date32)') SET
 SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON, 'JSON(a Date)') SETTINGS input_format_try_infer_datetimes = 0; -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON, 'JSON(a Date)') SETTINGS input_format_try_infer_datetimes = 0, json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 
--- date_time_overflow_behavior = 'throw' makes an out-of-range date-time string reject on both routes
--- (the direct CAST throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, the parser INCORRECT_DATA).
-SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- date_time_overflow_behavior = 'throw' makes an out-of-range date-time string reject on both routes. A
+-- String to DateTime goes through the parser, which rejects it with INCORRECT_DATA.
+SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw', json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 
 -- Removing a populated enum member rejects a value that is no longer in the destination, instead of keeping
