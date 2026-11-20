@@ -1,0 +1,52 @@
+mask_off	-1	1	0
+mask_off	-1	2	0
+mask_off	-1	7	1
+mask_off	0	1	1
+mask_off	0	4	0
+mask_off	0	9	0
+mask_off	1	2	1
+mask_off	1	7	0
+mask_off	1	12	0
+mask_on	-1	1	0
+mask_on	-1	2	0
+mask_on	-1	7	1
+mask_on	0	1	1
+mask_on	0	4	0
+mask_on	0	9	0
+mask_on	1	2	1
+mask_on	1	7	0
+mask_on	1	12	0
+aggregate_off	-1	7	120
+aggregate_off	0	1	160
+aggregate_off	1	2	280
+aggregate_on	-1	7	120
+aggregate_on	0	1	160
+aggregate_on	1	2	280
+merged_off	-1	1	7
+merged_off	-1	7	120
+merged_off	0	1	160
+merged_off	1	2	285
+merged_off	1	12	11
+merged_on	-1	1	7
+merged_on	-1	7	120
+merged_on	0	1	160
+merged_on	1	2	285
+merged_on	1	12	11
+merged_mask_off	5	0
+merged_mask_on	5	0
+mixed	1	10	0
+mixed	2	120	0
+mixed	3	30	1
+mixed	4	40	1
+mixed	5	50	1
+mixed	6	60	1
+set_nullable	4	1	40
+set_nullable	5	2	50
+set_nullable	6	\N	60
+barrier_mask	1	0
+barrier_mask	2	0
+barrier_mask	3	0
+barrier_mask	4	0
+barrier_mask	5	0
+barrier_mask	6	1
+barrier	6	\N	60

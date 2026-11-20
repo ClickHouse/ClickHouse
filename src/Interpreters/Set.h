@@ -13,6 +13,7 @@
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
 
+#include <span>
 
 namespace DB
 {
@@ -167,6 +168,13 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
+    /// Unites ready, resident integer tuple sets with the same key layout into a private set.
+    /// Returns null if any input cannot be copied within max_rows.
+    static std::shared_ptr<Set> tryUniteReadyFixedWidthSets(
+        std::span<const std::shared_ptr<Set>> sets,
+        const ColumnsWithTypeAndName & header,
+        size_t max_rows);
+
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 
@@ -226,6 +234,9 @@ private:
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
+
+    /// The group that owns the spill binding can differ from the group using the cached set.
+    bool built_with_adaptive_spilling = false;
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;

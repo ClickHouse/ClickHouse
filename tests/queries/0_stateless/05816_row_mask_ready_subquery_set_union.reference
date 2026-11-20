@@ -1,0 +1,30 @@
+off_dispatch	1	1	1
+off_mask	-1	0	18446744073709551617	0	10
+off_mask	-1	1	2	1	20
+off_mask	-1	1	18446744073709551617	0	70
+off_mask	0	0	18446744073709551617	1	30
+off_mask	0	1	2	0	40
+off_mask	1	0	3	0	50
+off_mask	1	1	4	0	60
+off_visible	-1	1	2	20
+off_visible	0	0	18446744073709551617	30
+on_dispatch	1	1	1
+on_mask	-1	0	18446744073709551617	0	10
+on_mask	-1	1	2	1	20
+on_mask	-1	1	18446744073709551617	0	70
+on_mask	0	0	18446744073709551617	1	30
+on_mask	0	1	2	0	40
+on_mask	1	0	3	0	50
+on_mask	1	1	4	0	60
+on_visible	-1	1	2	20
+on_visible	0	0	18446744073709551617	30
+over_budget_dispatch	1	1	1
+over_budget_mask	-1	0	18446744073709551617	0	10
+over_budget_mask	-1	1	2	1	20
+over_budget_mask	-1	1	18446744073709551617	0	70
+over_budget_mask	0	0	18446744073709551617	1	30
+over_budget_mask	0	1	2	0	40
+over_budget_mask	1	0	3	0	50
+over_budget_mask	1	1	4	0	60
+over_budget_visible	-1	1	2	20
+over_budget_visible	0	0	18446744073709551617	30

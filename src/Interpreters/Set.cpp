@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <shared_mutex>
@@ -8,10 +9,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -65,6 +69,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+static bool hasAdaptiveSpillScheduler()
+{
+    const auto group = CurrentThread::getGroup();
+    return group && group->memory_spill_scheduler->isEnabled();
+}
+
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
     , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
@@ -77,6 +87,7 @@ void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {
     std::lock_guard lock(rwlock);
     chassert(!isCreated());
+    built_with_adaptive_spilling = spill_settings_.tmp_data && hasAdaptiveSpillScheduler();
     spill_settings = std::move(spill_settings_);
 }
 
@@ -406,6 +417,140 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     }
 
     return types;
+}
+
+std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
+    std::span<const std::shared_ptr<Set>> sets,
+    const ColumnsWithTypeAndName & header,
+    size_t max_rows)
+{
+    if (sets.empty() || !sets.front() || !max_rows || header.size() < 2)
+        return {};
+
+    for (const auto & column : header)
+    {
+        if (!column.type || !column.column || column.column->size() != 0 || !WhichDataType(column.type).isInteger())
+            return {};
+    }
+
+    const auto & first = *sets.front();
+    const auto matches_header = [](const Set & set, const ColumnsWithTypeAndName & expected_header)
+    {
+        if (set.data_types.size() != expected_header.size() || set.set_elements_types.size() != expected_header.size())
+            return false;
+
+        for (size_t i = 0; i < expected_header.size(); ++i)
+        {
+            if (!set.data_types[i]->equals(*expected_header[i].type) || !set.set_elements_types[i]->equals(*expected_header[i].type))
+                return false;
+        }
+
+        return true;
+    };
+
+    const bool adaptive_spilling = hasAdaptiveSpillScheduler();
+    const auto is_ready_in_memory = [adaptive_spilling](const Set & set)
+    {
+        if (!set.isCreated() || set.isTruncated() || !set.data || set.data->empty()
+            || set.disk_set || set.spill_after_build_started.load())
+            return false;
+
+        /// The thread group's scheduler can request a spill even without a process list element.
+        /// A cached set can also be shared with its builder's thread group.
+        return !set.spill_settings.tmp_data
+            || (!adaptive_spilling && !set.built_with_adaptive_spilling && !set.spill_settings.process_list_element
+                && (!set.spill_settings.max_bytes_before_external_set || !set.isLargeEnoughToSpill()));
+    };
+
+    using Type = SetVariants::Type;
+    Type expected_type = Type::EMPTY;
+    Sizes expected_key_sizes;
+    ColumnsWithTypeAndName tuple_header;
+    size_t input_rows = 0;
+    /// Hold at most one source lock at a time. Created sets are immutable except for a transition to disk.
+    for (const auto & set : sets)
+    {
+        if (!set)
+            return {};
+
+        std::shared_lock lock(set->rwlock);
+        if (!is_ready_in_memory(*set) || set->limits != first.limits || set->transform_null_in != first.transform_null_in
+            || set->max_elements_to_fill != first.max_elements_to_fill)
+            return {};
+
+        if (expected_type == Type::EMPTY)
+        {
+            expected_type = set->data->type;
+            if (expected_type == Type::hashed)
+            {
+                /// An IN subquery may return one Tuple column instead of separate key columns.
+                if (set->data_types.size() != 1)
+                    return {};
+                const auto & type = set->data_types.front();
+                const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+                if (!tuple || tuple->getElements().size() != header.size())
+                    return {};
+                for (size_t i = 0; i < header.size(); ++i)
+                {
+                    if (!tuple->getElements()[i]->equals(*header[i].type))
+                        return {};
+                }
+                tuple_header.emplace_back(type->createColumn(), type, "");
+            }
+            else if (expected_type != Type::keys32 && expected_type != Type::keys64
+                && expected_type != Type::keys128 && expected_type != Type::keys256)
+                return {};
+
+            expected_key_sizes = set->key_sizes;
+        }
+        else if (set->data->type != expected_type || set->key_sizes != expected_key_sizes)
+            return {};
+
+        if (!matches_header(*set, tuple_header.empty() ? header : tuple_header))
+            return {};
+        const size_t rows = set->data->getTotalRowCount();
+        if (!rows || rows > max_rows - input_rows)
+            return {};
+        input_rows += rows;
+    }
+
+    auto united = std::make_shared<Set>(SizeLimits(max_rows, 0, OverflowMode::THROW), 0, first.transform_null_in);
+    united->setHeader(tuple_header.empty() ? header : tuple_header);
+    if (united->data->type != expected_type || united->key_sizes != expected_key_sizes)
+        return {};
+
+    const auto copy_keys = [&](auto member)
+    {
+        auto & destination = ((*united->data).*member)->data;
+        for (const auto & set : sets)
+        {
+            std::shared_lock lock(set->rwlock);
+            if (!is_ready_in_memory(*set))
+                return false;
+
+            const auto & source = ((*set->data).*member)->data;
+            for (const auto & cell : source)
+                destination.insert(cell.getValue());
+        }
+        return true;
+    };
+
+    bool copied;
+    switch (expected_type)
+    {
+        case Type::keys32: copied = copy_keys(&SetVariants::keys32); break;
+        case Type::keys64: copied = copy_keys(&SetVariants::keys64); break;
+        case Type::keys128: copied = copy_keys(&SetVariants::keys128); break;
+        case Type::keys256: copied = copy_keys(&SetVariants::keys256); break;
+        /// Membership in the original hashed Sets already compares these fingerprints.
+        case Type::hashed: copied = copy_keys(&SetVariants::hashed); break;
+        default: return {};
+    }
+    if (!copied)
+        return {};
+
+    united->finishInsert();
+    return united;
 }
 
 

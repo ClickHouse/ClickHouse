@@ -126,6 +126,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsBool enable_row_mask_update_coalescing;
+    extern const MergeTreeSettingsBool enable_row_mask_action_batching;
+    extern const MergeTreeSettingsBool enable_row_mask_typed_set_union;
     extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_keys;
     extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_key_bytes;
     extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_commands;
@@ -5207,6 +5209,36 @@ bool MutateTask::prepare()
         }
     }
 
+    /// Inspect the complete selected stream before the interpreter/file split removes barriers.
+    /// The existing singleton coalescer owns any stream it has rewritten.
+    const bool batch_row_mask_actions = (*merge_tree_settings)[MergeTreeSetting::enable_row_mask_action_batching];
+    const bool unite_row_mask_sets = (*merge_tree_settings)[MergeTreeSetting::enable_row_mask_typed_set_union];
+    bool can_optimize_row_mask_actions = (batch_row_mask_actions || unite_row_mask_sets)
+        && commands_for_execution == &ctx->commands_for_part
+        && max_coalescing_commands > 1 && max_coalescing_ast_bytes
+        && ctx->commands_for_part.size() > 1
+        && ctx->commands_for_part.size() <= max_coalescing_commands
+        && !ctx->txn && !alter_conversions->hasPatches()
+        && isWidePart(ctx->source_part)
+        && isFullPartStorage(ctx->source_part->getDataPartStorage())
+        && !MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
+        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part);
+    if (can_optimize_row_mask_actions)
+    {
+        UInt64 input_bytes = 0;
+        for (const auto & command : ctx->commands_for_part)
+        {
+            if (command.type != MutationCommand::UPDATE
+                || command.mutation_version != ctx->commands_for_part.front().mutation_version
+                || command.ast_text.size() > max_coalescing_ast_bytes - input_bytes)
+            {
+                can_optimize_row_mask_actions = false;
+                break;
+            }
+            input_bytes += command.ast_text.size();
+        }
+    }
+
     auto is_storage_touched = isStorageTouchedByMutations(
         ctx->source_part,
         mutations_snapshot,
@@ -5214,7 +5246,8 @@ bool MutateTask::prepare()
         *commands_for_execution,
         context_for_reading,
         [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
-        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); }
+        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); },
+        can_optimize_row_mask_actions && unite_row_mask_sets
     );
 
     ctx->changes_storage_type = ctx->source_part->getDataPartStorage().getType() != ctx->future_part->part_format.storage_type;
@@ -5355,6 +5388,8 @@ bool MutateTask::prepare()
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
+        settings.batch_row_mask_actions = can_optimize_row_mask_actions && batch_row_mask_actions && !ctx->changes_storage_type;
+        settings.unite_row_mask_sets = can_optimize_row_mask_actions && unite_row_mask_sets && !ctx->changes_storage_type;
         /// A storage-type change forces a full rewrite (no cross-storage hardlinks), so the interpreter
         /// must emit every column, not just the updated ones (else the writer fails with "Not found column").
         if (ctx->changes_storage_type)
