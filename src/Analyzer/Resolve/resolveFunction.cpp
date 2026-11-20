@@ -3313,15 +3313,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         if (is_window_function)
         {
-            if (action == NullsAction::RESPECT_NULLS)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", function_name);
-
             argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types));
             for (size_t i = 0; i < function_arguments.size(); ++i)
                 if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
                     function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
-            function_node.resolveAsWindowFunction(window_function_factory.get(function_name, argument_types, parameters));
+            function_node.resolveAsWindowFunction(window_function_factory.get(function_name, action, argument_types, parameters));
         }
         else
         {

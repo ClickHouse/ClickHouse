@@ -4,6 +4,8 @@
 
 #include <DataTypes/IDataType_fwd.h>
 
+#include <Parsers/NullsAction.h>
+
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 
@@ -44,7 +46,7 @@ public:
 
     [[nodiscard]] bool isWindowFunctionName(const String & name) const;
     [[nodiscard]] DataTypes bindArgumentTypes(const String & name, DataTypes argument_types) const;
-    [[nodiscard]] GeneralWindowFunctionPtr get(const String & name, const DataTypes & argument_types, const Array & parameters) const;
+    [[nodiscard]] GeneralWindowFunctionPtr get(const String & name, NullsAction action, const DataTypes & argument_types, const Array & parameters) const;
     [[nodiscard]] FunctionDocumentation getDocumentation(const String & name) const;
 
 private:

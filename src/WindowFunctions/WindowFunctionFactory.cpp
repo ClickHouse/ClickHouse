@@ -19,6 +19,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
 }
 
@@ -87,8 +88,11 @@ DataTypes WindowFunctionFactory::bindArgumentTypes(const String & name, DataType
     return registration.binder(std::move(argument_types));
 }
 
-GeneralWindowFunctionPtr WindowFunctionFactory::get(const String & name, const DataTypes & argument_types, const Array & parameters) const
+GeneralWindowFunctionPtr WindowFunctionFactory::get(const String & name, NullsAction action, const DataTypes & argument_types, const Array & parameters) const
 {
+    if (action == NullsAction::RESPECT_NULLS)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
+
     const Value & registration = find(name);
     const String resolved_name = getAliasToOrName(name);
 

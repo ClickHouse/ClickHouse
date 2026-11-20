@@ -811,11 +811,9 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
         {
-            if (function_node.getNullsAction() == NullsAction::RESPECT_NULLS)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", function_node.name);
-
             window_function.general_function = WindowFunctionFactory::instance().get(
                 function_node.name,
+                function_node.getNullsAction(),
                 window_function.argument_types,
                 window_function.function_parameters);
         }

@@ -440,6 +440,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
             {
                 window_function.general_function = WindowFunctionFactory::instance().get(
                     window_function.getFunctionName(),
+                    NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters);
             }

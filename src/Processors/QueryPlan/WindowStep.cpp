@@ -331,7 +331,7 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
         {
-            func.general_function = WindowFunctionFactory::instance().get(function_name, func.argument_types, func.function_parameters);
+            func.general_function = WindowFunctionFactory::instance().get(function_name, NullsAction::EMPTY, func.argument_types, func.function_parameters);
         }
         else
         {
