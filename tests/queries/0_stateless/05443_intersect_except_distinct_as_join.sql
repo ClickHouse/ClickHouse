@@ -6,6 +6,7 @@ SET rewrite_intersect_except_distinct_to_join = 1;
 SET query_plan_optimize_join_order_limit = 10; -- `query_plan_join_swap_table` needs the join order optimizer.
 SET max_threads = 4;
 SET max_block_size = 100;
+SET max_rows_to_group_by = 0; 
 
 -- Keys repeat many times, and their duplicates are read in different blocks and threads.
 DROP TABLE IF EXISTS t_left;
