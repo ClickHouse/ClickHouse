@@ -77,6 +77,8 @@ struct Event
     int code = 0;
     String message = {};
     Strings statuses = {};
+    /// The type of the request an `Error` answers.
+    PacketType request_type = PacketType::Ping;
 };
 
 String kindName(Event::Kind kind)
@@ -126,9 +128,10 @@ public:
     void onCancelTasksReply(UInt64 request_id) override { push({.kind = Event::Kind::CancelTasksReply, .request_id = request_id}); }
     void onForgetTasksReply(UInt64 request_id) override { push({.kind = Event::Kind::ForgetTasksReply, .request_id = request_id}); }
 
-    void onError(const Error & error) override
+    void onError(const Error & error, PacketType request_type) override
     {
-        push({.kind = Event::Kind::Error, .request_id = error.request_id, .code = error.code, .message = error.message});
+        push({.kind = Event::Kind::Error, .request_id = error.request_id, .code = error.code, .message = error.message,
+            .request_type = request_type});
     }
 
     void onBroken(std::exception_ptr exception) override
@@ -229,6 +232,24 @@ public:
         Message message;
         readBody(header, in, message);
         return message;
+    }
+
+    /// Receives `Message`, skipping the pings before it.
+    template <typename Message>
+    Message receiveSkippingPings()
+    {
+        while (true)
+        {
+            const PacketHeader header = readHeader(in, Sender::Initiator);
+            if (header.packet_type != static_cast<UInt64>(PacketType::Ping))
+            {
+                Message message;
+                readBody(header, in, message);
+                return message;
+            }
+            Ping ping;
+            readBody(header, in, ping);
+        }
     }
 
     void acceptHello()
@@ -538,12 +559,35 @@ TEST(WorkerControlLoop, ErrorAndUnexpectedReplies)
     peer->send(Error{.request_id = request_id, .code = ErrorCodes::ABORTED, .message = "busy"});
     const Event error = handler.expect(Event::Kind::Error);
     EXPECT_EQ(error.request_id, request_id);
+    EXPECT_TRUE(error.request_type == PacketType::GetStatuses);
     EXPECT_EQ(error.code, ErrorCodes::ABORTED);
     EXPECT_EQ(error.message, "busy");
 
     /// Its request is answered already.
     peer->send(GetStatusesReply{.request_id = request_id, .entries = {}});
     EXPECT_EQ(handler.expect(Event::Kind::Broken).code, ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+}
+
+TEST(WorkerControlLoop, ErrorForAPingStaysInTheLoop)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.ping_interval = 100ms});
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+
+    /// The ping is the loop's request, which the handler cannot tell from its own.
+    const auto ping = peer->receive<Ping>();
+    peer->send(Error{.request_id = ping.request_id, .code = ErrorCodes::ABORTED, .message = "busy"});
+    EXPECT_FALSE(handler.next(300ms));
+
+    /// The connection stays open.
+    const UInt64 request_id = connection->cancelTasks({"q1::a"});
+    EXPECT_EQ(peer->receiveSkippingPings<CancelTasks>().request_id, request_id);
+    peer->send(CancelTasksReply{.request_id = request_id});
+    EXPECT_EQ(handler.expect(Event::Kind::CancelTasksReply).request_id, request_id);
 }
 
 TEST(WorkerControlLoop, LargeStartTasksIsWrittenWhileRepliesAreRead)

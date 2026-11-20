@@ -708,8 +708,13 @@ void WorkerControlLoop::handleFrame(Connection & connection, const PacketHeader 
             const auto error = parseBody<Error>(header, body);
             if (error.request_id == 0)
                 throw Exception(error.code, "the worker closed it: {}", error.message);
-            takeRequest(connection, error.request_id, type, std::nullopt);
-            connection.notify([&](IWorkerControlHandler & handler) { handler.onError(error); });
+            const auto request = takeRequest(connection, error.request_id, type, std::nullopt);
+            /// A ping is the loop's own request, which the error answers as a `Pong` would.
+            if (request.type == PacketType::Ping)
+                LOG_WARNING(log, "Stateless worker {} answered a ping of the control connection of {} with an error: {}",
+                    connection.description, connection.params.unique_query_id, error.message);
+            else
+                connection.notify([&](IWorkerControlHandler & handler) { handler.onError(error, request.type); });
             break;
         }
         default:

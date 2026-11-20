@@ -1773,7 +1773,7 @@ protected:
         /// What the tracker knows of a worker and its control connection.
         struct WorkerState
         {
-            /// The `StartTasks` sent and not answered, in order: the worker answers them in order.
+            /// The `StartTasks` sent and not answered.
             DequeWithMemoryTracking<StartRequest> start_requests;
             /// The tasks the worker started that have not ended; polled together.
             VectorWithMemoryTracking<PolledTask> polled_tasks;
@@ -1809,7 +1809,10 @@ protected:
             void onGetStatusesReply(StatelessWorkerControlProtocol::GetStatusesReply & reply) override { tracker.onGetStatusesReply(worker, reply); }
             void onCancelTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
             void onForgetTasksReply(UInt64 request_id) override { tracker.onRequestAnswered(worker, request_id); }
-            void onError(const StatelessWorkerControlProtocol::Error & error) override { tracker.onError(worker, error); }
+            void onError(const StatelessWorkerControlProtocol::Error & error, StatelessWorkerControlProtocol::PacketType request_type) override
+            {
+                tracker.onError(worker, error, request_type);
+            }
             void onBroken(std::exception_ptr exception) override { tracker.onConnectionEnded(worker, exception); }
             void onClosed() override { tracker.onConnectionEnded(worker, nullptr); }
 
@@ -1870,7 +1873,7 @@ protected:
         {
             std::lock_guard g(lock);
             auto & state = worker_states[worker];
-            StartRequest request = takeStartRequestLocked(worker);
+            StartRequest request = takeStartRequestLocked(worker, reply.request_id);
             if (reply.code != 0)
             {
                 failStartLocked(worker, request, reply.code, reply.message);
@@ -1912,39 +1915,49 @@ protected:
             worker_states[worker].other_requests.erase(request_id);
         }
 
-        void onError(WorkerIndex worker, const StatelessWorkerControlProtocol::Error & error)
+        void onError(WorkerIndex worker, const StatelessWorkerControlProtocol::Error & error, StatelessWorkerControlProtocol::PacketType request_type)
         {
+            using StatelessWorkerControlProtocol::PacketType;
             std::lock_guard g(lock);
             auto & state = worker_states[worker];
             const String & description = channels[worker]->description;
-            if (state.status_request && state.status_request->request_id == error.request_id)
+            switch (request_type)
             {
-                state.status_request.reset();
-                auto exception = std::make_exception_ptr(Exception(error.code, "Stateless worker {} failed `GetStatuses`: {}", description, error.message));
-                if (state.tearing_down)
+                case PacketType::StartTasks:
                 {
-                    tryLogException(exception, logger, "Waiting for the cancelled tasks to end", LogsLevel::warning);
-                    finishTeardownLocked(worker);
+                    StartRequest request = takeStartRequestLocked(worker, error.request_id);
+                    failStartLocked(worker, request, error.code, error.message);
+                    return;
                 }
-                else
+                case PacketType::GetStatuses:
                 {
-                    recordFailure(exception);
+                    if (!state.status_request || state.status_request->request_id != error.request_id)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} failed `GetStatuses` {}, which is not in flight",
+                            description, error.request_id);
+                    state.status_request.reset();
+                    auto exception = std::make_exception_ptr(Exception(error.code, "Stateless worker {} failed `GetStatuses`: {}", description, error.message));
+                    if (state.tearing_down)
+                    {
+                        tryLogException(exception, logger, "Waiting for the cancelled tasks to end", LogsLevel::warning);
+                        finishTeardownLocked(worker);
+                    }
+                    else
+                    {
+                        recordFailure(exception);
+                    }
+                    return;
                 }
-                return;
+                case PacketType::CancelTasks:
+                case PacketType::ForgetTasks:
+                    if (!state.other_requests.erase(error.request_id))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} failed request {}, which is not in flight",
+                            description, error.request_id);
+                    LOG_WARNING(logger, "Stateless worker {} failed a request to cancel or forget tasks: {}", description, error.message);
+                    return;
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} failed request {} of type {}, which the tracker does not send",
+                        description, error.request_id, StatelessWorkerControlProtocol::packetTypeName(static_cast<UInt64>(request_type)));
             }
-            if (state.other_requests.erase(error.request_id))
-            {
-                LOG_WARNING(logger, "Stateless worker {} failed a request to cancel or forget tasks: {}", description, error.message);
-                return;
-            }
-            if (state.start_requests.empty())
-            {
-                recordFailure(std::make_exception_ptr(Exception(error.code, "Stateless worker {} failed request {}: {}", description, error.request_id, error.message)));
-                return;
-            }
-            /// The worker answers the `StartTasks` in order, so this one is the oldest in flight.
-            StartRequest request = takeStartRequestLocked(worker);
-            failStartLocked(worker, request, error.code, error.message);
         }
 
         /// `exception` is null for a connection that closed after the teardown.
@@ -1977,13 +1990,15 @@ protected:
             teardown_progress.notify_all();
         }
 
-        StartRequest takeStartRequestLocked(WorkerIndex worker) TSA_REQUIRES(lock)
+        StartRequest takeStartRequestLocked(WorkerIndex worker, UInt64 request_id) TSA_REQUIRES(lock)
         {
-            auto & state = worker_states[worker];
-            if (state.start_requests.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} answered a `StartTasks` that is not in flight", channels[worker]->description);
-            StartRequest request = std::move(state.start_requests.front());
-            state.start_requests.pop_front();
+            auto & requests = worker_states[worker].start_requests;
+            auto it = std::ranges::find(requests, request_id, &StartRequest::request_id);
+            if (it == requests.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker {} answered `StartTasks` {}, which is not in flight",
+                    channels[worker]->description, request_id);
+            StartRequest request = std::move(*it);
+            requests.erase(it);
             return request;
         }
 

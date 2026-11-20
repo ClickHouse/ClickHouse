@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_POLL;
+    extern const int FAULT_INJECTED;
     extern const int INCORRECT_DATA;
     extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
@@ -57,6 +58,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char stateless_worker_pause_before_start_task[];
+    extern const char stateless_worker_answer_ping_with_error[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -349,6 +351,11 @@ void StatelessWorkerControlServer::Session::handleFrame(const PacketHeader & hea
         {
             Ping request;
             readBody(header, in, request);
+            fiu_do_on(FailPoints::stateless_worker_answer_ping_with_error,
+            {
+                send(Error{.request_id = request.request_id, .code = ErrorCodes::FAULT_INJECTED, .message = "Injected failure to answer a ping"});
+                return;
+            });
             send(Pong{.request_id = request.request_id});
             return;
         }

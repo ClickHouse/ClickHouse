@@ -41,8 +41,8 @@ public:
     virtual void onGetStatusesReply(StatelessWorkerControlProtocol::GetStatusesReply & reply) = 0;
     virtual void onCancelTasksReply(UInt64 request_id) = 0;
     virtual void onForgetTasksReply(UInt64 request_id) = 0;
-    /// The worker failed the request `error.request_id`; the connection stays open.
-    virtual void onError(const StatelessWorkerControlProtocol::Error & error) = 0;
+    /// The worker failed the request `error.request_id`, of type `request_type`; the connection stays open.
+    virtual void onError(const StatelessWorkerControlProtocol::Error & error, StatelessWorkerControlProtocol::PacketType request_type) = 0;
     /// The connection is lost with its unanswered requests; no callback follows.
     virtual void onBroken(std::exception_ptr exception) = 0;
     /// `close` finished: every request was answered. No callback follows.
