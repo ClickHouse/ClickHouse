@@ -247,6 +247,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
+    "plan-based": "--parallel-rep-plan-based",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
     "AsyncInsert": " --async-insert",
@@ -266,6 +267,7 @@ DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
+    "plan-based": "--parallel-replicas-plan-based",
     "AsyncInsert": " --no-async-insert",
     "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
@@ -274,6 +276,28 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
+
+
+AUTOPR_ARGUMENT = "--autopr"
+
+
+def parallel_replicas_job_runs_autopr(sha):
+    """Whether this run of a `ParallelReplicas` job swaps in the automatic parallel replicas profile.
+
+    `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and replaces the
+    plan with the parallel-replicas one. The settings randomizer only ever picks 0 or 2, and mode 2
+    collects statistics without ever switching, so nothing else gives the plan rewrite broad
+    coverage. The `ParallelReplicas` jobs therefore take the automatic mode every second run instead
+    of it getting jobs of its own.
+
+    Keyed off the commit rather than the clock so that a run is reproducible: the same commit always
+    picks the same mode, and which mode ran is reported in the job's own result line.
+    """
+    # `_Environment.from_env` sets the SHA to "TEST" when the job runs without a CI environment.
+    if not sha or sha == "TEST":
+        return False
+    return int(sha[:8], 16) % 2 == 1
+
 
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
@@ -503,6 +527,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_plan_based_parallel_replicas = False
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
@@ -561,8 +586,10 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
-        if "ParallelReplicas" in to:
+        if to == "ParallelReplicas":
             is_parallel_replicas = True
+        if to == "plan-based":
+            is_plan_based_parallel_replicas = True
 
     is_no_stateful = "--no-stateful" in runner_options
 
@@ -596,6 +623,8 @@ def main():
         changed_files = info.get_changed_files()
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        # The plan-based parallel replicas jobs too: a change to the job script can break how they
+        # install and start the server with the plan-based profile.
         is_coverage_replacement_with_ci_script_changes = False
         if info.pr_number > 0 and any(
             Targeting.is_ci_job_script(f) for f in changed_files or []
@@ -604,7 +633,9 @@ def main():
             from ci.defs.job_configs import JobConfigs
 
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
-                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                j.name
+                for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
             ]
         if changed_files:
             # A changed test data submodule is owned by the tests that read it:
@@ -686,6 +717,23 @@ def main():
         # per-query client settings (which broke tests that switch to readonly
         # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
         config_installs_args += " --llvm-coverage"
+
+    # The automatic profile replaces the plain one rather than joining it: both set
+    # `enable_parallel_replicas`, `max_parallel_replicas`, `cluster_for_parallel_replicas` and
+    # `parallel_replicas_for_non_replicated_merge_tree`, so installing both would leave the values to
+    # whichever file `users.d` happens to load second.
+    # The plan-based job keeps its own profile: it covers the plan-based implementation, and its blacklist would
+    # only tolerate failures with `--autopr`.
+    autopr_mode_note = ""
+    if is_parallel_replicas and not is_plan_based_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
+        config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
+        runner_options += f" {AUTOPR_ARGUMENT}"
+        # The loop above has already announced the plain option as enabled; say that it is gone.
+        print(
+            f"NOTE: Replaced config option [{OPTIONS_TO_INSTALL_ARGUMENTS['ParallelReplicas']}] with [{AUTOPR_ARGUMENT}]"
+        )
+        autopr_mode_note = "Ran with automatic parallel replicas (automatic_parallel_replicas_mode = 1)."
+        print(f"NOTE: {autopr_mode_note}")
 
     if is_shared_catalog or is_parallel_replicas:
         pass
@@ -1854,7 +1902,7 @@ def main():
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
-        info=job_info,
+        info=" ".join(x for x in (autopr_mode_note, job_info) if x),
     )
 
     if bugfix_validation_no_repro:

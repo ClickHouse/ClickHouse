@@ -62,6 +62,10 @@ DRAFT_PR_JOBS = [
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
     j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
 ]
+# The stateless jobs that run with plan-based parallel replicas (see `ci/workflows/pull_request.py`).
+PLAN_BASED_PARALLEL_REPLICAS_JOBS = [
+    j.name for j in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+]
 COVERAGE_REPLACEMENT_JOBS = [
     j.name
     for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
@@ -780,6 +784,22 @@ def configure_performance_shards():
     config.dump()
 
 
+def configure_toolchain_builds():
+    """`Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for hours."""
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    if not info.pr_number or Labels.CI_TOOLCHAIN in info.pr_labels:
+        return
+    # A pre-hook, unlike `should_skip_job`, also applies with `ci-force-all`.
+    config = RunConfig.from_fs(info.workflow_name)
+    for job in JobConfigs.toolchain_build_jobs:
+        config.set_job_as_filtered(
+            job.name, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+        )
+    config.dump()
+
+
 def _llvm_coverage_only_decision(job_name):
     """Skip decision of the `ci-llvm-coverage` label, or `None` when it has
     nothing to say about the job.
@@ -985,17 +1005,6 @@ def should_skip_job(job_name):
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
-
-    # `Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for
-    # hours. This check stays ahead of the review-thread gate below, which is
-    # allowed to shrink the pipeline but never to widen it - a limited run must
-    # not start toolchain builds that a full run would have skipped.
-    if (
-        JobNames.BUILD_TOOLCHAIN in job_name
-        and _info_cache.pr_number
-        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     # While the PR has unresolved review threads, run only `REVIEW_THREADS_JOBS`
     # and the preliminary checks - the code is expected to change again, so the
@@ -1251,10 +1260,13 @@ def should_skip_job(job_name):
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # The coverage family and its `arm_binary` replacements are already handled above and must run
     # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    # The plan-based parallel replicas jobs run in full too: a change to the job script can break how they
+    # install and start the server with the plan-based profile.
     if (
         changed_files
         and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
         and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and job_name not in PLAN_BASED_PARALLEL_REPLICAS_JOBS
         and "llvm_coverage" not in job_name
         and "excluded_from_llvm" not in job_name
     ):

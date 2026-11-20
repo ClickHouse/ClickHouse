@@ -79,7 +79,7 @@ std::vector<Implementation> implementations()
         {"avx2",
          [](const void * s, int c, size_t n) -> const void * { return ch_test_memchr_avx2(s, c, n); },
          &ch_test_strlen_avx2,
-         [] { return DB::CPU::CPUFlagsCache::have_AVX2; }});
+         [] { return DB::CPU::haveAVX2(); }});
     /// The same features as `detect_cpu_level` in `x86_cpu_dispatch.h` checks, plus BMI2 for `bzhi`,
     /// which every AVX-512 CPU has.
     result.push_back(
@@ -88,9 +88,8 @@ std::vector<Implementation> implementations()
          &ch_test_strlen_avx512,
          []
          {
-             using DB::CPU::CPUFlagsCache;
-             return CPUFlagsCache::have_AVX512F && CPUFlagsCache::have_AVX512DQ && CPUFlagsCache::have_AVX512CD
-                 && CPUFlagsCache::have_AVX512BW && CPUFlagsCache::have_AVX512VL && CPUFlagsCache::have_BMI2;
+             using namespace DB::CPU;
+             return haveAVX512F() && haveAVX512DQ() && haveAVX512CD() && haveAVX512BW() && haveAVX512VL() && haveBMI2();
          }});
 #endif
     return result;
