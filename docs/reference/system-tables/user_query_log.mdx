@@ -59,6 +59,7 @@ If a table named `system.user_query_log` was created before upgrading to a Click
 - `columns` ([Array(String)](/reference/data-types/array)) — Names of the columns present in the query.
 - `partitions` ([Array(String)](/reference/data-types/array)) — Names of the partitions present in the query.
 - `projections` ([Array(String)](/reference/data-types/array)) — Names of the projections used during the query execution.
+- `used_data_skipping_indices` ([Array(String)](/reference/data-types/array)) — Names of the data skipping indexes that excluded granules from the read, in the form `database.table.index`.
 - `views` ([Array(String)](/reference/data-types/array)) — Names of the (materialized or live) views present in the query.
 - `exception_code` ([Int32](/reference/data-types/int-uint)) — Code of an exception.
 - `exception` ([String](/reference/data-types/string)) — Exception message.
