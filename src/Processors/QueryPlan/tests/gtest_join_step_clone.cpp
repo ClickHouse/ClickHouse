@@ -80,7 +80,7 @@ void expectCloneNotImplemented(const JoinStep & step)
 {
     try
     {
-        step.clone();
+        auto cloned = step.clone();
         FAIL() << "clone must throw NOT_IMPLEMENTED";
     }
     catch (const Exception & e)
