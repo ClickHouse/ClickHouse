@@ -1,0 +1,25 @@
+argument type differs from the input INCORRECT_DATA
+argument is not in the input INCORRECT_DATA
+aggregate is duplicated INCORRECT_DATA
+well-formed accepted
+merged column is not a state INCORRECT_DATA
+merged states are reordered INCORRECT_DATA
+merged state is duplicated INCORRECT_DATA
+merged key is after the states INCORRECT_DATA
+merged state is repeated after the states INCORRECT_DATA
+well-formed merge accepted
+grouping set column is a String INCORRECT_DATA
+grouping set column is duplicated INCORRECT_DATA
+memory-efficient grouping sets merge INCORRECT_DATA
+grouping set key is repeated after the states INCORRECT_DATA
+memory-bound grouping sets merge INCORRECT_DATA
+well-formed grouping sets merge accepted
+grouping set column without grouping sets INCORRECT_DATA
+well-formed merge without grouping sets accepted
+finalized column is not a state INCORRECT_DATA
+finalized state is not in the input INCORRECT_DATA
+finalized state is of another function INCORRECT_DATA
+well-formed totals accepted
+TotalsHaving of a union with quantile states ILLEGAL_COLUMN
+TotalsHaving of a union with quantiles states accepted
+3
