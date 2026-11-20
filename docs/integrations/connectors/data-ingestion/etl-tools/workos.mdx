@@ -1,0 +1,276 @@
+---
+sidebarTitle: "WorkOS"
+keywords:
+  [
+    "workos",
+    "sync engine",
+    "authkit",
+    "sso",
+    "directory sync",
+    "identity",
+    "sign-in events",
+    "data ingestion",
+    "integrate",
+  ]
+slug: /integrations/workos
+description: "Mirror WorkOS users, organizations and sign-in events into ClickHouse with the open-source WorkOS Sync Engine"
+title: "Connect WorkOS to ClickHouse"
+doc_type: "guide"
+integration:
+  - support_level: "partner"
+  - category: "data_ingestion"
+  - website: "https://workos.com/"
+---
+
+import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+import ConnectionDetails from "/snippets/_gather_your_details_http.mdx";
+
+<PartnerBadge />
+
+[WorkOS](https://workos.com/) provides authentication and identity APIs for B2B applications: user management
+and sign-in, single sign-on, directory sync (SCIM), and roles and permissions.
+An application built on WorkOS keeps its users, organizations, memberships and sign-in activity in WorkOS and reads them through the WorkOS API.
+
+The [WorkOS Sync Engine](https://github.com/workos/sync-engine) is an open-source tool, maintained by WorkOS, that copies that data into a database you run and keeps it current. Its ClickHouse destination, [`@workos/sync-clickhouse`](https://www.npmjs.com/package/@workos/sync-clickhouse), solves two problems:
+
+- **Sign-in history that outlives WorkOS's retention.** WorkOS keeps events for 90 days, and the `authentication.*` events (every sign-in, success or failure) have no list endpoint. The engine tails the Events API into append-only ClickHouse tables, so the history is yours for as long as you keep it.
+- **Joins with the rest of your analytics.** Users, organizations, memberships, directories, SSO connections and roles are mirrored next to the event tables, so a question such as "failed sign-ins per organization per hour" is one query instead of several paginated API calls.
+
+This page covers connecting the engine to ClickHouse Cloud and to self-hosted ClickHouse, authentication, an end-to-end example, and the limits to plan for.
+
+## How it works {#how-it-works}
+
+The engine runs in your infrastructure, as a Node.js command or a Docker container, and connects to ClickHouse over the HTTP interface with the official [JavaScript client](/integrations/language-clients/js/index). It does three things:
+
+1. **Backfill** loads current state from the WorkOS REST list endpoints.
+2. **Tail** polls the WorkOS Events API from a durable cursor and applies each event.
+3. **Reconcile** compares ids against the API and repairs anything the tail missed.
+
+It creates a `workos` database containing:
+
+| Tables                                                                            | Engine                                                                                                         | Contents                                                                   |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `auth_attempts`, `events`                                                         | [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree) keyed by event id | Append-only. One row per sign-in attempt, and every WorkOS event verbatim. |
+| `users`, `organizations`, `organization_memberships`, and the other mirror tables | `ReplacingMergeTree` versioned by the source timestamp                                                         | The current state of each object. Deletions are kept as tombstones.        |
+| `<table>_live` views                                                              | View                                                                                                           | Read the mirror tables with `FINAL` and hide tombstones. Query these.      |
+| Bookkeeping tables                                                                | [`KeeperMap`](/reference/engines/table-engines/special/keepermap)                                              | The tail cursor, a single-writer lease and a per-stream write lock.        |
+
+The engine writes one `String` column, `_raw`, holding the JSON payload. Every other column is a `DEFAULT` expression over `_raw`, so a field WorkOS adds later is queryable with `JSONExtractString(_raw, 'field')` without a schema change.
+
+## Prerequisites {#prerequisites}
+
+- A WorkOS account and an API key for the environment to mirror.
+- Node.js 22 or later, or Docker. The engine is published as the npm package `@workos/sync-clickhouse` and as the container image `ghcr.io/workos/sync-clickhouse`.
+- ClickHouse Cloud, or self-hosted ClickHouse 23.11 or later.
+- For self-hosted ClickHouse, a ClickHouse Keeper or ZooKeeper that the server can reach, with `keeper_map_path_prefix` set. See [Connect to self-hosted ClickHouse](#connect-to-self-hosted-clickhouse). ClickHouse Cloud has both already.
+- Network access from the host running the engine to the ClickHouse HTTP interface (port 8443 on Cloud; 8123, or 8443 with TLS, on self-hosted).
+
+## Setup {#setup}
+
+### Connect to ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+With those details in hand:
+
+1. Add the address the engine connects from to the service's [IP access list](/products/cloud/guides/security/connectivity/setting-ip-filters). A refused address looks like a connection timeout, not an authentication error.
+
+2. Put the credentials in front of the HTTPS endpoint to form the connection string, and export it with your WorkOS API key:
+
+   ```bash
+   export DATABASE_URL='https://default:PASSWORD@HOST.clickhouse.cloud:8443'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+   Percent-encode the password if it contains characters that are reserved in a URL. A path in the URL is ignored: the mirror lives in the `workos` database, or the one named by `WORKOS_SYNC_SCHEMA`.
+
+3. Create the schema, load current state, and start the tail:
+
+   ```bash
+   npx @workos/sync-clickhouse init       # create the database, tables and views
+   npx @workos/sync-clickhouse backfill   # load current state from the WorkOS API
+   npx @workos/sync-clickhouse listen     # tail the Events API until stopped
+   ```
+
+There is nothing to enable on the service. `init` creates its `KeeperMap` tables like any other.
+
+### Connect to self-hosted ClickHouse {#connect-to-self-hosted-clickhouse}
+
+1. Enable `KeeperMap`. The engine keeps its cursor and lease in `KeeperMap` tables, which need a Keeper and a path prefix in the server configuration. On a cluster that already uses [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) or ZooKeeper, add the prefix:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   A single node with no Keeper also needs the embedded Keeper turned on:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>localhost</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       <zookeeper>
+           <node>
+               <host>localhost</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   Restart the server after adding the file.
+
+2. Point the connection string at the HTTP interface: port 8123 without TLS, or 8443 with it.
+
+   ```bash
+   export DATABASE_URL='http://USER:PASSWORD@HOST:8123'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+3. Run the same three commands as for Cloud: `init`, `backfill`, then `listen`.
+
+### Run it as a container {#run-it-as-a-container}
+
+The container image takes the same environment variables and commands:
+
+```bash
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse init
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse backfill
+docker run -d   -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse listen
+```
+
+Run `listen` as a long-lived process, or run `tick` (one poll, then exit) from a scheduler. `status` reports the cursor, the time since the last successful poll and per-stream row counts. The <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse#command-line" target="_blank">package README</a> lists every command, flag and environment variable.
+
+## Authentication {#authentication}
+
+| Mode                                  | Supported | How to configure                                                                                                                   |
+| ------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Username and password over TLS        | ✅        | An `https://` connection string with the credentials in it. The server's certificate is verified against the system trust store.   |
+| Username and password, private CA     | ✅        | Set `WORKOS_SYNC_CLICKHOUSE_TLS_CA` to the CA certificate, as PEM or base64-encoded PEM. Requires an `https://` connection string. |
+| Username and password without TLS     | ✅        | An `http://` connection string. Self-hosted only; use it on a trusted network.                                                     |
+| mTLS or SSL client certificate        | ❌        | Not supported.                                                                                                                     |
+| Native protocol (ports 9000 and 9440) | ❌        | Not supported. The engine uses the HTTP interface only.                                                                            |
+
+The user the engine connects as needs `CREATE DATABASE` the first time (or an existing database it may create tables in), plus `CREATE TABLE`, `CREATE VIEW`, `DROP TABLE`, `ALTER`, `INSERT` and `SELECT` on that database. `ALTER` covers the lightweight `DELETE` that the `redact` command runs. The `default` user is enough for an evaluation. For production, create a dedicated user with those grants; see [Cloud access management](/products/cloud/guides/security/cloud-access-management/index).
+
+On the WorkOS side, the engine authenticates with one API key per environment. Dedicate a key to the sync so that its requests can be told apart from your application's.
+
+The `User-Agent` header of every connection starts with `workos-sync-engine`, so the engine's statements can be found by `http_user_agent` in [`system.query_log`](/reference/system-tables/query_log).
+
+## Example: failed sign-ins per organization {#example-failed-sign-ins}
+
+The engine's input is your own WorkOS environment rather than a file, so this example uses that data instead of a sample dataset. Any WorkOS environment with a few users and sign-ins works, including a staging environment.
+
+1. Create the schema and load current state:
+
+   ```bash
+   npx @workos/sync-clickhouse init
+   npx @workos/sync-clickhouse backfill
+   ```
+
+2. Start the tail and leave it running. Sign-in history begins now: there is no endpoint that lists past sign-ins, so `backfill` can't recover them.
+
+   ```bash
+   npx @workos/sync-clickhouse listen
+   ```
+
+3. Sign in to your application a few times, including at least one failed attempt.
+
+4. Confirm that the mirror has rows, from the Cloud SQL console or `clickhouse client`:
+
+   ```sql
+   SELECT _env, email
+   FROM workos.users_live
+   LIMIT 10;
+   ```
+
+5. Join the sign-in log to the mirror tables:
+
+   ```sql
+   SELECT
+       o.name AS organization,
+       toStartOfHour(a.created_at) AS hour,
+       count() AS failures
+   FROM workos.auth_attempts AS a
+   INNER JOIN workos.users_live AS u ON u.id = a.user_id AND u._env = a._env
+   INNER JOIN workos.organization_memberships_live AS m ON m.user_id = u.id AND m._env = u._env
+   INNER JOIN workos.organizations_live AS o ON o.id = m.organization_id AND o._env = m._env
+   WHERE a.status = 'failed' AND a.created_at > now() - INTERVAL 7 DAY
+   GROUP BY organization, hour
+   ORDER BY failures DESC;
+   ```
+
+Every row carries an `_env` column, `production` unless `WORKOS_ENVIRONMENT_NAME` says otherwise, so several WorkOS environments can share one database. Join on it as shown.
+
+## Known limits {#known-limits}
+
+- **The mirror is a read model.** It is eventually consistent, usually within seconds, and one-directional. Keep writes and authorization decisions on the WorkOS API.
+- **Sign-in history starts when the tail starts.** WorkOS keeps events for 90 days. A tail that was stopped for less than that resumes from its cursor. One stopped for longer needs `backfill` and `reconcile --repair` to restore current state, and the sign-ins in the gap are gone.
+- **One writer per environment.** A second `listen` waits for the first one's lease. `tick` exits with code 3 while a listener holds it.
+- **`listen` keeps a Cloud service awake.** It polls every 5 seconds by default, so the service never [idles](/products/cloud/features/autoscaling/idling). Run `tick` on a schedule to let the service idle between runs, at the cost of a wake per run.
+- **Small inserts by default.** Each poll applies up to 100 events as a few [asynchronous inserts](/concepts/features/operations/insert/asyncinserts) that the engine waits for. Raise `WORKOS_SYNC_MAX_EVENTS_PER_TICK` on a busy environment so that each poll produces fewer, larger inserts.
+- **The `_live` views read with `FINAL`.** They suit analytical queries. For an application that reads single rows by key, the Postgres or MySQL destination is a better fit.
+- **The mirror tables keep the newest version of each row only.** Older versions survive until the next merge. `workos.events` is where history is kept.
+- **Columns are projected from JSON.** A value that a typed column can't cast is `NULL` in that column and still present in `_raw`.
+- **No `ON CLUSTER` DDL.** `init` has been run against ClickHouse Cloud and single-node open source. A self-managed multi-node cluster isn't part of the test matrix.
+
+## Troubleshooting {#troubleshooting}
+
+### The first command times out {#trouble-timeout}
+
+On ClickHouse Cloud, the address the engine runs from is missing from the IP access list, or the network blocks outbound traffic on port 8443. Check the port from the same host:
+
+```bash
+curl https://HOST.clickhouse.cloud:8443/ping
+```
+
+`Ok.` means the service is reachable from that host. A command against an idle service also spends its first seconds waiting for the service to wake. The engine allows two minutes per request, so that isn't a failure.
+
+### `KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined` {#trouble-keepermap}
+
+`init` on a self-hosted server that has no `keeper_map_path_prefix`. Add the configuration in [Connect to self-hosted ClickHouse](#connect-to-self-hosted-clickhouse) and restart the server.
+
+### `unsupported ClickHouse URL scheme` {#trouble-scheme}
+
+The connection string must start with `http://` or `https://` and point at the HTTP interface. A `clickhouse://` URL, or the native protocol's port, isn't accepted.
+
+### A statement from `init --print-sql` fails with `Could not find table` {#trouble-print-sql}
+
+`init --print-sql` prints the DDL instead of running it. Applied by hand to a service with more than one replica, one statement per request, a `CREATE VIEW` can reach a replica before the `CREATE TABLE` it selects from. Run the script again: every statement in it is idempotent. The engine's own `init` isn't affected.
+
+## Related resources {#related-resources}
+
+- <a
+    href="https://workos.com/docs/events/data-syncing/database/clickhouse-cloud"
+    target="_blank"
+  >
+    ClickHouse Cloud guide in the WorkOS documentation
+  </a>
+- <a href="https://github.com/workos/sync-engine" target="_blank">
+    WorkOS Sync Engine on GitHub
+  </a>
+  : source, issues, and guides to operations and consistency
+- <a
+    href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse"
+    target="_blank"
+  >
+    `@workos/sync-clickhouse` reference
+  </a>
+  : commands, environment variables, the schema, and embedding the engine as a
+  library
+- <a href="https://workos.com/docs/events" target="_blank">
+    WorkOS Events API
+  </a>

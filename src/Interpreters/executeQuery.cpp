@@ -554,7 +554,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
 static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
-    return url.substr(0, url.find_first_of("?#"));
+    return String(stripQueryAndFragment(url));
 }
 
 String formatQueryForLogging(const String & query, const Settings & settings)
