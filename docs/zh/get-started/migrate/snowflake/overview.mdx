@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 > 本文档简要介绍如何将数据从 Snowflake 迁移到 ClickHouse。
 
 Snowflake 是一个云数据仓库，主要面向将传统本地部署的数据仓库工作负载迁移到云端的场景。它经过了良好优化，适合大规模运行耗时较长的报表查询。随着数据集迁移到云端，数据所有者开始思考还能如何进一步挖掘这些数据的价值，包括利用这些数据集为内部和外部用例中的实时应用提供支持。到了这一步，他们往往会意识到，自己需要一个针对实时分析优化的数据库，例如 ClickHouse。
@@ -44,7 +42,15 @@ Snowflake 的架构通常被描述为共享存储 (shared-disk)
 下面这张来自 [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 的图片展示了这种架构：
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake 架构" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Snowflake 架构](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+
+</Frame>
+
+</div>
 
 相比之下，作为一个开源且提供云托管的产品，ClickHouse 可以部署
 为共享磁盘和 shared-nothing 两种架构。后者通常见于
@@ -63,7 +69,15 @@ S3 的可扩展性解决了共享磁盘
 集群 中当前节点可用的 I/O 吞吐量不会因新增节点而
 受到影响。
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud 架构" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 架构](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+
+</Frame>
+
+</div>
 
 <div id="differences">
   ### 差异
