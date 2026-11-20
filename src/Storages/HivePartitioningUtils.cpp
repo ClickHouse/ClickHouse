@@ -5,16 +5,12 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/extractKeyValuePairs.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 
@@ -175,29 +171,39 @@ void addPartitionColumnsToChunk(
     }
 }
 
-void addPartitionColumnsForDefaults(
-    QueryPipelineBuilder & builder,
+std::function<ColumnsWithTypeAndName(const NameSet &, size_t)> makePartitionColumnsForDefaults(
     const NamesAndTypesList & columns,
     const std::string & path,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
     if (columns.empty())
-        return;
+        return {};
 
-    const auto hive_map = parseHivePartitioningKeysAndValues(path);
-    const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
-
-    ActionsDAG dag(builder.getHeader().getColumnsWithTypeAndName());
-    for (const auto & column : columns)
+    return [columns, path, hive_format_settings = buildHiveFormatSettings(format_settings, context)](
+               const NameSet & read_by_defaults, size_t num_rows)
     {
-        const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
-        auto field = convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, hive_format_settings);
-        dag.getOutputs().push_back(&dag.addColumn(column.type->createColumnConst(1, field), column.type, column.name));
-    }
+        NamesAndTypesList read_columns;
+        for (const auto & column : columns)
+        {
+            const auto is_read = [&](const String & name) { return name == column.name || name.starts_with(column.name + "."); };
+            if (std::ranges::any_of(read_by_defaults, is_read))
+                read_columns.push_back(column);
+        }
 
-    auto actions = std::make_shared<ExpressionActions>(std::move(dag));
-    builder.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, actions); });
+        ColumnsWithTypeAndName result;
+        if (read_columns.empty())
+            return result;
+
+        const auto hive_map = parseHivePartitioningKeysAndValues(path);
+        for (const auto & column : read_columns)
+        {
+            const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
+            auto field = convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, hive_format_settings);
+            result.emplace_back(column.type->createColumnConst(num_rows, field), column.type, column.name);
+        }
+        return result;
+    };
 }
 
 static void sanityCheckSchemaAndHivePartitionColumns(

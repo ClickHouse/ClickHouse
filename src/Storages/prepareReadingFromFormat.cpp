@@ -712,8 +712,8 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     /// main branch. The last rule feeds itself (pinning an input can strand another default's
     /// expression), so iterate to a fixpoint.
     ///
-    /// A hive partition column is such a format-unread input: it is added from the file path only in front of the main
-    /// branch's `AddingDefaultsTransform`, so a defaulted column whose expression reads one stays on the main branch.
+    /// A hive partition column is such a format-unread input: only the main branch's `AddingDefaultsTransform` gets it
+    /// from the file path, so a defaulted column whose expression reads one stays on the main branch.
     ///
     /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
     /// applies a default expression solely for a column present in the block of its own branch

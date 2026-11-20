@@ -2298,13 +2298,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (read_from_format_info.columns_description.hasDefaults())
         {
-            HivePartitioningUtils::addPartitionColumnsForDefaults(
-                builder, read_from_format_info.hive_partition_columns_read_by_defaults,
+            auto hive_columns = HivePartitioningUtils::makePartitionColumnsForDefaults(
+                read_from_format_info.hive_partition_columns_read_by_defaults,
                 getUniqueStoragePathIdentifier(*configuration, *object_info, false), format_settings, context_);
             builder.addSimpleTransform(
                 [&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, read_from_format_info.columns_description, *input_format, context_, hive_columns);
                 });
         }
 

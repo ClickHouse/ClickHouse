@@ -2433,11 +2433,12 @@ Chunk StorageFileSource::generate()
 
             if (columns_description.hasDefaults())
             {
-                HivePartitioningUtils::addPartitionColumnsForDefaults(
-                    builder, hive_partition_columns_read_by_defaults, current_path, storage->format_settings, getContext());
+                auto hive_columns = HivePartitioningUtils::makePartitionColumnsForDefaults(
+                    hive_partition_columns_read_by_defaults, current_path, storage->format_settings, getContext());
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, columns_description, *input_format, getContext(), hive_columns);
                 });
             }
 

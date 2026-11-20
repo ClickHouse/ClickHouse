@@ -813,11 +813,12 @@ StorageURLSource::StorageURLSource(
 
             if (columns_description.hasDefaults())
             {
-                HivePartitioningUtils::addPartitionColumnsForDefaults(
-                    builder, hive_partition_columns_read_by_defaults, curr_uri.getPath(), format_settings, getContext());
+                auto hive_columns = HivePartitioningUtils::makePartitionColumnsForDefaults(
+                    hive_partition_columns_read_by_defaults, curr_uri.getPath(), format_settings, getContext());
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        cur_header, columns_description, *input_format, getContext(), hive_columns);
                 });
             }
         }

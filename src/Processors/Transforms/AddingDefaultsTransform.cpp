@@ -156,9 +156,9 @@ static String getColumnOfSubcolumn(const ColumnsDescription & columns, const Str
     return name;
 }
 
-/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
-/// absent from `header`, whose defaults are inlined into the evaluation.
-static NameSet getHeaderColumnsReadByDefault(
+/// Columns that the default of `column_name` reads: directly, through a subcolumn, or through columns absent from
+/// `header`, whose defaults are inlined into the evaluation.
+static NameSet getColumnsReadByDefault(
     const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
 {
     NameSet result;
@@ -177,9 +177,10 @@ static NameSet getHeaderColumnsReadByDefault(
             if (!visited.insert(name).second)
                 continue;
 
+            result.insert(name);
             if (header.has(name))
-                result.insert(name);
-            else if (auto it = column_defaults.find(name); it != column_defaults.end())
+                continue;
+            if (auto it = column_defaults.find(name); it != column_defaults.end())
                 expressions.push_back(it->second.expression);
         }
     }
@@ -191,12 +192,14 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
-    ContextPtr context_)
+    ContextPtr context_,
+    GetExtraInputs get_extra_inputs_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
+    , get_extra_inputs(std::move(get_extra_inputs_))
 {
 }
 
@@ -243,8 +246,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         if (!res.has(col_name))
             continue;
         size_t column_idx = res.getPositionByName(col_name);
-        /// A column added after the input format, e.g. a Hive partition column, has no missing values.
-        if (column_idx < block_missing_values->getNumColumns() && block_missing_values->hasDefaultBits(column_idx))
+        if (block_missing_values->hasDefaultBits(column_idx))
             columns_needing_defaults.emplace_back(col_name, column_idx);
     }
 
@@ -265,16 +267,23 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
         columns_needing_defaults_set.insert(col_name);
 
+    NameSet read_by_defaults;
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
         NameSet deps;
-        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header))
+        for (const auto & read : getColumnsReadByDefault(col_name, columns, column_defaults, header))
         {
             if (columns_needing_defaults_set.contains(read))
                 deps.insert(read);
+            read_by_defaults.insert(read);
         }
         dependencies[col_name] = std::move(deps);
     }
+
+    const ColumnsWithTypeAndName extra_inputs = get_extra_inputs ? get_extra_inputs(read_by_defaults, num_rows) : ColumnsWithTypeAndName{};
+    Block available_columns = header;
+    for (const auto & column : extra_inputs)
+        available_columns.insert(column.cloneEmpty());
 
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
@@ -317,6 +326,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         /// Build evaluate_block: start from res (which has updated values from previous iterations),
         /// then remove only the columns we're computing defaults for in this iteration
         Block evaluate_block{res};
+        for (const auto & column : extra_inputs)
+            evaluate_block.insert(column);
         NamesAndTypesList required_columns_list;
 
         for (const auto & [col_name, col_idx] : ready)
@@ -335,7 +346,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         auto dag = evaluateMissingDefaults(evaluate_block, required_columns_list, columns, context, false);
         if (dag)
         {
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, dag->getRequiredColumnsNames(), context);
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);

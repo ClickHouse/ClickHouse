@@ -2,14 +2,16 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/MapWithMemoryTracking.h>
+
+#include <functional>
 
 namespace DB
 {
 
 class Chunk;
-class QueryPipelineBuilder;
 
 namespace HivePartitioningUtils
 {
@@ -44,8 +46,7 @@ void addPartitionColumnsToChunk(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context);
 
-void addPartitionColumnsForDefaults(
-    QueryPipelineBuilder & builder,
+std::function<ColumnsWithTypeAndName(const NameSet &, size_t)> makePartitionColumnsForDefaults(
     const NamesAndTypesList & columns,
     const std::string & path,
     const std::optional<FormatSettings> & format_settings,
