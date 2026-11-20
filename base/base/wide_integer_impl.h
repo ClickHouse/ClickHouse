@@ -572,9 +572,8 @@ struct integer<Bits, Signed>::_impl
         return mismatch == 0;
     }
 
-    /// An x87 extended or IEEE binary128 `long double` holds every 64-bit integer exactly and in one representation, so for
-    /// a value that fits in the lowest item the general conversion yields exactly `static_cast<long double>` of the item, and
-    /// converting the item directly to the target type rounds the same way. Other formats keep the general conversion.
+    /// An x87 extended or IEEE binary128 `long double` holds every 64-bit integer exactly and in one representation, so for a value
+    /// fitting in the lowest item the general conversion equals `static_cast<long double>` of the item and a direct one rounds the same.
     static constexpr bool lowest_item_converts_directly
         = std::numeric_limits<long double>::digits == 64 || std::numeric_limits<long double>::digits == 113;
 
