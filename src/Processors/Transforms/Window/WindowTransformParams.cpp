@@ -228,7 +228,11 @@ WindowFunctionRequirements collectRequirements(const WindowDescription & descrip
         if (auto general = asGeneralWindowFunction(function.aggregate_function))
             requirements = unionOf(requirements, general->getRequirements(description));
         else
-            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
+        {
+            /// An aggregate over a frame from the partition start is computed incrementally and reads only the frame end.
+            const bool reads_frame_start = description.frame.begin_type != WindowFrame::BoundaryType::Unbounded;
+            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = reads_frame_start, .frame_end = true});
+        }
     }
 
     return requirements;

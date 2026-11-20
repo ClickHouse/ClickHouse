@@ -40,3 +40,9 @@ general with aggregates, block size 3: 7374826459270448937
 general with aggregates, block size 5: 7374826459270448937
 general with aggregates, block size 8: 7374826459270448937
 general with aggregates, block size 65505: 7374826459270448937
+general and prefix aggregates over a growing frame, block size 1: 10767865186128056682
+general and prefix aggregates over a growing frame, block size 2: 10767865186128056682
+general and prefix aggregates over a growing frame, block size 3: 10767865186128056682
+general and prefix aggregates over a growing frame, block size 5: 10767865186128056682
+general and prefix aggregates over a growing frame, block size 8: 10767865186128056682
+general and prefix aggregates over a growing frame, block size 65505: 10767865186128056682
