@@ -15,6 +15,7 @@
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/SipHash.h>
+#include <Common/SipHashStrings.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
@@ -374,13 +375,28 @@ public:
     /// the row number to the key, `same(last_row, row)` tells whether the key of `row` is known to be routed already,
     /// such as when the row equals the last routed row. The rows are compared before the keys are computed, because
     /// computing a key (hashing a string) is more expensive.
-    template <typename Extract, typename Same>
-    ALWAYS_INLINE void routeRows(size_t stream_index, size_t num_rows, const UInt8 * null_map, Extract && extract, Same && same)
+    /// With `defer`, the keys of the rows where `defer(row)` holds are computed after the other rows of a batch by
+    /// `extract_deferred(begin, positions, count, row_keys)`, which sets `row_keys[positions[i]]` to the key of row
+    /// `begin + positions[i]`.
+    template <typename Extract, typename Same, typename Defer = std::nullptr_t, typename ExtractDeferred = std::nullptr_t>
+    ALWAYS_INLINE void routeRows(
+        size_t stream_index,
+        size_t num_rows,
+        const UInt8 * null_map,
+        Extract && extract,
+        Same && same,
+        [[maybe_unused]] Defer && defer = nullptr,
+        [[maybe_unused]] ExtractDeferred && extract_deferred = nullptr)
     {
+        constexpr bool has_deferred = !std::is_same_v<std::decay_t<Defer>, std::nullptr_t>;
         auto & stream = streams[stream_index];
         std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
         size_t last_row = 0;
         bool has_last_row = false;
+        bool has_routed = false;
+
+        [[maybe_unused]] std::array<Key, has_deferred ? KEYS_BATCH_SIZE : 0> row_keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - set before its read
+        [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> deferred_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_deferred entries are read
 
         /// The keys repeated within a few rows are skipped by a cache of the recent keys, as in `routeValues`, while they are
         /// frequent. The keys are hashes, so the cache compares them as fixed-size values.
@@ -394,20 +410,15 @@ public:
             const size_t end = std::min(begin + keys.size(), num_rows);
             size_t num_keys = 0;
             size_t num_computed = 0;
-            for (size_t row = begin; row < end; ++row)
+            [[maybe_unused]] size_t num_deferred = 0;
+
+            auto add = [&](const Key & key) ALWAYS_INLINE
             {
-                if (null_map && null_map[row])
-                    continue;
-
-                if (has_last_row && same(last_row, row))
-                    continue;
-                last_row = row;
-
-                const Key key = extract(row);
                 ++num_computed;
-                if (!has_last_row)
+                if (!has_routed)
                 {
                     /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
+                    has_routed = true;
                     recent.fill(key);
                     keys[num_keys++] = key;
                 }
@@ -422,7 +433,38 @@ public:
                 {
                     keys[num_keys++] = key;
                 }
+            };
+
+            for (size_t row = begin; row < end; ++row)
+            {
+                if (null_map && null_map[row])
+                    continue;
+
+                if (has_last_row && same(last_row, row))
+                    continue;
+                last_row = row;
                 has_last_row = true;
+
+                if constexpr (has_deferred)
+                {
+                    if (defer(row))
+                    {
+                        deferred_positions[num_deferred++] = static_cast<UInt32>(row - begin);
+                        continue;
+                    }
+                }
+
+                add(extract(row));
+            }
+
+            if constexpr (has_deferred)
+            {
+                if (num_deferred)
+                {
+                    extract_deferred(begin, deferred_positions.data(), num_deferred, row_keys.data());
+                    for (size_t i = 0; i < num_deferred; ++i)
+                        add(row_keys[deferred_positions[i]]);
+                }
             }
 
             if (skip_recent)
@@ -1553,9 +1595,8 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             [&](size_t row)
             {
                 const size_t size = size_of(row);
+                chassert(size < sizeof(UInt128));
                 routed_empty_string |= size == 0;
-                if (size >= sizeof(UInt128)) [[unlikely]]
-                    return sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT;
                 return mixKey(packShortString(chars + start_of(row), size));
             },
             [&](size_t lhs, size_t rhs)
@@ -1568,6 +1609,14 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
                 if (size < sizeof(UInt128))
                     return packShortString(chars + start_of(lhs), size) == packShortString(chars + start_of(rhs), size);
                 return memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
+            },
+            [size_of](size_t row) { return size_of(row) >= sizeof(UInt128); },
+            /// Out of line, so that its code does not take registers from the routing loop.
+            [chars, offsets](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
+            {
+                sipHash128PaddedStringRows(chars, offsets + begin, positions, count, row_keys);
+                for (size_t i = 0; i < count; ++i)
+                    row_keys[positions[i]] |= LONG_STRING_KEY_BIT;
             });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
@@ -1576,8 +1625,15 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const size_t n = column_fixed_string->getN();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
-            [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
+            [](size_t) -> UInt128
+            {
+                chassert(false);
+                return {};
+            },
+            [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; },
+            [](size_t) { return true; },
+            [chars, n](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
+            { sipHash128PaddedFixedStringRows(chars + begin * n, n, positions, count, row_keys); });
     }
     else
     {
