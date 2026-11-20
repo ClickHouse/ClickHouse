@@ -582,9 +582,9 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     gatherStringChars(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
 }
 
-/// A row store string column is gathered in two steps. While the batches run we copy only the
-/// 16-byte refs out of the rows, so we know the total size of the chars when the batches are done
-/// and can allocate them exactly once, instead of growing them batch by batch.
+/// A row store string column is gathered in two steps per batch: the 16-byte refs are copied out, then the chars.
+/// The chars are reserved once for every value at the largest inline length. A block that needs more stops
+/// copying, keeps the refs of its remaining rows, and copies at the end.
 struct RowStoreStringRefs
 {
     ColumnString * strings = nullptr;
@@ -595,9 +595,14 @@ struct RowStoreStringRefs
     PaddedPODArray<UnhashedPackedStringRef> values;
     UInt64 cursor = 0;
     size_t staged_rows = 0;
+    size_t total_rows = 0;
+    /// Set when the chars ran out: from then on the refs are kept in `tail`, and copied from `prefix_chars` at the end.
+    bool overflowed = false;
+    size_t prefix_chars = 0;
+    PaddedPODArray<UnhashedPackedStringRef> tail;
 };
 
-RowStoreStringRefs initRowStoreStringRefs(IColumn & column, const GatherNode & node, size_t rows, size_t row_length)
+RowStoreStringRefs initRowStoreStringRefs(IColumn & column, const GatherNode & node, size_t rows, size_t batch_rows, size_t row_length)
 {
     RowStoreStringRefs refs;
     refs.value_node = node.kind == GatherNode::Kind::Nullable ? &node.children.front() : &node;
@@ -613,8 +618,10 @@ RowStoreStringRefs initRowStoreStringRefs(IColumn & column, const GatherNode & n
     else
         refs.strings = &assert_cast<ColumnString &>(column);
 
-    refs.values.resize(rows);
+    refs.values.resize(std::min(rows, batch_rows));
+    refs.total_rows = rows;
     refs.cursor = refs.strings->getChars().size();
+    refs.strings->getChars().reserve_exact(refs.cursor + rows * UnhashedPackedStringRef::MAX_SMALL_LEN);
     return refs;
 }
 
@@ -658,22 +665,46 @@ void gatherColumnStringOffsetsAndRefs(RowStoreStringRefs & refs, const UInt64 * 
     refs.staged_rows += count;
 }
 
-void gatherColumnStringChars(RowStoreStringRefs & refs)
+void gatherColumnStringChars(RowStoreStringRefs & refs, size_t rows_before)
 {
     ColumnString::Chars & chars = refs.strings->getChars();
     const size_t old_chars = chars.size();
-    if (refs.cursor == old_chars)
+    const size_t batch_rows = refs.staged_rows;
+    refs.staged_rows = 0;
+    if (!refs.overflowed && refs.cursor > chars.capacity())
     {
-        refs.values = {};
+        refs.overflowed = true;
+        refs.prefix_chars = old_chars;
+        refs.tail.reserve_exact(refs.total_rows - rows_before);
+    }
+    if (refs.overflowed)
+    {
+        refs.tail.insert(refs.values.begin(), refs.values.begin() + batch_rows);
         return;
     }
-    chars.resize_exact(refs.cursor);
+    if (refs.cursor == old_chars)
+        return;
+    chars.resize(refs.cursor);
     UInt8 * out_chars = chars.data() + old_chars;
-    for (size_t i = 0; i < refs.staged_rows; ++i)
+    for (size_t i = 0; i < batch_rows; ++i)
         out_chars = refs.values[i].copyTo(out_chars);
     chassert(out_chars == chars.data() + chars.size());
-    /// Free the refs right away, the next column still has its own.
-    refs.values = {};
+}
+
+/// After the last batch: an overflowed column is resized once to its exact size.
+void finishColumnStringChars(RowStoreStringRefs & refs)
+{
+    ColumnString::Chars & chars = refs.strings->getChars();
+    if (refs.overflowed)
+    {
+        chars.resize_exact(refs.cursor);
+        UInt8 * out_chars = chars.data() + refs.prefix_chars;
+        for (const auto & value : refs.tail)
+            out_chars = value.copyTo(out_chars);
+        chassert(out_chars == chars.data() + chars.size());
+    }
+    else if (chars.capacity() > chars.size())
+        chars.shrink_to_fit();
 }
 
 void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -1304,11 +1335,15 @@ void gatherJoinOutputColumns(
             {
                 columns[dst_idx]->reserve(columns[dst_idx]->size() + selection.rows);
                 if (is_string_node(*gather[dst_idx].node))
-                    string_refs[dst_idx] = initRowStoreStringRefs(*columns[dst_idx], *gather[dst_idx].node, selection.rows, *row_store_row_length);
+                    string_refs[dst_idx] = initRowStoreStringRefs(
+                        *columns[dst_idx], *gather[dst_idx].node, selection.rows, batch_rows, *row_store_row_length);
             }
 
             if (string_refs[dst_idx])
+            {
                 gatherColumnStringOffsetsAndRefs(*string_refs[dst_idx], words, rows);
+                gatherColumnStringChars(*string_refs[dst_idx], batch_begin);
+            }
             else
                 gatherColumn(*columns[dst_idx], gather[dst_idx], batch, batch_scratch, row_store_row_length);
         }
@@ -1316,7 +1351,7 @@ void gatherJoinOutputColumns(
 
     for (auto & refs : string_refs)
         if (refs)
-            gatherColumnStringChars(*refs);
+            finishColumnStringChars(*refs);
 }
 
 }
