@@ -1221,7 +1221,6 @@ test_block_structure_mismatch/test.py	16184
 test_kerberos_auth/test.py	16159
 test_composable_protocols/test.py	16088
 test_reload_certificate/test.py	16039
-test_keeper_ipv4_fallback/test.py	15978
 test_storage_dict/test.py	15801
 test_storage_iceberg_with_spark/test_iceberg_history_summary.py	15792
 test_storage_iceberg_with_spark/test_pruning_nullable_bug.py	15734
