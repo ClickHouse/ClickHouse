@@ -48,7 +48,7 @@ namespace ErrorCodes
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
 LineReader::Patterns DisksApp::query_delimiters = {""};
-String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
+[[clang::no_destroy]] String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
 
 CommandPtr DisksApp::getCommandByName(const String & command) const
 {
@@ -208,7 +208,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (exit_strings.contains(text))
+    if (isExitString(text))
         return false;
     CommandPtr command;
 

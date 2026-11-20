@@ -25,7 +25,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <Interpreters/DatabaseCatalog.h>
+
 #include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -64,6 +69,8 @@ setting). The value specified when the table is created overrides the global
 value for this setting.
 
 For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
@@ -3436,6 +3443,16 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
             res.emplace_back(String{setting.getName()}, value);
     }
     return res;
+}
+
+bool MergeTreeSettings::isSystemDatabaseForDisks(const String & database_name)
+{
+#if CLICKHOUSE_CLOUD
+    /// The tables of the former local `system` database keep its exemption.
+    if (SharedSystemDatabase::isLocalDatabase(database_name))
+        return true;
+#endif
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE;
 }
 
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
