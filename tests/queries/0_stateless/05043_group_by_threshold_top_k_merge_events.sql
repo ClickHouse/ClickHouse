@@ -99,9 +99,9 @@ SELECT k, min(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIM
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_m_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
 
--- Shard-local final aggregation with the query plan serialized. The parameter is not on the wire,
--- and does not need to be: the optimization is a property of the plan shape, and the side that
--- runs the aggregation derives it from its own plan (a deserialized plan is optimized again in
+-- Shard-local final aggregation with the query plan serialized. The parameters are not on the wire,
+-- and do not need to be: the optimizations are a property of the plan shape, and the side that
+-- runs the aggregation derives them from its own plan (a deserialized plan is optimized again in
 -- `executeQuery` before it is turned into a pipeline). The session pins `serialize_query_plan = 0`
 -- above only to keep the local plan shape deterministic, not because the merge cannot survive it.
 CREATE TABLE threshold_top_k_events_dist AS threshold_top_k_events
@@ -124,8 +124,8 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
     AND log_comment != '05043_ttkm_dist_serialized'
 ORDER BY log_comment;
 
--- The shard's own query: the conversion-stage selection stands down for a serialized plan (its
--- fields are not serialized), and the threshold merge serves the lone `uniqExact` there instead.
+-- The shard's own query: as in `c_uniq_exact`, the conversion-stage selection serves the lone
+-- `uniqExact`, and the threshold merge yields to it.
 SELECT
     'dist_serialized',
     ProfileEvents['AggregationThresholdTopKMerges'] > 0,

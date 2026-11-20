@@ -8,6 +8,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/102331
 -- https://github.com/ClickHouse/ClickHouse/issues/119212
 
+SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_repl_05228 SYNC;
 
 CREATE TABLE t_repl_05228 (key Int, value String, _sample_factor UInt8)
