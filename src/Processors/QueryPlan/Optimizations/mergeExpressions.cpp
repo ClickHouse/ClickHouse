@@ -155,8 +155,9 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         if (child_actions.hasArrayJoin())
             return 0;
 
-        /// A filter with a stateful function is not split into its AND chain, so the upper filter would see the rows the lower one rejects.
-        if (child_actions.hasStatefulFunctions() || parent_actions.hasStatefulFunctions())
+        /// The merged filter is not always split back into its AND chain, so the upper filter could be evaluated on the rows
+        /// the lower one rejects. Keep apart the filters that can tell how many times and on which rows they are evaluated.
+        if (isSensitiveToEvaluationCount(child_actions) || isSensitiveToEvaluationCount(parent_actions))
             return 0;
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());

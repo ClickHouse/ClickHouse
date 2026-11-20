@@ -181,6 +181,7 @@ bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom);
 /// Does the AND chain have a column or constant atom? Such an atom is never split off, so it is evaluated in the last filter of the chain.
 bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter);
 
+/// Can every atom of the AND chain be evaluated before the atoms that precede it (see `canBeMovedToTheFrontOfAndChain`)?
 bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter);
 
 }
