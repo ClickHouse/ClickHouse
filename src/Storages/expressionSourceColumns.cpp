@@ -31,9 +31,17 @@ Names expressionSourceColumns(
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
     collectSetsAndSourceColumns(expression, planner_context, keep_alias_columns);
 
-    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getSelectedColumnsNames();
-    return {};
+    const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node);
+    if (!table_expression_data)
+        return {};
+
+    /// kept alias columns are only in the selected list, expanded ones only register their base columns
+    Names result = table_expression_data->getColumnNames();
+    NameSet seen(result.begin(), result.end());
+    for (const auto & name : table_expression_data->getSelectedColumnsNames())
+        if (seen.insert(name).second)
+            result.push_back(name);
+    return result;
 }
 
 }
