@@ -1,5 +1,6 @@
+-- Random settings limits: use_lz4_library_decompression=(0, 0)
 -- Reads that end exactly at the end of an LZ4 block decompress it straight into the column, which may overwrite
--- only the unused capacity and the right padding of the column. The results must match an uncompressed copy.
+-- only the unused capacity and the right padding of the column. The results must match the uncompressed table it is copied from.
 
 DROP TABLE IF EXISTS t_lz4_exact_block;
 DROP TABLE IF EXISTS t_none_exact_block;
@@ -12,17 +13,17 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS default_compression_codec = 'LZ4', index_granularity = 8192, index_granularity_bytes = 10485760,
     min_compress_block_size = 4096, max_compress_block_size = 1048576, min_bytes_for_wide_part = 0,
     ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types',
-    string_serialization_version = 'with_size_stream';
+    string_serialization_version = 'with_size_stream', propagate_types_serialization_versions_to_nested_types = 1;
 
 CREATE TABLE t_none_exact_block AS t_lz4_exact_block
 ENGINE = MergeTree ORDER BY k
 SETTINGS default_compression_codec = 'NONE', index_granularity = 8192, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_lz4_exact_block SELECT
+INSERT INTO t_none_exact_block SELECT
     number, number % 251, repeat('x', number % 61) || toString(number), if(number % 3 = 0, NULL, toString(number % 977)),
     toFixedString(toString(number % 1000000), 16), number / 7, generateUUIDv4(number), toIPv4(number), toIPv6(toIPv4(number)), range(number % 7)
 FROM numbers(100000);
-INSERT INTO t_none_exact_block SELECT * FROM t_lz4_exact_block;
+INSERT INTO t_lz4_exact_block SELECT * FROM t_none_exact_block;
 
 SET preferred_block_size_bytes = 0;
 SET use_uncompressed_cache = 0;
