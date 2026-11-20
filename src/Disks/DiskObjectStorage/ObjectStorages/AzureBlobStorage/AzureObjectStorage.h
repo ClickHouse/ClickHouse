@@ -16,6 +16,7 @@
 namespace Poco
 {
 class Logger;
+class URI;
 }
 
 namespace DB
@@ -122,6 +123,11 @@ public:
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return true; }
+
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override;
+
+    /// The URLs `remote_url_allow_hosts` must allow for a storage with these parameters, without path and query.
+    static std::vector<Poco::URI> getURIsForRemoteHostFilter(const AzureBlobStorage::ConnectionParams & params);
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
