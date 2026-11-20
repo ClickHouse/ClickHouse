@@ -327,6 +327,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
     const bool forwarding_disabled = no_forward && std::string_view(no_forward) == "1";
     const pid_t parent_pid = ::getppid();
     int serving_pidfd = -1;
+    bool registered = false;
     uint64_t pending_signals = 0;
 
     NotifySocket notify;
@@ -417,6 +418,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
                 }
                 else
                 {
+                    registered = true;
                     reply(serving_reply_prefix, sender);
                     if (serving_pidfd >= 0)
                         closeDescriptor(serving_pidfd);
@@ -465,7 +467,17 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
                 exitWithStatus(status);
             }
             if (forwarding_disabled && static_cast<pid_t>(info.ssi_pid) == parent_pid)
+            {
+                /// The service manager sends it to every process of the service, but before the first registration the
+                /// server may not exist yet to get it: then stop as the main process did without the isolation.
+                if (sig == SIGTERM && !registered)
+                {
+                    ::kill(init_pid, SIGKILL);
+                    pid_file.remove();
+                    exitWithStatus(SIGTERM);
+                }
                 continue;
+            }
             deliver(sig);
         }
     }
