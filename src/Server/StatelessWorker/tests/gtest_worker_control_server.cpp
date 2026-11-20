@@ -9,6 +9,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -47,9 +48,9 @@ namespace
 {
 
 std::shared_ptr<StatelessWorkerControlServer> makeControlServer(
-    size_t max_queries, InterserverCredentialsPtr credentials = nullptr, std::chrono::milliseconds silence_timeout = 30s)
+    size_t max_queries, InterserverCredentialsPtr credentials = nullptr, std::chrono::milliseconds idle_timeout = 30s)
 {
-    const StatelessWorkerControlServer::Limits limits{.max_queries = max_queries, .max_sessions = 4 * max_queries, .silence_timeout = silence_timeout};
+    const StatelessWorkerControlServer::Limits limits{.max_queries = max_queries, .max_sessions = 4 * max_queries, .idle_timeout = idle_timeout};
     return std::make_shared<StatelessWorkerControlServer>(limits, [credentials] { return credentials; });
 }
 
@@ -90,6 +91,25 @@ public:
     {
         writeFrame(message, out);
         out.next();
+    }
+
+    /// Sends the frame of `message` in `pieces` parts, `pause` apart.
+    template <typename Message>
+    void sendSlowly(const Message & message, size_t pieces, std::chrono::milliseconds pause)
+    {
+        WriteBufferFromOwnString frame;
+        writeFrame(message, frame);
+        frame.finalize();
+        const std::string_view bytes = frame.stringView();
+        const size_t piece = (bytes.size() + pieces - 1) / pieces;
+        for (size_t offset = 0; offset < bytes.size(); offset += piece)
+        {
+            if (offset != 0)
+                std::this_thread::sleep_for(pause);
+            const std::string_view part = bytes.substr(offset, piece);
+            out.write(part.data(), part.size());
+            out.next();
+        }
     }
 
     template <typename Message>
@@ -358,7 +378,7 @@ TEST(WorkerControlServer, ProtocolErrorsCloseTheConnection)
 
 TEST(WorkerControlServer, SilenceClosesTheConnection)
 {
-    auto control_server = makeControlServer(10, nullptr, /*silence_timeout=*/ 200ms);
+    auto control_server = makeControlServer(10, nullptr, /*idle_timeout=*/ 200ms);
     Worker worker(control_server);
     Initiator initiator(worker.port());
     ASSERT_EQ(initiator.hello(makeHello("q1")).code, 0);
@@ -367,6 +387,26 @@ TEST(WorkerControlServer, SilenceClosesTheConnection)
     EXPECT_EQ(error.request_id, 0u);
     EXPECT_EQ(error.code, ErrorCodes::SOCKET_TIMEOUT);
     EXPECT_TRUE(initiator.closedByWorker());
+}
+
+TEST(WorkerControlServer, SlowStartTasksBodyKeepsTheConnection)
+{
+    auto control_server = makeControlServer(10, nullptr, /*idle_timeout=*/ 2s);
+    Worker worker(control_server);
+    Initiator initiator(worker.port());
+    ASSERT_EQ(initiator.hello(makeHello("q1")).code, 0);
+
+    /// The body arrives over 5 s, each part well within the idle timeout.
+    StartTasks request = makeStartTasks(1, "t");
+    request.batch.stages[0].serialized_query_plan = std::make_shared<const String>(64 * 1024, 'p');
+    initiator.sendSlowly(request, /*pieces=*/ 50, /*pause=*/ 100ms);
+    EXPECT_EQ(initiator.receive<StartTasksReply>().code, 0);
+
+    /// The idle time counts from the end of the frame.
+    if (initiator.hasInputWithin(1s))
+        FAIL() << "The worker closed the connection after the frame: " << initiator.receive<Error>().message;
+    initiator.send(Ping{.request_id = 2});
+    EXPECT_EQ(initiator.receive<Pong>().request_id, 2u);
 }
 
 TEST(WorkerControlServer, ShutdownClosesTheConnections)

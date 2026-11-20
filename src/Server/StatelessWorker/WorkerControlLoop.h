@@ -80,18 +80,17 @@ public:
     {
         /// The connect and the hello reply together.
         std::chrono::milliseconds hello{10'000};
-        std::chrono::milliseconds start_tasks{100'000};
-        /// Added to the wait a `GetStatuses` allows the worker.
-        std::chrono::milliseconds get_statuses_grace{10'000};
-        std::chrono::milliseconds cancel_tasks{5'000};
-        std::chrono::milliseconds forget_tasks{10'000};
-        std::chrono::milliseconds pong{10'000};
-        /// A `Ping` goes out after this long without sending, as the worker closes a connection silent for 30 s.
+        /// A connection that waits for a reply or has bytes to send breaks after this long with no byte received and no
+        /// waiting byte taken by its socket.
+        std::chrono::milliseconds idle{30'000};
+        /// A `Ping` goes out after this long without sending, so the worker hears from an idle connection and answers.
         std::chrono::milliseconds ping_interval{1'000};
     };
 
-    /// The loop of the server; `Server` shuts it down.
+    /// The loop of the server, with the timeouts of `configure`; `Server` shuts it down.
     static WorkerControlLoop & instance();
+    /// Sets the timeouts of `instance`, before its first use.
+    static void configure(Timeouts timeouts_);
 
     WorkerControlLoop();
     explicit WorkerControlLoop(Timeouts timeouts_);
@@ -143,7 +142,6 @@ private:
     void breakConnection(Connection & connection, std::exception_ptr exception) noexcept;
     /// Breaks every connection and those still to be opened with `reason`.
     void breakAll(std::exception_ptr reason) noexcept;
-    std::chrono::milliseconds timeoutOf(const OutgoingFrame & frame) const;
 
     const Timeouts timeouts;
     const LoggerPtr log;

@@ -78,6 +78,10 @@ constexpr int SEND_FLAGS = MSG_NOSIGNAL;
 constexpr int SEND_FLAGS = 0;
 #endif
 
+std::mutex instance_mutex;
+std::optional<WorkerControlLoop::Timeouts> instance_timeouts;
+bool instance_created = false;
+
 int socketErrorCode(int socket_errno)
 {
     return socket_errno == ETIMEDOUT ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR;
@@ -116,8 +120,6 @@ struct WorkerControlLoop::OutgoingFrame
 {
     PacketType type = PacketType::Ping;
     UInt64 request_id = 0;
-    /// How long the worker may hold a `GetStatuses`.
-    std::chrono::milliseconds wait{0};
     /// The header, then the body without the stage plans.
     String bytes;
     /// Each plan goes out whole at its offset in `bytes`.
@@ -168,8 +170,6 @@ public:
     struct PendingRequest
     {
         PacketType type;
-        Clock::time_point deadline;
-        std::chrono::milliseconds timeout;
     };
 
     Connection(WorkerControlConnectionParams params_, Poco::Net::SocketAddress address_, IWorkerControlHandler & handler_)
@@ -213,6 +213,10 @@ public:
     std::optional<CurrentMetrics::Increment> open_metric;
     Clock::time_point hello_deadline;
     Clock::time_point last_send;
+    /// When a byte was last received, the socket last took bytes that waited in `write_queue`, or the connection began to wait.
+    Clock::time_point last_progress;
+    /// The last `flush` left bytes in `write_queue`.
+    bool write_waited = false;
     bool close_requested = false;
     std::map<UInt64, PendingRequest> requests;
     /// The requests that came before the hello was accepted.
@@ -241,6 +245,12 @@ namespace
 
 using Connection = WorkerControlLoop::Connection;
 using State = Connection::State;
+
+/// Something is due from the worker: a reply, or reading what is queued for it.
+bool expectsProgress(const Connection & connection)
+{
+    return !connection.requests.empty() || !connection.write_queue.empty();
+}
 
 void refreshBudgets(Connection & connection, UInt64 turn)
 {
@@ -292,8 +302,6 @@ WorkerControlLoop::OutgoingFrame WorkerControlLoop::makeFrame(const Message & me
     frame.type = Message::type;
     if constexpr (requires { message.request_id; })
         frame.request_id = message.request_id;
-    if constexpr (std::is_same_v<Message, GetStatuses>)
-        frame.wait = std::chrono::milliseconds(message.wait_milliseconds);
 
     size_t plan_bytes = 0;
     WriteBufferFromString out(frame.bytes);
@@ -320,8 +328,21 @@ WorkerControlLoop::OutgoingFrame WorkerControlLoop::makeFrame(const Message & me
 
 WorkerControlLoop & WorkerControlLoop::instance()
 {
-    static WorkerControlLoop loop;
+    static WorkerControlLoop loop([]
+    {
+        std::lock_guard lock(instance_mutex);
+        instance_created = true;
+        return instance_timeouts.value_or(Timeouts{});
+    }());
     return loop;
+}
+
+void WorkerControlLoop::configure(Timeouts timeouts_)
+{
+    std::lock_guard lock(instance_mutex);
+    if (instance_created)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The stateless worker control loop is configured after its first use");
+    instance_timeouts = timeouts_;
 }
 
 WorkerControlLoop::WorkerControlLoop()
@@ -553,26 +574,6 @@ void WorkerControlLoop::completeConnect(Connection & connection, uint32_t events
     LOG_TRACE(log, "Connected the control connection of {} to {}", connection.params.unique_query_id, connection.description);
 }
 
-std::chrono::milliseconds WorkerControlLoop::timeoutOf(const OutgoingFrame & frame) const
-{
-    switch (frame.type)
-    {
-        case PacketType::StartTasks:
-            return timeouts.start_tasks;
-        case PacketType::GetStatuses:
-            return frame.wait + timeouts.get_statuses_grace;
-        case PacketType::CancelTasks:
-            return timeouts.cancel_tasks;
-        case PacketType::ForgetTasks:
-            return timeouts.forget_tasks;
-        case PacketType::Ping:
-            return timeouts.pong;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected request {} on a control connection",
-                packetTypeName(static_cast<UInt64>(frame.type)));
-    }
-}
-
 void WorkerControlLoop::enqueue(Connection & connection, OutgoingFrame frame)
 {
     if (!connection.isOpen())
@@ -582,9 +583,10 @@ void WorkerControlLoop::enqueue(Connection & connection, OutgoingFrame frame)
         connection.held.push_back(std::move(frame));
         return;
     }
-    const auto timeout = timeoutOf(frame);
-    connection.requests.emplace(
-        frame.request_id, Connection::PendingRequest{.type = frame.type, .deadline = Clock::now() + timeout, .timeout = timeout});
+    /// The idle time of a connection that waited for nothing starts now.
+    if (!expectsProgress(connection))
+        connection.last_progress = Clock::now();
+    connection.requests.emplace(frame.request_id, Connection::PendingRequest{.type = frame.type});
     connection.write_queue.push_back(std::move(frame));
 }
 
@@ -637,6 +639,7 @@ void WorkerControlLoop::receive(Connection & connection)
         const auto received_bytes = static_cast<size_t>(received);
         ProfileEvents::increment(ProfileEvents::DistributedPlanControlReceiveBytes, received_bytes);
         connection.read_budget -= received_bytes;
+        connection.last_progress = Clock::now();
 
         if (connection.reading_body)
         {
@@ -753,6 +756,7 @@ void WorkerControlLoop::handleHelloReply(Connection & connection, const PacketHe
     LOG_TRACE(log, "Stateless worker {} accepted the control connection of {}", connection.description, connection.params.unique_query_id);
     connection.state = connection.close_requested ? State::Closing : State::Ready;
     connection.last_send = Clock::now();
+    connection.last_progress = connection.last_send;
     auto held = std::exchange(connection.held, {});
     for (auto & frame : held)
         enqueue(connection, std::move(frame));
@@ -821,8 +825,12 @@ void WorkerControlLoop::flush(Connection & connection)
             connection.write_budget -= sent_bytes;
             connection.write_offset += sent_bytes;
             connection.last_send = Clock::now();
+            /// The socket takes bytes that had to wait while the worker reads; without reading it takes one buffer at most.
+            if (connection.write_waited)
+                connection.last_progress = connection.last_send;
             skipWritten(connection);
         }
+        connection.write_waited = !connection.write_queue.empty();
         finishCloseIfDone(connection);
         if (!connection.isOpen())
             return;
@@ -849,7 +857,7 @@ void WorkerControlLoop::checkDeadlines()
             return now >= connection.hello_deadline;
         if (connection.write_queue.empty() && now - connection.last_send >= timeouts.ping_interval)
             return true;
-        return std::ranges::any_of(connection.requests, [&](const auto & request) { return now >= request.second.deadline; });
+        return expectsProgress(connection) && now - connection.last_progress >= timeouts.idle;
     };
 
     std::vector<ConnectionPtr> due;
@@ -868,10 +876,8 @@ void WorkerControlLoop::checkDeadlines()
                 throw Exception(ErrorCodes::SOCKET_TIMEOUT, "cannot connect within {} ms", timeouts.hello.count());
             if (connection->state == State::HelloSent && now >= connection->hello_deadline)
                 throw Exception(ErrorCodes::SOCKET_TIMEOUT, "no reply to the hello within {} ms", timeouts.hello.count());
-            for (const auto & [request_id, request] : connection->requests)
-                if (now >= request.deadline)
-                    throw Exception(ErrorCodes::SOCKET_TIMEOUT, "no reply to {} (request {}) within {} ms",
-                        packetTypeName(static_cast<UInt64>(request.type)), request_id, request.timeout.count());
+            if (expectsProgress(*connection) && now - connection->last_progress >= timeouts.idle)
+                throw Exception(ErrorCodes::SOCKET_TIMEOUT, "the worker sent nothing and read nothing for {} ms", timeouts.idle.count());
 
             if (connection->isAccepted() && connection->write_queue.empty() && now - connection->last_send >= timeouts.ping_interval)
             {

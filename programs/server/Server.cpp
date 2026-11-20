@@ -2291,6 +2291,17 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    /// The timeouts of both ends of the stateless worker control connections.
+    const UInt64 control_idle_timeout_ms = config().getUInt64("distributed_query.control_idle_timeout_ms", 30'000);
+    if (control_idle_timeout_ms < 2'000)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`distributed_query.control_idle_timeout_ms` must be at least 2000, twice the interval of the control connections' pings, got {}",
+            control_idle_timeout_ms);
+    const std::chrono::milliseconds control_idle_timeout(control_idle_timeout_ms);
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    WorkerControlLoop::configure(WorkerControlLoop::Timeouts{.idle = control_idle_timeout});
+#endif
+
     std::shared_ptr<StatelessWorkerControlServer> stateless_worker_control_server{nullptr};
     if (config().getBool("stateless_worker_server.enabled", false))
     {
@@ -2304,7 +2315,10 @@ try
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "`stateless_worker_server.max_control_sessions` must be at least 1");
         stateless_worker_control_server = std::make_shared<StatelessWorkerControlServer>(
-            StatelessWorkerControlServer::Limits{.max_queries = stateless_worker_max_queries, .max_sessions = stateless_worker_max_control_sessions},
+            StatelessWorkerControlServer::Limits{
+                .max_queries = stateless_worker_max_queries,
+                .max_sessions = stateless_worker_max_control_sessions,
+                .idle_timeout = control_idle_timeout},
             [] { return Context::getGlobalContextInstance()->getInterserverCredentials(); });
     }
 

@@ -518,6 +518,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(stateless_worker_pause_task_before_setup) \
     PAUSEABLE_ONCE(stateless_worker_pause_task_cancel) \
     REGULAR(stateless_worker_answer_ping_with_error) \
+    PAUSEABLE(stateless_worker_pause_control_session) \
     ONCE(worker_control_loop_break_connection_fails) \
     ONCE(worker_control_loop_open_fails_after_post) \
     REGULAR(worker_control_loop_break_connections) \

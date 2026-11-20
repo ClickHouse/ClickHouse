@@ -59,6 +59,7 @@ namespace FailPoints
 {
     extern const char stateless_worker_pause_before_start_task[];
     extern const char stateless_worker_answer_ping_with_error[];
+    extern const char stateless_worker_pause_control_session[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -261,7 +262,7 @@ void StatelessWorkerControlServer::Session::run() noexcept
 
 void StatelessWorkerControlServer::Session::serve()
 {
-    const Poco::Timespan io_timeout(std::chrono::duration_cast<std::chrono::microseconds>(server.limits.silence_timeout).count());
+    const Poco::Timespan io_timeout(std::chrono::duration_cast<std::chrono::microseconds>(server.limits.idle_timeout).count());
     socket.setReceiveTimeout(io_timeout);
     socket.setSendTimeout(io_timeout);
     /// Replies are small frames, often two back to back: with Nagle the second waits for the initiator's delayed ACK (40 ms).
@@ -270,23 +271,24 @@ void StatelessWorkerControlServer::Session::serve()
     send(makeHelloReply(0, ""));
     LOG_DEBUG(log, "Opened the control connection of {} from {} ({})", unique_query_id, initiator, peer);
 
-    auto silence_deadline = Clock::now() + server.limits.silence_timeout;
+    auto idle_deadline = Clock::now() + server.limits.idle_timeout;
     while (true)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_control_session);
         if (server.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "The stateless worker is shutting down");
 
         bool readable = in.hasPendingData();
         if (!readable)
-            readable = waitForInput(parked ? std::min(parked->deadline, silence_deadline) : silence_deadline);
+            readable = waitForInput(parked ? std::min(parked->deadline, idle_deadline) : idle_deadline);
 
         if (parked && (Clock::now() >= parked->deadline || parked->wait.changed()))
             answerParkedStatuses();
 
         if (!readable)
         {
-            if (Clock::now() >= silence_deadline)
-                throw Exception(ErrorCodes::SOCKET_TIMEOUT, "No frame from the initiator for {} ms", server.limits.silence_timeout.count());
+            if (Clock::now() >= idle_deadline)
+                throw Exception(ErrorCodes::SOCKET_TIMEOUT, "No frame from the initiator for {} ms", server.limits.idle_timeout.count());
             continue;
         }
 
@@ -296,8 +298,9 @@ void StatelessWorkerControlServer::Session::serve()
             return;
         }
         const PacketHeader header = readHeader(in, Sender::Initiator);
-        silence_deadline = Clock::now() + server.limits.silence_timeout;
         handleFrame(header);
+        /// After the frame: its body reads have a timeout each, so a body that comes slowly but steadily is not idle.
+        idle_deadline = Clock::now() + server.limits.idle_timeout;
     }
 }
 
@@ -426,8 +429,8 @@ void StatelessWorkerControlServer::Session::getStatuses(const PacketHeader & hea
         return;
     }
 
-    /// Bounded by the silence timeout, so a huge wait cannot overflow the deadline.
-    const std::chrono::milliseconds wait_time(std::min<UInt64>(request.wait_milliseconds, server.limits.silence_timeout.count()));
+    /// Bounded by the idle timeout, so a huge wait cannot overflow the deadline.
+    const std::chrono::milliseconds wait_time(std::min<UInt64>(request.wait_milliseconds, server.limits.idle_timeout.count()));
     parked = ParkedStatuses{
         .request_id = request.request_id,
         .task_ids = std::move(request.task_ids),

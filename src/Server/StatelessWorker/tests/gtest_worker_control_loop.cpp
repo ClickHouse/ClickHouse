@@ -36,6 +36,7 @@ namespace ProfileEvents
 
 namespace DB::FailPoints
 {
+    extern const char stateless_worker_pause_control_session[];
     extern const char worker_control_loop_break_connection_fails[];
     extern const char worker_control_loop_open_fails_after_post[];
 }
@@ -186,9 +187,9 @@ private:
 };
 
 std::shared_ptr<StatelessWorkerControlServer> makeControlServer(
-    size_t max_queries, InterserverCredentialsPtr credentials = nullptr, std::chrono::milliseconds silence_timeout = 30s)
+    size_t max_queries, InterserverCredentialsPtr credentials = nullptr, std::chrono::milliseconds idle_timeout = 30s)
 {
-    const StatelessWorkerControlServer::Limits limits{.max_queries = max_queries, .max_sessions = 4 * max_queries, .silence_timeout = silence_timeout};
+    const StatelessWorkerControlServer::Limits limits{.max_queries = max_queries, .max_sessions = 4 * max_queries, .idle_timeout = idle_timeout};
     return std::make_shared<StatelessWorkerControlServer>(limits, [credentials] { return credentials; });
 }
 
@@ -237,6 +238,20 @@ public:
         Message message;
         readBody(header, in, message);
         return message;
+    }
+
+    /// Receives `Message`, reading its body `step` bytes at a time, `pause` apart.
+    template <typename Message>
+    Message receiveSlowly(size_t step, std::chrono::milliseconds pause)
+    {
+        const PacketHeader header = readHeader(in, Sender::Initiator);
+        String body(header.bytes_size, '\0');
+        for (size_t offset = 0; offset < body.size(); offset += step)
+        {
+            in.readStrict(body.data() + offset, std::min(step, body.size() - offset));
+            std::this_thread::sleep_for(pause);
+        }
+        return parseBody<Message>(header, body);
     }
 
     /// Receives `Message`, skipping the pings before it.
@@ -426,7 +441,7 @@ TEST(WorkerControlLoop, ParkedStatusesAreAnsweredAtTheirDeadline)
 
 TEST(WorkerControlLoop, PingsKeepTheConnectionAlive)
 {
-    auto control_server = makeControlServer(10, nullptr, /*silence_timeout=*/ 500ms);
+    auto control_server = makeControlServer(10, nullptr, /*idle_timeout=*/ 500ms);
     Worker worker(control_server);
     WorkerControlLoop loop(WorkerControlLoop::Timeouts{.ping_interval = 100ms});
     RecordingHandler handler;
@@ -434,7 +449,7 @@ TEST(WorkerControlLoop, PingsKeepTheConnectionAlive)
     auto connection = loop.open(makeParams(worker.port(), "q1"), handler);
     handler.expect(Event::Kind::HelloAccepted);
 
-    /// Three silence timeouts of the worker.
+    /// Three idle timeouts of the worker.
     EXPECT_FALSE(handler.next(1500ms));
     EXPECT_GT(globalCount(ProfileEvents::DistributedPlanControlPings), pings_before);
     connection->getStatuses(0, {"q1::a"});
@@ -443,7 +458,7 @@ TEST(WorkerControlLoop, PingsKeepTheConnectionAlive)
 
 TEST(WorkerControlLoop, SilentConnectionIsClosedByTheWorker)
 {
-    auto control_server = makeControlServer(10, nullptr, /*silence_timeout=*/ 300ms);
+    auto control_server = makeControlServer(10, nullptr, /*idle_timeout=*/ 300ms);
     Worker worker(control_server);
     WorkerControlLoop loop(withoutPings());
     RecordingHandler handler;
@@ -542,10 +557,10 @@ TEST(WorkerControlLoop, RefusedConnect)
     EXPECT_TRUE(broken.message.contains("cannot connect")) << broken.message;
 }
 
-TEST(WorkerControlLoop, UnansweredRequestTimesOut)
+TEST(WorkerControlLoop, UnansweredRequestBreaksAfterTheIdleTimeout)
 {
     FakeWorker fake_worker;
-    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.cancel_tasks = 200ms, .ping_interval = 600s});
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 300ms, .ping_interval = 600s});
     RecordingHandler handler;
     auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
     auto peer = fake_worker.accept();
@@ -556,7 +571,7 @@ TEST(WorkerControlLoop, UnansweredRequestTimesOut)
     peer->receive<CancelTasks>();
     const Event broken = handler.expect(Event::Kind::Broken);
     EXPECT_EQ(broken.code, ErrorCodes::SOCKET_TIMEOUT);
-    EXPECT_TRUE(broken.message.contains("no reply to CancelTasks")) << broken.message;
+    EXPECT_TRUE(broken.message.contains("the worker sent nothing and read nothing for 300 ms")) << broken.message;
     EXPECT_TRUE(peer->closedByInitiator());
 }
 
@@ -664,6 +679,62 @@ TEST(WorkerControlLoop, LargeStartTasksIsWrittenWhileRepliesAreRead)
     connection->close();
     handler.expect(Event::Kind::Closed);
     EXPECT_TRUE(peer->closedByInitiator());
+}
+
+TEST(WorkerControlLoop, RequestBehindASlowlyReadStartTasksIsAnswered)
+{
+    /// Far more than the socket buffers hold, read at about 8 MiB/s, so the transfer takes about 4 s.
+    const auto plan = std::make_shared<const String>(32 * 1024 * 1024, 'p');
+    FakeWorker fake_worker(/*receive_buffer_bytes=*/ 64 * 1024);
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 2s});
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+
+    StartTasks request;
+    request.temp_path = "tmp/q1";
+    DistributedQueryTaskBatch::Task task;
+    task.task.task_id = "main";
+    request.batch.initial_query_id = "q1";
+    request.batch.stages.push_back({"main", plan, {task}});
+    const UInt64 start_id = connection->startTasks(request);
+    const UInt64 statuses_id = connection->getStatuses(0, {"q1::main"});
+
+    try
+    {
+        EXPECT_EQ(peer->receiveSlowly<StartTasks>(64 * 1024, 8ms).request_id, start_id);
+        peer->send(StartTasksReply{.request_id = start_id, .code = 0, .message = ""});
+        EXPECT_EQ(peer->receiveSkippingPings<GetStatuses>().request_id, statuses_id);
+        peer->send(GetStatusesReply{.request_id = statuses_id, .entries = {}});
+    }
+    catch (...)
+    {
+        ADD_FAILURE() << "The fake worker failed: " << getCurrentExceptionMessage(false);
+    }
+    EXPECT_EQ(handler.expect(Event::Kind::StartTasksReply).request_id, start_id);
+    EXPECT_EQ(handler.expect(Event::Kind::GetStatusesReply).request_id, statuses_id);
+}
+
+TEST(WorkerControlLoop, HungWorkerIsDetectedWithinTheIdleTimeout)
+{
+    auto control_server = makeControlServer(10);
+    Worker worker(control_server);
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 2s});
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(worker.port(), "q1"), handler);
+    handler.expect(Event::Kind::HelloAccepted);
+
+    /// The session answers the next ping, then reads and sends nothing.
+    FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_control_session);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_control_session));
+    FailPointInjection::waitForPause(FailPoints::stateless_worker_pause_control_session);
+    const Stopwatch watch;
+    const Event broken = handler.expect(Event::Kind::Broken);
+    EXPECT_EQ(broken.code, ErrorCodes::SOCKET_TIMEOUT) << broken.message;
+    /// The idle timeout, a ping interval and the loop's tick.
+    EXPECT_LT(watch.elapsedMilliseconds(), 4000u) << broken.message;
 }
 
 TEST(WorkerControlLoop, FailureWhileBreakingAConnectionKeepsTheLoop)

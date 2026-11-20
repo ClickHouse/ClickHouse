@@ -36,8 +36,9 @@ public:
         size_t max_queries = 1000;
         /// `stateless_worker_server.max_control_sessions`.
         size_t max_sessions = 4000;
-        /// A session closes after this long without a frame from the initiator, which pings every second.
-        std::chrono::milliseconds silence_timeout{30'000};
+        /// A connection closes after this long without a byte from the initiator, which pings every second; each socket read
+        /// and write has it as its timeout.
+        std::chrono::milliseconds idle_timeout{30'000};
         /// How long a closing session waits for the tasks it cancels.
         std::chrono::milliseconds reclaim_timeout{60'000};
     };
