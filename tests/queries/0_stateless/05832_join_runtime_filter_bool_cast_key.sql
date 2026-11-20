@@ -83,7 +83,7 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_dat
 -- The same with a range instead of the exact values.
 SELECT 'bool_read_range', count() FROM probe_u8 AS p JOIN build_true AS b ON CAST(p.x AS Bool) = b.flag
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0,
-    join_runtime_filter_exact_values_limit = 0;
+    join_runtime_filter_exact_values_limit = 0, log_comment = '05832_bool_read_range';
 
 -- Primary key, seal-gated reading.
 SELECT 'bool_seal', count() FROM probe_u8 AS p JOIN build_true AS b ON CAST(p.x AS Bool) = b.flag
@@ -143,7 +143,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RuntimeFilterGranulesDropped'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05832_bool_read', '05832_date32_overflow', '05832_datetime_time_zone', '05832_decimal_precision')
+    AND log_comment IN ('05832_bool_read', '05832_bool_read_range', '05832_date32_overflow', '05832_datetime_time_zone',
+        '05832_decimal_precision')
 ORDER BY log_comment;
 
 DROP TABLE probe_u8;

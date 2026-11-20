@@ -15,6 +15,7 @@ date32_overflow	256
 datetime_time_zone	48
 decimal_precision	16
 05832_bool_read	1
+05832_bool_read_range	1
 05832_date32_overflow	1
 05832_datetime_time_zone	1
 05832_decimal_precision	1
