@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: depends on S3
+-- Random settings limits: output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
 
 -- A Parquet file in object storage whose ranges to read are all in the filesystem cache is read like a local file:
 -- gaps between the needed column chunks are skipped (input_format_parquet_local_file_min_bytes_for_seek) instead of
@@ -7,7 +8,7 @@
 -- If any range is not cached, the file is read as before. The file names are unique per database, so the cache starts
 -- empty.
 
--- One row group of three uncompressed column chunks: a (~1 MB), b (~2.3 MB), c (~1 MB).
+-- One row group of three uncompressed column chunks: a (~1 MB), b (~2.3 MB), c (~1 MB). The settings limits keep this layout.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '_05836_f1.parquet', format = Parquet)
 SELECT number AS a, toString(cityHash64(number)) AS b, number * 3 AS c FROM numbers(100000)
 SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 1000000, output_format_parquet_compression_method = 'none',
