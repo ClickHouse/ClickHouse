@@ -36,6 +36,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char worker_control_loop_break_connection_fails[];
+    extern const char worker_control_loop_open_fails_after_post[];
 }
 
 namespace DB::ErrorCodes
@@ -238,6 +239,8 @@ public:
 
     bool closedByInitiator() { return in.eof(); }
 
+    void setReceiveTimeout(std::chrono::seconds timeout) { socket.setReceiveTimeout(Poco::Timespan(timeout.count(), 0)); }
+
     void close()
     {
         out.cancel();
@@ -267,8 +270,17 @@ public:
 
     std::unique_ptr<FakePeer> accept()
     {
-        if (!listener.poll(Poco::Timespan(10, 0), Poco::Net::Socket::SELECT_READ))
+        auto peer = tryAccept(10s);
+        if (!peer)
             throw std::runtime_error("No connection to the fake worker within 10 s");
+        return peer;
+    }
+
+    /// Null when no connection comes within `timeout`.
+    std::unique_ptr<FakePeer> tryAccept(std::chrono::seconds timeout)
+    {
+        if (!listener.poll(Poco::Timespan(timeout.count(), 0), Poco::Net::Socket::SELECT_READ))
+            return nullptr;
         return std::make_unique<FakePeer>(listener.acceptConnection());
     }
 
@@ -597,6 +609,47 @@ TEST(WorkerControlLoop, FailureWhileBreakingAConnectionKeepsTheLoop)
     auto next_peer = fake_worker.accept();
     next_peer->acceptHello();
     next_handler.expect(Event::Kind::HelloAccepted);
+}
+
+TEST(WorkerControlLoop, OpenThatFailsLeavesNoConnection)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    FailPointInjection::enableFailPoint(FailPoints::worker_control_loop_open_fails_after_post);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::worker_control_loop_open_fails_after_post));
+
+    /// The handler belongs to the failed `open`, so no callback may reach it.
+    RecordingHandler handler;
+    EXPECT_THROW(loop.open(makeParams(fake_worker.port(), "q1"), handler), Exception);
+
+    /// What the loop connected before the failure is closed.
+    if (auto peer = fake_worker.tryAccept(1s))
+    {
+        peer->setReceiveTimeout(2s);
+        const auto closed_by_initiator = [&]
+        {
+            try
+            {
+                return peer->closedByInitiator();
+            }
+            catch (const Exception & e)
+            {
+                /// A reset closes it too; a timeout leaves it open.
+                return e.code() == ErrorCodes::NETWORK_ERROR;
+            }
+        };
+        bool closed = closed_by_initiator();
+        if (!closed)
+        {
+            /// The hello can go out before the connection is aborted.
+            peer->receive<ControlHello>();
+            closed = closed_by_initiator();
+        }
+        if (!closed)
+            peer->send(ControlHelloReply{});
+        EXPECT_TRUE(closed) << "The initiator kept a control connection that the failed `open` did not hand over";
+    }
+    EXPECT_FALSE(handler.next(500ms));
 }
 
 TEST(WorkerControlLoop, ShutdownBreaksTheConnections)

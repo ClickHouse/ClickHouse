@@ -55,6 +55,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char worker_control_loop_break_connection_fails[];
+    extern const char worker_control_loop_open_fails_after_post[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -359,6 +360,8 @@ WorkerControlConnectionPtr WorkerControlLoop::open(WorkerControlConnectionParams
     };
     auto connection = std::make_shared<Connection>(std::move(params), address, handler);
     Command command{.connection = connection, .kind = Command::Kind::Open, .frame = makeFrame(hello)};
+    /// Before the post: once posted, the connection is detached and ended only by its handle, also when this throws.
+    auto handle = std::make_unique<WorkerControlConnection>(*this, connection);
 
     bool wake = false;
     {
@@ -372,9 +375,11 @@ WorkerControlConnectionPtr WorkerControlLoop::open(WorkerControlConnectionParams
     }
     if (wake)
         wakeup.write();
+    fiu_do_on(FailPoints::worker_control_loop_open_fails_after_post,
+        { throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after posting a control connection"); });
 
     ProfileEvents::increment(ProfileEvents::DistributedPlanControlConnects);
-    return std::make_unique<WorkerControlConnection>(*this, connection);
+    return handle;
 }
 
 void WorkerControlLoop::shutdown()
