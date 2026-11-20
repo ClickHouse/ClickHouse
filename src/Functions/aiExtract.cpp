@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,20 +27,24 @@ public:
 
     explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiExtract);
+        return std::make_shared<FunctionAiExtract>(context_);
+    }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(const String, Nullable(String), const String, [const Number]) -> Nullable(String)"
             " OR (const String, String, const String, [const Number]) -> String";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -56,7 +61,7 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t instruction_arg_index = 1;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
     }
@@ -67,12 +72,12 @@ private:
         return (pos != String::npos && instruction[pos] == '{');
     }
 
-    String getInstruction(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] String getInstruction(const ColumnsWithTypeAndName & arguments) const
     {
         return String(arguments[instruction_arg_index].column->getDataAt(0));
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         auto instruction = getInstruction(arguments);
         if (isJSONSchema(instruction))
@@ -83,7 +88,7 @@ private:
                 + ". Return only the extracted value, nothing else. If not found, return null.";
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }
@@ -122,7 +127,7 @@ private:
     ///       }
     ///     }
     ///   }
-    Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
     {
         auto instruction = getInstruction(arguments);
 
@@ -192,11 +197,14 @@ private:
         return root;
     }
 
-    /// Unwrap a single-key `{"result": "..."}` response; in free-text mode the model is constrained to this shape
-    /// and we return just the string value. If the object has multiple fields (schema mode), return the raw JSON.
+    /// In instruction mode the reply is constrained to `{"result": "..."}`: return the value, or an empty string for `null`.
+    /// In schema mode, return the JSON object as is.
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
-    String postProcessResponse(const String & raw) const override
+    [[nodiscard]] String postProcessResponse(const ColumnsWithTypeAndName & arguments, const String & raw) const override
     {
+        if (isJSONSchema(getInstruction(arguments)))
+            return raw;
+
         if (raw.empty() || raw.front() != '{')
             return raw;
 

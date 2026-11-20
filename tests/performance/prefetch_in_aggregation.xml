@@ -22,11 +22,21 @@
   <query>select a from t_str_key_{size} group by a format Null</query>
   <query>select b from t_str_key_{size} group by b format Null</query>
 
-  <query>select number from {table}(50000000) group by number format Null</query>
-  <query>select count() from {table}({size}) group by number format Null</query>
+  <query disabled="1">select number from {table}(50000000) group by number format Null</query>
+  <query disabled="1">select count() from {table}({size}) group by number format Null</query>
 
   <query>select number from numbers_mt(1e8) group by number format Null</query>
   <query>select count() from numbers_mt(1e8) group by number format Null</query>
+
+  <!-- Placeholders: query numbers 12 and 13 hold the history of the two queries above and must not be reused. -->
+  <query disabled="1">select number from numbers_mt(1e8) group by number format Null</query>
+  <query disabled="1">select count() from numbers_mt(1e8) group by number format Null</query>
+
+  <query>select number from numbers(20000000) group by number format Null</query>
+  <query>select number from numbers_mt(50000000) group by number format Null</query>
+  <query>select count() from {table}(10000000) group by number format Null</query>
+  <query>select count() from numbers(20000000) group by number format Null</query>
+  <query>select count() from numbers_mt(50000000) group by number format Null</query>
 
   <drop_query>drop table t_str_key_{size}</drop_query>
 </test>
