@@ -145,7 +145,6 @@ public:
 
     void clear();
 
-    /// Remove all entries of the table.
     void removeTable(const UUID & table_id);
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);

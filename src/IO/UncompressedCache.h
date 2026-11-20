@@ -51,7 +51,6 @@ struct UncompressedCacheCell
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
-    /// The file the block is from.
     String path;
 
     ~UncompressedCacheCell()
