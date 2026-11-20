@@ -99,7 +99,7 @@ SELECT count() FROM (EXPLAIN SELECT sum(c) FROM t_index_hint_left_whatif WHERE a
 
 CREATE HYPOTHETICAL PROJECTION p_h ON t_index_hint_left_whatif (SELECT * ORDER BY a);
 
-SELECT derived[2] = written[2], derived[2] < derived[1]
+SELECT length(derived) = 2 AND length(written) = 2, derived[2] = written[2], derived[2] < derived[1]
 FROM
 (
     SELECT
