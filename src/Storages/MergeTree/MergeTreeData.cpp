@@ -2333,10 +2333,10 @@ void MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(const StorageInMemory
 
         const auto & [owner, name] = violation;
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The {} expression {} has the same name as the column {}, so writing the table would replace the values of the column "
-            "with the values of the expression. Rename the column, or quote the name to use the column itself. "
+            "The expression {} of the {} has the same name as the column {}, so writing the table would replace the values "
+            "of the column with the values of the expression. Rename the column or change the expression. "
             "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'",
-            owner, name, backQuote(name));
+            name, owner, backQuote(name));
     }
 }
 
