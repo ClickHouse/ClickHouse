@@ -188,8 +188,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
     const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
-    /// Skip index data stays far below `max_compress_block_size`; use adaptive write buffers
-    /// instead of preallocating two full-size buffers per index substream.
     WriteSettings index_write_settings = settings.query_write_settings;
     index_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_skip_indexes;
     index_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;

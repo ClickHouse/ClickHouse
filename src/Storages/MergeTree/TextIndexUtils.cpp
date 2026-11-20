@@ -80,7 +80,6 @@ makeOutputStreams(
     MergeTreeIndexOutputStreams streams;
     std::vector<std::unique_ptr<MergeTreeIndexWriterStream>> streams_holders;
 
-    /// Use adaptive write buffers for index streams (see MergeTreeDataPartWriterOnDisk::initSkipIndices).
     WriteSettings index_write_settings = settings.query_write_settings;
     index_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_skip_indexes;
     index_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
