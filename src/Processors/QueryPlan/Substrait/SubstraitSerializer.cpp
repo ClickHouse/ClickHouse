@@ -463,6 +463,20 @@ SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read
     if (read.getRowLevelFilter() || read.getDeferredRowLevelFilter())
         return blocked("row-level filters are not supported");
 
+    if (const auto & storage_limits = read.getQueryInfo().storage_limits)
+    {
+        for (const auto & limits : *storage_limits)
+        {
+            const auto & local_limits = limits.local_limits;
+            if (truncatesResult(local_limits.size_limits))
+                return blocked("max_rows_to_read or max_bytes_to_read with read_overflow_mode = 'break' is not supported");
+            if (truncatesResult(limits.leaf_limits))
+                return blocked("max_rows_to_read_leaf or max_bytes_to_read_leaf with read_overflow_mode_leaf = 'break' is not supported");
+            if (local_limits.speed_limits.max_execution_time != 0 && local_limits.timeout_overflow_mode != OverflowMode::THROW)
+                return blocked("max_execution_time with timeout_overflow_mode = 'break' is not supported");
+        }
+    }
+
     const auto & header = *read.getOutputHeader();
     const auto & virtuals = read.getStorageSnapshot()->metadata->virtuals;
     for (const auto & column : header)
