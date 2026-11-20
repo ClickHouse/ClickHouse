@@ -254,7 +254,7 @@ private:
     const DataTypePtr filter_column_target_type;
     /// At most 8 KiB, so a plain vector: it is counted, but not refused at the memory limit, and the switch from the
     /// exact set cannot throw halfway.
-    std::vector<UInt64> words;
+    std::vector<UInt64> words; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- must not be refused at the memory limit, see above
 };
 
 /// Starts with an exact set. Once the exact set becomes too large, switches to a dense bitset for (U)Int8 and
