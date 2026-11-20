@@ -56,6 +56,17 @@ SELECT dateDiff('second', last_success_time, next_refresh_time) BETWEEN 101 AND 
 FROM system.view_refreshes
 WHERE database = currentDatabase() AND view = 'refresh_progress_mv';
 
+-- After the clock went far back, a manual refresh resets the completed timeslot instead of keeping it in the future.
+SYSTEM STOP VIEW refresh_progress_mv;
+SYSTEM TEST VIEW refresh_progress_mv SET FAKE TIME '2049-12-31 00:00:15';
+SYSTEM REFRESH VIEW refresh_progress_mv;
+SYSTEM START VIEW refresh_progress_mv;
+SYSTEM WAIT VIEW refresh_progress_mv;
+SELECT count() FROM refresh_progress_dst;
+SELECT dateDiff('second', last_success_time, next_refresh_time) BETWEEN 101 AND 109
+FROM system.view_refreshes
+WHERE database = currentDatabase() AND view = 'refresh_progress_mv';
+
 -- The completion-based schedule keeps its own behavior.
 SYSTEM STOP VIEW refresh_progress_mv;
 ALTER TABLE refresh_progress_mv MODIFY REFRESH AFTER 20 SECOND APPEND;

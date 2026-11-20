@@ -56,7 +56,15 @@ std::chrono::sys_seconds RefreshSchedule::timeslotForCompletedRefresh(std::chron
     /// some timeslots.
     auto res = floorEvery(start_time, period, offset);
     if (out_of_schedule)
-        return std::max(res, last_completed_timeslot);
+    {
+        /// A scheduled refresh can complete the next timeslot early, by at most half of the random spread
+        /// (see `addRandomSpread`), so a manual refresh soon after it must not move the timeslot back.
+        /// A completed timeslot further ahead, e.g. after the clock went backwards, is reset to the current one.
+        if (last_completed_timeslot > res
+            && last_completed_timeslot <= start_time + std::chrono::seconds(static_cast<Int64>(spread.minSeconds() / 2 + 1)))
+            return last_completed_timeslot;
+        return res;
+    }
     /// Next timeslot after the last completed one. Useful in case we did a refresh a little early
     /// because of random spread.
     res = std::max(res, advanceEvery(last_completed_timeslot, period, offset));
