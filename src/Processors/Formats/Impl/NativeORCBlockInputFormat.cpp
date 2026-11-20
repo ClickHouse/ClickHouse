@@ -724,7 +724,9 @@ static void buildORCSearchArgumentImpl(
     const ORC::Type & schema,
     KeyCondition::RPN & rpn_stack,
     ORC::SearchArgumentBuilder & builder,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    /// True under an odd number of NOTs.
+    bool negated)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -820,6 +822,8 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
+            bool and_not_null = false;
+
             /// A non-nullable element converts NULL to its default even when a nullable ancestor makes
             /// its extracted type nullable. Pruning must agree with the values produced by the reader.
             const auto & declared_type = column_types->declared_type;
@@ -836,6 +840,21 @@ static void buildORCSearchArgumentImpl(
                     builder.literal(ORC::TruthValue::YES_NO_NULL);
                     break;
                 }
+
+                /// Under a negation ORC keeps the atom NULL for a NULL, which the reader returns as the default,
+                /// so read the row groups with NULLs. Element statistics do not count the NULLs of ancestors.
+                if (negated)
+                {
+                    bool is_top_level = false;
+                    for (UInt64 i = 0; i < schema.getSubtypeCount() && !is_top_level; ++i)
+                        is_top_level = schema.getSubtype(i) == orc_type;
+                    if (!is_top_level)
+                    {
+                        builder.literal(ORC::TruthValue::YES_NO_NULL);
+                        break;
+                    }
+                    and_not_null = true;
+                }
             }
 
             auto predicate_type = convertORCTypeToPredicateType(*orc_type);
@@ -843,6 +862,14 @@ static void buildORCSearchArgumentImpl(
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
                 break;
+            }
+
+            if (and_not_null)
+            {
+                builder.startAnd();
+                builder.startNot();
+                builder.isNull(orc_type->getColumnId(), *predicate_type);
+                builder.end();
             }
 
             if (need_wrap_not)
@@ -971,6 +998,9 @@ static void buildORCSearchArgumentImpl(
             if (need_wrap_not)
                 builder.end();
 
+            if (and_not_null)
+                builder.end();
+
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
@@ -983,7 +1013,7 @@ static void buildORCSearchArgumentImpl(
             for (auto & atom : atoms)
             {
                 rpn_stack.push_back(std::move(atom));
-                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             }
             builder.end();
             break;
@@ -1002,7 +1032,7 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, !negated);
             builder.end();
             break;
         }
@@ -1010,8 +1040,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             builder.end();
             break;
         }
@@ -1019,8 +1049,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             builder.end();
             break;
         }
@@ -1047,7 +1077,7 @@ std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
         return nullptr;
 
     auto builder = std::make_unique<ORC::SearchArgumentBuilder>();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
+    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings, /*negated=*/ false);
     return builder->build();
 }
 
