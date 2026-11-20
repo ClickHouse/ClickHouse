@@ -819,8 +819,7 @@ When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `az
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
-        {"24.11", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"}, \
-        {"24.10", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"}) \
+        {"24.11", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"}) \
     DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
 )", 0) \
@@ -5039,8 +5038,7 @@ Possible values:
 Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
 Should be big enough so the whole operation won't fail because of a temporary [Zoo]Keeper failure.
 )", 0, \
-        {"24.11", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."}, \
-        {"24.10", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."}) \
+        {"24.11", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."}) \
     DECLARE(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, R"(
 Initial backoff timeout for [Zoo]Keeper operations during backup or restore
 )", 0) \
@@ -5055,26 +5053,22 @@ This value should be bigger than any reasonable time for a host to reconnect to 
 Zero means unlimited.
 )", 0, \
         {"26.10", 3600, 3600, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
-        {"24.11", 0, 3600, "New setting."}, \
-        {"24.10", 0, 3600, "New setting."}) \
+        {"24.11", 0, 3600, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
 Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
         {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
-        {"24.11", 0, 20, "New setting."}, \
-        {"24.10", 0, 20, "New setting."}) \
+        {"24.11", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
 Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
         {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
-        {"24.11", 0, 20, "New setting."}, \
-        {"24.10", 0, 20, "New setting."}) \
+        {"24.11", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
 How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
         {"26.10", 180, 180, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
-        {"24.11", 0, 180, "New setting."}, \
-        {"24.10", 0, 180, "New setting."}) \
+        {"24.11", 0, 180, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
 Maximum size of data of a [Zoo]Keeper's node during backup
 )", 0) \
@@ -9349,8 +9343,7 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0, \
-        {"24.11", true, true, "New setting"}, \
-        {"24.10", true, true, "New setting"}) \
+        {"24.11", true, true, "New setting"}) \
     DECLARE(UInt64, distributed_cache_min_inflight_bytes_to_discard_connection_on_seek, 4 * 1024 * 1024, R"(
 Only has an effect in ClickHouse Cloud. On a seek away from the current position of an open distributed cache stream, if the estimated number of in-flight bytes that would have to be discarded to keep reusing the connection (via the read range id mechanism) exceeds this value, drop the connection and open a new one instead. This avoids draining a large amount of unused data when seeks are frequent. 0 disables this and always reuses the connection.
 )", 0, \
@@ -10156,7 +10149,6 @@ Parts virtually divided into segments to be distributed between replicas for par
 Build local plan for local replica
 )", 0, \
         {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
-        {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.9", false, false, "Use local plan for local replica in a query with parallel replicas"}) \
     DECLARE(Bool, parallel_replicas_plan_based, false, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
