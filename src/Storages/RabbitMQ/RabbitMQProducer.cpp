@@ -152,13 +152,11 @@ void RabbitMQProducer::setupChannel()
 
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
-    auto record_iter = delivery_record.find(received_delivery_tag);
-    chassert(record_iter != delivery_record.end());
-
+    /// The delivery tag comes from the broker, so it may refer to a message that is not (or no longer) in `delivery_record`.
     if (multiple)
     {
         /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
-        ++record_iter;
+        auto record_iter = delivery_record.upper_bound(received_delivery_tag);
 
         if (republish)
             for (auto record = delivery_record.begin(); record != record_iter; ++record)
@@ -170,6 +168,13 @@ void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple,
     }
     else
     {
+        auto record_iter = delivery_record.find(received_delivery_tag);
+        if (record_iter == delivery_record.end())
+        {
+            LOG_WARNING(log, "Received {} for unknown delivery tag {}, ignoring it", republish ? "nack" : "ack", received_delivery_tag);
+            return;
+        }
+
         if (republish)
             if (!returned.push(record_iter->second))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
