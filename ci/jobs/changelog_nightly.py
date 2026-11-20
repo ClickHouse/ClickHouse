@@ -1054,10 +1054,16 @@ def analyze_reverts(text, anchor, range_prs=()):
     # when its text only repeats that entry (skill section 2, case 6). Forcing
     # it out, as for a revert that takes a change out, lost that fix from the
     # 26.11 changelog.
+    # Today's raw entries say so only on the day the re-apply arrives. On later
+    # runs it is a strict entry in no raw block, so the in-progress section is
+    # the record: an earlier verified edit could leave it attributed there only
+    # as its own accepted bullet or as the re-apply link on the entry it brought
+    # back, and that link has to stay either way.
     reapplying_with_entry = {
         pr
         for pr in cancelling
-        if pr in strict_prs and targets[pr] <= set(targets)
+        if targets[pr] <= set(targets)
+        and (pr in strict_prs or is_attributed(section, pr))
     }
     cancelling -= reapplying_with_entry
     # Which pull requests have to carry which re-applying links. Asked of every
@@ -1173,6 +1179,11 @@ def analyze_reverts(text, anchor, range_prs=()):
         "reapply_allowance": allowance,
         "own_entry_required": own_entry_required,
         "reapplying_with_entry": sorted(reapplying_with_entry, key=int),
+        # The ones to put to the agent: those arriving in today's raw blocks.
+        # The others are already in the section, where their link stays.
+        "reapplying_with_entry_new": sorted(
+            (pr for pr in reapplying_with_entry if pr in strict_prs), key=int
+        ),
         "case_five": case_five,
         "amend": amend,
         "unresolved": unresolved,
@@ -1479,9 +1490,9 @@ Entries to amend. These entries are already in the in-progress section and stay,
 {entries}
 """
     own = ""
-    if reverts.get("reapplying_with_entry"):
+    if reverts.get("reapplying_with_entry_new"):
         own = f"""
-Re-applies with an entry of their own. These pull requests revert reverts of this release, so they put a change back (point 4), but their authors also wrote a changelog entry under one of the categories of point 3: {_pr_list(reverts["reapplying_with_entry"])}. A re-apply can carry more than the re-apply, such as a fix made along the way. Read each with `gh pr view <N> --json title,body`. If its entry describes a change beyond the one it brings back, keep it as a bullet of its own; if it only repeats the entry it brought back, merge it into that entry (skill section 7). Either way, its link has to stay in the section.
+Re-applies with an entry of their own. These pull requests revert reverts of this release, so they put a change back (point 4), but their authors also wrote a changelog entry under one of the categories of point 3: {_pr_list(reverts["reapplying_with_entry_new"])}. A re-apply can carry more than the re-apply, such as a fix made along the way. Read each with `gh pr view <N> --json title,body`. If its entry describes a change beyond the one it brings back, keep it as a bullet of its own; if it only repeats the entry it brought back, merge it into that entry (skill section 7). Either way, its link has to stay in the section.
 """
     outside = ""
     if reverts["case_five"]:
