@@ -132,6 +132,11 @@ std::string StorageWebConfiguration::getPathInArchive() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
+String StorageWebConfiguration::getHeadersForSchemaCache() const
+{
+    return canonicalizeHTTPHeadersForSchemaCache(headers_from_ast);
+}
+
 void StorageWebConfiguration::check(ContextPtr context)
 {
     StorageObjectStorageConfiguration::check(context);

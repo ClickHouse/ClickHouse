@@ -75,6 +75,7 @@ public:
     [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
     [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
+    [[nodiscard]] String getHeadersForSchemaCache() const override;
 
     [[nodiscard]] bool isArchive() const override { return archive_pattern.has_value(); }
     [[nodiscard]] std::string getPathInArchive() const override;

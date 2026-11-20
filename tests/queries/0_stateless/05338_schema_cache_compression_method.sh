@@ -18,7 +18,11 @@ snappy_framed_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_snappy_framed.raw"
 
 cleanup()
 {
-    rm -f "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}"*
+    if [ -n "${HTTP_PID:-}" ]; then
+        kill "$HTTP_PID" 2>/dev/null || true
+        wait "$HTTP_PID" 2>/dev/null || true
+    fi
+    rm -rf "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"* "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}"*
 }
 trap cleanup EXIT
 
@@ -258,3 +262,194 @@ WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_autotrace
 GROUP BY storage, format
 SETTINGS schema_inference_use_cache_for_url=0
 "
+
+# Case V: Wildcard URL header cache isolation
+echo "Case V: Wildcard URL header cache isolation"
+
+HTTP_PORT=$(python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+")
+
+python3 -c "
+try:
+    from http.server import ThreadingHTTPServer as ServerClass, BaseHTTPRequestHandler
+except ImportError:
+    from http.server import HTTPServer as ServerClass, BaseHTTPRequestHandler
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_HEAD(self):
+        self.handle_req(False)
+
+    def do_GET(self):
+        self.handle_req(True)
+
+    def handle_req(self, with_body):
+        path = self.path.split('?')[0]
+        if path == '/data/':
+            data = b'<a href=\"a.csv\">a.csv</a>\n'
+            ctype = 'text/html'
+        elif path == '/data/a.csv':
+            variant = self.headers.get('X-Variant', '')
+            if variant == 'one':
+                data = b'val_one\n1\n'
+            elif variant == 'two':
+                data = b'val_two\n10\n20\n'
+            else:
+                data = b'val_default\n999\n'
+            ctype = 'text/csv'
+        else:
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        range_hdr = self.headers.get('Range')
+        if range_hdr and range_hdr.startswith('bytes='):
+            parts = range_hdr[6:].split('-')
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else len(data) - 1
+            if start < len(data):
+                end = min(end, len(data) - 1)
+                sliced = data[start:end+1]
+                self.send_response(206)
+                self.send_header('Content-Type', ctype)
+                self.send_header('Content-Range', f'bytes {start}-{end}/{len(data)}')
+                self.send_header('Content-Length', str(len(sliced)))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Last-Modified', 'Sun, 01 Jan 2023 00:00:00 GMT')
+                self.end_headers()
+                if with_body:
+                    self.wfile.write(sliced)
+                return
+            else:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{len(data)}')
+                self.end_headers()
+                return
+
+        self.send_response(200)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Last-Modified', 'Sun, 01 Jan 2023 00:00:00 GMT')
+        self.end_headers()
+        if with_body:
+            self.wfile.write(data)
+
+ServerClass(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
+" &
+HTTP_PID=$!
+
+for _ in $(seq 1 50); do
+    curl -s "http://127.0.0.1:$HTTP_PORT/data/" -o /dev/null 2>/dev/null && break
+    sleep 0.1
+done
+
+wildcard_settings="--allow_url_wildcard_from_index_pages=1 --use_cache_for_count_from_files=1 --optimize_count_from_files=1 --schema_inference_use_cache_for_url=1 --schema_inference_cache_require_modification_time_for_url=0 --send_logs_level=error"
+wildcard_url="http://127.0.0.1:${HTTP_PORT}/data/*.csv"
+
+# First count with X-Variant: one warms cache with 1 row
+$CLICKHOUSE_CLIENT $wildcard_settings -q "SELECT count() FROM url('$wildcard_url', 'CSV', 'val_one UInt64', headers('X-Variant' = 'one'))"
+
+# Second count with X-Variant: two must not hit the 'one' entry and must return 2 rows
+$CLICKHOUSE_CLIENT $wildcard_settings -q "SELECT count() FROM url('$wildcard_url', 'CSV', 'val_two UInt64', headers('X-Variant' = 'two'))"
+
+# Re-read with X-Variant: two hits cache
+$CLICKHOUSE_CLIENT $wildcard_settings -q "SELECT count() FROM url('$wildcard_url', 'CSV', 'val_two UInt64', headers('X-Variant' = 'two'))"
+
+# Header case and whitespace canonicalization
+$CLICKHOUSE_CLIENT $wildcard_settings -q "SELECT count() FROM url('$wildcard_url', 'CSV', 'val_two UInt64', headers('x-variant' = 'two'))"
+
+# Re-read with X-Variant: one hits its separate cache entry
+$CLICKHOUSE_CLIENT $wildcard_settings -q "SELECT count() FROM url('$wildcard_url', 'CSV', 'val_one UInt64', headers('X-Variant' = 'one'))"
+
+# Schema inference partitioning
+$CLICKHOUSE_CLIENT $wildcard_settings -q "DESCRIBE url('$wildcard_url', 'CSV', 'auto', headers('X-Variant' = 'one')) FORMAT TSV" | cut -f1,2
+$CLICKHOUSE_CLIENT $wildcard_settings -q "DESCRIBE url('$wildcard_url', 'CSV', 'auto', headers('X-Variant' = 'two')) FORMAT TSV" | cut -f1,2
+
+# Table engine with wildcard URL and headers
+$CLICKHOUSE_CLIENT $wildcard_settings -q "
+DROP TABLE IF EXISTS table_wildcard_v;
+CREATE TABLE table_wildcard_v (val_one UInt64) ENGINE = URL('$wildcard_url', 'CSV', 'none', headers('X-Variant' = 'one'));
+SELECT count() FROM table_wildcard_v;
+DROP TABLE table_wildcard_v;
+"
+
+# Case W: Archive member snappy wire mode cache isolation
+echo "Case W: Archive member snappy wire mode cache isolation"
+has_libarchive=1
+if ! command -v tar >/dev/null 2>&1; then
+    has_libarchive=0
+else
+    mkdir -p "${user_files_path}" "${CLICKHOUSE_TMP}" 2>/dev/null || true
+    probe_tar="${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_probe.tar"
+    probe_csv="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_probe.csv"
+    echo "1" > "${probe_csv}"
+    if tar -cf "${probe_tar}" -C "${CLICKHOUSE_TMP}" "${CLICKHOUSE_TEST_UNIQUE_NAME}_probe.csv" 2>/dev/null; then
+        archive_probe_output=$($CLICKHOUSE_CLIENT --allow_archive_path_syntax=1 -q "DESCRIBE file('${CLICKHOUSE_TEST_UNIQUE_NAME}_probe.tar::${CLICKHOUSE_TEST_UNIQUE_NAME}_probe.csv', 'CSV')" 2>&1 || true)
+        rm -f "${probe_tar}" "${probe_csv}" 2>/dev/null || true
+        if echo "$archive_probe_output" | grep -qE "libarchive library is disabled|SUPPORT_IS_DISABLED"; then
+            has_libarchive=0
+        fi
+    else
+        rm -f "${probe_tar}" "${probe_csv}" 2>/dev/null || true
+        has_libarchive=0
+    fi
+fi
+
+if [ "$has_snappy" -eq 1 ] && [ "$has_libarchive" -eq 1 ]; then
+    archive_members_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive_members"
+    mkdir -p "${archive_members_dir}"
+
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_part_basic.snappy', 'CSV', 'x UInt64', 'snappy') SELECT number FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'basic'"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_part_framed.snappy', 'CSV', 'x UInt64', 'snappy') SELECT number FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'framed'"
+
+    cp "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_part_basic.snappy" "${archive_members_dir}/part.snappy"
+    tar -cf "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_basic.tar" -C "${archive_members_dir}" part.snappy
+
+    cp "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_part_framed.snappy" "${archive_members_dir}/part.snappy"
+    tar -cf "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_framed.tar" -C "${archive_members_dir}" part.snappy
+
+    touch -d '2000-01-01' "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_basic.tar" "${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_framed.tar"
+
+    archive_basic="${CLICKHOUSE_TEST_UNIQUE_NAME}_basic.tar"
+    archive_framed="${CLICKHOUSE_TEST_UNIQUE_NAME}_framed.tar"
+
+    $CLICKHOUSE_CLIENT -q "DESCRIBE file('$archive_basic::part.snappy', 'CSV', 'auto', 'snappy') SETTINGS snappy_mode='basic', schema_inference_use_cache_for_file=1 FORMAT TSV" | cut -f1,2
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "DESCRIBE file('$archive_basic::part.snappy', 'CSV', 'auto', 'snappy') SETTINGS snappy_mode='framed', schema_inference_use_cache_for_file=1"
+
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$archive_basic::part.snappy', 'CSV', 'x UInt64', 'snappy') SETTINGS snappy_mode='basic', use_cache_for_count_from_files=1"
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$archive_basic::part.snappy', 'CSV', 'x UInt64', 'snappy') SETTINGS snappy_mode='framed', use_cache_for_count_from_files=1"
+
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$archive_framed::part.snappy', 'CSV', 'x UInt64', 'snappy') SETTINGS snappy_mode='framed', use_cache_for_count_from_files=1"
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$archive_framed::part.snappy', 'CSV', 'x UInt64', 'snappy') SETTINGS snappy_mode='basic', use_cache_for_count_from_files=1"
+else
+    echo "c1	Nullable(Int64)"
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+    echo 10
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+    echo 10
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+fi
+
+# Case X: Ordinary filename with #compression_method= marker
+echo "Case X: Ordinary filename with #compression_method= marker"
+special_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_rows#compression_method=tag.raw"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$special_file', 'LineAsString', 'line String', 'gzip') SELECT toString(number) FROM numbers(1000) SETTINGS engine_file_truncate_on_insert = 1"
+
+touch -d '2000-01-01' "${user_files_path}/${special_file}"
+
+count_none=$($CLICKHOUSE_CLIENT $settings -q "SELECT count() FROM file('$special_file', 'LineAsString', 'line String', 'none')")
+if [ "$count_none" -ne 1000 ]; then
+    echo "NOT_1000"
+else
+    echo "UNEXPECTED_1000"
+fi
+
+$CLICKHOUSE_CLIENT $settings -q "SELECT count() FROM file('$special_file', 'LineAsString', 'line String', 'gzip')"

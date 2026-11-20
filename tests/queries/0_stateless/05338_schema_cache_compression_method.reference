@@ -66,3 +66,22 @@ Case U: Auto-tracing does not fragment schema cache
 50
 50
 URL	CSV	1
+Case V: Wildcard URL header cache isolation
+1
+2
+2
+2
+1
+val_one	Nullable(Int64)
+val_two	Nullable(Int64)
+1
+Case W: Archive member snappy wire mode cache isolation
+c1	Nullable(Int64)
+SNAPPY_UNCOMPRESS_FAILED
+10
+SNAPPY_UNCOMPRESS_FAILED
+10
+SNAPPY_UNCOMPRESS_FAILED
+Case X: Ordinary filename with #compression_method= marker
+NOT_1000
+1000

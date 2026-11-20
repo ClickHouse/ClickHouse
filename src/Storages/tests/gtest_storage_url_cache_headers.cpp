@@ -2,6 +2,7 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageURL.h>
+#include <Storages/StorageFile.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Common/SipHash.h>
@@ -243,4 +244,83 @@ TEST(StorageURLCacheHeaders, ErrorToleranceDisablesNumRowsCache)
     settings_with_both.input_allow_errors_num = 5;
     settings_with_both.input_allow_errors_ratio = 0.1f;
     EXPECT_FALSE(canUseNumRowsFromSchemaCache(settings_with_both, nullptr));
+}
+
+TEST(StorageURLCacheHeaders, ArchiveEntrySnappyWireModeCacheKey)
+{
+    auto key_basic = getArchiveEntryCacheKey("archive.tar::part.snappy", std::nullopt, CompressionMethod::Snappy, SnappyMode::Basic);
+    auto key_framed = getArchiveEntryCacheKey("archive.tar::part.snappy", std::nullopt, CompressionMethod::Snappy, SnappyMode::Framed);
+    auto key_default = getArchiveEntryCacheKey("archive.tar::part.snappy", std::nullopt, CompressionMethod::Snappy);
+
+    EXPECT_NE(key_basic, key_framed);
+    EXPECT_TRUE(key_basic.contains("#compression_method=snappy:basic"));
+    EXPECT_TRUE(key_framed.contains("#compression_method=snappy:framed"));
+    EXPECT_TRUE(key_default.contains("#compression_method=snappy"));
+
+    /// Non-Snappy methods must not split on snappy_mode
+    auto key_gz_basic = getArchiveEntryCacheKey("archive.tar::part.gz", std::nullopt, CompressionMethod::Gzip, SnappyMode::Basic);
+    auto key_gz_framed = getArchiveEntryCacheKey("archive.tar::part.gz", std::nullopt, CompressionMethod::Gzip, SnappyMode::Framed);
+    EXPECT_EQ(key_gz_basic, key_gz_framed);
+    EXPECT_TRUE(key_gz_basic.contains("#compression_method=gzip"));
+
+    /// None method preserves plain archive entry key without #compression_method
+    auto key_none = getArchiveEntryCacheKey("archive.tar::part.csv", std::nullopt, CompressionMethod::None, SnappyMode::Basic);
+    EXPECT_FALSE(key_none.contains("#compression_method="));
+    EXPECT_EQ(key_none, "archive.tar::part.csv");
+}
+
+TEST(StorageURLCacheHeaders, OrdinaryFileWithCompressionMarkerDoesNotCollide)
+{
+    String ordinary_file = "rows#compression_method=tag.raw";
+
+    /// Explicit compression methods 'none' and 'gzip'
+    auto method_none = chooseCompressionMethod(ordinary_file, "none");
+    auto method_gzip = chooseCompressionMethod(ordinary_file, "gzip");
+
+    EXPECT_EQ(method_none, CompressionMethod::None);
+    EXPECT_EQ(method_gzip, CompressionMethod::Gzip);
+
+    auto name_none = toContentEncodingName(method_none);
+    auto name_gzip = toContentEncodingName(method_gzip);
+
+    EXPECT_EQ(name_none, "");
+    EXPECT_EQ(name_gzip, "gzip");
+
+    /// Separate effective decoder parameter guarantees distinct keys without string-parsing the filename
+    auto key_none = SchemaCache::Key{ordinary_file, "LineAsString", "", "", name_none, ""};
+    auto key_gzip = SchemaCache::Key{ordinary_file, "LineAsString", "", "", name_gzip, ""};
+
+    EXPECT_NE(key_none, key_gzip);
+}
+
+TEST(StorageURLCacheHeaders, WildcardURLHeaderPartitioning)
+{
+    HTTPHeaderEntries headers_v1{{"X-Variant", "one"}};
+    HTTPHeaderEntries headers_v2{{"X-Variant", "two"}};
+    HTTPHeaderEntries headers_v1_case{{"x-variant", "one"}};
+    HTTPHeaderEntries headers_empty{};
+
+    String canon_v1 = canonicalizeHTTPHeadersForSchemaCache(headers_v1);
+    String canon_v2 = canonicalizeHTTPHeadersForSchemaCache(headers_v2);
+    String canon_v1_case = canonicalizeHTTPHeadersForSchemaCache(headers_v1_case);
+    String canon_empty = canonicalizeHTTPHeadersForSchemaCache(headers_empty);
+
+    EXPECT_NE(canon_v1, canon_v2);
+    EXPECT_EQ(canon_v1, canon_v1_case);
+    EXPECT_NE(canon_v1, "");
+    EXPECT_EQ(canon_empty, "");
+
+    SchemaCache::Key key_v1{"http://127.0.0.1:8080/data/*.csv/a.csv", "CSV", "", "DEFAULT", "", canon_v1};
+    SchemaCache::Key key_v2{"http://127.0.0.1:8080/data/*.csv/a.csv", "CSV", "", "DEFAULT", "", canon_v2};
+    SchemaCache::Key key_v1_case{"http://127.0.0.1:8080/data/*.csv/a.csv", "CSV", "", "DEFAULT", "", canon_v1_case};
+    SchemaCache::Key key_empty{"http://127.0.0.1:8080/data/*.csv/a.csv", "CSV", "", "DEFAULT", "", canon_empty};
+
+    EXPECT_NE(key_v1, key_v2);
+    EXPECT_EQ(key_v1, key_v1_case);
+    EXPECT_NE(key_v1, key_empty);
+
+    SchemaCache::KeyHash hasher;
+    EXPECT_NE(hasher(key_v1), hasher(key_v2));
+    EXPECT_EQ(hasher(key_v1), hasher(key_v1_case));
+    EXPECT_NE(hasher(key_v1), hasher(key_empty));
 }

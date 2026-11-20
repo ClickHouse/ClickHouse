@@ -47,7 +47,7 @@ ReadBufferIterator::ReadBufferIterator(
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
 {
     auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, object_info);
-    return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
+    return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext(), "", configuration->getHeadersForSchemaCache());
 }
 
 SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
@@ -59,7 +59,7 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
         read_keys.end(),
         std::back_inserter(sources),
         [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem); });
-    return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
+    return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext(), "", configuration->getHeadersForSchemaCache());
 }
 
 std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
