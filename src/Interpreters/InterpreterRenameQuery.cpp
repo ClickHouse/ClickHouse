@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
+#include <optional>
 #include <set>
 #include <shared_mutex>
 
@@ -133,6 +134,20 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
+    /// A `DROP DATABASE` of a database involved here must wait for the whole RENAME, so take the shared lock it waits for,
+    /// before the table guards (`DROP DATABASE` takes this lock first too). Nested RENAMEs of this thread reuse it.
+    std::optional<RenameDatabaseLocks> database_locks;
+    if (!rename.database)
+    {
+        std::set<String> databases_to_lock;
+        for (const auto & description : descriptions)
+        {
+            databases_to_lock.insert(description.from_database_name);
+            databases_to_lock.insert(description.to_database_name);
+        }
+        database_locks.emplace(databases_to_lock);
+    }
+
     auto & database_catalog = DatabaseCatalog::instance();
 
     /// Must do it in consistent order.
@@ -149,16 +164,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
-
-    /// A `DROP DATABASE` of a database involved here must wait for the whole RENAME, so take the shared lock it waits for.
-    /// Nested RENAMEs of this thread reuse it (see `RenameDatabaseLocks`).
-    std::set<String> databases_to_lock;
-    for (const auto & elem : descriptions)
-    {
-        databases_to_lock.insert(elem.from_database_name);
-        databases_to_lock.insert(elem.to_database_name);
-    }
-    RenameDatabaseLocks database_locks(databases_to_lock);
 
     for (const auto & elem : descriptions)
     {
