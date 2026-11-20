@@ -105,7 +105,7 @@ CREATE DATABASE db_04546_pg_settings ENGINE = PostgreSQL(pg_settings_nc_db, post
 -- The MaterializedPostgreSQL engines do not use a connection pool, so the pool settings are rejected
 -- instead of being accepted and silently ignored.
 SELECT '--- the MaterializedPostgreSQL database engine rejects pool settings ---';
-SET allow_experimental_database_materialized_postgresql = 1;
+SET enable_database_materialized_postgresql = 1;
 CREATE DATABASE db_04546_pg_settings ENGINE = MaterializedPostgreSQL(pg_settings_nc_db, postgresql_connection_pool_size = 50); -- { serverError BAD_ARGUMENTS }
 
 SELECT '--- the MaterializedPostgreSQL table engine rejects pool settings ---';

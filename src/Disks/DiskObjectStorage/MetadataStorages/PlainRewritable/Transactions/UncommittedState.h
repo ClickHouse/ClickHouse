@@ -33,10 +33,10 @@ public:
     void recordMovedFile(const std::string & path_from, const std::string & path_to, bool keeps_blob);
     void markDirectoryExplicit(const std::string & path);
 
-    std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
-    bool existsFileOrDirectory(const std::string & path) const;
-    const FsSnapshot & getSnapshot() const { return *tx_snapshot; }
-    std::shared_ptr<Preconditions> getTxPreconditions() const;
+    [[nodiscard]] std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
+    [[nodiscard]] bool existsFileOrDirectory(const std::string & path) const;
+    [[nodiscard]] const FsSnapshot & getSnapshot() const { return *tx_snapshot; }
+    [[nodiscard]] std::shared_ptr<Preconditions> getTxPreconditions() const;
 
 private:
     std::shared_ptr<FsSnapshot> tx_snapshot;

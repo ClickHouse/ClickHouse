@@ -300,7 +300,7 @@ protected:
         NodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
         std::unordered_map<String, SelfPtr> children; // basename -> child
 
-        bool empty() const { return children.empty(); }
+        [[nodiscard]] bool empty() const { return children.empty(); }
 
         NodePtr getRoot()
         {
@@ -372,7 +372,7 @@ protected:
         std::unordered_map<Priority::Value, FairnessBranch> branches; /// Branches for different priority values
 
         // Returns true iff there are no workload children attached
-        bool empty() const { return branches.empty(); }
+        [[nodiscard]] bool empty() const { return branches.empty(); }
 
         NodePtr getRoot()
         {
@@ -464,6 +464,7 @@ protected:
     struct QueueOrChildrenBranch
     {
         NodePtr queue; /// RequestQueue or AllocationQueue node is used if there are no children
+        bool queue_dropped = false; /// `queue` has been purged by `purgeDroppedQueue`
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;
@@ -515,6 +516,17 @@ protected:
             settings = new_settings;
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
+        }
+
+        /// Fails the requests and allocations of a dropped workload, the same way `removeQueue` does
+        /// when the workload gets its first child. The queue itself stays alive while older hierarchy
+        /// versions reference it.
+        void purgeDroppedQueue()
+        {
+            if (!queue || std::exchange(queue_dropped, true))
+                return;
+            detach(queue);
+            Traits::purgeQueue(queue);
         }
 
     private:
@@ -661,6 +673,18 @@ public:
         : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
 
+    ~WorkloadNodeCommon() override
+    {
+        /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        /// The queue clears its own pointer in `purgeQueue` under its mutex, because query threads read it there.
+        purgeQueue(); // No-op if the workload was dropped through `purgeQueue` already
+        forEachSchedulerNode([this](ISchedulerNode * node)
+        {
+            if (node != impl.branch.queue.get())
+                node->workload = nullptr;
+        });
+    }
+
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
         SCHED_DBG("{} -- attachWorkloadChild(child={})", this->getPath(), child->getWorkload());
@@ -686,27 +710,27 @@ public:
     /// Sharing-mode specific implementation of scheduling settings propagation
     virtual void propagateUpdateSchedulingSettings() = 0;
 
-    CostUnit getCostUnit() const final
+    [[nodiscard]] CostUnit getCostUnit() const final
     {
         return impl.unit;
     }
 
-    const String & getWorkload() const final
+    [[nodiscard]] const String & getWorkload() const final
     {
         return this->basename;
     }
 
-    const String & getResource() const final
+    [[nodiscard]] const String & getResource() const final
     {
         return impl.resource;
     }
 
-    const WorkloadSettings & getSettings() const final
+    [[nodiscard]] const WorkloadSettings & getSettings() const final
     {
         return impl.settings;
     }
 
-    ResourceLink getLink() const final
+    [[nodiscard]] ResourceLink getLink() const final
     {
         if (impl.branch.queue)
             return Traits::getLink(impl.branch.queue);
@@ -738,7 +762,12 @@ public:
         }
     }
 
-    bool hasWorkloadChildren() const final
+    void purgeQueue() final
+    {
+        impl.branch.purgeDroppedQueue();
+    }
+
+    [[nodiscard]] bool hasWorkloadChildren() const final
     {
         return impl.branch.queue == nullptr;
     }
@@ -762,7 +791,7 @@ public:
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
-    std::string_view getTypeName() const override { return "workload"; }
+    [[nodiscard]] std::string_view getTypeName() const override { return "workload"; }
 
     ConstraintsBranch impl;
 };

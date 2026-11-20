@@ -107,12 +107,12 @@ bool allMergesAreExactlyCommutative(const AggregateDescriptions & aggregates)
 }
 
 /// Each source chunk is released as soon as it is appended, so only one copy of the set is held.
-Chunk finalizeAndConcatenate(Chunks && chunks, const ColumnsMask & aggregates_mask)
+Chunk finalizeAndConcatenate(Chunks && chunks, const ColumnsMask & aggregates_mask, const Block & finalized_header)
 {
     if (chunks.size() == 1)
     {
         auto chunk = std::move(chunks.front());
-        finalizeChunk(chunk, aggregates_mask);
+        finalizeChunk(chunk, aggregates_mask, finalized_header);
         return chunk;
     }
 
@@ -124,7 +124,7 @@ Chunk finalizeAndConcatenate(Chunks && chunks, const ColumnsMask & aggregates_ma
     for (auto & chunk : chunks)
     {
         auto num_rows = chunk.getNumRows();
-        finalizeChunk(chunk, aggregates_mask);
+        finalizeChunk(chunk, aggregates_mask, finalized_header);
         auto columns = chunk.detachColumns();
 
         if (result_columns.empty())
@@ -154,6 +154,7 @@ GroupByModifierTransform::GroupByModifierTransform(SharedHeader header, Aggregat
     : IAccumulatingTransform(std::move(header), std::make_shared<const Block>(generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_)))
     , params(std::move(params_))
     , use_nulls(use_nulls_)
+    , finalized_header(params->getHeader())
 {
     keys.reserve(params->params.keys_size);
     for (const auto & key : params->params.keys)
@@ -277,7 +278,7 @@ Chunk RollupTransform::generate()
     }
 
     /// Only after the merge above: finalizing mutates the aggregate state columns it reads.
-    auto gen_chunk = finalizeAndConcatenate(std::move(gen_chunks), aggregates_mask);
+    auto gen_chunk = finalizeAndConcatenate(std::move(gen_chunks), aggregates_mask, finalized_header);
     if (!gen_chunk.empty())
         gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), set_counter++));
     return gen_chunk;

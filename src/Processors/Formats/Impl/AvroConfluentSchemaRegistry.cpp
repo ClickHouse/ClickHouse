@@ -7,6 +7,8 @@
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/maskURIPassword.h>
@@ -16,6 +18,8 @@
 #include <Formats/FormatSettings.h>
 
 #include <IO/HTTPCommon.h>
+
+#include <Interpreters/Context.h>
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
@@ -145,6 +149,8 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
 {
     if (!url.getUserInfo().empty())
     {
+        Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
         Poco::Net::HTTPCredentials http_credentials;
         Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
@@ -272,7 +278,10 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
                 /// Build the request path directly to preserve percent-encoding.
                 /// Poco::URI normalizes paths by decoding %2F -> /, which breaks
                 /// subjects containing slashes.
-                std::string request_path = base_url.getPath() + "/subjects/" + encoded_subject + "/versions";
+                /// `getPath` returns the decoded path, so encode it again like `getPathAndQuery` does for the schema fetch.
+                std::string request_path;
+                Poco::URI::encode(base_url.getPath(), "?#", request_path);
+                request_path += "/subjects/" + encoded_subject + "/versions";
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Registering schema under subject '{}' at path {}", subject, request_path);
 
                 auto connection_timeouts = buildTimeouts(timeouts);
@@ -389,15 +398,15 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
 
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 
-/// Cache of Schema Registry URL -> ConfluentSchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>
+/// Cache of Schema Registry URL hash -> ConfluentSchemaRegistry
+static CacheBase<UInt128, ConfluentSchemaRegistry, UInt128TrivialHash>
     schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
     const auto & base_url = format_settings.avro.schema_registry_url;
     auto [schema_registry, loaded] = schema_registry_cache.getOrSet(
-        base_url,
+        sipHash128(base_url.data(), base_url.size()),
         [base_url]()
         {
             return std::make_shared<ConfluentSchemaRegistry>(base_url);

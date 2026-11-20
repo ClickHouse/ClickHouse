@@ -1,0 +1,12 @@
+Avro	1	x	m	('y')
+Avro	2	x	m	('y')
+Avro	3	x	m	('y')
+Avro	4	x	m	('y')
+Parquet	1	x	m	('y')
+Parquet	2	x	m	('y')
+Parquet	3	x	m	('y')
+Parquet	4	x	m	('y')
+Nullable	1	1	\N
+Nullable	2	1	\N
+Nullable	3	0	x
+Nullable	4	0	x
