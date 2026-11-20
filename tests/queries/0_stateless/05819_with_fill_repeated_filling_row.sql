@@ -4,6 +4,10 @@
 SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, -1), (NULL, 2))
 ORDER BY i ASC NULLS LAST WITH FILL TO 2, k WITH FILL;
 
+SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, -1), (NULL, 2))
+ORDER BY i ASC NULLS LAST WITH FILL TO 2, k WITH FILL
+SETTINGS max_block_size = 1;
+
 SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, -1))
 ORDER BY i ASC NULLS LAST WITH FILL TO 2, k WITH FILL;
 
@@ -44,6 +48,28 @@ ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 2 STALENESS 2;
 -- A STALENESS jump that does not move the filling row keeps it in the result
 SELECT * FROM values('a Int64, o Int64, b Int64', (1, 2, 2), (1, 1, 3), (1, 0, 1), (2, 0, 4))
 ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 2 STALENESS 2;
+
+-- A STALENESS jump that only resets a later fill key changes the filling row too
+SELECT * FROM values('a Int64, o Int64, b Int64, c Nullable(Int64)', (2, 3, 4, 3), (2, 2, 5, 0), (2, 0, 1, 1))
+ORDER BY a WITH FILL TO 4 STALENESS 3, o DESC, b WITH FILL STEP 3, c WITH FILL;
+
+SELECT * FROM values('a Int64, o Int64, b Int64, c Nullable(Int64)', (2, 3, 4, 3), (2, 2, 5, 0), (2, 0, 1, 1), (3, 0, 0, 1))
+ORDER BY a WITH FILL TO 4 STALENESS 3, o DESC, b WITH FILL STEP 3, c WITH FILL;
+
+-- An unset key of the filling row is inserted, and compared, as the default of its column
+SELECT * FROM values('a Int64, o Int64, b Int64, c Int64', (0, 0, 0, 0), (0, 1, 3, 0), (0, 2, 2, 0), (0, 3, 1, 0), (0, 4, 3, 1))
+ORDER BY a WITH FILL, o, b WITH FILL STEP 2 STALENESS 2, c WITH FILL;
+
+SELECT * FROM values('a Int64, o Int64, b Int64, c Int64', (0, 0, 0, 0), (0, 1, 3, 0), (0, 2, 2, 0), (0, 3, 1, 0))
+ORDER BY a WITH FILL, o, b WITH FILL STEP 2 STALENESS 2, c WITH FILL;
+
+-- A filling row that is not inserted again counts as inserted for the rows after it
+SELECT * FROM values('a Nullable(Int64), b Nullable(Int64), c Nullable(Int64)', (1, 0, NULL), (3, 4, NULL), (0, 3, NULL), (NULL, 2, NULL))
+ORDER BY a ASC NULLS FIRST WITH FILL, b DESC NULLS LAST WITH FILL STEP -3 STALENESS -3, c DESC NULLS LAST WITH FILL TO 1;
+
+-- The rows of another sorting prefix group are not in the result of this one
+SELECT * FROM values('g Int64, i Int64', (0, 1), (0, 2), (1, 1), (1, 2))
+ORDER BY g, i WITH FILL FROM 5 TO 6;
 
 SELECT DISTINCT i FROM
 (

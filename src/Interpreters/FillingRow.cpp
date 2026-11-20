@@ -465,7 +465,6 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
             return false;
 
         Field next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
-        const bool moved = !equals(next_value, row[pos]);
 
         row[pos] = std::move(next_value);
 
@@ -495,7 +494,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
         {
             initUsingTo(/*from_pos=*/pos + 1);
 
-            value_changed = moved;
+            value_changed = false;
             return false;
         }
     }

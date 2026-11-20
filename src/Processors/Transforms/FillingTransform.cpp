@@ -717,6 +717,7 @@ FillingTransform::FillingTransform(
     , interpolate_description(interpolate_description_)
     , filling_row(fill_description_)
     , next_row(fill_description_)
+    , filling_row_in_result(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
     , process_list_element(std::move(process_list_element_))
 {
@@ -750,6 +751,7 @@ FillingTransform::FillingTransform(
         running_with_staleness |= !descr.fill_staleness.isNull();
 
         const Block & output_header = getOutputPort().getHeader();
+        fill_column_defaults.push_back(output_header.getByPosition(block_position).type->getDefault());
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
 
         if (!tryConvertFields(descr, type))
@@ -1001,6 +1003,22 @@ void FillingTransform::insertFromFillingRow(
         other_column->insertDefault();
 
     filling_row_inserted = true;
+    rememberFillingRowInResult();
+}
+
+void FillingTransform::rememberFillingRowInResult()
+{
+    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        filling_row_in_result[i] = filling_row[i].isNull() ? fill_column_defaults[i] : filling_row[i];
+}
+
+/// Whether the filling row, as it is inserted into the result, has the values of `other`.
+bool FillingTransform::fillingRowEquals(const FillingRow & other) const
+{
+    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        if (!equals(filling_row[i].isNull() ? fill_column_defaults[i] : filling_row[i], other[i]))
+            return false;
+    return true;
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -1090,7 +1108,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("generateSuffixIfNeeded next_row", next_row);
 
     /// Determines if we should insert filling row before start generating next rows
-    bool should_insert_first = !filling_row_inserted && (next_row < filling_row || (next_row.isNull() && !filling_row.isNull()));
+    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || (next_row.isNull() && !filling_row.isNull());
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -1105,6 +1123,13 @@ bool FillingTransform::generateSuffixIfNeeded(
     }
 
     filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
+
+    /// A filling row that is already in the result is not inserted again.
+    if (should_insert_first && fillingRowEquals(filling_row_in_result))
+    {
+        should_insert_first = false;
+        filling_row_inserted = true;
+    }
 
     Block interpolate_block;
     if (should_insert_first)
@@ -1238,6 +1263,9 @@ void FillingTransform::transformRange(
     if (new_sorting_prefix)
     {
         logDebug("--- new range ---", range_end);
+        for (size_t i = 0, size = filling_row_in_result.size(); i < size; ++i)
+            filling_row_in_result[i] = Field();
+
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
             const auto current_value = (*input_fill_columns[i])[range_begin];
@@ -1280,7 +1308,7 @@ void FillingTransform::transformRange(
         logDebug("filling_row", filling_row);
         logDebug("next_row", next_row);
 
-        bool should_insert_first = !filling_row_inserted && next_row < filling_row;
+        bool should_insert_first = next_row < filling_row;
         logDebug("should_insert_first", should_insert_first);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -1293,9 +1321,15 @@ void FillingTransform::transformRange(
         /// It can happen only once for a range.
         if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
-            copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            /// A filling row that is already in the result is not inserted again.
+            if (fillingRowEquals(filling_row_in_result))
+                filling_row_inserted = true;
+            else
+            {
+                interpolate(result_columns, interpolate_block);
+                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
+                copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            }
         }
 
         bool filling_row_changed = false;
@@ -1356,8 +1390,8 @@ void FillingTransform::transformRange(
             filling_row_inserted = false;
 
         /// The original row copied below holds the values of the filling row, so the filling row is in the result.
-        if (filling_row == next_row)
-            filling_row_inserted = true;
+        if (fillingRowEquals(next_row))
+            rememberFillingRowInResult();
 
         logDebug("filling_row after", filling_row);
 
