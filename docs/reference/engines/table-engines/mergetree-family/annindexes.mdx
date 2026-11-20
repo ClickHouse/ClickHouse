@@ -692,7 +692,7 @@ The codec is a good fit for ClickHouse because the expensive part (the scan) is 
 
 #### Applying the codec {#quantized-codecs-declaring}
 
-Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
+Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) column.
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -720,6 +720,10 @@ The `dimensions` argument is the vector length.
 - `Quantized('product', dimensions, nbits, m)` — Product Quantization: a per-part codebook trained with k-means; each vector becomes `m` codes of `nbits` bits (so `dimensions` must be a multiple of `m`). The most compact option and highest recall per byte, at the cost of a training step during insert. Supports `L2Distance` and `cosineDistance`.
 
 `rabitq` and `turboquant` require `dimensions` to be a multiple of 8.
+
+For `Array(Int8)` and `Array(UInt8)` columns, methods `int8` and `prefix` with format `int8` are not supported, as their codes are not smaller than the original vectors.
+`UInt8` embeddings are typically signed values shifted by 128. Methods `rabitq` and `turboquant` assume vectors scattered around the origin, so for `Array(UInt8)` columns they subtract 128 from each element of the stored vectors and of the reference vector before encoding.
+As a consequence, the shortlist ranks by the cosine distance of the shifted vectors, whereas the final result is rescored by the exact `cosineDistance` of the original vectors.
 
 #### Using the codec {#quantized-codecs-searching}
 
