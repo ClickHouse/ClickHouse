@@ -78,3 +78,47 @@ DETACH TABLE t_mutation_param_tuple0;
 ATTACH TABLE t_mutation_param_tuple0;
 SELECT countIf(flag), count() FROM t_mutation_param_tuple0;
 DROP TABLE t_mutation_param_tuple0;
+
+-- `DateTime64` and `Time64` query parameters are substituted as a cast of a cast of a literal.
+
+DROP TABLE IF EXISTS t_mutation_param_dt64;
+CREATE TABLE t_mutation_param_dt64 (ts DateTime64(3, 'UTC'), k UInt8, v UInt8)
+ENGINE = MergeTree PARTITION BY dateTrunc('day', ts) ORDER BY k;
+INSERT INTO t_mutation_param_dt64 VALUES ('2024-01-01 10:00:00', 1, 0), ('2024-01-02 10:00:00', 2, 0), ('2024-01-03 10:00:00', 3, 0);
+
+SET param_p2 = '2024-01-02 00:00:00', param_p3 = '2024-01-03 00:00:00';
+ALTER TABLE t_mutation_param_dt64 DROP PARTITION {p2:DateTime64(0, 'UTC')};
+ALTER TABLE t_mutation_param_dt64 UPDATE v = 1 IN PARTITION {p3:DateTime64(0, 'UTC')} WHERE 1 SETTINGS mutations_sync = 2;
+SELECT k, v FROM t_mutation_param_dt64 ORDER BY k;
+DETACH TABLE t_mutation_param_dt64;
+ATTACH TABLE t_mutation_param_dt64;
+SELECT k, v FROM t_mutation_param_dt64 ORDER BY k;
+DROP TABLE t_mutation_param_dt64;
+
+DROP TABLE IF EXISTS t_mutation_param_dt64_tuple;
+CREATE TABLE t_mutation_param_dt64_tuple (ts DateTime64(3, 'UTC'), s String, k UInt8, v UInt8)
+ENGINE = MergeTree PARTITION BY (dateTrunc('day', ts), s) ORDER BY k;
+INSERT INTO t_mutation_param_dt64_tuple VALUES ('2024-01-01 10:00:00', 'a', 1, 0), ('2024-01-02 10:00:00', 'b', 2, 0), ('2024-01-03 10:00:00', 'c', 3, 0);
+
+SET param_pt2 = '(''2024-01-02 00:00:00'',''b'')', param_pt3 = '(''2024-01-03 00:00:00'',''c'')';
+ALTER TABLE t_mutation_param_dt64_tuple DROP PARTITION {pt2:Tuple(DateTime64(0, 'UTC'), String)};
+ALTER TABLE t_mutation_param_dt64_tuple UPDATE v = 1 IN PARTITION {pt3:Tuple(DateTime64(0, 'UTC'), String)} WHERE 1 SETTINGS mutations_sync = 2;
+SELECT k, v FROM t_mutation_param_dt64_tuple ORDER BY k;
+DETACH TABLE t_mutation_param_dt64_tuple;
+ATTACH TABLE t_mutation_param_dt64_tuple;
+SELECT k, v FROM t_mutation_param_dt64_tuple ORDER BY k;
+DROP TABLE t_mutation_param_dt64_tuple;
+
+DROP TABLE IF EXISTS t_mutation_param_time64;
+CREATE TABLE t_mutation_param_time64 (t Time64(3), k UInt8, v UInt8)
+ENGINE = MergeTree PARTITION BY t ORDER BY k;
+INSERT INTO t_mutation_param_time64 VALUES ('10:00:00', 1, 0), ('11:00:00', 2, 0), ('12:00:00.5', 3, 0);
+
+SET param_t2 = '11:00:00', param_t3 = '12:00:00.5';
+ALTER TABLE t_mutation_param_time64 DROP PARTITION {t2:Time64(3)};
+ALTER TABLE t_mutation_param_time64 UPDATE v = 1 IN PARTITION {t3:Time64(3)} WHERE 1 SETTINGS mutations_sync = 2;
+SELECT k, v FROM t_mutation_param_time64 ORDER BY k;
+DETACH TABLE t_mutation_param_time64;
+ATTACH TABLE t_mutation_param_time64;
+SELECT k, v FROM t_mutation_param_time64 ORDER BY k;
+DROP TABLE t_mutation_param_time64;
