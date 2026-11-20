@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <create_query>CREATE TABLE left_table (id UInt64, value String) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE right_table (id UInt64) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE right_table_duplicates (id UInt64) ENGINE = MergeTree ORDER BY id</create_query>
