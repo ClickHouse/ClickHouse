@@ -50,7 +50,32 @@ def test_normal_projection_with_deleted_rows_after_upgrade(started_cluster):
     )
     node.query("DELETE FROM t WHERE k >= 10000 AND g <= 1")
     assert projection_rows_per_partition() == "0\t10000\n1\t5000\n"
+    assert (
+        node.query(
+            "SELECT partition_id, is_broken, exception_code, exception LIKE '%may contain lightweight-deleted rows%' "
+            "FROM system.projection_parts WHERE table = 't' AND active ORDER BY partition_id"
+        )
+        == "0\t1\t713\t1\n1\t0\t0\t0\n"
+    )
 
     query = "SELECT count() FROM t WHERE v < 1000"
     assert node.query(query, settings={"optimize_use_projections": 0}) == "1000\n"
     assert node.query(query, settings={"force_optimize_projection": 1}) == "1000\n"
+    assert (
+        node.query("CHECK TABLE t SETTINGS check_query_single_value_result = 1")
+        == "0\n"
+    )
+
+    node.query("ALTER TABLE t MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2")
+    assert projection_rows_per_partition() == "0\t5000\n1\t5000\n"
+    assert (
+        node.query(
+            "SELECT count() FROM system.projection_parts WHERE table = 't' AND active AND is_broken"
+        )
+        == "0\n"
+    )
+    assert node.query(query, settings={"force_optimize_projection": 1}) == "1000\n"
+    assert (
+        node.query("CHECK TABLE t SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )

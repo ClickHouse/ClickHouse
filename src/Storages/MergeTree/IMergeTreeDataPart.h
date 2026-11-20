@@ -641,6 +641,9 @@ public:
 
     bool hasBrokenProjection(const String & projection_name) const;
 
+    /// Returns why the projection part `projection_part` of this part may hold lightweight-deleted rows, or an empty string.
+    String getProjectionPartDeletedRowsReason(const IMergeTreeDataPart & projection_part) const;
+
     /// Listed in checksums but not loaded by loadProjections, e.g. because the part was loaded with table metadata that did not have it yet.
     bool hasUnloadedProjection(const String & projection_name) const;
 

@@ -379,15 +379,6 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
-/// A normal projection part has at most one row per visible parent row, so one not smaller than a parent with `_row_exists`
-/// holds deleted rows, unless the mask has no zero (e.g. after `UPDATE _row_exists = 1`).
-static bool projectionPartKeepsDeletedRows(
-    const IMergeTreeDataPart & projection_part, const IMergeTreeDataPart & parent_part, const ProjectionDescription & projection)
-{
-    return projection.type == ProjectionDescription::Type::Normal && projection_part.rows_count >= parent_part.rows_count
-        && parent_part.hasLightweightDelete();
-}
-
 /// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
 /// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
 /// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
@@ -473,10 +464,7 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken
-                && !projectionPartKeepsDeletedRows(*it->second, *part_with_ranges.data_part, *candidate.projection)
-            ? it->second
-            : nullptr;
+        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
         if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
             projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
         /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
