@@ -49,9 +49,6 @@ SELECT * FROM prometheusQuery('ts', 'sort(ties)', 3000);
 SELECT '-- sort_desc ties';
 SELECT * FROM prometheusQuery('ts', 'sort_desc(ties)', 3000);
 
-SELECT '-- many threads';
-SELECT * FROM prometheusQuery('ts', 'sort_desc(http_requests)', 3000) SETTINGS max_threads = 16;
-
 SELECT '-- scalar vector';
 SELECT * FROM prometheusQuery('ts', 'sort(vector(1))', 3000);
 

@@ -291,20 +291,12 @@ namespace
         const auto * aggregation = (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
             ? static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node)
             : nullptr;
-        const auto * function = (result.node->node_type == PrometheusQueryTree::NodeType::Function)
-            ? static_cast<const PrometheusQueryTree::Function *>(result.node)
-            : nullptr;
 
-        /// Set only if the root is `sort` or `sort_desc`.
-        const auto sort_direction = function ? getSortDirection(function->function_name) : std::nullopt;
-
-        if (sort_direction)
+        /// A PromQL sort function at the root is applied here, see `applyFunctionSort`.
+        if (auto sort_order = getSortOrder(result))
         {
-            /// The order of rows is kept only from the outermost SELECT, so `sort` or `sort_desc` at the root is applied here.
-            /// Ties are ordered by tags, in the same direction, to make the result deterministic.
-            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
-            builder.order_direction = (*sort_direction == SortDirection::DESCENDING) ? -1 : 1;
+            builder.order_by = std::move(sort_order->keys);
+            builder.order_direction = (sort_order->direction == SortDirection::DESCENDING) ? -1 : 1;
         }
         else if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
         {
