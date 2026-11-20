@@ -134,9 +134,10 @@ error=$(${CLICKHOUSE_CLIENT} --query "SELECT sum(x) FROM s3(s3_conn, filename = 
 echo "$(grep -o -m1 INCORRECT_DATA <<< "$error") $(grep -q -F "${DIR}/not_parquet/1.parquet" <<< "$error" && echo 1 || echo 0)"
 
 # Nor through the page cache. The CI server has none, so a clickhouse-local reads with one, then without it as a control.
+# The files in share/ have no page index, so the next file is read ahead while its reader is created, before the switch.
 config="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_page_cache.yaml"
 echo "page_cache_max_size: 134217728" > "$config"
-url_files="s3('http://localhost:11111/test/${DIR}/good/{0,1,2}.parquet', 'test', 'testtest', 'Parquet')"
+url_files="s3('http://localhost:11111/test/${DIR}/share/*.parquet', 'test', 'testtest', 'Parquet')"
 events="SELECT sumIf(value, event = 'PageCacheReadBytes') > 0, sumIf(value, event = 'ParquetColumnDataReadAheadOfNextFile') > 0 FROM system.events"
 ${CLICKHOUSE_LOCAL} --config-file "$config" --multiquery "
     $QUERY FROM $url_files SETTINGS $SETTINGS, use_page_cache_for_object_storage = 1 FORMAT Null;
