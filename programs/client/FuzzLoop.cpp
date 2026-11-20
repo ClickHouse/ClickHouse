@@ -390,7 +390,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 /// Print insert data
                 String bytes;
-                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
+                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process, client_context);
                 WriteBufferFromString write_buf(bytes);
                 copyData(*read_buf, write_buf);
                 fmt::print(stdout, "{}\n", bytes);
@@ -508,7 +508,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 String bytes;
                 {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    auto read_buf = getReadBufferFromASTInsertQuery(query, client_context);
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }

@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/NetException.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
@@ -880,7 +881,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     return ptr;
 }
 
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter)
 {
     credentials.clear();
 
@@ -898,6 +899,8 @@ void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const 
     {
         credentials.setUsername(user_info);
     }
+
+    header_filter.checkBasicCredentials(credentials);
 }
 
 }
