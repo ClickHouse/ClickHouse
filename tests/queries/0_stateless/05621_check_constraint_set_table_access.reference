@@ -1,0 +1,12 @@
+--- set_target
+ACCESS_DENIED
+ACCESS_DENIED
+--- mt_target
+ACCESS_DENIED
+ACCESS_DENIED
+--- absent_target
+ACCESS_DENIED
+ACCESS_DENIED
+--- granted
+set_target: created
+BAD_ARGUMENTS
