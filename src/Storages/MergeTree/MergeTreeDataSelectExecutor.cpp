@@ -1424,7 +1424,8 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
             params.find_exact_ranges ? &ranges.exact_ranges : nullptr,
             params.pk_to_minmax_slot,
             params.settings,
-            log);
+            log,
+            params.stop_at_first_match);
 
         stats.primary_key.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
         stats.primary_key.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1727,6 +1728,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .pk_to_minmax_slot = pk_to_minmax_slot_ptr,
             .find_exact_ranges = find_exact_ranges,
             .keep_ranges_after_primary_key = is_final_query && use_skip_indexes_if_final_exact_mode_,
+            /// The primary key decides part emptiness only when no skip index filters its ranges afterwards.
+            .stop_at_first_match = filter_context.stop_at_first_match && skip_indexes.empty(),
             .skip_indexes = skip_indexes,
             .key_condition_rpn_template = key_condition_rpn_template.get(),
             .use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions,
@@ -2531,7 +2534,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     size_t num_streams,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool use_query_condition_cache,
-    bool allow_top_k_prewhere_query_condition_cache) const
+    bool allow_top_k_prewhere_query_condition_cache,
+    bool stop_at_first_match) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -2560,7 +2564,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*supports_skip_indexes_on_data_read*/false,
         /*check_row_limits=*/true,
         /*skip_ranges_analysis=*/false,
-        /*report_index_usage=*/true);
+        /*report_index_usage=*/true,
+        stop_at_first_match);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -2679,7 +2684,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     return markRangesFromPKRange(
         part_with_ranges.data_part,
@@ -2692,7 +2698,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges,
         pk_to_minmax_slot,
         settings,
-        log);
+        log,
+        stop_at_first_match);
 }
 
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
@@ -2706,7 +2713,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     return markRangesFromPKRange(
         LoadedMergeTreeDataPartInfoForReader(part, /*alter_conversions_=*/ nullptr),
@@ -2719,7 +2727,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges,
         pk_to_minmax_slot,
         settings,
-        log);
+        log,
+        stop_at_first_match);
 }
 
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
@@ -2733,7 +2742,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     MarkRanges res;
 
@@ -2902,7 +2912,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         if (sparse_keys_size == 0 && key_condition_useful)
         {
             const BoolMask mask = key_condition.checkInRange(
-                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types,
+                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types, primary_key.data_types,
                 /*equal_boundaries_mask=*/ {}, /*initial_mask=*/ {}, /*key_bounds=*/ nullptr);
             sparse_condition_can_be_true = mask.can_be_true;
         }
@@ -3094,6 +3104,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_left.data(),
                     sparse_key_right.data(),
                     sparse_key_types,
+                    primary_key.data_types,
                     equal_boundaries_mask,
                     initial_mask,
                     &index_bounds);
@@ -3214,6 +3225,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
             .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
             .min_marks_for_seek = min_marks_for_seek,
+            .stop_at_first_match = stop_at_first_match,
         };
 
         GenericExclusionSearchResult search_result;
