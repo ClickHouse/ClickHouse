@@ -35,7 +35,14 @@ SELECT count(), sum(a), sum(b) FROM t_index_hint_left WHERE indexHint(k < 640) A
 SELECT count() FROM (EXPLAIN SELECT k < a AND a < 500 AS c FROM t_index_hint_left WHERE c) WHERE trimLeft(explain) LIKE 'Filter%';
 SELECT count(), sum(c) FROM (SELECT k < a AND a < 500 AS c FROM t_index_hint_left WHERE c);
 
+-- `a < b` reads every queried column and stays in WHERE next to the derived `indexHint(a < 500)`: the filter is kept.
+SELECT count() FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_left WHERE a < b AND b < 500) WHERE trimLeft(explain) LIKE 'Filter%';
+SELECT count(), sum(b) FROM t_index_hint_left WHERE a < b AND b < 500;
+SELECT count(), sum(b) FROM t_index_hint_left WHERE a < b AND b < 500 SETTINGS optimize_and_compare_chain = 0;
+
 -- An additional table filter is one more condition moved to PREWHERE.
+SELECT count() FROM (EXPLAIN SELECT count(), sum(k), sum(a), sum(b) FROM t_index_hint_left WHERE k < a AND a < 500
+    SETTINGS additional_table_filters = {'t_index_hint_left': 'b < 300'}, query_plan_merge_filters = 1) WHERE trimLeft(explain) LIKE 'Filter%';
 SELECT count(), sum(k), sum(a), sum(b) FROM t_index_hint_left WHERE k < a AND a < 500
     SETTINGS additional_table_filters = {'t_index_hint_left': 'b < 300'};
 SELECT count(), sum(k), sum(a), sum(b) FROM t_index_hint_left WHERE k < a AND a < 500
