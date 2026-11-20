@@ -232,6 +232,11 @@ class ElOraculoDeTablas:
         "last_exception != '' AND NOT (type = 'MUTATE_PART' AND "
         f"toUInt32OrZero(extract(last_exception, '^Code: ([0-9]+)[.]')) IN {DATA_CONVERSION_ERRORS})"
     )
+    # Temporary data only in the distributed cache fails merges while no cache server is registered, e.g. after a restart
+    UNEXPECTED_PART_ERROR = (
+        f"exception != '' AND error NOT IN {DATA_CONVERSION_ERRORS} "
+        "AND NOT (error = 900 AND exception LIKE '%no server is available%')"
+    )
 
     HEALTH_CHECKS = [
         "broken detached part(s)",
@@ -257,7 +262,7 @@ class ElOraculoDeTablas:
         "",
         "",
         "SELECT database, table, last_exception FROM system.replicas WHERE readonly_start_time IS NOT NULL LIMIT 3;",
-        f"SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND error NOT IN {DATA_CONVERSION_ERRORS} AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
+        f"SELECT database, table, part_name, exception FROM system.part_log WHERE {UNEXPECTED_PART_ERROR} AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
         f"SELECT database, table, last_exception FROM system.replication_queue WHERE {UNEXPECTED_QUEUE_ERROR} LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
@@ -308,7 +313,7 @@ class ElOraculoDeTablas:
                     (SELECT count() x, 6 y FROM clusterAllReplicas(default, system.replicas) WHERE readonly_start_time IS NOT NULL)
                      UNION ALL
                     (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
-                     WHERE exception != '' AND error NOT IN {self.DATA_CONVERSION_ERRORS} AND event_time > (now() - toIntervalSecond(60))
+                     WHERE {self.UNEXPECTED_PART_ERROR} AND event_time > (now() - toIntervalSecond(60))
                      GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE {self.UNEXPECTED_QUEUE_ERROR})

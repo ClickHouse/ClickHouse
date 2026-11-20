@@ -1371,6 +1371,9 @@ void FuzzConfig::validateClickHouseHealth()
     static const String unexpected_queue_error = "\"last_exception\" != '' AND NOT (\"type\" = 'MUTATE_PART' AND "
                                                  "toUInt32OrZero(extract(\"last_exception\", '^Code: ([0-9]+)[.]')) IN "
         + data_conversion_errors + ")";
+    /// Temporary data only in the distributed cache fails merges while no cache server is registered, e.g. after a restart
+    static const String unexpected_part_error = "exception != '' AND error NOT IN " + data_conversion_errors
+        + " AND NOT (error = 900 AND exception LIKE '%no server is available%')";
 
     if (processServerQuery(
             false,
@@ -1406,7 +1409,7 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
                 " UNION ALL "
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
-                " WHERE exception != '' AND error NOT IN {} AND event_time > (now() - toIntervalSecond(60))"
+                " WHERE {} AND event_time > (now() - toIntervalSecond(60))"
                 " GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE {})"
@@ -1415,7 +1418,7 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE {} AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
-                data_conversion_errors,
+                unexpected_part_error,
                 unexpected_queue_error,
                 unexpected_queue_error,
                 fuzzer_out_file.generic_string())))
@@ -1445,8 +1448,7 @@ void FuzzConfig::validateClickHouseHealth()
             "",
             "",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replicas" WHERE readonly_start_time IS NOT NULL LIMIT 3)",
-            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND error NOT IN )"
-                + data_conversion_errors + " AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3",
+            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE )" + unexpected_part_error + " AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE )" + unexpected_queue_error + " LIMIT 3",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
