@@ -513,6 +513,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalAggregationMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for aggregation in external memory.
 - `ProfileEvent_ExternalAggregationCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to disk for aggregation in external memory.
 - `ProfileEvent_ExternalAggregationUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.
+- `ProfileEvent_GPUAggregationRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows aggregated on a GPU by the experimental GPU aggregation.
+- `ProfileEvent_GPUAggregationBatches` ([UInt64](/reference/data-types/int-uint)) — Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.
+- `ProfileEvent_GPUAggregationMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent transferring batches of rows to a GPU and aggregating them there.
 - `ProfileEvent_ExternalJoinWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for JOIN in external memory.
 - `ProfileEvent_ExternalJoinMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for JOIN in external memory.
 - `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for JOIN in external memory.
