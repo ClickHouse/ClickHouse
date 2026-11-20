@@ -8,7 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
 #include <Storages/expressionSourceColumns.h>
 
 #include <algorithm>
@@ -38,14 +38,13 @@ bool usesColumn(const Names & used_columns, const String & column)
     return std::ranges::any_of(used_columns, [&](const String & used) { return used == column || used.starts_with(column + "."); });
 }
 
-Names columnsReadByFilter(
-    const String & filter, const String & policy_name, const StorageID & table_id, const ColumnsDescription & columns, const ContextPtr & context)
+Names columnsReadByFilter(const String & filter, const String & policy_name, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
     try
     {
         ParserExpression parser;
         auto ast = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        return expressionSourceColumns(ast, columns, context, /*keep_alias_columns=*/ true, table_id);
+        return expressionSourceColumns(ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot);
     }
     catch (Exception & e)
     {
@@ -57,10 +56,13 @@ Names columnsReadByFilter(
 }
 
 void checkRowPoliciesBeforeAlter(
-    const StorageID & table_id, const ColumnsDescription & columns, const AlterCommands & commands, const ContextPtr & context)
+    const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const AlterCommands & commands, const ContextPtr & context)
 {
     if (std::none_of(commands.begin(), commands.end(), removesColumn))
         return;
+
+    const auto table_id = table->getStorageID();
+    const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
 
     const auto & access_control = context->getAccessControl();
     for (const auto & id : access_control.findAll<RowPolicy>())
@@ -76,7 +78,7 @@ void checkRowPoliciesBeforeAlter(
             if (filter.empty())
                 continue;
 
-            const auto used_columns = columnsReadByFilter(filter, policy_name, table_id, columns, context);
+            const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, context);
             for (const auto & command : commands)
             {
                 if (removesColumn(command) && usesColumn(used_columns, command.column_name))

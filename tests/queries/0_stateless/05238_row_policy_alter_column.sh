@@ -110,6 +110,16 @@ refused "ALTER TABLE tf DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tf RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tf DROP COLUMN other"
 
+echo "-- a virtual column of the table resolves, so other columns are free"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tv (id UInt32, tenant UInt32, extra UInt8, misc UInt8) ENGINE = MergeTree PARTITION BY tenant ORDER BY id;
+INSERT INTO tv VALUES (1, 1, 0, 0), (2, 2, 0, 0);
+CREATE ROW POLICY pv ON $DB.tv FOR SELECT USING _partition_id = '1' TO CURRENT_USER;
+ALTER TABLE tv DROP COLUMN extra;
+ALTER TABLE tv RENAME COLUMN misc TO misc2;
+SELECT 'virtual column policy', arraySort(groupArray(id)) FROM tv;
+"
+
 echo "-- a database-wide policy counts too"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 refused "ALTER TABLE t RENAME COLUMN tenant TO tenant2" ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -124,6 +134,7 @@ DROP ROW POLICY pn ON $DB.tn;
 DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
 DROP ROW POLICY pf ON $DB.tf;
+DROP ROW POLICY pv ON $DB.tv;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -134,4 +145,5 @@ DROP TABLE tn;
 DROP TABLE tu;
 DROP TABLE ta;
 DROP TABLE tf;
+DROP TABLE tv;
 "

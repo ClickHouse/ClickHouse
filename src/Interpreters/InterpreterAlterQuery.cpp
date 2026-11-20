@@ -504,7 +504,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            checkRowPoliciesBeforeAlter(table->getStorageID(), metadata_snapshot->getColumns(), *alter_commands, context);
+            checkRowPoliciesBeforeAlter(table, metadata_snapshot, *alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
             /// The following segments must see the metadata this ALTER committed.

@@ -40,7 +40,11 @@ void collectFoldedSourceColumns(const QueryTreeNodePtr & node, PlannerContextPtr
 }
 
 Names expressionSourceColumns(
-    const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, bool keep_alias_columns, const StorageID & table_id)
+    const ASTPtr & ast,
+    const ColumnsDescription & columns,
+    const ContextPtr & context,
+    bool keep_alias_columns,
+    const StorageSnapshotPtr & storage_snapshot)
 {
     if (!ast)
         return {};
@@ -48,7 +52,8 @@ Names expressionSourceColumns(
     auto analysis_context = Context::createCopy(context);
     auto expression = buildQueryTree(ast, analysis_context);
 
-    auto storage = std::make_shared<StorageDummy>(table_id, columns);
+    auto table_id = storage_snapshot ? storage_snapshot->storage.getStorageID() : StorageID{"dummy", "dummy"};
+    auto storage = std::make_shared<StorageDummy>(table_id, columns, storage_snapshot);
     auto table_node = std::make_shared<TableNode>(storage, analysis_context);
 
     QueryAnalyzer analyzer(/*only_analyze=*/ true);
