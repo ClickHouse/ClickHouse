@@ -246,7 +246,7 @@ TEST(SerializationIsColumnCompatible, MapSizeRequiresColumnUInt64)
 
 TEST(SerializationIsColumnCompatible, MapKeysOrValuesRequiresColumnArray)
 {
-    const auto array_serialization = SerializationArray::create(SerializationString::create());
+    const auto array_serialization = SerializationArray::create(SerializationString::create(), DataTypeFactory::instance().get("String"));
     const auto serialization = SerializationMapKeysOrValues::create(array_serialization, MergeTreeMapSerializationVersion::WITH_BUCKETS);
 
     EXPECT_TRUE(serialization->isColumnCompatible(*ColumnArray::create(ColumnString::create())));
