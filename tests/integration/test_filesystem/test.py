@@ -125,14 +125,21 @@ def test_filesystem_database_symlinked_user_files():
     expected = "1\ta\n2\tb\n"
     assert node_link.query("SELECT * FROM file('sub/t.csv') ORDER BY 1") == expected
 
-    node_link.query("CREATE DATABASE fs_relative ENGINE = Filesystem('sub')")
-    node_link.query("CREATE DATABASE fs_default ENGINE = Filesystem")
+    # An absolute path is accepted both as the resolved directory and as written through the symlink.
+    databases = {
+        "fs_relative": "Filesystem('sub')",
+        "fs_absolute": "Filesystem('/var/lib/clickhouse/user_files_real/sub')",
+        "fs_absolute_link": "Filesystem('/var/lib/clickhouse/user_files_link/sub')",
+    }
     try:
-        assert node_link.query("SELECT * FROM fs_relative.`t.csv` ORDER BY 1") == expected
+        node_link.query("CREATE DATABASE fs_default ENGINE = Filesystem")
         assert node_link.query("SELECT * FROM fs_default.`sub/t.csv` ORDER BY 1") == expected
-        assert "PATH_ACCESS_DENIED" in node_link.query_and_get_error(
-            "SELECT * FROM fs_relative.`../../outside.csv`"
-        )
+        for name, engine in databases.items():
+            node_link.query(f"CREATE DATABASE {name} ENGINE = {engine}")
+            assert node_link.query(f"SELECT * FROM {name}.`t.csv` ORDER BY 1") == expected
+            assert "PATH_ACCESS_DENIED" in node_link.query_and_get_error(
+                f"SELECT * FROM {name}.`../../outside.csv`"
+            )
     finally:
-        node_link.query("DROP DATABASE IF EXISTS fs_relative")
-        node_link.query("DROP DATABASE IF EXISTS fs_default")
+        for name in ["fs_default", *databases]:
+            node_link.query(f"DROP DATABASE IF EXISTS {name}")

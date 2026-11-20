@@ -81,6 +81,19 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
+    /// The paths of the tables are checked against the resolved `user_files_path` without resolving them, as `file` checks
+    /// its paths, so an absolute path written through a `user_files_path` that is a symlink, such as
+    /// `/var/lib/clickhouse/user_files_link/sub`, is moved onto the resolved one, as a relative path is built on it. Only
+    /// this prefix is replaced: the symlinks below it are kept, as `file` keeps them.
+    if (!is_local)
+    {
+        fs::path configured_user_files_path = fs::absolute(getContext()->getUserFilesPath()).lexically_normal();
+        if (!configured_user_files_path.has_filename())
+            configured_user_files_path = configured_user_files_path.parent_path();
+        if (configured_user_files_path != user_files_path && fileOrSymlinkPathStartsWith(path, configured_user_files_path.string()))
+            path = (user_files_path / fs::path(path).lexically_relative(configured_user_files_path)).lexically_normal();
+    }
+
     /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
     std::error_code ec;
     const bool path_exists = fs::exists(path, ec);
