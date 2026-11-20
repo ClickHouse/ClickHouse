@@ -391,7 +391,8 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin);
+    struct LoadMetadataProgress;
+    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin, LoadMetadataProgress & progress);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
