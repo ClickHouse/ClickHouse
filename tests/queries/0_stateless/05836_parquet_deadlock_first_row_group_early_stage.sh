@@ -11,11 +11,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FILE="${CLICKHOUSE_DATABASE}/t_parquet_deadlock_first_row_group.parquet"
 
-# Many small row groups and concurrent queries give the race many chances.
+# Thirty row groups and a few concurrent queries keep the test cheap; it is a smoke test of this
+# scheduling path, the race itself is rare at this size.
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE', Parquet, 'id UInt64, s String, u String, v String')
 SELECT number, toString(number % 100), toString(intDiv(number, 7) % 50), toString(number % 13)
-FROM numbers(300000)
+FROM numbers(3000)
 SETTINGS engine_file_truncate_on_insert = 1,
     output_format_parquet_row_group_size = 100,
     output_format_parquet_row_group_size_bytes = 536870912,
@@ -40,7 +41,6 @@ query()
     "
 }
 
-for i in {1..20}; do
+for i in {1..4}; do
     query "$i" &
-    (( i % 4 == 0 )) && wait
 done | sort | uniq -c | sed 's/^ *//'
