@@ -1,12 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstddef>
-#include <limits>
 #include <optional>
 #include <utility>
 
-#include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
@@ -103,31 +100,10 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (one_bucket_windows)
                 return one_bucket_result;
 
-            const Summary & summary = sliding_sum.getCurrentSum();
-            const auto & values = summary.values;
+            const auto & values = sliding_sum.getCurrentSum().values;
             if (values.empty())
                 return std::nullopt;
-
-            /// Like in Prometheus, a NaN sample in the window makes the result NaN. The NaN samples sort first.
-            if (isNaN(values.front()))
-                return std::numeric_limits<Float64>::quiet_NaN();
-
-            const Float64 median = *calculateTimeseriesQuantileOfSorted(values, 0.5);
-
-            /// A median interpolated between -Inf and +Inf is NaN. An infinite median makes the deviations of the samples
-            /// equal to it NaN (`Inf - Inf`), and there are always enough of them to cover the median position of the deviations.
-            if (!std::isfinite(median))
-                return std::numeric_limits<Float64>::quiet_NaN();
-
-            /// The median of the deviations is taken like the median of the values: the middle deviation for an odd count,
-            /// the two middle deviations weighted by 0.5 each for an even count.
-            const size_t count = values.size();
-            const size_t middle = (count - 1) / 2;
-            if (count % 2 == 1)
-                return calculateTimeseriesKthSmallestDeviation</* with_next = */ false>(values.data(), count, median, middle);
-
-            const auto [lower_deviation, upper_deviation] = calculateTimeseriesKthSmallestDeviation</* with_next = */ true>(values.data(), count, median, middle);
-            return lower_deviation * 0.5 + upper_deviation * 0.5;
+            return calculateTimeseriesMadOfSorted(values);
         }
     };
 

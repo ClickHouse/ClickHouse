@@ -73,46 +73,6 @@ std::optional<Float64> calculateTimeseriesQuantile(VectorWithMemoryTracking<Valu
     return calculateTimeseriesQuantileOfSorted(values, phi);
 }
 
-/// The median absolute deviation `median(|x - median(x)|)` of non-empty unsorted values, both medians taken like the
-/// 0.5-quantile of `calculateTimeseriesQuantileOfSorted` and selected instead of sorting. Like in Prometheus, it is NaN if
-/// a value is NaN or the median is not finite.
-template <typename ValueType>
-Float64 calculateTimeseriesMad(VectorWithMemoryTracking<ValueType> values)
-{
-    if (std::any_of(values.begin(), values.end(), [](ValueType value) { return isNaN(value); }))
-        return std::numeric_limits<Float64>::quiet_NaN();
-
-    const Float64 median = *calculateTimeseriesQuantile(values, 0.5);
-    if (!std::isfinite(median))
-        return std::numeric_limits<Float64>::quiet_NaN();
-
-    /// The middle deviation, or the two middle ones weighted by 0.5. No deviation is NaN, so `std::less` orders them.
-    auto median_of_deviations = [](auto & deviations) -> Float64
-    {
-        const size_t middle = (deviations.size() - 1) / 2;
-        ::nth_element(deviations.begin(), deviations.begin() + middle, deviations.end());
-        if (deviations.size() % 2 == 1)
-            return deviations[middle];
-        return deviations[middle] * 0.5 + *std::min_element(deviations.begin() + middle + 1, deviations.end()) * 0.5;
-    };
-
-    /// `Float64` deviations, as in `calculateTimeseriesKthSmallestDeviation`: in place for `Float64` values, in a buffer
-    /// for `Float32`.
-    if constexpr (std::is_same_v<ValueType, Float64>)
-    {
-        for (Float64 & value : values)
-            value = std::abs(value - median);
-        return median_of_deviations(values);
-    }
-    else
-    {
-        VectorWithMemoryTracking<Float64> deviations(values.size());
-        for (size_t i = 0; i < values.size(); ++i)
-            deviations[i] = std::abs(static_cast<Float64>(values[i]) - median);
-        return median_of_deviations(deviations);
-    }
-}
-
 /// The k-th smallest (counting from 0) of the deviations `|values[i] - median|`, where `values` are `count` real values
 /// in ascending order, `median` is finite and `k < count`. If `with_next`, the (k + 1)-th smallest deviation is returned
 /// as well, which requires `k + 1 < count`.
@@ -159,4 +119,69 @@ calculateTimeseriesKthSmallestDeviation(const ValueType * values, size_t count, 
     }
 }
 
+/// The median absolute deviation `median(|x - median(x)|)` of non-empty values sorted by
+/// `AggregateFunctionTimeseriesSortedValues::less`, both medians taken like the 0.5-quantile of
+/// `calculateTimeseriesQuantileOfSorted`. Like in Prometheus, it is NaN if a value is NaN or the median is not finite.
+template <typename ValueType>
+Float64 calculateTimeseriesMadOfSorted(const VectorWithMemoryTracking<ValueType> & values)
+{
+    /// The NaN values sort first.
+    if (isNaN(values.front()))
+        return std::numeric_limits<Float64>::quiet_NaN();
+
+    const Float64 median = *calculateTimeseriesQuantileOfSorted(values, 0.5);
+
+    /// A median interpolated between -Inf and +Inf is NaN. An infinite median makes the deviations of the values equal
+    /// to it NaN (`Inf - Inf`), and there are always enough of them to cover the median position of the deviations.
+    if (!std::isfinite(median))
+        return std::numeric_limits<Float64>::quiet_NaN();
+
+    /// The median of the deviations is taken like the median of the values: the middle deviation for an odd count,
+    /// the two middle deviations weighted by 0.5 each for an even count.
+    const size_t count = values.size();
+    const size_t middle = (count - 1) / 2;
+    if (count % 2 == 1)
+        return calculateTimeseriesKthSmallestDeviation</* with_next = */ false>(values.data(), count, median, middle);
+
+    const auto [lower_deviation, upper_deviation] = calculateTimeseriesKthSmallestDeviation</* with_next = */ true>(values.data(), count, median, middle);
+    return lower_deviation * 0.5 + upper_deviation * 0.5;
+}
+
+/// `calculateTimeseriesMadOfSorted` of non-empty unsorted values: both medians are selected instead of sorting.
+template <typename ValueType>
+Float64 calculateTimeseriesMad(VectorWithMemoryTracking<ValueType> values)
+{
+    if (std::any_of(values.begin(), values.end(), [](ValueType value) { return isNaN(value); }))
+        return std::numeric_limits<Float64>::quiet_NaN();
+
+    const Float64 median = *calculateTimeseriesQuantile(values, 0.5);
+    if (!std::isfinite(median))
+        return std::numeric_limits<Float64>::quiet_NaN();
+
+    /// The middle deviation, or the two middle ones weighted by 0.5. No deviation is NaN, so `std::less` orders them.
+    auto median_of_deviations = [](auto & deviations) -> Float64
+    {
+        const size_t middle = (deviations.size() - 1) / 2;
+        ::nth_element(deviations.begin(), deviations.begin() + middle, deviations.end());
+        if (deviations.size() % 2 == 1)
+            return deviations[middle];
+        return deviations[middle] * 0.5 + *std::min_element(deviations.begin() + middle + 1, deviations.end()) * 0.5;
+    };
+
+    /// `Float64` deviations, as in `calculateTimeseriesKthSmallestDeviation`: in place for `Float64` values, in a buffer
+    /// for `Float32`.
+    if constexpr (std::is_same_v<ValueType, Float64>)
+    {
+        for (Float64 & value : values)
+            value = std::abs(value - median);
+        return median_of_deviations(values);
+    }
+    else
+    {
+        VectorWithMemoryTracking<Float64> deviations(values.size());
+        for (size_t i = 0; i < values.size(); ++i)
+            deviations[i] = std::abs(static_cast<Float64>(values[i]) - median);
+        return median_of_deviations(deviations);
+    }
+}
 }
