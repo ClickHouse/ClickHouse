@@ -127,8 +127,8 @@ TEST(GlueSchemaColumns, ColumnCommentWithinGlueConstraints)
     ASSERT_EQ(columns.size(), 4u);
 
     EXPECT_EQ(columns[0].GetComment(), "first line  second\tline ");
-    EXPECT_EQ(columns[1].GetComment(), String(255, 'a'));
-    EXPECT_EQ(columns[2].GetComment(), String(254, 'b'));
+    EXPECT_EQ(columns[1].GetComment(), Aws::String(255, 'a'));
+    EXPECT_EQ(columns[2].GetComment(), Aws::String(254, 'b'));
     EXPECT_EQ(columns[3].GetComment(), "\xD0\xBF\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
 }
 
