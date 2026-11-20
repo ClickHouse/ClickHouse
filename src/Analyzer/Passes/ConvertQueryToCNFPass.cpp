@@ -285,10 +285,10 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
     return UNKNOWN;
 }
 
-bool comparesEnumWithString(const QueryTreeNodes & arguments)
+bool comparesEnumWithString(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
 {
-    const auto left_type = arguments[0]->getResultType();
-    const auto right_type = arguments[1]->getResultType();
+    const auto left_type = left->getResultType();
+    const auto right_type = right->getResultType();
     return comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type);
 }
 
@@ -320,7 +320,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
             continue;
 
         /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`: '9' is a name for `e`, a number for `n`.
-        if (comparesEnumWithString(arguments))
+        if (comparesEnumWithString(arguments[0], arguments[1]))
             return {};
 
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
@@ -343,7 +343,8 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
 
                     /// `CHECK e <= n` must not turn `n <= '9'` into `e <= '9'`: '9' is a number for `n`, a name for `e`.
-                    if (comparesEnumWithString(helper_function_node.getArguments().getNodes()))
+                    const auto & helper_arguments = helper_function_node.getArguments().getNodes();
+                    if (comparesEnumWithString(helper_arguments[0], helper_arguments[1]))
                         continue;
 
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
@@ -526,6 +527,10 @@ public:
 
         const auto component_id = component_id_it->second;
         auto new_node = id_to_query_node_map.at(component_id)->clone();
+
+        /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but `CAST('9', ...)` to the `Enum` of `e` reads the name '9'.
+        if (comparesEnumWithString(node, new_node))
+            return;
 
         if (!node->getResultType()->equals(*new_node->getResultType()))
         {

@@ -205,6 +205,12 @@ bool equals(const Field & lhs, const Field & rhs)
     }
 }
 
+/// An `Enum` compared with a string orders by the `Enum` value, and a cast from a string to an `Enum` reads a name.
+bool comparesEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
+{
+    return comparesStringWithEnum(left, right) || comparesStringWithEnum(right, left);
+}
+
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
 {
     using enum ComparisonGraphCompareResult;
@@ -387,9 +393,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// and it compares the constant bounds of the two sides by their `Field`s directly.
     if constexpr (!with_ast)
     {
-        const auto left_type = left->getResultType();
-        const auto right_type = right->getResultType();
-        if (comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type))
+        if (comparesEnumWithString(left->getResultType(), right->getResultType()))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 
@@ -634,7 +638,13 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         return graph.vertices[index].getConstant();
     else
     {
-        const auto & constant = getConstantValue(graph.vertices[index].getConstant());
+        const auto & equal_constant = graph.vertices[index].getConstant();
+
+        /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but '9' cast to the `Enum` of `e` is the name '9'.
+        if (comparesEnumWithString(equal_constant->getResultType(), node->getResultType()))
+            return std::nullopt;
+
+        const auto & constant = getConstantValue(equal_constant);
         auto constant_node = std::make_shared<ConstantNode>(constant, node->getResultType());
         return constant_node;
     }
