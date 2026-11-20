@@ -14,13 +14,17 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## throw_on_error_from_cache_on_write_operations {#throw_on_error_from_cache_on_write_operations}
+<div id="throw_on_error_from_cache_on_write_operations">
+  ## throw_on_error_from_cache_on_write_operations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 对写入操作 (INSERT、合并操作) 进行缓存时，忽略缓存错误
 
-## throw_on_hive_partitioning_resolution_failure {#throw_on_hive_partitioning_resolution_failure}
+<div id="throw_on_hive_partitioning_resolution_failure">
+  ## throw_on_hive_partitioning_resolution_failure
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,7 +32,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 当对象存储表的 Hive 风格分区检测无法列出存储内容时，抛出异常而非记录 Warning。禁用后，查询将不包含 Hive 分区列地运行，这可能会改变查询结果。
 
-## throw_on_max_partitions_per_insert_block {#throw_on_max_partitions_per_insert_block}
+<div id="throw_on_max_partitions_per_insert_block">
+  ## throw_on_max_partitions_per_insert_block
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,7 +49,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   如果你想了解修改 [`max_partitions_per_insert_block`](/zh/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block) 会对用户产生什么影响，此设置会很有帮助。
 </Tip>
 
-## throw_on_unsupported_query_inside_transaction {#throw_on_unsupported_query_inside_transaction}
+<div id="throw_on_unsupported_query_inside_transaction">
+  ## throw_on_unsupported_query_inside_transaction
+</div>
 
 <ExperimentalBadge />
 

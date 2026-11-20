@@ -41,6 +41,8 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsBool s3_disable_checksum;
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
@@ -72,7 +74,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -139,7 +140,7 @@ private:
         s3_uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        NormalizedHTTPHeaderEntries headers;
+        HTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
         String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
@@ -171,6 +172,7 @@ private:
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
+        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
         /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
@@ -219,13 +221,14 @@ private:
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
-            /* group = */ HTTPConnectionGroupType::STORAGE,
+            /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
             request_settings.request_throttler,
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
         client_configuration.expired_token_retry_timeout_ms = local_settings[Setting::backup_s3_expired_token_retry_timeout_ms];
+        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -240,16 +243,15 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
-        /// Propagate the explicit Google ADC triple or service account key so a user-supplied `gcp_oauth` is accepted by the restriction.
+        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
-        client_configuration.google_service_account_key = settings.auth_settings[S3AuthSetting::google_service_account_key];
 
-        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple or service
-        /// account key is only ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so
-        /// when the `gcp_oauth` is not query-supplied, the credential here is server config too and must be dropped
-        /// with it. Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple or a key would be treated as explicit and mint a
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
+        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
+        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
+        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
         /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
         /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
         if (boost::iequals(client_configuration.http_client, "gcp_oauth")
@@ -262,11 +264,11 @@ private:
             client_configuration.google_adc_client_id.clear();
             client_configuration.google_adc_client_secret.clear();
             client_configuration.google_adc_refresh_token.clear();
-            client_configuration.google_service_account_key.clear();
         }
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
+            .disable_checksum = local_settings[Setting::s3_disable_checksum],
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
@@ -291,7 +293,7 @@ private:
         if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
         {
             HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
-            context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(gcp_oauth_headers);
         }
 
         auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
@@ -397,7 +399,6 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
-    , disk_client_factory(S3BackupClientCreator(context_))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -426,6 +427,9 @@ BackupReaderS3::BackupReaderS3(
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+
+    if (auto blob_storage_system_log = context_->getBlobStorageLog())
+        blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
@@ -486,30 +490,20 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
                                 blob_path.size(), mode);
 
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
-            /// The native copy below issues its requests with the backup client, so `backup_restore_s3_retry_*`
-            /// already covers it. `dest_client` is used only by the fallback, which uploads to the destination
-            /// with it, so it is cloned with the same settings instead of keeping the ones of the disk.
-            auto dest_client = disk_client_factory.getOrCreate(destination_disk);
+            auto dest_client = destination_disk->getS3StorageClient();
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this]
-            {
-                LOG_TRACE(log, "Falling back to copy file {} from S3 to disk {} through buffers", path_in_backup, destination_disk->getName());
-                return readFile(path_in_backup);
-            };
-            auto copy_blob_storage_log = BlobStorageLogWriter::create(destination_disk->getName());
-            if (copy_blob_storage_log)
-                copy_blob_storage_log->local_path = destination_path;
+            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
 
             if (is_range)
                 copyS3FileRange(
                     client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
             else
                 copyS3File(
                     client, s3_uri.bucket, src_key, size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
 
             return size;
         };
@@ -739,7 +733,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     size_t batch_size = 1000;
 
     deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
-                      s3_capabilities, s3_settings.request_settings, batch_size, blob_storage_log);
+                      s3_capabilities, batch_size, blob_storage_log);
 }
 
 }

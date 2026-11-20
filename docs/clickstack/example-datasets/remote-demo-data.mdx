@@ -20,7 +20,7 @@ This guide uses a sample dataset hosted on the public ClickHouse playground at [
 Remote databases aren't supported when using Managed ClickStack. This dataset is therefore not supported. 
 </Warning>
 
-It contains approximately 40 hours of data captured from the ClickHouse version of the official OpenTelemetry (OTel) demo. The data is replayed nightly with timestamps adjusted to the current time window, allowing users to explore system behavior using ClickStack UI's integrated logs, traces, and metrics.
+It contains approximately 40 hours of data captured from the ClickHouse version of the official OpenTelemetry (OTel) demo. The data is replayed nightly with timestamps adjusted to the current time window, allowing users to explore system behavior using HyperDX's integrated logs, traces, and metrics.
 
 <Info>
 **Data variations**
@@ -34,7 +34,7 @@ In this demo, we investigate an incident involving an e-commerce website that se
 
 The customer support team has reported that users are experiencing issues completing payments at checkout. The issue has been escalated to the Site Reliability Engineering (SRE) team for investigation.
 
-Using ClickStack UI, the SRE team will analyze logs, traces, and metrics to diagnose and resolve the issue—then review session data to confirm whether their conclusions align with actual user behavior.
+Using HyperDX, the SRE team will analyze logs, traces, and metrics to diagnose and resolve the issue—then review session data to confirm whether their conclusions align with actual user behavior.
 
 ## OpenTelemetry Demo {#otel-demo}
 
@@ -106,7 +106,7 @@ The error should be more apparent:
 </Step>
 <Step title="Identify the error patterns" id="identify-error-patterns">
 
-With ClickStack UI's Clustering feature, you can automatically identify errors and group them into meaningful patterns. This accelerates user analysis when dealing with large volumes of log and traces. To use it, select `Event Patterns` from the `Analysis Mode` menu on the left panel.
+With HyperDX's Clustering feature, you can automatically identify errors and group them into meaningful patterns. This accelerates user analysis when dealing with large volumes of log and traces. To use it, select `Event Patterns` from the `Analysis Mode` menu on the left panel.
 
 The error clusters reveal issues related to failed payments, including a named pattern `Failed to place order`. Additional clusters also indicate problems charging cards and caches being full.
 
@@ -144,7 +144,7 @@ The issue doesn't seem to infrastructure related - no metrics have appreciably c
 
 In ClickStack, traces are also automatically correlated with both logs and metrics. Let's explore the trace linked to our selected log to identify the service responsible.
 
-Select `Trace` to visualize the associated trace. Scrolling down through the subsequent view we can see how ClickStack UI is able to visualize the distributed trace across the microservices, connecting the spans in each service. A payment clearly involves multiple microservices, including those that performance checkout and currency conversions.
+Select `Trace` to visualize the associated trace. Scrolling down through the subsequent view we can see how HyperDX is able to visualize the distributed trace across the microservices, connecting the spans in each service. A payment clearly involves multiple microservices, including those that performance checkout and currency conversions.
 
 <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="Step 8" size="lg"/>
 
@@ -263,7 +263,7 @@ In summary, by exploring logs, traces and finally metrics we have concluded:
 
 Sessions allow us to replay the user experience, offering a visual account of how an error occurred from the user's perspective. While not typically used to diagnose root causes, they're valuable for confirming issues reported to customer support and can serve as a starting point for deeper investigation.
 
-In ClickStack UI, sessions are linked to traces and logs, providing a complete view of the underlying cause.
+In HyperDX, sessions are linked to traces and logs, providing a complete view of the underlying cause.
 
 For example, if the support team provides the email of a user who encountered a payment issue `Ronny.Windler@gmail.com` - it's often more effective to begin with their session rather than directly searching logs or traces.
 

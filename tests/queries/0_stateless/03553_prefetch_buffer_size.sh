@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, no-parallel-replicas, no-distributed-cache
+# Tags: no-random-settings, no-fasttest, no-parallel-replicas
 # - no-random-settings -- prefetch became non deterministic
 # - no-fasttest -- requires S3
 # - no-parallel-replicas -- query can be executed on another node
-# - no-distributed-cache -- DC ignores filesystem_cache_prefer_bigger_buffer_size
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

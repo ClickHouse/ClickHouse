@@ -6,15 +6,9 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
-
-#include <base/EnumReflection.h>
-
-#include <mutex>
 
 
 namespace ProfileEvents
@@ -44,7 +38,6 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
-    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
     auto elapsed = watch.elapsedMicroseconds();
@@ -90,13 +83,11 @@ void deleteFilesFromS3(
     const Strings & keys,
     bool if_exists,
     S3Capabilities & s3_capabilities,
-    const S3::S3RequestSettings & request_settings,
     size_t batch_size,
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
-    std::optional<ProfileEvents::Event> profile_event,
-    Strings * successful_keys)
+    std::optional<ProfileEvents::Event> profile_event)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
     chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
@@ -121,33 +112,6 @@ void deleteFilesFromS3(
 
     if (try_batch_delete)
     {
-        /// Historically `GCS` has not supported `DeleteObjects`. Support was added recently, with some limitations on the call.
-        /// `GCS` rejects `x-amz-checksum-*`, so it gets no flexible checksum and the request keeps `Content-MD5`
-        /// (`DeleteObjectsRequest::ShouldComputeContentMd5`). `delete_checksum_algorithm` does not apply to it.
-        const bool use_checksum_header = !s3_client->isClientForGCS();
-        const bool explicit_checksum_algorithm = S3::RequestChecksum::hasExplicitDeleteChecksumAlgorithm(request_settings);
-
-        /// Throws for an explicit algorithm that cannot work (`MD5` under FIPS or on `S3Express`): fail closed.
-        std::optional<S3::RequestChecksum::Algorithm> checksum_algorithm;
-        if (use_checksum_header)
-        {
-            checksum_algorithm = S3::RequestChecksum::getDeleteChecksumAlgorithm(
-                request_settings, s3_client->isS3ExpressBucket(), s3_capabilities.isDeleteMD5Rejected());
-
-            if (*checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256 && !explicit_checksum_algorithm
-                && !s3_client->isS3ExpressBucket())
-            {
-                static std::once_flag log_once;
-                std::call_once(log_once, [&]
-                {
-                    LOG_INFO(log, "Using a SHA256 checksum for DeleteObjects instead of Content-MD5, because MD5 is unavailable "
-                             "or was rejected by the server. Set `delete_checksum_algorithm` to choose explicitly");
-                });
-            }
-            LOG_TRACE(log, "DeleteObjects checksum algorithm: {} ({})", magic_enum::enum_name(*checksum_algorithm),
-                      explicit_checksum_algorithm ? "explicit setting" : "automatic");
-        }
-
         bool need_retry_with_plain_delete_object = false;
         size_t current_position = 0;
 
@@ -171,56 +135,16 @@ void deleteFilesFromS3(
             delkeys.SetObjects(current_chunk);
             delkeys.SetQuiet(true);
 
-            auto send_delete_objects = [&]
-            {
-                S3::DeleteObjectsRequest request;
-                request.SetBucket(bucket);
-                request.SetDelete(delkeys);
-                if (checksum_algorithm)
-                    request.setUploadChecksumAlgorithm(*checksum_algorithm);
+            S3::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
 
-                ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-                if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
-                    ProfileEvents::increment(*profile_event);
+            ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+            if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
+                ProfileEvents::increment(*profile_event);
 
-                return s3_client->DeleteObjects(request);
-            };
-
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
-            auto outcome = send_delete_objects();
-
-            /// With the automatic default (`MD5`), a server that rejects the digest gets one retry of the same batch
-            /// with `SHA256`. The outcome is remembered so later batches start with `SHA256`. An explicit algorithm
-            /// is never replaced.
-            if (!outcome.IsSuccess() && use_checksum_header && !explicit_checksum_algorithm
-                && checksum_algorithm == S3::RequestChecksum::Algorithm::MD5 && !s3_client->isS3ExpressBucket())
-            {
-                const String error_name = outcome.GetError().GetExceptionName();
-                if (error_name == "MissingContentMD5" || error_name == "InvalidDigest" || error_name == "InvalidRequest"
-                    || error_name == "InvalidArgument")
-                {
-                    const String error_message = outcome.GetError().GetMessage();
-                    checksum_algorithm = S3::RequestChecksum::Algorithm::SHA256;
-                    outcome = send_delete_objects();
-
-                    /// Remember the switch only once the server has accepted `SHA256`. Otherwise the digest may not be the
-                    /// cause, and the original error is logged here because the retry's error is the one handled below.
-                    if (outcome.IsSuccess())
-                    {
-                        if (s3_capabilities.setDeleteMD5Rejected())
-                            LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Using a SHA256 checksum for "
-                                        "later batches. Set `delete_checksum_algorithm` to choose explicitly",
-                                        error_message, error_name);
-                    }
-                    else
-                    {
-                        LOG_INFO(log, "DeleteObjects failed with Content-MD5: {} ({}), and the retry with a SHA256 checksum "
-                                 "failed too: {}. The server may not support DeleteObjects, or may reject both digests",
-                                 error_message, error_name, outcome.GetError().GetMessage());
-                    }
-                }
-            }
+            auto outcome = s3_client->DeleteObjects(request);
             auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
@@ -259,38 +183,18 @@ void deleteFilesFromS3(
                 {
                     /// All the objects were removed.
                     LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", comma_separated_keys);
-
-                    if (successful_keys)
-                    {
-                        successful_keys->reserve(current_chunk.size());
-                        for (const auto & chunk : current_chunk)
-                        {
-                            successful_keys->emplace_back(chunk.GetKey());
-                        }
-                    }
                 }
                 else
                 {
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
-
-                    /// Keys which already did not exist at the removal point.
-                    UnorderedSetWithMemoryTracking<std::string_view> non_existing_keys;
-                    /// Keys which were successfully removed by current thread.
-                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys;
+                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys{keys.begin(), keys.end()};
                     String not_found_keys;
                     std::exception_ptr other_error;
-
-                    for (const auto & chunk : current_chunk)
-                    {
-                        removed_keys.insert(chunk.GetKey());
-                        non_existing_keys.insert(chunk.GetKey());
-                    }
 
                     for (const auto & err : errors)
                     {
                         removed_keys.erase(err.GetKey());
-
                         auto error_type = static_cast<Aws::S3::S3Errors>(Aws::S3::S3ErrorMapper::GetErrorForName(err.GetCode().c_str()).GetErrorType());
                         if (if_exists && S3::isNotFoundError(error_type))
                         {
@@ -298,21 +202,12 @@ void deleteFilesFromS3(
                                 not_found_keys += ", ";
                             not_found_keys += err.GetKey();
                         }
-                        else
+                        else if (!other_error)
                         {
-                            non_existing_keys.erase(err.GetKey());
-
-                            if (!other_error)
-                                other_error = std::make_exception_ptr(
-                                    S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",
-                                                err.GetMessage(), err.GetCode(), err.GetKey()});
+                            other_error = std::make_exception_ptr(
+                                S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",
+                                            err.GetMessage(), err.GetCode(), err.GetKey()});
                         }
-                    }
-
-                    if (!non_existing_keys.empty() && successful_keys)
-                    {
-                        for (const auto & key : non_existing_keys)
-                            successful_keys->emplace_back(key);
                     }
 
                     if (!removed_keys.empty())
@@ -343,39 +238,14 @@ void deleteFilesFromS3(
                 /// DeleteObjects didn't succeed, that means either a) this operation isn't supported at all;
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
-
-                /// `MissingContentMD5` and `InvalidDigest` mean the digest header is missing or malformed, which is the same on
-                /// every request, so retrying is pointless. A digest error means `DeleteObjects` is unsupported only if every
-                /// automatic digest was rejected. The request tries `Content-MD5`, then `SHA256`. When `MD5` is unavailable (FIPS),
-                /// the first request already uses `SHA256`, so there is no second digest to try. An explicit checksum algorithm
-                /// setting and `S3Express` buckets are never second-guessed, and `GCS` only has `Content-MD5`.
-                /// This applies unless `DeleteObjects` has already worked: changing that capability would trip the mismatch
-                /// check in `setIsBatchDeleteSupported`. Another thread may have marked it unsupported first, which still allows the
-                /// fallback.
-                /// `setBatchDeleteUnsupportedUnlessSupported` does the check and the update as one atomic step.
-                const bool digest_rejected = err.GetExceptionName() == "MissingContentMD5" || err.GetExceptionName() == "InvalidDigest";
-                const bool automatic_digests_exhausted = !explicit_checksum_algorithm && !s3_client->isS3ExpressBucket()
-                    && (!use_checksum_header || checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256);
-                const bool generic_unsupported = (err.GetExceptionName() == "InvalidRequest")
-                    || (err.GetExceptionName() == "InvalidArgument") || (err.GetExceptionName() == "NotImplemented");
-
-                bool fall_back = false;
-                if (generic_unsupported)
-                {
-                    /// Multiple threads can call deleteFilesFromS3() with a reference to the same `s3_capabilities`,
-                    /// and the following line doesn't cause a race because `s3_capabilities` is protected with mutex.
-                    s3_capabilities.setIsBatchDeleteSupported(false);
-                    fall_back = true;
-                }
-                else
-                {
-                    fall_back = digest_rejected && automatic_digests_exhausted && s3_capabilities.setBatchDeleteUnsupportedUnlessSupported();
-                }
-
-                if (fall_back)
+                if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
+                    || (err.GetExceptionName() == "NotImplemented"))
                 {
                     LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+                    /// Multiple threads can call deleteFilesFromS3() with a reference to the same `s3_capabilities`,
+                    /// and the following line doesn't cause a race because `s3_capabilities` is protected with mutex.
+                    s3_capabilities.setIsBatchDeleteSupported(false);
                     need_retry_with_plain_delete_object = true;
                     break;
                 }
@@ -405,9 +275,6 @@ void deleteFilesFromS3(
         deleteFileFromS3(s3_client, bucket, keys[i], if_exists,
                          blob_storage_log, local_path_for_blob_storage_log, file_size_for_blob_storage_log,
                          profile_event);
-
-        if (successful_keys)
-            successful_keys->emplace_back(keys[i]);
     }
 }
 

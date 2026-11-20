@@ -112,11 +112,3 @@ Most of the time, you shouldn't be using `select_sequential_consistency` or `SYS
 2. If you write to one replica and read from another, you can use `SYSTEM SYNC REPLICA LIGHTWEIGHT` to force the replica to fetch the metadata from ClickHouse-Keeper.
 
 3. Use `select_sequential_consistency` as a setting as part of your query.
-
-## `ALTER` and mutation visibility {#alter-and-mutation-visibility}
-
-`SharedMergeTree` coordinates metadata changes through ClickHouse Keeper. Replicas fetch changed metadata asynchronously, so a metadata change is not necessarily visible immediately on every replica. Reads in the same session on the same node already use current metadata. When a read must run on another replica immediately after a metadata change, use `SYSTEM SYNC REPLICA LIGHTWEIGHT` to make that replica fetch metadata from ClickHouse Keeper.
-
-Mutation-producing `ALTER` operations perform background work that creates new parts in shared storage and coordinates their visibility through ClickHouse Keeper. This is not a per-replica rewrite or data-transfer process as in `ReplicatedMergeTree`.
-
-In ClickHouse Cloud, [`alter_sync`](/reference/settings/session-settings/alter#alter_sync) defaults to `0`; set it when a client must wait for metadata operations or a non-metadata `MODIFY COLUMN` rewrite. For `UPDATE`, `DELETE`, and `MATERIALIZE ...` operations, use [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) to control waiting and monitor progress in [`system.mutations`](/reference/system-tables/mutations).
