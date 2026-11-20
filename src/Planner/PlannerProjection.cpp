@@ -9,7 +9,6 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -93,19 +92,26 @@ String getStoredName(const QueryTreeNodePtr & node)
 
 
 /// a projection stores what a window function reads, not its result
-void collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
+/// returns true if the node has a window function
+bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
 {
+    size_t size_before = result.size();
+    const auto * function_node = node->as<FunctionNode>();
+    bool has_window_function = function_node && function_node->isWindowFunction();
+    for (const auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            has_window_function |= collectExpressionsBeforeWindow(child, result);
+
     auto node_type = node->getNodeType();
     bool is_expression = node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT;
-    if (is_expression && !hasWindowFunctionNodes(node))
+    if (is_expression && !has_window_function)
     {
+        /// the part stores the expression, not its arguments
+        result.resize(size_before);
         result.push_back(node);
-        return;
     }
 
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectExpressionsBeforeWindow(child, result);
+    return has_window_function;
 }
 
 }
