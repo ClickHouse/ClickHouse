@@ -506,7 +506,7 @@ A [Join](/reference/engines/table-engines/special/join) table is a prepared hash
 
 A column that a row policy reads cannot be dropped or renamed while the policy exists: `ALTER TABLE ... DROP COLUMN` and `ALTER TABLE ... RENAME COLUMN` fail with `ALTER_OF_COLUMN_IS_FORBIDDEN`. Change or drop the policy first. Other alterations, such as `MODIFY COLUMN` or `CLEAR COLUMN`, are not affected. A read through an `Alias` table applies the policies of the alias and of its target, so the policies of both count, whether the `ALTER` names the alias or the target.
 
-The check uses the row policies of the server and table that receive the `ALTER`. The other replicas of a [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table apply the change without the check, so keep the same policies on every replica, for example with `ON CLUSTER` or a replicated access storage.
+The check uses the row policies of the server and table that receive the `ALTER`. The other replicas of a [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table or of a [Replicated](/reference/engines/database-engines/replicated) database apply the change without the check, so keep the same policies on every replica, for example with `ON CLUSTER` or a replicated access storage.
 
 ## ON CLUSTER Clause {#on-cluster-clause}
 
