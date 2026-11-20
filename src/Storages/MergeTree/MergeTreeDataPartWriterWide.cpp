@@ -40,6 +40,10 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// The serialization requests the streams of a column in the order `enumerateStreams` lists them, except a few it
+    /// writes only in a prefix or a suffix, so the stream getter checks this many next streams before a lookup by name.
+    constexpr size_t STREAMS_TO_CHECK_IN_ORDER = 4;
 }
 
 namespace
@@ -215,12 +219,20 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
 {
     auto & resolved_streams = resolved_streams_by_column[name_and_type.name];
+    auto & resolved_stream_paths = resolved_stream_paths_by_column[name_and_type.name];
 
-    const auto add_resolved_stream = [&](const String & full_stream_name, MergeTreeWriterStream * stream, const bool is_offsets)
+    const auto add_resolved_stream = [&](
+        const String & full_stream_name, const ISerialization::SubstreamPath & substream_path, MergeTreeWriterStream * stream, const bool is_offsets)
     {
         const ResolvedStream resolved_stream{.stream = stream, .is_offsets = is_offsets};
         resolved_streams.push_back(resolved_stream);
         resolved_streams_by_full_name.emplace(full_stream_name, resolved_stream);
+
+        auto & path = resolved_stream_paths.emplace_back();
+        path.reserve(substream_path.size());
+        for (const auto & substream : substream_path)
+            path.push_back(
+                {substream.type, substream.bucket, substream.name_of_substream, substream.variant_element_name, substream.object_path_name});
     };
 
     const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
@@ -260,7 +272,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         /// Shared offsets for Nested type.
         if (const auto it = column_streams.find(stream_name); it != column_streams.end())
         {
-            add_resolved_stream(full_stream_name, it->second.get(), is_offsets);
+            add_resolved_stream(full_stream_name, substream_path, it->second.get(), is_offsets);
             return;
         }
 
@@ -319,7 +331,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             settings.marks_compress_block_size,
             query_write_settings));
         chassert(inserted);
-        add_resolved_stream(full_stream_name, stream_it->second.get(), is_offsets);
+        add_resolved_stream(full_stream_name, substream_path, stream_it->second.get(), is_offsets);
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -331,6 +343,24 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
+}
+
+bool MergeTreeDataPartWriterWide::isSameSubstreamPath(const SubstreamPathElements & elements, const ISerialization::SubstreamPath & substream_path)
+{
+    if (elements.size() != substream_path.size())
+        return false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        const auto & element = elements[i];
+        const auto & substream = substream_path[i];
+        if (element.type != substream.type || element.bucket != substream.bucket
+            || element.name_of_substream != substream.name_of_substream
+            || element.variant_element_name != substream.variant_element_name
+            || element.object_path_name != substream.object_path_name)
+            return false;
+    }
+    return true;
 }
 
 const MergeTreeDataPartWriterWide::ResolvedStream * MergeTreeDataPartWriterWide::resolveStream(
@@ -360,13 +390,35 @@ const MergeTreeDataPartWriterWide::ResolvedStreams & MergeTreeDataPartWriterWide
 ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(const NameAndTypePair & column,
     const WrittenOffsetSubstreams & offset_substreams) const
 {
-    return [&, this] (const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
+    return [&, this,
+            &resolved_streams = getResolvedStreams(column.name),
+            &resolved_stream_paths = resolved_stream_paths_by_column.at(column.name),
+            next_stream = size_t{0}] (const ISerialization::SubstreamPath & substream_path) mutable -> WriteBuffer *
     {
         /// Skip ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return nullptr;
 
-        const auto * resolved_stream = resolveStream(column, substream_path);
+        const ResolvedStream * resolved_stream = nullptr;
+        const size_t num_streams = resolved_streams.size();
+        for (size_t i = 0; i < std::min(num_streams, STREAMS_TO_CHECK_IN_ORDER); ++i)
+        {
+            size_t pos = next_stream + i;
+            if (pos >= num_streams)
+                pos -= num_streams;
+
+            if (isSameSubstreamPath(resolved_stream_paths[pos], substream_path))
+            {
+                resolved_stream = &resolved_streams[pos];
+                next_stream = pos + 1 == num_streams ? 0 : pos + 1;
+                chassert(resolveStream(column, substream_path)->stream == resolved_stream->stream);
+                chassert(resolveStream(column, substream_path)->is_offsets == resolved_stream->is_offsets);
+                break;
+            }
+        }
+
+        if (!resolved_stream)
+            resolved_stream = resolveStream(column, substream_path);
         if (!resolved_stream)
             return nullptr;
 
@@ -945,6 +997,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     }
 
     resolved_streams_by_column.clear();
+    resolved_stream_paths_by_column.clear();
     resolved_streams_by_full_name.clear();
     written_before_full_names.clear();
     column_streams.clear();
@@ -997,6 +1050,7 @@ void MergeTreeDataPartWriterWide::cancel() noexcept
             stream.second->cancel();
 
     resolved_streams_by_column.clear();
+    resolved_stream_paths_by_column.clear();
     resolved_streams_by_full_name.clear();
     written_before_full_names.clear();
     column_streams.clear();
