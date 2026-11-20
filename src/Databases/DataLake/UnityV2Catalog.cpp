@@ -358,7 +358,7 @@ bool UnityV2Catalog::existsTable(const std::string & schema_name, const std::str
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
     try
     {
-        auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+        auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name)).first;
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         return hasValueAndItsNotNone("name", object)
             && object->get("name").extract<String>() == table_name;
@@ -380,7 +380,7 @@ void UnityV2Catalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try
     {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, schema_name));
+        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / encodeUnityFullName(fmt::format("{}.{}", warehouse, schema_name)));
     }
     catch (const DB::HTTPException & e)
     {
@@ -445,7 +445,7 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
 {
     checkNamespaceExists(namespace_name);
 
-    auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
+    auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / encodeUnityFullName(fmt::format("{}.{}", warehouse, namespace_name))).first;
     const auto & object = json.extract<Poco::JSON::Object::Ptr>();
 
     /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
@@ -483,7 +483,7 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
 
     try
     {
-        deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name));
     }
     catch (...)
     {
@@ -496,7 +496,7 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
 
 String UnityV2Catalog::getTableType(const String & full_table_name) const
 {
-    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name)).first;
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
     if (!hasValueAndItsNotNone("table_type", object))
         throw DB::Exception(
@@ -556,6 +556,13 @@ void UnityV2Catalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from Unity catalog");
 }
 
+void UnityV2Catalog::checkDirectCommitIsAllowed(const std::string & schema_name, const std::string & table_name, const DB::UUID & table_uuid) const
+{
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name)).first;
+    checkUnityDirectCommitIsAllowed(json.extract<Poco::JSON::Object::Ptr>(), full_table_name, table_uuid);
+}
+
 bool UnityV2Catalog::tryGetTableMetadata(
     const std::string & schema_name,
     const std::string & table_name,
@@ -566,7 +573,7 @@ bool UnityV2Catalog::tryGetTableMetadata(
     Poco::Dynamic::Var json;
     try
     {
-        json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+        json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name)).first;
     }
     catch (const DB::HTTPException & e)
     {

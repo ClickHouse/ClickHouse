@@ -6,6 +6,12 @@
 - reports an Iceberg `securable_kind`, which the open-source server never sends;
 - writes the table location as `file:///tmp/...`, which `setLocation` requires.
 
+For the tables in `PATCHED_TABLE_TYPES` it reports a `table_type` other than
+`EXTERNAL` (or none at all), which the open-source server has no notion of.
+
+It also serves `managed_delta` under `ESCAPED_NAME`, a name the open-source server
+would not accept, and gives `REPLACED_TABLE` a new `table_id` on every lookup.
+
 It also emulates Databricks authentication:
 
 - `POST /oidc/v1/token` mints OAuth tokens for `CLIENT_ID:CLIENT_SECRET`, and
@@ -32,6 +38,25 @@ UPSTREAM = "http://localhost:8080"
 UNIFORM_TABLES = {"marksheet_uniform"}
 
 ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
+
+# Tables reported as not external, name -> `table_type`, where None removes the field. A static
+# mapping, so no test can change what another test sees. The legacy resolver ignores `table_type`
+# entirely, which is why these values have to be refused by the write guard rather than by the read rule.
+PATCHED_TABLE_TYPES = {
+    "managed_delta": "MANAGED",
+    "clone_delta": "MANAGED_SHALLOW_CLONE",
+    "foreign_delta": "FOREIGN",
+    "untyped_delta": None,
+}
+
+# The open-source server allows only `[a-zA-Z0-9_@-]` in a name. In a request path this one
+# is split by `?`, `#` and `/`, changed by `%41`, and rejected for `é` unless it is escaped.
+ESCAPED_NAME = "a?b#c%41/é"
+ESCAPED_NAME_TARGET = "managed_delta"
+TABLE_ROUTE = "/unity-catalog/tables/"
+
+# As if another table took this name after each lookup of it.
+REPLACED_TABLE = "replaced_delta"
 
 # The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
@@ -71,19 +96,41 @@ def normalize_scheme(data):
 
 
 def patch_table(table):
-    if table.get("name") in UNIFORM_TABLES:
+    name = table.get("name")
+    if name in UNIFORM_TABLES:
         table["securable_kind"] = ICEBERG_SECURABLE_KIND
+    if name in PATCHED_TABLE_TYPES:
+        if PATCHED_TABLE_TYPES[name] is None:
+            table.pop("table_type", None)
+        else:
+            table["table_type"] = PATCHED_TABLE_TYPES[name]
+    if name == REPLACED_TABLE:
+        table["table_id"] = str(uuid.uuid4())
     return table
 
 
-def patch_tables_response(data):
+def patch_tables_response(data, rename_to=None):
     """The catalog uses both the paged listing and the single-table response."""
     body = json.loads(data)
     if "tables" in body:
         body["tables"] = [patch_table(t) for t in body["tables"]]
     elif "name" in body:
         body = patch_table(body)
+        if rename_to is not None:
+            body["name"] = rename_to
     return json.dumps(body).encode()
+
+
+def resolve_escaped_name(path):
+    """The upstream path for a request that names `ESCAPED_NAME` as one escaped path
+    segment, or None."""
+    prefix, route, segment = path.partition(TABLE_ROUTE)
+    if not route or "/" in segment or "?" in segment:
+        return None
+    schema, _, name = urllib.parse.unquote(segment).rpartition(".")
+    if name != ESCAPED_NAME:
+        return None
+    return f"{prefix}{TABLE_ROUTE}{schema}.{ESCAPED_NAME_TARGET}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -106,6 +153,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         path = self.path.replace("/iceberg-rest/", "/iceberg/")
+        escaped_path = resolve_escaped_name(path)
+        if escaped_path is not None:
+            path = escaped_path
         try:
             response = urllib.request.urlopen(UPSTREAM + path)
             status, data = response.status, response.read()
@@ -114,7 +164,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if status == 200:
             if "/unity-catalog/tables" in path:
-                data = patch_tables_response(data)
+                rename_to = ESCAPED_NAME if escaped_path is not None else None
+                data = patch_tables_response(data, rename_to)
             elif "/unity-catalog/iceberg/" in path:
                 data = normalize_scheme(data)
 
