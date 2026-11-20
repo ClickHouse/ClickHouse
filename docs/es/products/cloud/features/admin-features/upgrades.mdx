@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['actualizaciones', 'gestión de versiones', 'funciones de Cloud', 'mantenimiento', 'actualizaciones']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por las actualizaciones. Implementamos periódicamente actualizaciones que incluyen correcciones, nuevas características y mejoras del rendimiento.
@@ -68,15 +68,7 @@ En concreto, los servicios:
 Puede modificar el calendario de versiones del servicio en la consola de Cloud, como se muestra a continuación:
 
 <div class="eighty-percent">
-  <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Seleccione el tipo de canal de lanzamiento](/images/cloud/manage/fast_release.webp)
-
-  </Frame>
-
-  </div>
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Seleccione el tipo de canal de lanzamiento" border />
 </div>
 
 <br />
@@ -126,15 +118,7 @@ Puede configurar una ventana de actualización para los servicios del nivel Ente
 Seleccione el servicio para el que desea programar una actualización y, a continuación, seleccione `Settings` en el menú de la izquierda. Desplácese hasta `Scheduled upgrades`.
 
 <div class="eighty-percent">
-  <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Actualizaciones programadas](/images/cloud/manage/scheduled_upgrades.webp)
-
-  </Frame>
-
-  </div>
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="Actualizaciones programadas" border />
 </div>
 
 <br />
@@ -142,15 +126,7 @@ Seleccione el servicio para el que desea programar una actualización y, a conti
 Al seleccionar esta opción, podrá elegir el día de la semana y la franja horaria para las actualizaciones de la base de datos y de Cloud.
 
 <div class="eighty-percent">
-  <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Ventana de actualización programada](/images/cloud/manage/scheduled_upgrade_window.webp)
-
-  </Frame>
-
-  </div>
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="Ventana de actualización programada" border />
 </div>
 
 <br />

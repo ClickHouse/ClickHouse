@@ -6,7 +6,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <mutex>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -29,21 +28,21 @@ public:
     /// primary key) and the filters built for them, as referenced by the pushed-down
     /// `__applyFilter` conjuncts.
     RuntimeFilterReadRangesRefiner(
-        StorageMetadataPtr metadata_snapshot_, ContextPtr context_, VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors_);
+        StorageMetadataPtr metadata_snapshot_, ContextPtr context_, std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors_);
     ~RuntimeFilterReadRangesRefiner() override;
 
     /// Idempotent and thread-safe: the seal is copied to every gated reading stream, so this
     /// is called once per stream with the same filter and only the first call takes effect.
     void setFilter(const RuntimeFilterConstPtr & filter);
 
-    [[nodiscard]] MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
+    MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
 private:
     void setFilterImpl(const RuntimeFilterConstPtr & filter);
 
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
-    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors;
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors;
 
     /// Written once by setFilter before any refine call (guaranteed by the gating edge).
     std::once_flag set_filter_once;

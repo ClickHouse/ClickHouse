@@ -1,7 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -137,7 +134,7 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto old_children = node->children;
-        ActionsDAG::NodeRawConstPtrs new_children;
+        std::vector<const ActionsDAG::Node *> new_children;
 
         for (const auto & child : old_children)
             new_children.push_back(replaceNodes(dag, child, replacements));
@@ -147,21 +144,6 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     }
 
     return node;
-}
-
-/// Returns the inputs that the outputs depend on. Expects the unused actions to be removed.
-UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getUsedInputs(const ActionsDAG & dag)
-{
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
-    for (const auto & node : dag.getNodes())
-        used_nodes.insert(node.children.begin(), node.children.end());
-
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
-    for (const auto * input : dag.getInputs())
-        if (used_nodes.contains(input))
-            used_inputs.insert(input);
-
-    return used_inputs;
 }
 
 String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const Names & removed_columns)
@@ -200,31 +182,9 @@ String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const N
 /// Columns changed on the fly by patches, mutations and masking policies. The index is not used for them in the
 /// whole query: the preprocessor rewrite and the on-fly mutation steps do not depend on the part. They are taken
 /// from the whole snapshot to avoid looking up the patches of each part.
-/// Also includes every name touched by a pending `DROP COLUMN` or `RENAME COLUMN` of the parts: such a name can be
-/// reused by a new column right away, while the part still holds the index file built over the old column.
-NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step, const UnorderedSetWithMemoryTracking<DataPartPtr> & parts)
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step)
 {
-    const auto & mutations_snapshot = read_from_merge_tree_step.getMutationsSnapshot();
-    NameSet updated_columns = mutations_snapshot->getColumnsChangedOnFly();
-
-    if (mutations_snapshot->hasMetadataMutations())
-    {
-        for (const auto & part : parts)
-        {
-            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
-            {
-                if (command.type == MutationCommand::DROP_COLUMN)
-                {
-                    updated_columns.insert(command.column_name);
-                }
-                else if (command.type == MutationCommand::RENAME_COLUMN)
-                {
-                    updated_columns.insert(command.column_name);
-                    updated_columns.insert(command.rename_to);
-                }
-            }
-        }
-    }
+    NameSet updated_columns = read_from_merge_tree_step.getMutationsSnapshot()->getColumnsChangedOnFly();
 
 #if CLICKHOUSE_CLOUD
     /// Masking policies are the same for all parts.
@@ -267,22 +227,18 @@ void collectTextIndexReadInfos(
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
 
-    UnorderedSetWithMemoryTracking<DataPartPtr> unique_parts;
+    std::unordered_set<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step, unique_parts);
+    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())
             continue;
 
-        /// The set is query-wide, so no per-part type record can relax a type change: pass it as both sets,
-        /// so any on-the-fly change disables the index.
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(
-                index.index, metadata_snapshot, updated_columns, updated_columns, read_from_merge_tree_step->getContext());
-            !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
@@ -387,7 +343,7 @@ ASTPtr convertSetColumnToAST(const IColumn & column)
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured = {});
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
 
 /// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
 /// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
@@ -399,7 +355,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
         return nullptr;
 
     /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
-    UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> body_captured;
+    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
     for (size_t i = 0; i < capture.captured_names.size(); ++i)
         body_captured.emplace(capture.captured_names[i], captured_values[i]);
 
@@ -424,7 +380,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     return lambda;
 }
 
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured)
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
 {
     switch (node.type)
     {
@@ -533,7 +489,7 @@ public:
     std::optional<ResultReplacement> replace(const ContextPtr & context, const String & filter_column_name)
     {
         NodesReplacementMap replacements;
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> original_inputs(actions_dag.getInputs().begin(), actions_dag.getInputs().end());
+        Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
@@ -558,30 +514,25 @@ public:
                 filter_node = output;
         }
 
-        /// Keep the original inputs, even unused ones: the step consumes them, and without an input for a column
-        /// `ActionsDAG::updateHeader` would pass it through, widening the step's output header. They are reported in
-        /// `removed_columns`, so that direct read removes them when it stops reading the columns.
-        actions_dag.removeUnusedActions(original_inputs);
+        actions_dag.removeUnusedActions();
 
         ResultReplacement result;
         result.filter_node = filter_node;
 
-        auto used_inputs = getUsedInputs(actions_dag);
-        NameSet used_columns;
+        Names replaced_columns = actions_dag.getRequiredColumnsNames();
+        NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
 
-        for (const auto * input : actions_dag.getInputs())
+        for (const auto & column : original_inputs)
         {
-            if (used_inputs.contains(input))
-                used_columns.insert(input->result_name);
-            else if (original_inputs.contains(input))
-                result.removed_columns.push_back(input->result_name);
+            if (!replaced_columns_set.contains(column))
+                result.removed_columns.push_back(column);
         }
 
-        /// A virtual column is read only if its input is still used: the rewrite can keep
-        /// a different index's virtual (or the original expression) instead, leaving this one unused.
+        /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
+        /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
         for (auto & [index_name, index_read_task] : index_read_tasks)
         {
-            std::erase_if(index_read_task.columns, [&](const auto & column) { return !used_columns.contains(column.name); });
+            std::erase_if(index_read_task.columns, [&](const auto & column) { return !replaced_columns_set.contains(column.name); });
             if (!index_read_task.columns.empty())
                 result.index_read_tasks.emplace(index_name, std::move(index_read_task));
         }
@@ -603,7 +554,7 @@ private:
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
     /// Input nodes of the virtual columns in the DAG, by column name.
-    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_inputs;
+    std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
 
@@ -629,7 +580,7 @@ private:
             || function_name == "hasPhrase";
     }
 
-    VectorWithMemoryTracking<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
+    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
         /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
@@ -646,7 +597,7 @@ private:
         });
 
         NameSet used_index_columns;
-        VectorWithMemoryTracking<SelectedCondition> selected_conditions;
+        std::vector<SelectedCondition> selected_conditions;
 
         for (const auto & [index_name, info] : text_index_read_infos)
         {
@@ -728,7 +679,7 @@ private:
     /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
     const ActionsDAG::Node * processTextIndexFunction(
         const ActionsDAG::Node & function_node,
-        const VectorWithMemoryTracking<SelectedCondition> & selected_conditions,
+        const std::vector<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
         if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
@@ -942,7 +893,7 @@ private:
     /// Optimizes text-search functions by replacing them with virtual columns.
     const ActionsDAG::Node * replaceFunctionsToVirtualColumns(
         const ActionsDAG::Node & function_node,
-        VectorWithMemoryTracking<SelectedCondition> selected_conditions,
+        std::vector<SelectedCondition> selected_conditions,
         const ContextPtr & context)
     {
         std::erase_if(selected_conditions, [](const auto & condition) { return condition.virtual_column.name.empty(); });
@@ -1079,22 +1030,22 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
             for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
                 required_columns_by_readers.insert(name);
 
-        std::erase_if(result->removed_columns, [&](const String & column) { return required_columns_by_readers.contains(column); });
-    }
+        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
+        std::erase_if(result->removed_columns, [&](const String & column)
+        {
+            if (!required_columns_by_readers.contains(column))
+                return false;
 
-    /// The step stops reading the removed columns, so the DAG must not take them as inputs.
-    {
-        NameSet removed_columns(result->removed_columns.begin(), result->removed_columns.end());
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> kept_inputs;
-        for (const auto * input : filter_dag.getInputs())
-            if (!removed_columns.contains(input->result_name))
-                kept_inputs.insert(input);
-
-        filter_dag.removeUnusedActions(kept_inputs);
+            /// ActionsDAG::updateHeader appends a header column that is not an input of the DAG,
+            /// which would widen this step's output header.
+            if (read_header.has(column))
+                filter_dag.addInput(read_header.getByName(column));
+            return true;
+        });
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
-    LOG_DEBUG(logger, "Text index optimization: {}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
 
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
@@ -1116,28 +1067,15 @@ static bool applyTextIndexInject(
     const NameToNameMap & source_columns)
 {
     /// Match inputs renamed by a step below (e.g. `__table1.s`) by their scan column name, then restore the header names.
-    /// A node with the scan column name blocks the rename, unless it is an alias of an input renamed to the same
-    /// column (e.g. `__table1.s AS s` of the projection): it holds the same values, so matching it by name is fine.
-    NameSet conflicting_names;
+    NameSet node_names;
     for (const auto & node : dag.getNodes())
-    {
-        const auto * source_node = &node;
-        while (source_node->type == ActionsDAG::ActionType::ALIAS)
-            source_node = source_node->children.front();
+        node_names.insert(node.result_name);
 
-        auto it = source_columns.end();
-        if (source_node != &node && source_node->type == ActionsDAG::ActionType::INPUT)
-            it = source_columns.find(source_node->result_name);
-
-        if (it == source_columns.end() || it->second != node.result_name)
-            conflicting_names.insert(node.result_name);
-    }
-
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> renamed_inputs;
+    std::unordered_map<const ActionsDAG::Node *, String> renamed_inputs;
     for (const auto * input : dag.getInputs())
     {
         auto it = source_columns.find(input->result_name);
-        if (it == source_columns.end() || conflicting_names.contains(it->second))
+        if (it == source_columns.end() || node_names.contains(it->second))
             continue;
 
         renamed_inputs.emplace(input, input->result_name);
@@ -1261,20 +1199,9 @@ void processAndOptimizeTextIndexFunctions(
     NameToNameMap source_columns;
     auto update_source_columns = [&](const ActionsDAG & dag)
     {
-        NameSet input_names;
-        for (const auto * input : dag.getInputs())
-            input_names.insert(input->result_name);
-
-        /// A column that is not an input of the DAG passes through the step unchanged (see `ActionsDAG::updateHeader`).
         NameToNameMap updated;
-        for (const auto & [name, source] : source_columns)
-            if (!input_names.contains(name))
-                updated.emplace(name, source);
-
         for (const auto * output : dag.getOutputs())
         {
-            updated.erase(output->result_name);
-
             const auto * node = output;
             while (node->type == ActionsDAG::ActionType::ALIAS)
                 node = node->children.front();
@@ -1327,9 +1254,7 @@ void processAndOptimizeTextIndexFunctions(
 
             bool removes_filter_column = filter_step->removesFilterColumn();
             auto new_filter_column_name = result_filter_node->result_name;
-            auto new_filter_step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
-            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-            node->step = std::move(new_filter_step);
+            node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
             continue;
         }
 
@@ -1342,11 +1267,7 @@ void processAndOptimizeTextIndexFunctions(
 
         const SharedHeader & input_header = step->getInputHeaders().front();
         if (filter_step)
-        {
-            auto new_filter_step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-            node->step = std::move(new_filter_step);
-        }
+            node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }

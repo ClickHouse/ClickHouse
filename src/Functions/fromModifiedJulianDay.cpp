@@ -27,12 +27,12 @@ namespace DB
     class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
     {
     public:
-        [[nodiscard]] String getName() const override
+        String getName() const override
         {
             return Name::name;
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
             const ColVecType & col_from = checkAndGetColumn<ColVecType>(*arguments[0].column);
@@ -76,7 +76,7 @@ namespace DB
                 return col_to;
         }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override
+        bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
@@ -196,12 +196,18 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
+            if (!isInteger(arguments[0]))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+            }
+
+            DataTypePtr base_type = std::make_shared<DataTypeString>();
             if constexpr (nullOnErrors)
-                return "(Integer) -> Nullable(String)";
+                return std::make_shared<DataTypeNullable>(base_type);
             else
-                return "(Integer) -> String";
+                return base_type;
         }
 
         size_t getNumberOfArguments() const override

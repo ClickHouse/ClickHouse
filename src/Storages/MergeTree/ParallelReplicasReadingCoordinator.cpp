@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
-#include <Common/SetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>
@@ -109,7 +108,7 @@ struct Part
     mutable RangesInDataPartDescription description;
     // FIXME: This is needed to put this struct in set
     // and modify through iterator
-    mutable SetWithMemoryTracking<size_t> replicas;
+    mutable std::set<size_t> replicas;
 
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
@@ -1322,7 +1321,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     if (is_reading_completed)
         return response;
 
-    SetWithMemoryTracking<size_t> replicas_to_exclude;
+    std::set<size_t> replicas_to_exclude;
     bool reading_assignment_has_been_completed = false;
     {
         std::lock_guard lock(mutex);

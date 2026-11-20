@@ -2368,6 +2368,7 @@ const char * auto_contributors[] {
     "kmeaw",
     "kolechenkov",
     "koloshmet",
+    "kolsha",
     "kolsys",
     "konnectr",
     "konruvikt",

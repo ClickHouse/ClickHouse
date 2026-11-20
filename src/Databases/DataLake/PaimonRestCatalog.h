@@ -82,23 +82,23 @@ public:
 
     ~PaimonRestCatalog() override = default;
 
-    [[nodiscard]] bool empty() const override;
+    bool empty() const override;
 
-    [[nodiscard]] CatalogTables getTables() const override;
+    CatalogTables getTables() const override;
 
-    [[nodiscard]] Namespaces getNamespaces() const override;
+    Namespaces getNamespaces() const override;
 
-    [[nodiscard]] bool existsTable(const String & database_name, const String & table_name) const override;
+    bool existsTable(const String & database_name, const String & table_name) const override;
 
     void getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
     bool tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
-    [[nodiscard]] std::optional<StorageType> getStorageType() const override { return storage_type; }
+    std::optional<StorageType> getStorageType() const override { return storage_type; }
 
-    [[nodiscard]] DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
 
-    [[nodiscard]] DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
 
 private:
     using StopCondition = std::function<bool(const String &)>;
@@ -124,7 +124,7 @@ private:
         const String & method,
         const std::optional<String> & data = std::nullopt) const;
 
-    [[nodiscard]] DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},
@@ -136,9 +136,9 @@ private:
 
     void forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
 
-    [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
-    [[nodiscard]] Poco::JSON::Object::Ptr requestRest(
+    Poco::JSON::Object::Ptr requestRest(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},

@@ -24,7 +24,7 @@
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/WhatIf/ParserHypotheticalObjectQuery.h>
+#include <Parsers/ParserHypotheticalObjectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOnCluster.h>
@@ -42,7 +42,6 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserUseQuery.h>
@@ -98,7 +97,6 @@ void registerParsers()
     registry.registerParser<ParserSystemQuery>();
     registry.registerParser<ParserTablePropertiesQuery>();
     registry.registerParser<ParserTablesInSelectQuery>();
-    registry.registerParser<ParserTransactionControl>();
     registry.registerParser<ParserUndropQuery>();
     registry.registerParser<ParserUpdateQuery>();
     registry.registerParser<ParserUseQuery>();
