@@ -26,16 +26,16 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    bool test(size_t i, std::memory_order memory_order) const
+    [[nodiscard]] bool test(size_t i, std::memory_order memory_order) const
     {
         return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
     }
 
     /// First set bit at or after `start`.
-    std::optional<size_t> findNext(size_t start) const;
-    std::optional<size_t> findFirst() const { return findNext(0); }
+    [[nodiscard]] std::optional<size_t> findNext(size_t start) const;
+    [[nodiscard]] std::optional<size_t> findFirst() const { return findNext(0); }
     /// First bit at or after `start` that is set here and not in `mask` (of the same size).
-    std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
+    [[nodiscard]] std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
 };
 
 // I'd like to talk to the manager.
@@ -51,7 +51,12 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_);
+    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
+    /// are read by other readers of the same query, so they are not counted as pruned by this one.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        RowGroupSelection row_groups_to_read_,
+        bool other_row_groups_are_read_by_other_readers = false);
 
     ~ReadManager();
 
@@ -98,6 +103,15 @@ private:
         };
     };
 
+    /// A stage schedules its tasks in two steps:
+    ///  1. When a row group or row subgroup reaches the stage, `setTasksToSchedule` stores its tasks in
+    ///     `row_group_tasks_to_schedule`. Nothing is prefetched or charged for them yet, except by `readAheadColumnData`.
+    ///  2. `scheduleTasksIfNeeded` takes stored tasks in row group order while the stage is within its share of the
+    ///     reader's limits (see `is_privileged_task` for the exception). It starts their prefetches, charges the
+    ///     prefetched bytes (and the estimated output of `ColumnData`) to `memory_usage`, and queues the tasks in the
+    ///     thread pool. Below the low watermark it does so even when all the stage's threads are busy.
+    /// So with background reads (`Prefetcher::readsInBackground`), data is read ahead of decoding as far as the stage's
+    /// memory share allows, instead of when a thread picks the task up. The shares are per stage, see `MemoryUsageDiff`.
     struct Stage
     {
         std::atomic<size_t> memory_usage {0};
@@ -124,9 +138,9 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue;
+    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue TSA_GUARDED_BY(delivery_mutex);
     std::condition_variable delivery_cv;
-    std::exception_ptr exception;
+    std::exception_ptr exception TSA_GUARDED_BY(delivery_mutex);
     RowGroupSelection row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
@@ -134,10 +148,10 @@ private:
     {
         size_t min_outstanding = 1;
         std::mutex mutex;
-        size_t next_row_group = 0;
+        size_t next_row_group TSA_GUARDED_BY(mutex) = 0;
         /// Admitted row groups that are not fully read yet.
-        size_t outstanding = 0;
-        size_t admitted = 0;
+        size_t outstanding TSA_GUARDED_BY(mutex) = 0;
+        size_t admitted TSA_GUARDED_BY(mutex) = 0;
     };
     TopKAdmission top_k_admission;
 

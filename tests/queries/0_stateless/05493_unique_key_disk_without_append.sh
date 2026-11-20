@@ -12,7 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 
+# Plan-based parallel replicas fails a read of a UNIQUE KEY table (count() reads one without trivial count):
+# https://github.com/ClickHouse/ClickHouse/issues/128534
 $CLICKHOUSE_CLIENT --enable_unique_key 1 -n -q "
+SET parallel_replicas_plan_based = 0;
 CREATE TABLE t_local (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable'; -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_enc (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'encrypted_s3_plain_rewritable_cache'; -- { serverError SUPPORT_IS_DISABLED }
 CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable' AS SELECT 1::Int32 AS c0; -- { serverError SUPPORT_IS_DISABLED }
