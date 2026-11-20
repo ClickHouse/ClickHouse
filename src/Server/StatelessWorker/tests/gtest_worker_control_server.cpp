@@ -25,6 +25,7 @@
 namespace DB::FailPoints
 {
     extern const char stateless_worker_pause_task_before_setup[];
+    extern const char stateless_worker_pause_task_cancel[];
 }
 
 namespace DB::ErrorCodes
@@ -108,6 +109,12 @@ public:
 
     /// True once the worker has closed the connection gracefully; a reset throws.
     bool closedByWorker() { return in.eof(); }
+
+    /// Returns true when a frame starts to arrive within `timeout`.
+    bool hasInputWithin(std::chrono::seconds timeout)
+    {
+        return in.hasPendingData() || socket.poll(Poco::Timespan(timeout.count(), 0), Poco::Net::Socket::SELECT_READ);
+    }
 
     void close()
     {
@@ -415,6 +422,35 @@ TEST(WorkerControlServer, TaskThatOutlivesTheReclaimIsForgottenWhenItEnds)
     Initiator other_query(worker.port());
     const auto reply = other_query.hello(makeHello("q2"));
     EXPECT_EQ(reply.code, 0) << reply.message;
+}
+
+TEST(WorkerControlServer, SlowCancellationDoesNotHoldHellos)
+{
+    auto control_server = makeControlServer(10);
+    Worker worker(control_server);
+    /// The task stays registered without running, and its cancellation is held.
+    FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_task_cancel);
+    SCOPE_EXIT({
+        FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_cancel);
+        FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    });
+
+    Initiator initiator(worker.port());
+    ASSERT_EQ(initiator.hello(makeHello("q1")).code, 0);
+    initiator.send(makeStartTasks(1, "t"));
+    ASSERT_EQ(initiator.receive<StartTasksReply>().code, 0);
+    initiator.send(CancelTasks{.request_id = 2, .task_ids = {"q1::t"}});
+    FailPointInjection::waitForPause(FailPoints::stateless_worker_pause_task_cancel);
+
+    /// The admission of another query does not wait for the cancellation.
+    Initiator other_query(worker.port());
+    other_query.send(makeHello("q2"));
+    const bool answered = other_query.hasInputWithin(3s);
+    FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_cancel);
+    EXPECT_TRUE(answered) << "The hello of another query waited for the cancellation of a task";
+    EXPECT_EQ(other_query.receive<ControlHelloReply>().code, 0);
+    EXPECT_EQ(initiator.receive<CancelTasksReply>().request_id, 2u);
 }
 
 TEST(WorkerControlServer, ExchangeServerWithoutControlServerAnswersError)

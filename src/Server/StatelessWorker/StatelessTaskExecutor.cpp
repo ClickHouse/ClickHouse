@@ -45,6 +45,7 @@ namespace FailPoints
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
     extern const char stateless_worker_pause_task_before_setup[];
+    extern const char stateless_worker_pause_task_cancel[];
 }
 
 namespace Setting
@@ -92,6 +93,7 @@ void StatelessTaskExecutor::TaskCancellation::cancel()
         cancelled = true;
         running_query = query.lock();
     }
+    FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_task_cancel);
     /// The way `KILL QUERY` cancels: it reaches the task's executors at once.
     if (running_query)
         running_query->cancelQuery(CancelReason::CANCELLED_BY_USER);
@@ -477,10 +479,16 @@ std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::StatusWait
 
 void StatelessTaskExecutor::cancelTasks(const Strings & task_ids)
 {
-    std::lock_guard lock(tasks_mutex);
-    for (const auto & task_id : task_ids)
-        if (auto it = tasks.find(task_id); it != tasks.end())
-            it->second->cancellation->cancel();
+    std::vector<std::shared_ptr<TaskCancellation>> cancellations;
+    {
+        std::lock_guard lock(tasks_mutex);
+        for (const auto & task_id : task_ids)
+            if (auto it = tasks.find(task_id); it != tasks.end())
+                cancellations.push_back(it->second->cancellation);
+    }
+    /// Outside the lock, which every session and admission takes, as cancelling a query can block on its sources' sockets.
+    for (const auto & cancellation : cancellations)
+        cancellation->cancel();
 }
 
 void StatelessTaskExecutor::forgetTasks(const Strings & task_ids)
