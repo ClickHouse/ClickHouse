@@ -100,13 +100,14 @@ size_t MergeTask::rewriteRowsSources(
     {
         RowSourcePart row_source;
         readBinary(row_source.data, in);
+        if (row_source.getSourceNum() >= global_ctx.future_part->parts.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "rows_sources of a vertical merge refers to part {} of a merge of {} parts",
+                row_source.getSourceNum(), global_ctx.future_part->parts.size());
 
         if (!parts.empty())
         {
             const size_t part_index = row_source.getSourceNum();
-            if (part_index >= parts.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "rows_sources of a vertical merge refers to part {} of a merge of {} parts", part_index, parts.size());
             write_dropped_input_rows(part_index);
             auto & part = *parts[part_index];
             if (!part.hasRow())
