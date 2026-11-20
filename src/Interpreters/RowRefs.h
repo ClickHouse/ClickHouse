@@ -634,6 +634,7 @@ struct SortedLookupVectorBase
 
     // This needs to be synchronized internally. Returns nullptr when there is no match.
     virtual const RowRef * findAsof(const IColumn &, size_t) = 0;
+    virtual void prefetchSearch() const = 0;
 };
 
 

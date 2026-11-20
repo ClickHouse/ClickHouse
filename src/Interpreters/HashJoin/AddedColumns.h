@@ -36,6 +36,12 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
+    /// For a key type that builds its keys: `ready_keys` points to the keys that the last prepare step
+    /// (`JoinProbe::PrepareKeysFn`) made for the key search that follows it. They are in `ready_keys_buffer`, or in the kept
+    /// key getter when it packed the keys of the whole block. The buffer only grows.
+    mutable const void * ready_keys = nullptr;
+    mutable std::vector<UInt64> ready_keys_buffer;
+
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality = false);
 
@@ -53,6 +59,13 @@ struct JoinOnKeyColumns
 /// `JoinOnKeyColumns::buildRowSkipData` for the given NULL key map and ON-section mask.
 const UInt8 * buildRowSkipData(
     ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size);
+
+enum class ProbeOutput : UInt8
+{
+    Default,
+    FilteredOffsets, /// Each left row contributes zero or one output row.
+    Selected, /// Left row indexes and right refs are paired in completion order.
+};
 
 struct LazyOutput
 {
@@ -78,6 +91,7 @@ struct LazyOutput
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
+    ProbeOutput probe_output = ProbeOutput::Default;
 
     ColumnAccessIndexes output_access_indexes;
     std::optional<size_t> row_store_row_length;
@@ -157,6 +171,8 @@ public:
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
+        , amac_mode(join.getTableJoin().hashJoinAmacMode())
+        , allow_reordering(!is_join_get_ && !join.preservesLeftBlockOrder())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -258,11 +274,13 @@ public:
     size_t rows_to_add;
     bool need_filter = false;
     bool enable_prefetch = true;
+    HashJoinAmacMode amac_mode;
+    bool allow_reordering;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
-    /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
+    /// Left row positions in output order. `ProbeOutput::Selected` may permute them.
     IColumn::Offsets matched_rows;
 
     /// for lazy

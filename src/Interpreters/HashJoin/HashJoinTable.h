@@ -290,8 +290,19 @@ public:
         dispatchType([&]<Type TYPE>() { typedMap<TYPE, Maps>(*this).forEachMapped(std::forward<F>(f)); });
     }
 
-    /// Computes the cell prefix sums and the min/max bounds of a direct-addressed map. Call it after the last insert.
+    /// Publish the bucket cell offsets and the min/max bounds of a direct-addressed map after the last insert.
     void freezeForProbing();
+
+    bool shouldUseAmacLookup(HashJoinAmacMode mode) const
+    {
+        if (mode == HashJoinAmacMode::OFF)
+            return false;
+        if (mode == HashJoinAmacMode::ON)
+            return amac_support != AmacSupport::Unsupported;
+        return amac_support == AmacSupport::LargeTable;
+    }
+
+    bool bucketsAreRobinHood() const { return buckets_are_robin_hood; }
 
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
@@ -524,6 +535,14 @@ private:
     std::vector<std::unique_ptr<Arena>> arenas;
     BuildSlots slots;
     std::atomic<size_t> num_keys = 0;
+    enum class AmacSupport : uint8_t
+    {
+        Unsupported,
+        SmallTable,
+        LargeTable,
+    };
+    AmacSupport amac_support = AmacSupport::Unsupported;
+    bool buckets_are_robin_hood = false;
 };
 
 }

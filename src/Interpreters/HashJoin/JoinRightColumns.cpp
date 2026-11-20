@@ -1,7 +1,13 @@
 #include <Interpreters/HashJoin/JoinRightColumns.h>
+#include <Common/ProfileEvents.h>
 #include <base/MemorySanitizer.h>
 
 #include <algorithm>
+
+namespace ProfileEvents
+{
+extern const Event JoinProbeAmacRows;
+}
 
 namespace DB
 {
@@ -26,23 +32,6 @@ size_t firstRowOf(const ScatteredBlock::Selector & selector)
     return selector.getRange().first;
 }
 
-/// Makes the batch the `batch_rows` block rows after the first `done` rows of the call.
-void startBatch(JoinRightColumnsData & data, size_t done, size_t batch_rows)
-{
-    data.batch_first_row = data.first_row + done;
-    data.batch_rows = batch_rows;
-    if (data.functions.words_in_row_refs)
-    {
-        /// The batch is the whole block, and the row refs of a block start empty.
-        auto & row_refs = data.added_columns.lazy_output.row_refs;
-        chassert(row_refs.empty());
-        row_refs.resize(batch_rows);
-        data.match_words = row_refs.data();
-    }
-    else
-        data.match_words = data.left_block_state.match_words.data();
-}
-
 /// The rows of the batch, or for a join that stops at the first match, the rows that no disjunct before `k` matched.
 ProbeRows rowsToProbe(const JoinRightColumnsData & data, size_t k)
 {
@@ -52,18 +41,34 @@ ProbeRows rowsToProbe(const JoinRightColumnsData & data, size_t k)
     return {.first = data.batch_first_row, .rows = nullptr, .size = data.batch_rows};
 }
 
+/// The key search of disjunct `k` by the AMAC ring, for the mode of the buckets of its table. Null where the ring has none.
+FindKeysFn ringFn(const JoinRightColumnsData & data, size_t k)
+{
+    const auto & ring = k == 0 ? data.functions.find_keys_ring_first : data.functions.find_keys_ring_later;
+    return ring[data.tables[k]->bucketsAreRobinHood()];
+}
+
 size_t findKeysOfDisjunct(JoinRightColumnsData & data, size_t k)
 {
+    const Functions & functions = data.functions;
     DisjunctState & disjunct = data.left_block_state.disjuncts[k];
-    return (k == 0 ? data.functions.find_keys_first : data.functions.find_keys_later)(
-        {.table = *data.tables[k],
-         .disjunct = disjunct,
-         .rows = rowsToProbe(data, k),
-         .enable_prefetch = data.added_columns.enable_prefetch,
-         .base = data.batch_first_row,
-         .words = data.matchWordsOf(k),
-         .key_offsets = data.functions.records_key_offsets ? data.left_block_state.key_offsets.data() : nullptr,
-         .max_output_rows = data.max_joined_rows - std::min<size_t>(data.added_rows, data.max_joined_rows)});
+    const ProbeRows probe_rows = rowsToProbe(data, k);
+    const FindKeysArgs args{
+        .table = *data.tables[k],
+        .disjunct = disjunct,
+        .rows = probe_rows,
+        .enable_prefetch = data.added_columns.enable_prefetch,
+        .base = data.batch_first_row,
+        .words = data.matchWordsOf(k),
+        .key_offsets = functions.records_key_offsets ? data.left_block_state.key_offsets.data() : nullptr,
+        .max_output_rows = data.max_joined_rows - std::min<size_t>(data.added_rows, data.max_joined_rows)};
+    const FindKeysFn ring = probe_rows.size && args.table.shouldUseAmacLookup(data.added_columns.amac_mode) ? ringFn(data, k) : nullptr;
+    if (!ring)
+        return (k == 0 ? functions.find_keys_first : functions.find_keys_later)(args);
+    if (const PrepareKeysFn prepare_keys = k == 0 ? functions.prepare_keys_first : functions.prepare_keys_later)
+        prepare_keys(args);
+    ProfileEvents::increment(ProfileEvents::JoinProbeAmacRows, probe_rows.size);
+    return ring(args);
 }
 
 /// For a join that stops at the first match: removes the rows that disjunct `k` matched from `unmatched_rows`. The match
@@ -123,7 +128,7 @@ size_t runProbe(
     const size_t max_batch_rows = functions.max_batch_rows ? std::min(rows, functions.max_batch_rows) : rows;
     size_t next_batch_rows = functions.max_batch_rows ? std::min(max_batch_rows, max_joined_rows) : rows;
 
-    if (functions.words_in_row_refs)
+    if (!functions.max_batch_rows)
     {
         /// The batch is the whole block, and `add_matches` finds the keys itself, on search batches of about equal size.
         const size_t num_search_batches = (rows + max_search_batch_rows - 1) / max_search_batch_rows;
@@ -153,12 +158,16 @@ size_t runProbe(
             tables.size(),
             added_columns.need_filter);
 
+    if (functions.uses_amac)
+        ProfileEvents::increment(ProfileEvents::JoinProbeAmacRows, rows);
+
     size_t done = 0;
     do
     {
-        startBatch(data, done, std::min(next_batch_rows, rows - done));
+        data.batch_first_row = data.first_row + done;
+        data.batch_rows = std::min(next_batch_rows, rows - done);
         next_batch_rows = std::min(max_batch_rows, 2 * next_batch_rows);
-        if (!functions.words_in_row_refs)
+        if (functions.max_batch_rows)
         {
             for (size_t k = 0; k < tables.size(); ++k)
             {
@@ -169,8 +178,6 @@ size_t runProbe(
                 keepUnmatchedRows(data, k);
             }
         }
-        /// The keys of every disjunct are found before any match is added: the output of a left row must be contiguous
-        /// and in row order, and a right row that two disjuncts reach is added once.
         const size_t finished = functions.add_matches(data);
         done += finished;
         if (finished < data.batch_rows)

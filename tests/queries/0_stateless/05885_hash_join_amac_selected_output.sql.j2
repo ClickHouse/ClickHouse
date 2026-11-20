@@ -1,0 +1,40 @@
+SET join_algorithm = 'hash', hash_join_layout = 'serial', enable_amac_in_hash_join = 'on';
+SET max_threads = 1, max_block_size = 1024, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET enable_software_prefetch_in_join = 1, any_join_distinct_right_table_keys = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SET join_use_nulls = 1, max_joined_block_size_rows = 17, joined_block_split_single_row = 1;
+
+CREATE TABLE l ENGINE = Memory AS
+    SELECT number AS id, intHash64(if(number % 4 = 0, number + 1024, number)) AS k,
+           repeat(toString(number), 16) AS s
+    FROM numbers(1024);
+CREATE TABLE r ENGINE = Memory AS
+    SELECT number AS v, intHash64(intDiv(number, 2)) AS k FROM numbers(2048);
+
+{% for lazy in [0, 1] %}
+SET enable_lazy_columns_replication = {{ lazy }}, query_plan_min_columns_for_join_lazy_indexing = {{ lazy }},
+    query_plan_max_limit_for_join_lazy_indexing = 0;
+
+SELECT count(), countIf(isNull(l.id)), countIf(r.k != intHash64(intDiv(r.v, 2))),
+       countIf(l.id != intDiv(r.v, 2) OR l.s != repeat(toString(intDiv(r.v, 2)), 16))
+FROM l RIGHT ANY JOIN r ON l.k = r.k;
+
+SELECT count(), countIf(isNull(r.k)), countIf(isNull(r.k) != (l.id % 4 = 0)),
+       countIf(intDiv(r.v, 2) != l.id OR r.k != l.k)
+FROM l LEFT ALL JOIN r ON l.k = r.k;
+
+-- Every selected left row wins a claim. Their right refs must follow the same permutation.
+SELECT count(), countIf(s != repeat(toString(intDiv(v, 2)), 16))
+FROM
+(
+    SELECT l.s AS s, r.v AS v
+    FROM (SELECT id, k, s FROM l WHERE id % 4 != 0) AS l INNER ANY JOIN r ON l.k = r.k
+    LIMIT 4096
+);
+
+SELECT count(), count(r.k), countIf(l.id % 4 != 0)
+FROM l LEFT ANTI JOIN r ON l.k = r.k;
+{% endfor %}
+
+DROP TABLE r;
+DROP TABLE l;

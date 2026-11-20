@@ -216,8 +216,10 @@ public:
         return getTotals().empty() && getTotalRowCount() == 0;
     }
 
-    /// The left side is streamed through once, each row emitted in input order.
-    bool preservesLeftBlockOrder() const override { return true; }
+    bool preservesLeftBlockOrder() const override { return !allow_reordering; }
+    bool canPreserveLeftBlockOrder() const override { return true; }
+    void keepLeftPipelineInOrder() override { allow_reordering = false; }
+    void allowLeftRowsReordering() override { allow_reordering = true; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
@@ -748,7 +750,9 @@ private:
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
     {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
+        auto cloned = std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
+        cloned->allow_reordering = allow_reordering;
+        return cloned;
     }
 
     std::shared_ptr<TableJoin> table_join;
@@ -757,6 +761,7 @@ private:
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
+    bool allow_reordering = false;
 
     const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     const size_t reserve_num;

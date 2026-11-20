@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
+    extern const SettingsHashJoinAmacMode enable_amac_in_hash_join;
     extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
     extern const SettingsUInt64 max_bytes_before_external_join;
@@ -143,6 +144,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
     extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
+    extern const QueryPlanSerializationSettingsHashJoinAmacMode enable_amac_in_hash_join;
     extern const QueryPlanSerializationSettingsBool legacy_join_size_limits_trigger_spilling;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
@@ -216,6 +218,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
+    enable_amac_in_hash_join = query_settings[Setting::enable_amac_in_hash_join];
     legacy_join_size_limits_trigger_spilling = query_settings[Setting::legacy_join_size_limits_trigger_spilling];
 
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
@@ -285,6 +288,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
+    enable_amac_in_hash_join = settings[QueryPlanSerializationSetting::enable_amac_in_hash_join];
     /// A plan from before the name existed was built where the size limits still drove spilling.
     legacy_join_size_limits_trigger_spilling = version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS
         || settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
@@ -533,6 +537,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ENABLE_AMAC_IN_HASH_JOIN && enable_amac_in_hash_join != HashJoinAmacMode::AUTO)
+        settings[QueryPlanSerializationSetting::enable_amac_in_hash_join] = enable_amac_in_hash_join;
     /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so this name may
     /// go on the wire only towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
     /// a peer below that version keeps the old contract for the settings it does know, so a plan that

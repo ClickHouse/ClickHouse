@@ -47,6 +47,7 @@ struct FindKeysArgs
     MatchWord * words = nullptr;
     size_t * key_offsets = nullptr;
     size_t max_output_rows = 0;
+    const UInt8 * used_flags = nullptr;
 
     const JoinOnKeyColumns & keys() const
     {
@@ -57,13 +58,28 @@ struct FindKeysArgs
 /// Returns how many rows it visited: `rows.size`, unless the row limit stopped it.
 using FindKeysFn = size_t (*)(const FindKeysArgs &);
 
+/// A key type whose key is not read from the key column but built from the key columns: packed from several columns
+/// (`keysN`), packed from a string (`key_packed_string`), or hashed (`hashed`). The map key has a fixed width.
+template <typename KeyGetter>
+concept BuildsKeys = detail::PacksKeysIntoBlob<KeyGetter> || PreparedKeyGetter<KeyGetter>;
+
+/// The key of a row as the map compares it: a fixed key by value, a string key as a view into the key column.
+template <typename KeyGetter>
+using KeyOfGetter = std::decay_t<decltype(keyHolderGetKey(
+    std::declval<std::remove_reference_t<decltype(std::declval<KeyGetter &>().getKeyHolder(0uz, std::declval<Arena &>()))> &>()))>;
+
+/// The prepare step of a batch, before the key search: builds the keys of `args.rows` as an array of the map's key type and
+/// sets `ready_keys` in the key columns to it. `[i]` is the key of the `i`-th row of `args.rows`. The key of a row with a NULL key,
+/// or of a row that the ON-section mask filters out, is unspecified. The array is valid until the next prepare step of these
+/// key columns. Defined in `PrepareKeys.h`.
+using PrepareKeysFn = void (*)(const FindKeysArgs & args);
+
 /// A lookup method has a `run` that visits every row of `args.rows`, finds its key, and calls `on_row(i, ind, find_result)`
 /// for the position `i` and the block row `ind`. `on_row` may return false to stop after that row. `run` returns how many
 /// rows it visited. A row with a NULL key, or one that the ON-section mask filters out, gets a result that is not found;
 /// `fast_path` assumes there is no such row. A block is searched in several calls of `run`, so a key getter that is costly to
 /// build may be kept and used again in the later calls, as `keyGetterOf` does.
-/// `retires_rows_in_order`: whether the method calls `on_row` in increasing `i`. The single pass and the row limit of
-/// `findKeys` need that, because they count the output in row order.
+/// `findKeys` can stop at the output row limit only if the method visits rows in increasing order.
 template <typename Lookup>
 concept LookupMethod = requires(const FindKeysArgs & args)
 {
@@ -147,5 +163,10 @@ void prepareListedRows(KeyGetter & key_getter, const ProbeRows & rows, const UIn
 /// `FindKeys.h`. Each lookup method declares the instances of its maps `extern` and instantiates them in one file per map.
 template <typename Maps, LookupMethod Lookup>
 FindKeysFn selectFindKeys(HashJoin::Type key_type, FindKeysMode mode, bool fast_path);
+
+/// The prepare step of `key_type`, for a range of rows or for a row list. Null for a key type that does not build its keys.
+/// Defined in `PrepareKeys.h` and instantiated in `PrepareKeysMaps*.cpp`, one file per map.
+template <typename Maps>
+PrepareKeysFn selectPrepareKeys(HashJoin::Type key_type, bool row_list, bool fast_path);
 
 }

@@ -12,21 +12,10 @@
 namespace DB::JoinProbe
 {
 
-/** The probe of a hash join, through function pointers that `selectFunctions` picks for each block:
-  *  - With one disjunct and no additional filter, one pass finds the key of each left row and adds its output right away.
-  *    It searches the block in search batches (`max_search_batch_rows`). The pass depends on the key type and on the match
-  *    handling (`JoinProbe::MatchHandling`): what the join kind does with a row whose key was found and with one whose key
-  *    was not. Join kinds with the same handling share one pass per key type.
-  *  - With several disjuncts or an additional filter, each batch of left rows takes two steps. The key search looks up the
-  *    keys of the rows in each ON disjunct and records what it found. It depends on the key type and the map, never on the
-  *    join kind. The match step then does what the join kind does with what was found, the used flags included. A call of
-  *    `runProbe` may stop at the row limit (`max_joined_block_size_rows`, counted by `added_rows`); the next call goes on
-  *    with the rest of the block.
-  * `probeBlock` picks the functions and `runProbe` runs them on the batches of the block. The key search is in `FindKeys.h`,
-  * and what a lookup method implements is in `LookupMethod.h`. The pass, the match steps, `selectFunctions` and `probeBlock`
-  * are in `JoinRightColumnsImpl.h`.
-  */
-
+/// With one disjunct and no residual filter, the lookup handles each match. AMAC can write output
+/// in completion order or leave one word per left row to build the ordered gather inputs.
+/// With multiple disjuncts or a residual filter, each disjunct records its hits first. A separate
+/// match step checks the full condition, updates used flags and enforces the output row limit.
 struct JoinRightColumnsData;
 
 /// With one disjunct and no additional filter, the pass searches a block in search batches: consecutive ranges of at most
@@ -44,6 +33,9 @@ constexpr size_t max_disjunct_batch_rows = 8192;
 /// with one disjunct has this type too, and finds the keys itself.
 using AddMatchesFn = size_t (*)(JoinRightColumnsData &);
 
+AddMatchesFn selectAmacPostPass(bool groups, bool add_missing, bool keeps_unmatched);
+size_t compactOrderedAmacRows(JoinRightColumnsData & data);
+
 using Tables = std::span<const std::unique_ptr<HashJoinTable>>;
 
 /// The functions of a join for one block, from `selectFunctions`.
@@ -52,16 +44,23 @@ struct Functions
     /// Several disjuncts or an additional filter: the key search of the first disjunct and of the later ones.
     FindKeysFn find_keys_first = nullptr;
     FindKeysFn find_keys_later = nullptr;
+    /// The same searches by the AMAC ring (`AmacLookup.h`), [buckets in the Robin Hood mode]. Null where the ring has none.
+    FindKeysFn find_keys_ring_first[2]{};
+    FindKeysFn find_keys_ring_later[2]{};
+    /// The prepare step before a search by the ring (`PrepareKeys.h`), of the first disjunct and of the later ones. Null for
+    /// a key type whose key is read from the key column.
+    PrepareKeysFn prepare_keys_first = nullptr;
+    PrepareKeysFn prepare_keys_later = nullptr;
     /// Several disjuncts or an additional filter: the match step. One disjunct and no additional filter: the pass that
     /// finds the keys and adds the matches.
     AddMatchesFn add_matches = nullptr;
+    /// Consumes the indexed words of a single-disjunct AMAC lookup in left input order.
+    AddMatchesFn amac_postpass = nullptr;
     /// The most rows of a batch, or 0 for a single batch of the whole block. With a value other than 0, the row limit
     /// applies: the first batch of a call has at most as many rows as the limit, and each later batch twice as many as the
     /// one before, up to this value. So a call that stops early at the limit wastes few lookups.
     size_t max_batch_rows = 0;
-    /// One disjunct and no additional filter: the batch is the whole block. The pass writes its row refs in place, into
-    /// `lazy_output.row_refs`, which starts empty.
-    bool words_in_row_refs = false;
+    bool uses_amac = false;
     /// For a join with an additional filter and one disjunct that sets a used flag per key: the flag is indexed by the
     /// key's cell offset. A match word does not carry that offset.
     bool records_key_offsets = false;
@@ -74,7 +73,7 @@ struct Functions
 /// `HashJoin` at once. What a block keeps or works in across its calls is in the block's `LeftBlockState`.
 struct JoinRightColumnsData
 {
-    [[nodiscard]] MatchWord * matchWordsOf(size_t k) const { return match_words + k * batch_rows; }
+    [[nodiscard]] MatchWord * matchWordsOf(size_t k) const { return left_block_state.match_words.data() + k * batch_rows; }
 
     const Functions & functions;
     const Tables tables;
@@ -89,12 +88,9 @@ struct JoinRightColumnsData
     /// The current batch: the block rows `[batch_first_row, batch_first_row + batch_rows)`.
     size_t batch_first_row = 0;
     size_t batch_rows = 0;
-    /// `[k * batch_rows + j]` is the match word of disjunct `k` for row `batch_first_row + j`. With `words_in_row_refs`, it
-    /// holds the row refs of the batch instead. The pass writes them in row order.
-    MatchWord * match_words = nullptr;
     /// What the row limit counts so far in this call: output rows, or with an additional filter, the pairs that match on the keys.
     IColumn::Offset added_rows = 0;
-    /// With `words_in_row_refs`: the number of rows of every search batch but the last, which may have fewer.
+    /// For a single-disjunct fused pass, the number of rows of every search batch but the last, which may have fewer.
     size_t search_batch_rows = 0;
 };
 

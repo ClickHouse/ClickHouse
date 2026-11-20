@@ -369,10 +369,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
 bool SpillingHashJoin::canPreserveLeftBlockOrder() const
 {
-    /// The in-memory join processes the probe side when the build fits under the threshold, so it
-    /// must preserve the order on its own.
-    bool in_memory_join_preserves_order = hash_join->preservesLeftBlockOrder();
-
     /// Hash-key equality must survive the switch: the hash join matches the key's byte
     /// representation while MergeJoin matches with `compareAt`, and for some types the two
     /// disagree - floating point (`-0.0` == `+0.0`, NaNs with different payloads compare equal
@@ -399,12 +395,10 @@ bool SpillingHashJoin::canPreserveLeftBlockOrder() const
 
     /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
     /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
-    bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
+    return MergeJoin::isSupported(table_join)
         && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
         && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any)
         && keys_preserve_hash_equality();
-
-    return in_memory_join_preserves_order && merge_join_fallback_is_possible;
 }
 
 void SpillingHashJoin::keepLeftPipelineInOrder()
@@ -421,7 +415,14 @@ void SpillingHashJoin::keepLeftPipelineInOrder()
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SpillingHashJoin got the left-order pin after the build phase started");
 
+    hash_join->keepLeftPipelineInOrder();
     keep_left_block_order = true;
+}
+
+void SpillingHashJoin::allowLeftRowsReordering()
+{
+    if (!keep_left_block_order)
+        hash_join->allowLeftRowsReordering();
 }
 
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)

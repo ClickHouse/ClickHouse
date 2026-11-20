@@ -17,6 +17,7 @@
 #include <base/Decimal.h>
 #include <base/sort.h>
 #include <base/types.h>
+#include <Common/CacheLine.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/RadixSort.h>
@@ -159,6 +160,14 @@ public:
 
 #undef BOUND_ITERATION
         return low;
+    }
+
+    void prefetchSearch() const override
+    {
+        /// Lazy sorting can move entries within the array, but both arrays keep their addresses after the build.
+        __builtin_prefetch(entries.data() + entries.size() / 2, 0, 3);
+        if (row_refs.size() <= CH_CACHE_LINE_SIZE / sizeof(RowRef))
+            __builtin_prefetch(row_refs.data(), 0, 3);
     }
 
     const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override

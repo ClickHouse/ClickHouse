@@ -260,6 +260,9 @@ public:
     /// only when `canPreserveLeftBlockOrder` is true.
     virtual void keepLeftPipelineInOrder() {}
 
+    /// Ordinary join pipelines may opt in. Filled joins and positional lookups such as `joinGet` keep input order.
+    virtual void allowLeftRowsReordering() {}
+
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 

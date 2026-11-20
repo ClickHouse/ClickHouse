@@ -7,6 +7,8 @@
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/joinDispatch.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <base/getCPUCacheSize.h>
+#include <base/getL2CacheSize.h>
 
 #include <limits>
 #include <numeric>
@@ -152,15 +154,28 @@ void insertKey(MutableColumns & columns, const KeyLayout & layout, std::string_v
 
 void HashJoinTable::freezeForProbing()
 {
-    auto finish_fill = []<typename Table>(const std::shared_ptr<Table> & table)
+    bool buckets_in_one_mode = false;
+    auto finish_fill = [&]<typename Table>(const std::shared_ptr<Table> & table)
     {
         if (!table)
             return;
         table->computeBucketPrefix();
         if constexpr (is_partitioned_fixed_table<Table>)
             table->restoreMinMaxOptimization();
+        else
+        {
+            buckets_in_one_mode = table->robin_hood_buckets != Table::RobinHoodBuckets::Mixed;
+            buckets_are_robin_hood = table->robin_hood_buckets == Table::RobinHoodBuckets::All;
+        }
     };
     std::visit([&](auto & maps_) { maps_.visit(key_type, finish_fill); }, maps);
+    /// When the cells fit in cache, AMAC has few misses to overlap. On Graviton4, a single 2–32 MiB table
+    /// was up to 18% slower with AMAC than with ordinary prefetch.
+    static const size_t min_bytes_for_amac_lookup = getL2CacheSize() + getCPUDataCacheSize(3);
+    if (buckets_in_one_mode)
+        amac_support = bufferBytes() > min_bytes_for_amac_lookup ? AmacSupport::LargeTable : AmacSupport::SmallTable;
+    else
+        amac_support = AmacSupport::Unsupported;
 }
 
 size_t HashJoinTable::bufferBytes() const
@@ -254,6 +269,9 @@ bool HashJoinTable::tryConvertToFixedHashMapImpl(Maps & maps_)
         key_type = range_type;
         key_range = {min_key, range};
         maps_.template mapOf<source_type>().reset();
+        /// The new map is direct-addressed.
+        amac_support = AmacSupport::Unsupported;
+        buckets_are_robin_hood = false;
         return true;
     };
 

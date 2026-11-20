@@ -101,6 +101,12 @@ IMPLEMENT_SETTING_ENUM(HashJoinLayout, ErrorCodes::BAD_ARGUMENTS,
      {"parallel", HashJoinLayout::PARALLEL}})
 
 
+IMPLEMENT_SETTING_ENUM(HashJoinAmacMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", HashJoinAmacMode::AUTO},
+     {"on",   HashJoinAmacMode::ON},
+     {"off",  HashJoinAmacMode::OFF}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},

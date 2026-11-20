@@ -94,6 +94,7 @@ public:
     /// The read-in-order decision is made at plan time (before any switch), so we must be
     /// conservative and never claim to preserve the left stream order. See issue #110662.
     bool preservesLeftBlockOrder() const override { return false; }
+    void allowLeftRowsReordering() override { join->allowLeftRowsReordering(); }
 
     void onBuildPhaseFinish() override;
 

@@ -4,17 +4,18 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/AmacLookup.h>
 #include <Interpreters/HashJoin/FindKeys.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/JoinRightColumns.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KnownRowsHolder.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
+#include <Interpreters/HashJoin/PrepareKeys.h>
 
 #include <type_traits>
 
-/// The single pass and the match steps of the hash join probe, `selectFunctions` and `probeBlock`. Only
-/// `HashJoinMethodsImpl.h` includes it, so only the files that instantiate the methods of a join kind compile it.
+/// The single pass and the match steps of the hash join probe, `selectFunctions` and `probeBlock`.
 namespace DB
 {
 namespace ErrorCodes
@@ -264,9 +265,6 @@ struct MatchHandling
     static constexpr bool keeps_rows_without_match = keeps_rows_without_match_;
     /// The join kind always has a filter (`JoinFeatures::need_filter`). Otherwise `AddedColumns::need_filter` tells it per block.
     static constexpr bool filters_always = filters_always_;
-    static constexpr bool adds_row_ref
-        = on_match == OnMatch::AllRowsOfKey || on_match == OnMatch::FirstRowOfKey || on_match == OnMatch::AsofRow;
-    static constexpr bool sets_filter_on_match = adds_row_ref || on_match == OnMatch::LeftRowOnly;
 };
 
 /// What a join kind does with a match and with a row that has none, derived from `JoinFeatures`.
@@ -313,175 +311,190 @@ struct MatchRules
         keeps_rows_without_match, Features::need_filter>;
 };
 
-/// Adds the output of a join with one disjunct, one row at a time and in row order, as the pass finds the keys. For a row whose
-/// key was found, it applies the used flag action to the key's cell offset and picks the ASOF row. A lost claim, or no ASOF
-/// row, makes the row a miss. Then it writes the filter, the replication offset and the row ref. The row refs are kept in
-/// order at the front of `JoinRightColumnsData::match_words`.
-template <typename Handling>
+enum class MatchLayout : uint8_t
+{
+    InOrder,    /// The lookup visits left rows in order.
+    Fixed,      /// Every input has one output slot, including left outer misses.
+    Selected,   /// One left index for each emitted pair or group.
+    Indexed,    /// The postpass consumes a match word at each left index.
+    MarkOnly,
+};
+
+template <typename Handling, MatchLayout layout>
 class MatchAdder
 {
+    static constexpr bool ordered = layout == MatchLayout::InOrder;
+    static constexpr bool indexed = layout == MatchLayout::Indexed;
+    static constexpr bool selected = layout == MatchLayout::Selected;
+
 public:
     ALWAYS_INLINE explicit MatchAdder(JoinRightColumnsData & data_)
         : data(data_)
-        , first_row(data_.batch_first_row)
-        , kept_words(data_.match_words)
-        , record_row_refs(data_.added_columns.record_row_refs)
-        , need_filter_at_run_time(data_.added_columns.need_filter)
+        , record_row_refs(data.added_columns.record_row_refs)
+        , need_filter(Handling::filters_always || data.added_columns.need_filter)
     {
-        AddedColumns & added_columns = data.added_columns;
+        auto & added = data.added_columns;
+        auto & output = added.lazy_output;
         const size_t rows = data.batch_rows;
-        if (needFilter())
+        if (layout != MatchLayout::MarkOnly && (record_row_refs || indexed))
         {
-            added_columns.filter.resize_fill(rows, 0);
-            added_columns.matched_rows.resize(rows);
-            filter = added_columns.filter.data();
-            matched = added_columns.matched_rows.data();
+            output.row_refs.resize(rows);
+            words = output.row_refs.data();
         }
-        if constexpr (Handling::need_replication)
+        if ((ordered || layout == MatchLayout::Fixed) && need_filter)
         {
-            added_columns.offsets_to_replicate.resize(rows);
-            offsets = added_columns.offsets_to_replicate.data();
+            if constexpr (ordered)
+                added.filter.resize_fill(rows, 0);
+            else
+                added.filter.resize(rows);
+            filter = added.filter.data();
+        }
+        if (selected || (ordered && need_filter))
+        {
+            added.matched_rows.resize(rows);
+            matched = added.matched_rows.data();
+        }
+        if constexpr (!indexed && Handling::need_replication)
+        {
+            added.offsets_to_replicate.resize(rows);
+            offsets = added.offsets_to_replicate.data();
         }
         if constexpr (Handling::used_flag_action != UsedFlagAction::None)
-            offset_flags = data.used_flags.offsetFlags();
+            flags = data.used_flags.offsetFlags();
         if constexpr (Handling::on_match == OnMatch::AsofRow)
-            asof_key = &added_columns.leftAsofKey();
+            asof_key = &added.leftAsofKey();
+        if constexpr (selected)
+            output.probe_output = ProbeOutput::Selected;
     }
 
-    /// A row whose key was found. `word_of_key` gives its match word. The word is read only when the row needs it, after the
-    /// claim of an ANY join.
-    template <typename WordOfKey>
-    ALWAYS_INLINE void addFound(size_t i, size_t key_offset [[maybe_unused]], WordOfKey && word_of_key)
+    template <typename Result>
+    ALWAYS_INLINE void addFound(size_t i, size_t source_row [[maybe_unused]], const Result & result)
     {
         if constexpr (Handling::used_flag_action == UsedFlagAction::SetUsedOnce)
         {
-            if (!JoinStuff::JoinUsedFlags::setUsedOnceAt(offset_flags, key_offset))
+            if (!JoinStuff::JoinUsedFlags::setUsedOnceAt(flags, result.getOffset()))
                 return addMiss(i);
         }
         else if constexpr (Handling::used_flag_action == UsedFlagAction::SetUsed)
-            JoinStuff::JoinUsedFlags::setUsedAt(offset_flags, key_offset);
+            JoinStuff::JoinUsedFlags::setUsedAt(flags, result.getOffset());
 
         if constexpr (Handling::on_match == OnMatch::AsofRow)
         {
-            const RowRef * row = reinterpret_cast<SortedLookupVectorBase *>(word_of_key())->findAsof(*asof_key, first_row + i);
+            const RowRef * row = result.getMapped()->findAsof(*asof_key, source_row);
             if (!row)
                 return addMiss(i);
-            addMatch(i, row->encode());
+            write<true>(i, row->encode());
         }
+        else if constexpr (Handling::on_match == OnMatch::FirstRowOfKey)
+            write<true>(i, record_row_refs ? firstRefWord(result.getMapped()) : 1);
+        else if constexpr (Handling::on_match == OnMatch::AllRowsOfKey)
+            write<true>(i, result.getMapped().word);
         else
-        {
-            MatchWord word = 1;
-            if constexpr (Handling::adds_row_ref)
-                word = word_of_key();
-            addMatch(i, word);
-        }
+            write<true>(i, 1);
     }
 
-    ALWAYS_INLINE void addMiss(size_t i [[maybe_unused]])
+    ALWAYS_INLINE void addMiss(size_t i)
     {
-        if (Handling::keeps_rows_without_match && needFilter())
-        {
-            filter[i] = 1;
-            matched[matched_count++] = i;
-        }
-        if constexpr (Handling::add_missing)
-        {
-            if (record_row_refs)
-            {
-                kept_words[kept++] = 0;
-                ++row_count;
-            }
-            if constexpr (Handling::need_replication)
-                ++offset;
-        }
-        if constexpr (Handling::need_replication)
-            offsets[i] = offset;
+        write<false>(i, 0);
     }
 
     ALWAYS_INLINE size_t finish()
     {
-        AddedColumns & added_columns = data.added_columns;
-        if (needFilter())
-            added_columns.matched_rows.resize(matched_count);
+        auto & added = data.added_columns;
+        if constexpr (indexed)
+            return data.functions.amac_postpass(data);
 
-        auto & lazy_output = added_columns.lazy_output;
+        if (selected || (ordered && need_filter))
+            added.matched_rows.resize_assume_reserved(selected_rows);
+        if constexpr (selected && Handling::need_replication)
+            added.offsets_to_replicate.resize_assume_reserved(selected_rows);
+        if constexpr (layout == MatchLayout::Fixed)
+            kept = data.batch_rows;
         if (record_row_refs)
         {
+            added.lazy_output.row_refs.resize_assume_reserved(kept);
+            added.lazy_output.row_count = Handling::need_replication ? total : kept;
+            added.lazy_output.hash_table_matches = Handling::add_missing ? matches : added.lazy_output.row_count;
 #ifndef NDEBUG
-            /// The pass writes the row refs itself, not through `AddedColumns::appendFromBlock`, which checks each one.
-            for (size_t j = 0; j < kept; ++j)
-                if (kept_words[j])
-                    added_columns.checkColumnsOfRef(kept_words[j]);
+            for (MatchWord word : added.lazy_output.row_refs)
+                if (word)
+                    added.checkColumnsOfRef(word);
 #endif
-            lazy_output.row_refs.resize_assume_reserved(kept);
-            const size_t output_rows = Handling::need_replication ? row_count : kept;
-            lazy_output.row_count += output_rows;
-            lazy_output.hash_table_matches += Handling::add_missing ? matches : output_rows;
         }
-        else
-            lazy_output.row_refs.clear();
-
-        /// A join that replicates left rows keeps the whole cell word of a key, which may be a `RowRefList` word. Without
-        /// `output_by_row_list`, the output reads every word as one row.
-        static_assert(Handling::need_replication == (Handling::on_match == OnMatch::AllRowsOfKey));
-        if constexpr (Handling::need_replication)
-            lazy_output.output_by_row_list = true;
+        added.lazy_output.output_by_row_list = Handling::need_replication;
         return data.batch_rows;
     }
 
 private:
-    static constexpr bool maps_all = std::is_same_v<typename Handling::Maps, HashJoin::MapsAll>;
-
-    [[nodiscard]] ALWAYS_INLINE bool needFilter() const
+    template <bool hit>
+    ALWAYS_INLINE void write(size_t i [[maybe_unused]], MatchWord word [[maybe_unused]])
     {
-        if constexpr (Handling::filters_always)
-            return true;
-        else
-            return need_filter_at_run_time;
-    }
-
-    ALWAYS_INLINE void addMatch(size_t i [[maybe_unused]], MatchWord word [[maybe_unused]])
-    {
-        if (Handling::sets_filter_on_match && needFilter())
+        constexpr bool keep = hit ? Handling::on_match != OnMatch::NoOutput : Handling::add_missing || Handling::keeps_rows_without_match;
+        if constexpr (layout == MatchLayout::MarkOnly)
+            static_assert(!keep);
+        else if constexpr (indexed)
         {
-            filter[i] = 1;
-            matched[matched_count++] = i;
+            /// A kept anti-join row has no right ref. Use a nonzero token until offsets are built.
+            if constexpr (Handling::keeps_rows_without_match)
+                words[i] = keep;
+            else
+                words[i] = keep ? word : 0;
         }
-        size_t hit_rows = 0;
-        if constexpr (Handling::adds_row_ref)
+        else if constexpr (layout == MatchLayout::Fixed)
         {
-            hit_rows = Handling::on_match == OnMatch::AllRowsOfKey ? refWordRows(word) : 1;
+            static_assert(keep);
+            if (need_filter)
+                filter[i] = hit;
             if (record_row_refs)
             {
-                if constexpr (Handling::on_match == OnMatch::FirstRowOfKey && maps_all)
-                    word = RowRefList::fromWord(word).firstWord();
-                kept_words[kept++] = word;
-                row_count += hit_rows;
-                matches += hit_rows;
+                words[i] = word;
+                matches += hit;
             }
         }
-        if constexpr (Handling::need_replication)
+        else
         {
-            offset += hit_rows;
-            offsets[i] = offset;
+            if constexpr (selected && keep)
+                matched[selected_rows++] = i;
+            else if constexpr (ordered && (hit ? keep : Handling::keeps_rows_without_match))
+            {
+                if (need_filter)
+                {
+                    filter[i] = 1;
+                    matched[selected_rows++] = i;
+                }
+            }
+            if constexpr (keep)
+            {
+                const size_t copies = hit && Handling::need_replication ? refWordRows(word) : 1;
+                if constexpr (Handling::need_replication)
+                    total += copies;
+                if (record_row_refs)
+                {
+                    words[kept++] = word;
+                    if constexpr (hit && Handling::add_missing)
+                        matches += copies;
+                }
+                if constexpr (selected && Handling::need_replication)
+                    offsets[selected_rows - 1] = total;
+            }
+            if constexpr (ordered && Handling::need_replication)
+                offsets[i] = total;
         }
     }
 
     JoinRightColumnsData & data;
-    const size_t first_row;
-    MatchWord * kept_words;
     const bool record_row_refs;
-    const bool need_filter_at_run_time;
-    UInt8 * offset_flags = nullptr;
+    const bool need_filter;
+    UInt8 * flags = nullptr;
+    const IColumn * asof_key = nullptr;
+    MatchWord * words = nullptr;
     UInt8 * filter = nullptr;
     UInt64 * matched = nullptr;
     IColumn::Offset * offsets = nullptr;
-    const IColumn * asof_key = nullptr;
-    size_t matched_count = 0;
+    size_t selected_rows = 0;
     size_t kept = 0;
-    size_t row_count = 0;
+    size_t total = 0;
     size_t matches = 0;
-    IColumn::Offset offset = 0;
 };
 
 /// Several disjuncts: adds the matches of the disjuncts of a row, in order. The used flags are per right row, so the match
@@ -514,7 +527,7 @@ NO_INLINE size_t addMatchesOfDisjuncts(JoinRightColumnsData & data)
 
     const size_t num_disjuncts = data.tables.size();
     const size_t batch_rows = data.batch_rows;
-    const MatchWord * words = data.match_words;
+    const MatchWord * words = data.matchWordsOf(0);
     const size_t max_joined_rows = data.max_joined_rows;
     /// Only a join that replicates rows moves the output offset. For the others it stays 0.
     IColumn::Offset current_offset = data.added_rows;
@@ -851,69 +864,87 @@ NO_INLINE size_t addMatchesWithAdditionalFilter(JoinRightColumnsData & data)
     return left_rows;
 }
 
-/// One disjunct and no additional filter: finds the keys and adds the output of each row in one pass, so that nothing is
-/// stored and loaded again. It searches the block in search batches, with one adder for the whole block. There is one
-/// instance per key type and match handling. Join kinds with the same handling share it.
-template <HashJoin::Type TYPE, bool fast_path, typename Handling, typename Lookup>
+/// One adder collects the output of every search batch in the block.
+template <HashJoin::Type TYPE, bool fast_path, typename Handling, MatchLayout layout, typename Lookup>
 NO_INLINE size_t findKeysAndAddMatches(JoinRightColumnsData & data)
 {
     using Maps = typename Handling::Maps;
-    static_assert(Lookup::retires_rows_in_order, "`MatchAdder` adds rows in row order");
-    MatchAdder<Handling> adder(data);
+    MatchAdder<Handling, layout> adder(data);
     for (size_t begin = 0; begin < data.batch_rows; begin += data.search_batch_rows)
     {
         const size_t size = std::min(data.search_batch_rows, data.batch_rows - begin);
         const size_t first = data.batch_first_row + begin;
-        Lookup::template run<TYPE, Maps, fast_path, /*row_list=*/false>(
-            {.table = *data.tables[0],
-             .disjunct = data.left_block_state.disjuncts[0],
-             .rows = {.first = first, .rows = nullptr, .size = size},
-             .enable_prefetch = data.added_columns.enable_prefetch},
-            [&](size_t i, size_t, const auto & result) ALWAYS_INLINE
-            {
-                if (!result.isFound())
-                    return adder.addMiss(begin + i);
-                size_t key_offset = 0;
-                if constexpr (Handling::used_flag_action != UsedFlagAction::None)
-                    key_offset = result.getOffset();
-                adder.addFound(begin + i, key_offset, [&] ALWAYS_INLINE { return matchWordOf<Maps>(result); });
-            });
+        DisjunctState & disjunct = data.left_block_state.disjuncts[0];
+        const FindKeysArgs args{
+            .table = *data.tables[0],
+            .disjunct = disjunct,
+            .rows = {.first = first, .rows = nullptr, .size = size},
+            .enable_prefetch = data.added_columns.enable_prefetch,
+            .used_flags = data.used_flags.offsetFlags()};
+        if constexpr (!Lookup::retires_rows_in_order)
+            if (data.functions.prepare_keys_first)
+                data.functions.prepare_keys_first(args);
+        const auto on_row = [&](size_t i, size_t source_row, const auto & result) ALWAYS_INLINE
+        {
+            if (result.isFound())
+                adder.addFound(begin + i, source_row, result);
+            else
+                adder.addMiss(begin + i);
+        };
+        Lookup::template run<TYPE, Maps, fast_path, false>(args, on_row);
     }
     return adder.finish();
 }
 
-template <typename Handling, bool fast_path>
-AddMatchesFn selectFindKeysAndAddMatches(HashJoin::Type key_type)
+template <typename Handling, MatchLayout layout, typename Lookup>
+AddMatchesFn selectFindKeysAndAddMatches(HashJoin::Type key_type, bool fast_path)
 {
+    const auto of_type = [&]<HashJoin::Type TYPE>() -> AddMatchesFn
+    {
+        if constexpr (Lookup::template supports<TYPE, typename Handling::Maps>)
+            return fast_path ? &findKeysAndAddMatches<TYPE, true, Handling, layout, Lookup>
+                             : &findKeysAndAddMatches<TYPE, false, Handling, layout, Lookup>;
+        return nullptr;
+    };
     switch (key_type)
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        return &findKeysAndAddMatches<HashJoin::Type::TYPE, fast_path, Handling, PrefetchingLookup>;
+        return of_type.template operator()<HashJoin::Type::TYPE>();
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
     }
     UNREACHABLE();
 }
 
-/// Picks the functions of a join for one block, with `fast_path` from `canUseFastPath` and `need_filter` from
-/// `AddedColumns::need_filter`. Per block, it always sees the current key type and strictness: both may change after the
-/// build filled the tables.
+/// Select per block because the build can change the key type and join strictness.
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-Functions selectFunctions(HashJoin::Type key_type, size_t num_disjuncts, bool has_additional_filter, bool fast_path, bool need_filter)
+Functions selectFunctions(HashJoin::Type key_type, Tables tables, bool fast_path, const AddedColumns & added, size_t rows)
 {
     using Rules = MatchRules<KIND, STRICTNESS, Maps>;
     using Features = typename Rules::Features;
 
+    const size_t num_disjuncts = tables.size();
+    const bool need_filter = added.need_filter;
     Functions functions;
-    /// A template, so that it is instantiated only where it is called. An ASOF join never calls it, so its file does not
-    /// instantiate `selectFindKeys` for `MapsAsof`.
-    const auto select_find_keys = [&]<typename SearchMaps = Maps>(FindKeysMode mode)
-    { return selectFindKeys<SearchMaps, PrefetchingLookup>(key_type, mode, fast_path); };
+    /// The key searches of the first disjunct, or with `later` of the disjuncts after it. A template, so that it is
+    /// instantiated only where it is called. An ASOF join never calls it, so its file does not instantiate `selectFindKeys`
+    /// for `MapsAsof`.
+    const auto select_find_keys = [&]<typename SearchMaps = Maps>(bool later, FindKeysMode mode)
+    {
+        FindKeysFn & find_keys = later ? functions.find_keys_later : functions.find_keys_first;
+        auto & find_keys_ring = later ? functions.find_keys_ring_later : functions.find_keys_ring_first;
+        PrepareKeysFn & prepare_keys = later ? functions.prepare_keys_later : functions.prepare_keys_first;
+        find_keys = selectFindKeys<SearchMaps, PrefetchingLookup>(key_type, mode, fast_path);
+        /// The ring has no search that stops at the row limit. It has one copy for buckets in the Robin Hood mode.
+        find_keys_ring[0] = selectFindKeys<SearchMaps, AmacLookup<false>>(key_type, mode, fast_path);
+        find_keys_ring[1] = selectFindKeys<SearchMaps, AmacLookup<true>>(key_type, mode, fast_path);
+        prepare_keys = selectPrepareKeys<SearchMaps>(key_type, mode == FindKeysMode::WordsOfRowList, fast_path);
+    };
 
     /// A join kind with `JoinFeatures::need_filter` always sets `AddedColumns::need_filter`, so it needs no copy of a function
     /// for `need_filter` = false.
-    if (has_additional_filter)
+    if (added.additional_filter_expression)
     {
         if constexpr (Features::is_maps_all)
         {
@@ -921,9 +952,10 @@ Functions selectFunctions(HashJoin::Type key_type, size_t num_disjuncts, bool ha
             /// only adds pairs.
             functions.records_key_offsets
                 = Features::need_flags && !Features::right && !Features::full && !Features::is_anti_join && num_disjuncts == 1;
-            functions.find_keys_first = select_find_keys(
+            select_find_keys(
+                false,
                 functions.records_key_offsets ? FindKeysMode::WordsAndKeyOffsetsUpToRowLimit : FindKeysMode::WordsUpToRowLimit);
-            functions.find_keys_later = select_find_keys(FindKeysMode::Words);
+            select_find_keys(true, FindKeysMode::Words);
             /// The filter runs once per batch, so the batches have no cap of their own. The first batch of a call still has at
             /// most as many rows as the limit, and each later batch doubles.
             functions.max_batch_rows = std::numeric_limits<size_t>::max();
@@ -944,9 +976,8 @@ Functions selectFunctions(HashJoin::Type key_type, size_t num_disjuncts, bool ha
             /// With replication, the key search of the first disjunct stops once the right rows it found reach the row limit.
             /// The match step adds at least that many rows for those left rows, unless it skips right rows that another left
             /// row claimed. Then the output of the batch stays below the limit, and `runProbe` goes on with the next batch.
-            functions.find_keys_first
-                = select_find_keys(Features::need_replication ? FindKeysMode::WordsUpToRowLimit : FindKeysMode::Words);
-            functions.find_keys_later = select_find_keys(Rules::stops_at_first_match ? FindKeysMode::WordsOfRowList : FindKeysMode::Words);
+            select_find_keys(false, Features::need_replication ? FindKeysMode::WordsUpToRowLimit : FindKeysMode::Words);
+            select_find_keys(true, Rules::stops_at_first_match ? FindKeysMode::WordsOfRowList : FindKeysMode::Words);
             /// Several disjuncts have no required right keys (see the `HashJoin` constructor), so only the copy with the join
             /// kind's own `need_filter` can run.
             if (need_filter == Features::need_filter)
@@ -958,10 +989,48 @@ Functions selectFunctions(HashJoin::Type key_type, size_t num_disjuncts, bool ha
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected hash join with {} disjuncts", num_disjuncts);
     }
 
-    /// The pass reads `AddedColumns::need_filter` itself.
-    functions.words_in_row_refs = true;
-    functions.add_matches = !fast_path ? selectFindKeysAndAddMatches<typename Rules::Handling, false>(key_type)
-                                       : selectFindKeysAndAddMatches<typename Rules::Handling, true>(key_type);
+    using Handling = typename Rules::Handling;
+    constexpr bool mark_only = Handling::on_match == OnMatch::NoOutput && !Handling::add_missing
+        && !Handling::keeps_rows_without_match;
+    constexpr bool fixed = Handling::add_missing && !Handling::need_replication
+        && (Handling::on_match == OnMatch::FirstRowOfKey || Handling::on_match == OnMatch::AsofRow);
+
+    if (rows && tables.front()->shouldUseAmacLookup(added.amac_mode))
+    {
+        const auto use_layout = [&]<MatchLayout layout>()
+        {
+            constexpr bool flags = Handling::used_flag_action != UsedFlagAction::None;
+            functions.add_matches = tables.front()->bucketsAreRobinHood()
+                ? selectFindKeysAndAddMatches<Handling, layout, AmacLookup<true, flags>>(key_type, fast_path)
+                : selectFindKeysAndAddMatches<Handling, layout, AmacLookup<false, flags>>(key_type, fast_path);
+            if constexpr (layout == MatchLayout::Indexed)
+            {
+                if constexpr (Features::inner && (Handling::on_match == OnMatch::FirstRowOfKey || Handling::on_match == OnMatch::LeftRowOnly))
+                    functions.amac_postpass = &compactOrderedAmacRows;
+                else
+                    functions.amac_postpass = selectAmacPostPass(
+                        Handling::need_replication, Handling::add_missing, Handling::keeps_rows_without_match);
+            }
+        };
+        if constexpr (mark_only)
+            use_layout.template operator()<MatchLayout::MarkOnly>();
+        else if constexpr (fixed)
+            use_layout.template operator()<MatchLayout::Fixed>();
+        else if constexpr (Features::is_all_join)
+            use_layout.template operator()<MatchLayout::Indexed>();
+        else if (added.allow_reordering)
+            use_layout.template operator()<MatchLayout::Selected>();
+        else
+            use_layout.template operator()<MatchLayout::Indexed>();
+
+        if (functions.add_matches)
+        {
+            functions.prepare_keys_first = selectPrepareKeys<Maps>(key_type, false, fast_path);
+            functions.uses_amac = true;
+            return functions;
+        }
+    }
+    functions.add_matches = selectFindKeysAndAddMatches<Handling, MatchLayout::InOrder, PrefetchingLookup>(key_type, fast_path);
     return functions;
 }
 
@@ -977,11 +1046,7 @@ size_t probeBlock(
     const ScatteredBlock::Selector & selector)
 {
     const auto functions = selectFunctions<KIND, STRICTNESS, Maps>(
-        key_type,
-        tables.size(),
-        added_columns.additional_filter_expression != nullptr,
-        canUseFastPath(left_block_state),
-        added_columns.need_filter);
+        key_type, tables, canUseFastPath(left_block_state), added_columns, selector.size());
     return runProbe(functions, tables, used_flags, added_columns, left_block_state, selector);
 }
 }

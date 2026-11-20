@@ -8581,6 +8581,16 @@ Maximum number of rows in an `IN`-clause set for which the projection matcher co
 Used by the aggregate projection matcher (and any future projection matcher that needs to compare `IN`-clause sets). Computing the content hash is `O(N log N)` in the number of set elements; this setting bounds the cost paid during planning when many `IN`-clauses appear in the query or the projection.
 )", 0, \
         {"26.6", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."}) \
+    DECLARE(HashJoinAmacMode, enable_amac_in_hash_join, HashJoinAmacMode::AUTO, R"(
+Controls asynchronous memory access chaining (AMAC) for supported hash join lookups.
+
+- `auto` uses AMAC when the hash table exceeds the combined L2 and L3 cache size.
+- `on` uses AMAC at any table size.
+- `off` uses ordinary lookup.
+
+Only ordinary lookup follows `enable_software_prefetch_in_join`.
+)", 0, \
+        {"26.12", "off", "auto", "Choose AMAC for eligible hash join lookups."}) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0, \

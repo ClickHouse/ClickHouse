@@ -186,6 +186,13 @@ enum class HashJoinLayout : uint8_t
     PARALLEL,
 };
 
+enum class HashJoinAmacMode : uint8_t
+{
+    AUTO,
+    ON,
+    OFF,
+};
+
 enum class JoinAnalyzeMode : uint8_t
 {
     None = 0,

@@ -108,6 +108,7 @@ public:
     bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
     bool canPreserveLeftBlockOrder() const override;
     void keepLeftPipelineInOrder() override;
+    void allowLeftRowsReordering() override;
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
