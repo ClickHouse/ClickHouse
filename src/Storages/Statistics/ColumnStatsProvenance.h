@@ -30,8 +30,8 @@ namespace DB
 ///     PartialStatisticsCoverage   no      no                 no      no         no
 ///     Unmodeled                   no      no                 no      no         no
 ///
-/// The distinct-count guarantees also require the origin `MeasuredStatistics` or `SyntheticOverride`, the value-range
-/// guarantees the origin `MeasuredStatistics`.
+/// The distinct-count guarantee `Exact` requires the origin `MeasuredStatistics` or `SyntheticOverride`, `UpperBound` one
+/// of them or `AssumedDistinct`. The value-range guarantees require the origin `MeasuredStatistics`.
 
 /// Source of a column fact before the plan transforms it.
 enum class ColumnStatsOrigin : UInt8
@@ -47,6 +47,13 @@ enum class ColumnStatsOrigin : UInt8
     /// A fact from test-only statistics hints or randomization. A distinct count of this origin is trusted as if
     /// measured; a value range of this origin gives no guarantee, so only readers that ignore provenance use it.
     SyntheticOverride,
+    /// A distinct count assumed by the table policy (`auto_statistics_assume_floats_distinct`) in place of a uniq sketch:
+    /// the non-NULL values are assumed to be distinct, capped using `basic` (see
+    /// `ColumnStatistics::estimateAssumedDistinctCardinality`). Like a measured distinct count, it describes the rows it
+    /// counts, but it deliberately errs upward, so it keeps `UpperBound` and gives no `Exact`. Like a sketch, it can still
+    /// be below the distinct count of its rows: the cap for equal minimum and maximum misses NaNs, which the minimum and
+    /// maximum skip, and `-0.0`, which compares equal to `0.0`.
+    AssumedDistinct,
 };
 
 /// What happened to a column fact on its way through the plan. These flags are deliberately unordered: consumers ask
@@ -82,13 +89,16 @@ struct ColumnStatsProvenance
 };
 
 /// What a consumer requires of `ColumnStats::num_distinct_values`. Both guarantees refer to the rows the distinct count
-/// was measured on, not to its numerical error: a sketch can underestimate the distinct count of the rows it covers
-/// (e.g. `uniq_v2` above 256 distinct values), and NULLs are not counted.
+/// was measured or assumed for, not to its numerical error: a sketch can underestimate the distinct count of the rows it
+/// covers (e.g. `uniq_v2` above 256 distinct values), so can an assumed one (see `ColumnStatsOrigin::AssumedDistinct`),
+/// and NULLs are not counted.
 enum class DistinctCountGuarantee : UInt8
 {
-    /// Measured on exactly the rows the relation produces.
+    /// Measured on exactly the rows the relation produces. An assumed distinct count deliberately errs upward, so it gives
+    /// none.
     Exact,
-    /// Measured on a superset of the rows the relation produces, so the rows dropped since cannot make it too small.
+    /// Measured on or assumed for a superset of the rows the relation produces, so the rows dropped since cannot make it
+    /// too small.
     UpperBound,
 };
 
