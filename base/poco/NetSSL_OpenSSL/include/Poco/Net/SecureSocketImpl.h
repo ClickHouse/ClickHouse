@@ -35,6 +35,9 @@ namespace Net
 {
 
 
+    class NonBlockingFilterBIO;
+
+
     class HostEntry;
 
 
@@ -208,6 +211,15 @@ namespace Net
         /// Returns true while the handshake is still owed, so that a caller
         /// can tell that any I/O it starts would run the handshake first.
 
+        int waitForSendOrReceive(Poco::Timespan & timeout, int mode);
+        int sendNow(const void * buffer, int length);
+        int receiveNow(void * buffer, int length);
+        void throwHeldSendError();
+        /// The non-blocking calls of `SocketImpl` after the handshake; the first call installs a
+        /// `NonBlockingFilterBIO`. `sendNow` writes one record at a time, only into an empty queue.
+        /// The wait also reports data that OpenSSL has decrypted (`SSL_pending`). The wait and a
+        /// blocking receive send the queued bytes while they wait for data.
+
 
         void setBioMethod(const BIO_METHOD * method);
         /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
@@ -327,6 +339,20 @@ namespace Net
 
         Poco::Timespan getMaxTimeoutOrLimit();
         //// Return max(send, receive) if non zero, otherwise maximum timeout
+
+        NonBlockingFilterBIO & nonBlockingFilter();
+        /// Installs the filter on the first call.
+
+        bool holdsSendError() const;
+
+        int readNow(NonBlockingFilterBIO & filter, void * buffer, int length);
+        /// `SSL_read` through the filter in the non-blocking mode, without the throttler.
+
+        NonBlockingFilterBIO * _nonBlockingFilter = nullptr;
+        /// Owned by the BIO of `_pSSL`.
+        int _nowWriteLength = 0;
+        /// The length of an `SSL_write` that wants to read: OpenSSL needs it repeated.
+        bool _nowReceiveEnded = false;
     };
 
 

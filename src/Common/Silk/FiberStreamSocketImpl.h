@@ -19,6 +19,8 @@ public:
     void connect(const Poco::Net::SocketAddress & address) override;
     void connect(const Poco::Net::SocketAddress & address, const Poco::Timespan & timeout) override;
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
+    /// Suspends the fiber, not the thread.
+    int waitForSendOrReceive(Poco::Timespan & timeout, int mode) override;
     int sendBytes(const void * buffer, int length, int flags) override;
     int receiveBytes(void * buffer, int length, int flags) override;
     void setBlocking(bool flag) override;

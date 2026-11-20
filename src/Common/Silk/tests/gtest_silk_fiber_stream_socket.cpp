@@ -31,6 +31,7 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/Socket.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/SocketImpl.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
@@ -43,6 +44,8 @@
 #include <latch>
 #include <string>
 
+#include <poll.h>
+
 
 namespace
 {
@@ -54,6 +57,9 @@ struct PlainPolicy
     [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
 
     [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
+
+    /// The error of a send after the server closed the connection with `SO_LINGER` 0: a reset.
+    static constexpr int reset_error = ECONNRESET;
 };
 
 struct SecurePolicy
@@ -67,6 +73,10 @@ struct SecurePolicy
     [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
 
     [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
+
+    /// A TLS socket sends `close_notify` and shuts the TCP connection down before the reset, so
+    /// the reset arrives after the end of the stream.
+    static constexpr int reset_error = EPIPE;
 };
 
 struct RetryOnceWriteBIOState
@@ -342,6 +352,151 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 }
 
 
+/// `waitForSendOrReceive` on a fiber socket reports the ready directions, and spends its timeout.
+TYPED_TEST(SilkFiberSocketTest, WaitForSendOrReceive)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    std::latch nothing_arrived{1};
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = this->policy.makeClient(), &nothing_arrived]() -> int
+        {
+            constexpr int select_read = Poco::Net::SocketImpl::SELECT_READ;
+            constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
+
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+            /// Also finishes the TLS handshake on both sides.
+            socket.sendBytes("ping", 4);
+            char prime[4] = {};
+            int received = 0;
+            while (received < 4)
+            {
+                int n = socket.receiveBytes(prime + received, 4 - received);
+                EXPECT_GT(n, 0);
+                if (n <= 0)
+                    return 1;
+                received += n;
+            }
+
+            Poco::Timespan check(0);
+            EXPECT_EQ(socket.impl()->waitForSendOrReceive(check, select_read | select_write), select_write);
+
+            Poco::Timespan timeout(0, 50'000);
+            EXPECT_EQ(socket.impl()->waitForSendOrReceive(timeout, select_read), 0);
+            EXPECT_EQ(timeout.totalMicroseconds(), 0);
+            nothing_arrived.count_down();
+
+            timeout = Poco::Timespan(5, 0);
+            EXPECT_EQ(socket.impl()->waitForSendOrReceive(timeout, select_read), select_read);
+            char data[1] = {};
+            EXPECT_EQ(socket.impl()->receiveNow(data, 1), 1);
+            socket.close();
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char prime[4] = {};
+    int received = 0;
+    while (received < 4)
+    {
+        int n = peer.receiveBytes(prime + received, 4 - received);
+        ASSERT_GT(n, 0);
+        received += n;
+    }
+    peer.sendBytes("pong", 4);
+
+    nothing_arrived.wait();
+    peer.sendBytes("x", 1);
+
+    client_future.wait();
+    peer.close();
+}
+
+
+/// The server answers and resets the connection. The send fails, but the answer is still read,
+/// and the error is held until then.
+TYPED_TEST(SilkFiberSocketTest, AnswerIsReadableAfterTheResetThatFailsTheSend)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+    const std::string answer = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+
+    std::latch reset_sent{1};
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, answer, impl = this->policy.makeClient(), reset_error = TypeParam::reset_error, &reset_sent]() -> int
+        {
+            constexpr int select_read = Poco::Net::SocketImpl::SELECT_READ;
+
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            socket.sendBytes("ping", 4);
+            reset_sent.wait();
+
+            /// Only an error or a hang-up wakes a `poll` with no events: the answer alone does not.
+            pollfd fd{.fd = socket.impl()->sockfd(), .events = 0, .revents = 0};
+            EXPECT_EQ(::poll(&fd, 1, 5000), 1);
+
+            const std::string body(1024, 'x');
+            EXPECT_EQ(socket.impl()->sendNow(body.data(), static_cast<int>(body.size())), -1);
+
+            std::string received;
+            char buffer[256];
+            while (true)
+            {
+                Poco::Timespan timeout(5, 0);
+                if (socket.impl()->waitForSendOrReceive(timeout, select_read) == 0)
+                {
+                    ADD_FAILURE() << "The end of the stream did not arrive";
+                    return 1;
+                }
+                const int n = socket.impl()->receiveNow(buffer, static_cast<int>(sizeof(buffer)));
+                if (n < 0)
+                    break;
+                received.append(buffer, static_cast<size_t>(n));
+            }
+            EXPECT_EQ(received, answer);
+
+            try
+            {
+                socket.impl()->throwHeldSendError();
+                ADD_FAILURE() << "No send error is held";
+            }
+            catch (const Poco::IOException & e)
+            {
+                EXPECT_EQ(e.code(), reset_error) << e.displayText();
+            }
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[4] = {};
+    int received = 0;
+    while (received < 4)
+    {
+        int n = peer.receiveBytes(ping + received, 4 - received);
+        ASSERT_GT(n, 0);
+        received += n;
+    }
+    peer.sendBytes(answer.data(), static_cast<int>(answer.size()));
+    peer.setLinger(true, 0);
+    peer.close();
+    reset_sent.count_down();
+
+    client_future.wait();
+}
+
+
 TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
 {
     /// Plain bound socket suffices for both variants.
@@ -402,6 +557,89 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     char buf[1] = {};
     ASSERT_EQ(peer.receiveBytes(buf, sizeof(buf)), 1);
     peer.sendBytes("y", 1);
+
+    client_future.wait();
+    peer.close();
+}
+
+
+/// The throttler of `sendNow` waits outside OpenSSL, so its fiber never suspends inside an OpenSSL
+/// call. An error of the throttler leaves the connection usable, and a slow throttler suspends the
+/// fiber between the writes.
+TYPED_TEST(SilkFiberSocketTest, SendNowWithAThrottler)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+    const std::string body(64 * 1024, 'x');
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, body, impl = this->policy.makeClient()]() -> int
+        {
+            try
+            {
+                constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
+
+                Poco::Net::StreamSocket socket(impl);
+                socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+                /// Also finishes the TLS handshake on both sides.
+                socket.sendBytes("x", 1);
+                char pong[1] = {};
+                EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+
+                socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
+                EXPECT_THROW(socket.impl()->sendNow("y", 1), DB::Exception);
+
+                socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 32 * 1024));
+                size_t sent = 0;
+                while (sent < body.size())
+                {
+                    Poco::Timespan timeout(5, 0);
+                    if (socket.impl()->waitForSendOrReceive(timeout, select_write) == 0)
+                    {
+                        ADD_FAILURE() << "The socket did not become writable";
+                        return 1;
+                    }
+                    const int n = socket.impl()->sendNow(body.data() + sent, static_cast<int>(body.size() - sent));
+                    if (n < 0)
+                    {
+                        ADD_FAILURE() << "The send failed";
+                        return 1;
+                    }
+                    sent += static_cast<size_t>(n);
+                }
+
+                /// A blocking receive sends the queued bytes of a TLS connection first.
+                char done[1] = {};
+                EXPECT_EQ(socket.receiveBytes(done, sizeof(done)), 1);
+                socket.close();
+                return 0;
+            }
+            catch (...)
+            {
+                ADD_FAILURE() << DB::getCurrentExceptionMessage(/*with_stacktrace*/ false);
+                return 1;
+            }
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(10, 0));
+    char buf[4096];
+    ASSERT_EQ(peer.receiveBytes(buf, 1), 1);
+    peer.sendBytes("p", 1);
+
+    std::string received;
+    while (received.size() < body.size())
+    {
+        const int n = peer.receiveBytes(buf, sizeof(buf));
+        ASSERT_GT(n, 0);
+        received.append(buf, static_cast<size_t>(n));
+    }
+    EXPECT_EQ(received, body);
+    peer.sendBytes("d", 1);
 
     client_future.wait();
     peer.close();
