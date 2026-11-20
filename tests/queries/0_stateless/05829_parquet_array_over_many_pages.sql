@@ -17,7 +17,8 @@ INSERT INTO src SELECT number, arrayMap(i -> toUInt32(number * 100000 + i), rang
 FROM numbers(4);
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05829_dict.parquet') SELECT * FROM src
-SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000;
+SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000,
+    output_format_parquet_max_dictionary_size = 1048576;
 INSERT INTO FUNCTION file(currentDatabase() || '_05829_plain.parquet') SELECT * FROM src
 SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000,
     output_format_parquet_max_dictionary_size = 0;
