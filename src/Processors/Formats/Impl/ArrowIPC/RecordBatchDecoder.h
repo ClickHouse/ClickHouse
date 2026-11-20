@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -197,7 +198,7 @@ public:
     /// Decodes requested fields from a record batch, validating every root node's row count. When
     /// `keep_top_level_fields` is set, only the named fields have their values decoded; other fields are
     /// skipped; their names are normalized according to the reader's case-insensitive matching setting.
-    /// `target_types` maps the requested column names, including dotted subcolumn names, to requested types.
+    /// `target_types` (see `bindRequestedTypes`) maps dotted field paths to requested types.
     /// These hints guide numeric `date32` decoding, raw-byte reinterpretation, and struct nullability at
     /// every nesting level, following the same rules as the Apache Arrow library reader.
     /// `reachable_buffers`, when set, is a 0/1 mask (see `reachableTopLevelBuffers`) marking the buffers the
@@ -238,6 +239,10 @@ public:
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> collectDictionaryUses(
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
+
+    /// The `target_types` of `header`: each column's type keyed by its name and, with case-insensitive matching, by the path
+    /// of the field it reads, resolved as the reader extracts the column. A field read by several case variants has none.
+    [[nodiscard]] UnorderedMapWithMemoryTracking<String, DataTypePtr> bindRequestedTypes(const Block & header) const;
 
 private:
     Slice nextBuffer();
@@ -402,7 +407,7 @@ private:
 
     /// State valid only during a single decode call.
     const flatbuf::RecordBatch * current_batch = nullptr;
-    /// Requested column types by requested (dotted) name, for the recursive `date32` numeric type hint;
+    /// Requested column types by dotted field path, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used

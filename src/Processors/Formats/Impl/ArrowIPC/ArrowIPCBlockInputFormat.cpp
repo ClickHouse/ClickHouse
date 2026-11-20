@@ -149,16 +149,10 @@ void ArrowIPCBlockInputFormat::prepareReader()
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
-    requested_field_target_types.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
-        /// Record each requested column's target type by name so the decoder can read a
-        /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
-        /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
-        /// library reader's recursive numeric type-hint handling.
-        requested_field_target_types[header_column.name] = header_column.type;
     }
 
     if (stream)
@@ -183,6 +177,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+    requested_field_target_types = decoder->bindRequestedTypes(getPort().getHeader());
 
     /// Collect the dictionaries the requested columns reference and the field positions each one's values
     /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
@@ -272,6 +267,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        requested_field_target_types = temp_decoder->bindRequestedTypes(getPort().getHeader());
         dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         UnorderedSetWithMemoryTracking<Int64> base_dictionary_ids;
         for (const auto & block : footer.dictionary_blocks)

@@ -29,6 +29,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
+#include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
@@ -509,25 +511,13 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// layers does not describe this field: no hint.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types, bool case_insensitive)
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
 {
     if (parent_hint)
         return parent_hint;
     if (!types)
         return nullptr;
     auto it = types->find(path);
-    if (it == types->end() && case_insensitive)
-    {
-        /// A path that no requested name spells takes the type of the only requested name that differs from it only by case.
-        for (auto candidate = types->begin(); candidate != types->end(); ++candidate)
-        {
-            if (!boost::iequals(candidate->first, path))
-                continue;
-            if (it != types->end())
-                return nullptr;
-            it = candidate;
-        }
-    }
     if (it == types->end())
         return nullptr;
     DataTypePtr hint = it->second;
@@ -2890,8 +2880,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
-    return resolveHint(
-        parent_hint, path, list_depth, decoding_below_union ? nullptr : target_types, settings.arrow.case_insensitive_column_matching);
+    return resolveHint(parent_hint, path, list_depth, decoding_below_union ? nullptr : target_types);
 }
 
 DictionaryUse RecordBatchDecoder::dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const
@@ -2920,8 +2909,7 @@ void RecordBatchDecoder::collectDictionaryUses(
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
-    const DataTypePtr effective_hint = resolveHint(
-        target_hint, path, list_depth, below_union ? nullptr : lookup_types, settings.arrow.case_insensitive_column_matching);
+    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, below_union ? nullptr : lookup_types);
     if (field.dictionary)
     {
         /// Fields with equal uses decode the values the same way, so one decoding serves them all.
@@ -2968,6 +2956,87 @@ void RecordBatchDecoder::collectDictionaryUses(
         default:
             break;
     }
+}
+
+UnorderedMapWithMemoryTracking<String, DataTypePtr> RecordBatchDecoder::bindRequestedTypes(const Block & header) const
+{
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> types;
+    for (const auto & column : header)
+        types.emplace(column.name, column.type);
+    if (!settings.arrow.case_insensitive_column_matching)
+        return types;
+
+    /// The paths `resolveTargetHint` looks up, as `collectDictionaryUses` builds them.
+    UnorderedSetWithMemoryTracking<String> top_level_fields;
+    UnorderedSetWithMemoryTracking<String> nested_fields;
+    auto collect = [&](this auto && self, const ArrowType & type, const String & path) -> void
+    {
+        switch (type.kind)
+        {
+            case TypeKind::List:
+            case TypeKind::LargeList:
+            case TypeKind::FixedSizeList:
+            case TypeKind::ListView:
+            case TypeKind::LargeListView:
+            case TypeKind::Map:
+                self(type.children.at(0).type, path);
+                break;
+            case TypeKind::Struct:
+                for (size_t i = 0; i < type.children.size(); ++i)
+                {
+                    String child_path = structFieldPath(path, type, i);
+                    self(type.children[i].type, child_path);
+                    nested_fields.insert(std::move(child_path));
+                }
+                break;
+            case TypeKind::RunEndEncoded:
+                self(type.children.at(1).type, path);
+                break;
+            default:
+                break;
+        }
+    };
+    for (const ArrowField & field : schema.fields)
+    {
+        top_level_fields.insert(field.name);
+        collect(field.type, field.name);
+    }
+
+    /// The field `prefix` + `name` if there is one, else the only one below `prefix` that differs from it only by case.
+    auto find = [](const UnorderedSetWithMemoryTracking<String> & fields, const String & prefix, std::string_view name) -> std::optional<String>
+    {
+        String exact = prefix + String(name);
+        if (fields.contains(exact))
+            return exact;
+        std::optional<String> match;
+        for (const String & field : fields)
+        {
+            if (field.size() != exact.size() || !field.starts_with(prefix) || !boost::iequals(std::string_view(field).substr(prefix.size()), name))
+                continue;
+            if (match)
+                return {};
+            match = field;
+        }
+        return match;
+    };
+
+    /// As `ArrowIPCBlockInputFormat::buildChunk` finds a column: the whole name as a top-level field, else its first component
+    /// as a top-level field and the rest as a field below it.
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> folded;
+    for (const auto & column : header)
+    {
+        auto path = find(top_level_fields, "", column.name);
+        if (const auto [table, rest] = Nested::splitName(std::string_view(column.name)); !path && !rest.empty())
+            if (const auto root = find(top_level_fields, "", table))
+                path = find(nested_fields, *root + ".", rest);
+        if (path && !types.contains(*path))
+            if (auto [it, inserted] = folded.try_emplace(*path, column.type); !inserted)
+                it->second = nullptr;
+    }
+    for (const auto & [path, type] : folded)
+        if (type)
+            types.emplace(path, type);
+    return types;
 }
 
 }
