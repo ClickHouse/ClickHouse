@@ -195,7 +195,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
     /// per batch loses nothing noticeable. The check sits in an outer loop rather than behind a mask test on
     /// the row index: on AArch64 clang-23 keeps even that test and its branch in the row loop, which costs 20%.
-    for (UInt64 batch_start_row = 0; batch_start_row < row_count; batch_start_row += cancellation_check_batch_rows)
+    for (UInt64 batch_start_row = 0, batch_end_row = 0; batch_start_row < row_count; batch_start_row = batch_end_row)
     {
         if (isCancelled())
         {
@@ -204,12 +204,15 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             return;
         }
 
-        const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
+        /// The mid-loop failpoint pauses before row 5. Row 5 starts a batch, so the row loop needs no test for it.
+        constexpr UInt64 mid_loop_pause_row = 5;
+        if (batch_start_row == mid_loop_pause_row)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
+        batch_end_row = std::min(
+            batch_start_row < mid_loop_pause_row ? mid_loop_pause_row : batch_start_row + cancellation_check_batch_rows, row_count);
         for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
         {
-            if (row_idx == 5)
-                FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
-
             auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
             size_t row_group_idx = 0;
             if (key_emplace_result.isInserted()) /// New grouping key
