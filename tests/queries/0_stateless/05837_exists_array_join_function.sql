@@ -9,6 +9,7 @@ SELECT EXISTS (SELECT arrayJoin(CAST([], 'Array(UInt8)')) FROM t);
 SELECT EXISTS (SELECT arrayJoin([1, 2]) FROM t);
 SELECT EXISTS (SELECT arrayJoin(groupArray(k)) FROM t WHERE k = 5);
 SELECT EXISTS (SELECT arrayJoin(groupArray(k)) FROM t);
+SELECT EXISTS (SELECT arrayJoin([count()]) FROM t WHERE k = 5);
 
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT l.number, arrayJoin(CAST([], 'Array(UInt8)')) FROM t);
 SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT l.number, arrayJoin(CAST([], 'Array(UInt8)')) FROM t);
@@ -17,7 +18,9 @@ SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(l.number =
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(CAST([], 'Array(UInt8)')) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([1, 2]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(t.k = 1, CAST([], 'Array(UInt8)'), [1])) FROM t WHERE t.k = l.number GROUP BY t.k);
-SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(groupArray(t.k)) FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([sumState(toNullable(t.k))]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT l.number, a FROM t ARRAY JOIN CAST([], 'Array(UInt8)') AS a);
 
 DROP TABLE t;
