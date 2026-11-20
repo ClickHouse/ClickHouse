@@ -1,0 +1,25 @@
+<test>
+    <create_query>CREATE TABLE t_sparse_write_json (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE t_sparse_write_json_dst (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE t_sparse_write_variant (v Variant(UInt64, String, Float64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_sparse_write_variant_dst (v Variant(UInt64, String, Float64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+
+    <!-- 5 parts of JSON with 400 paths, each present in one row of 400. -->
+    <fill_query>INSERT INTO t_sparse_write_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(0, 12000) SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO t_sparse_write_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(12000, 12000) SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO t_sparse_write_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(24000, 12000) SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO t_sparse_write_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(36000, 12000) SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO t_sparse_write_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(48000, 12000) SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <!-- 25% NULLs: no block of 32 NULLs. -->
+    <fill_query>INSERT INTO t_sparse_write_variant SELECT multiIf(cityHash64(number) % 4 = 0, NULL, cityHash64(number) % 4 = 1, number, cityHash64(number) % 4 = 2, toString(number), number / 7) FROM numbers(6000000) SETTINGS use_variant_as_common_type = 1</fill_query>
+    <fill_query>OPTIMIZE TABLE t_sparse_write_variant FINAL</fill_query>
+
+    <query>INSERT INTO t_sparse_write_json_dst SELECT json FROM t_sparse_write_json SETTINGS max_threads = 1, max_insert_threads = 1</query>
+    <query>OPTIMIZE TABLE t_sparse_write_json DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0' SETTINGS optimize_dry_run_check_part = 0</query>
+    <query>INSERT INTO t_sparse_write_variant_dst SELECT v FROM t_sparse_write_variant SETTINGS max_threads = 1, max_insert_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_sparse_write_json</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_sparse_write_json_dst</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_sparse_write_variant</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_sparse_write_variant_dst</drop_query>
+</test>
