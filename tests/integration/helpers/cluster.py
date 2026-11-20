@@ -6628,11 +6628,12 @@ class ClickHouseInstance:
                 "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version",
             ]
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -6698,11 +6699,12 @@ class ClickHouseInstance:
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
