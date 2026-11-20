@@ -62,7 +62,7 @@ struct CapturedPlan
     ///
     /// `steps_to_stats` fills the statistics in as the plan is read, for a caller that already
     /// has them. The logged plan does not: it captures before the query runs and fills them in
-    /// afterwards, through `QueryPlanProfiler::captureStatistics`.
+    /// afterwards, through `QueryPlanLogCapture::captureStatistics`.
     static CapturedPlan capture(
         const PlanWalk & walk,
         const ExplainPlanOptions & options,

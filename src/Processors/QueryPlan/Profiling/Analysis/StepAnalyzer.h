@@ -3,7 +3,6 @@
 #include <functional>
 #include <optional>
 #include <span>
-#include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
@@ -22,6 +21,14 @@ using StepProcessors = std::span<IProcessor * const>;
 using StepReporter = std::function<StepAnalysisReport(StepProcessors)>;
 
 struct StepStatsContext;
+
+/// One stage of a step's execution, as `getStepGroups` numbers them and `getStepGroupName` names
+/// them. Most steps have the single unnamed stage; a join has a build and a probe.
+struct StepGroup
+{
+    size_t id = 0;
+    String name;
+};
 
 /// Shapes a step's raw report into its analysis, adding what the step itself knows -- a join's
 /// estimation and input columns, for instance -- to what was measured.
@@ -49,8 +56,7 @@ struct StepAnalyzer
     /// Filled by the walk, which is the only thing that knows the shape.
     std::vector<UInt64> children;
 
-    /// What the passes that run across steps need to know about this one. A step declares these
-    /// for itself, so that nothing has to ask what kind of step it is after the fact.
+    /// What the passes that run across steps need to know about this one.
     ///
     /// Joins of one cluster share their cost. Zero means the join belongs to no cluster.
     UInt64 cluster_id = 0;
@@ -59,8 +65,7 @@ struct StepAnalyzer
     bool is_creating_set = false;
 
     /// Every step has at least the one unnamed stage.
-    std::vector<size_t> groups{0};
-    std::unordered_map<size_t, String> group_names;
+    std::vector<StepGroup> groups{{}};
 
     /// Empty when the step has nothing to report of its own.
     StepReporter reporter;
@@ -70,11 +75,9 @@ struct StepAnalyzer
     /// Set by joins only; its presence is what puts a step in the branch-cost phase.
     JoinCardinalityReader join_cardinality;
 
-    /// What a pass across steps asks. The fields above are what a step declares about itself;
-    /// these are the questions asked of it afterwards, so no caller has to know which field
-    /// answers which question.
-    bool isJoin() const { return join_cardinality != nullptr; }
-    bool isCreatingSet() const { return is_creating_set; }
+    /// What a pass across steps asks of a step.
+    [[nodiscard]] bool isJoin() const { return join_cardinality != nullptr; }
+    [[nodiscard]] bool isCreatingSet() const { return is_creating_set; }
 };
 
 }

@@ -19,8 +19,8 @@ using QueryExecutionStartedCallback = std::function<void()>;
 
 class Context;
 
-class QueryPlanProfiler;
-using QueryPlanProfilerPtr = std::shared_ptr<QueryPlanProfiler>;
+class QueryPlanLogCapture;
+using QueryPlanLogCapturePtr = std::shared_ptr<QueryPlanLogCapture>;
 
 /// Most used types have shorter names
 using ContextPtr = std::shared_ptr<const Context>;
@@ -38,7 +38,7 @@ struct WithContextImpl
     WithContextImpl() = default;
     explicit WithContextImpl(Weak context_) : context(context_) {}
 
-    Shared getContext() const;
+    [[nodiscard]] Shared getContext() const;
 
 protected:
     Weak context;

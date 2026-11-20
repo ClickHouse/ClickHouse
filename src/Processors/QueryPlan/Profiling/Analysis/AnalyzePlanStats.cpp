@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -297,14 +298,15 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
 void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
-    /// By index rather than by step: the processors outlive the plan, and so does this.
+    /// Whether the step a processor belongs to is the builder of a set, answered from the
+    /// snapshot because the processors outlive the plan.
     const auto creates_a_set = [this](UInt64 step_id)
     {
         const auto * analyzer = plan_snapshot.find(step_id);
         return analyzer && analyzer->isCreatingSet();
     };
 
-    std::unordered_map<const TemporaryDataOnDiskScope *, UInt64> steps_by_scope;
+    UnorderedMapWithMemoryTracking<const TemporaryDataOnDiskScope *, UInt64> steps_by_scope;
     for (const auto & processor : processors)
     {
         const UInt64 step_id = processor->getQueryPlanStepIndex();
@@ -421,14 +423,13 @@ StepStatsContext AnalyzeStepsStats::makeContext(UInt64 step_id, const StepAnalyz
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
     context.groups = analyzer.groups;
-    context.group_names = analyzer.group_names;
 
     if (const auto step_stats_it = stats_by_step.find(step_id); step_stats_it != stats_by_step.end())
         context.io = step_stats_it->second;
 
-    for (size_t group : context.groups)
-        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group)); group_stats_it != stats_by_step_group.end())
-            context.group_stats[group] = group_stats_it->second;
+    for (const auto & group : context.groups)
+        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group.id)); group_stats_it != stats_by_step_group.end())
+            context.group_stats[group.id] = group_stats_it->second;
 
     if (interval_timings)
         context.time_and_conc_stats = interval_timings->findTiming(step_id);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Sources/LazyFinalSharedState.h>
@@ -34,7 +35,7 @@ public:
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
 private:

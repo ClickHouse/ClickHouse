@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB
@@ -7,14 +8,14 @@ namespace DB
 namespace
 {
 
-/// One clock per stage of every step the snapshot found, so the walk of the plan happens once.
+/// One clock per stage of every step the snapshot found.
 StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_snapshot)
 {
     StepWallClocks clocks;
 
     for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
-        for (size_t group : analyzer.groups)
-            clocks.try_emplace(std::make_pair(step_id, group), std::make_unique<StepWallClock>());
+        for (const auto & group : analyzer.groups)
+            clocks.try_emplace(std::make_pair(step_id, group.id), std::make_unique<StepWallClock>());
 
     return clocks;
 }
@@ -34,9 +35,19 @@ StepWallClock * StepProfiler::findClockForStep(UInt64 step_id, size_t group) con
     return it != clocks.end() ? it->second.get() : nullptr;
 }
 
+void StepProfiler::markExecutionStarted()
+{
+    execution_start_ns.store(clock_gettime_ns(), std::memory_order_release);
+}
+
 void StepProfiler::markExecutionFinished()
 {
-    execution_time_ns.store(clock_gettime_ns() - execution_start_ns, std::memory_order_release);
+    /// Zero until the executor starts, and a pipeline may be finalized without ever having run.
+    const UInt64 started_at = execution_start_ns.load(std::memory_order_acquire);
+    if (started_at == 0)
+        return;
+
+    execution_time_ns.store(clock_gettime_ns() - started_at, std::memory_order_release);
 }
 
 bool StepProfiler::needCollectWorkIntervals() const

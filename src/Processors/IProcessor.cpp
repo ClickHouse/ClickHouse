@@ -175,19 +175,19 @@ ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
     ProcessorsProfileLogInfo info;
 
-    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
-
-    info.id = get_proc_id(*this);
+    /// Indices unique within the query, not heap addresses, which must not be published.
+    info.id = processor_index;
 
     for (const auto & port : outputs)
     {
         if (!port.isConnected())
             continue;
         const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(get_proc_id(next));
+        info.parent_ids.push_back(next.processor_index);
     }
 
-    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
+    /// One plus the step index, so that 0 means no step.
+    info.plan_step = query_plan_step_index == PlanStepIndex::NONE ? 0 : query_plan_step_index + 1;
     info.plan_step_name = plan_step_name;
     info.plan_step_description = plan_step_description;
     info.plan_group = query_plan_step_group;

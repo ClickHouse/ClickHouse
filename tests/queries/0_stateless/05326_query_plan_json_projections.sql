@@ -29,7 +29,7 @@ SYSTEM FLUSH LOGS query_log;
 -- The projection is named on the step that read the table, and its counters are present.
 SELECT
     'projections',
-    anyLast(JSONExtractString(node, 'Node Type')),
+    anyLast(JSONExtractString(node, 'NodeType')),
     anyLast(JSONExtractString(projection, 'Name')),
     anyLast(JSONHas(projection, 'Selected Parts')),
     anyLast(JSONHas(projection, 'Selected Marks')),

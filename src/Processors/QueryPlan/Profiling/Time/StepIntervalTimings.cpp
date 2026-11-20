@@ -1,4 +1,7 @@
 #include <Core/Types.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <base/defines.h>
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
@@ -62,11 +65,11 @@ StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepInterva
 
     struct StepIntervalsByThread
     {
-        std::vector<TimeIntervals> intervals_by_thread;
+        VectorWithMemoryTracking<TimeIntervals> intervals_by_thread;
         size_t last_thread = no_thread;
     };
 
-    std::unordered_map<UInt64, StepIntervalsByThread> step_to_thread_intervals;
+    UnorderedMapWithMemoryTracking<UInt64, StepIntervalsByThread> step_to_thread_intervals;
     step_to_thread_intervals.reserve(timing_by_step.size());
 
     for (const auto & [step_id, _] : timing_by_step)
@@ -130,10 +133,10 @@ void StepIntervalTimings::computeBranchTime(const PlanAnalysisSnapshot & plan_sn
         all_steps_time_ns = root_it->second.branch_time_ns;
 }
 
-std::vector<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(
+VectorWithMemoryTracking<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(
     TimeIntervals && current_step_intervals, const std::vector<UInt64> & children, TimeIntervalsByStep & branch_intervals_by_step) const
 {
-    std::vector<TimeIntervals> current_step_branch_intervals;
+    VectorWithMemoryTracking<TimeIntervals> current_step_branch_intervals;
 
     current_step_branch_intervals.push_back(std::move(current_step_intervals));
 

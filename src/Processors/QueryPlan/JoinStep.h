@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
@@ -40,11 +42,10 @@ public:
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
-        bool keep_left_read_in_order_,
         bool use_new_analyzer_,
         bool use_join_disjunctions_push_down_ = false);
 
-    String getName() const override { return "Join"; }
+    [[nodiscard]] String getName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -54,17 +55,17 @@ public:
     /// Output-byte collection is nevertheless supported here for completeness, but only on the
     /// analyzer path: `updatePipeline` appends the collector only there, so claiming support
     /// otherwise would silently report zero output bytes.
-    bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
 
     void describePipeline(FormatSettings & settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const JoinPtr & getJoin() const { return join; }
+    [[nodiscard]] const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
-    bool allowPushDownToRight() const;
+    [[nodiscard]] bool allowPushDownToRight() const;
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
@@ -75,7 +76,7 @@ public:
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    struct PrimaryKeySharding : VectorWithMemoryTracking<PrimaryKeyNamesPair>
     {
         bool is_reverse_order = false;
     };
@@ -87,18 +88,35 @@ public:
     /// Gate the probe-side reads on the build completion seal carrying the given runtime
     /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
     void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
+
+    /// What the query plan guarantees about the left input streams.
+    enum class LeftPipelineOrder : uint8_t
+    {
+        None, /// The left pipe may be resized to max_streams.
+        KeepLayout, /// The left streams are not resized in `joinPipelinesRightLeft`, e.g. to keep shards intact.
+        KeepOrder, /// The layout is kept AND the join must emit the left rows in their original order.
+    };
+
+    /// The query plan REQUIRES the left stream's row order (`LeftPipelineOrder::KeepOrder`):
+    /// keeps the left pipe layout, and asks the join to keep the left row order. Throws a logical
+    /// error when the join cannot honor the request - the caller must check
+    /// `IJoin::canPreserveLeftBlockOrder` first.
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
-    bool isOptimized() const { return optimized; }
+    /// Keeps only the left pipe layout (`LeftPipelineOrder::KeepLayout`), without any requirement
+    /// on the join itself. Does not downgrade an already required order.
+    void keepLeftPipelineLayout();
+
+    [[nodiscard]] bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
+    [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    StepAnalyzer makeAnalyzer() const override;
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
-    const JoinEstimation & getEstimation() const { return estimation; }
-    UInt64 getClusterId() const { return cluster_id; }
+    [[nodiscard]] const JoinEstimation & getEstimation() const { return estimation; }
+    [[nodiscard]] UInt64 getClusterId() const { return cluster_id; }
 
 private:
     bool optimized = false;
@@ -117,9 +135,9 @@ private:
     size_t max_streams;
 
     const NameSet required_output;
-    std::set<size_t> columns_to_remove;
+    SetWithMemoryTracking<size_t> columns_to_remove;
     JoinLocality locality = JoinLocality::Unspecified;
-    bool keep_left_read_in_order;
+    LeftPipelineOrder left_pipeline_order = LeftPipelineOrder::None;
     bool use_new_analyzer = false;
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
@@ -130,13 +148,13 @@ private:
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep
-    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    [[nodiscard]] bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
 
     /// Mark that disjunction optimization has been applied to this JoinStep
     void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
 
     bool swap_streams = false;
-    bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
+    [[nodiscard]] bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
     PrimaryKeySharding primary_key_sharding;
 };
 
@@ -147,18 +165,18 @@ class FilledJoinStep : public ITransformingStep
 public:
     FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
-    String getName() const override { return "FilledJoin"; }
+    [[nodiscard]] String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const JoinPtr & getJoin() const { return join; }
+    [[nodiscard]] const JoinPtr & getJoin() const { return join; }
 
-    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    [[nodiscard]] bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    StepAnalyzer makeAnalyzer() const override;
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
 private:
     void updateOutputHeader() override;

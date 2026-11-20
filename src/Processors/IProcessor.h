@@ -334,7 +334,7 @@ public:
 
     const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     /// `IQueryPlanStep::getStepIndex` of the step, or `PlanStepIndex::NONE` if there is none.
-    UInt64 getQueryPlanStepIndex() const { return query_plan_step_index; }
+    [[nodiscard]] UInt64 getQueryPlanStepIndex() const { return query_plan_step_index; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }

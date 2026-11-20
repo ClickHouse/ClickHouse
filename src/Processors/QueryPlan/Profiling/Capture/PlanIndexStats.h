@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <base/types.h>
 
@@ -46,15 +48,15 @@ struct PlanIndexStat
     std::string part_name = {};
     std::string description = {};
     std::string condition = {};
-    std::vector<std::string> used_keys = {};
+    std::vector<std::string> used_keys = {}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- filled from `KeyCondition::Description::used_keys` and `StatisticsPartPruner::getUsedColumns`
     size_t num_parts_after;
     size_t num_granules_after;
     MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
-    std::vector<PlanDistributedIndexStat> distributed = {};
+    VectorWithMemoryTracking<PlanDistributedIndexStat> distributed = {};
 };
 
-using PlanIndexStats = std::vector<PlanIndexStat>;
+using PlanIndexStats = VectorWithMemoryTracking<PlanIndexStat>;
 
 struct PlanProjectionStat
 {
@@ -70,7 +72,7 @@ struct PlanProjectionStat
 };
 
 /// `deque` is used to ensure stable addresses during projection analysis stats building.
-using PlanProjectionStats = std::deque<PlanProjectionStat>;
+using PlanProjectionStats = DequeWithMemoryTracking<PlanProjectionStat>;
 
 const char * toString(PlanIndexType type);
 std::string_view toString(MarkRanges::SearchAlgorithm search_algorithm);

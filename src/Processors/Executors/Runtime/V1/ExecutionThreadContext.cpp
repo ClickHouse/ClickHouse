@@ -275,12 +275,6 @@ std::exception_ptr ExecutionThreadContext::getException()
     return exception;
 }
 
-void ExecutionThreadContext::rethrowExceptionIfHas()
-{
-    if (exception)
-        std::rethrow_exception(exception);
-}
-
 void ExecutionThreadContext::flushWorkIntervals()
 {
     if (step_profiler)

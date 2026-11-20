@@ -1,9 +1,9 @@
 -- Tags: no-old-analyzer
 
 -- A join reports metrics of its own -- how many rows each side saw, how large the hash table grew --
--- only when the query runs with the join analyze mode on. Until `log_query_plans` turned that mode
--- on, the plan stored for a query with a join carried its I/O and timings but none of that, so the
--- whole `Left` / `Right` / `HashTable` vocabulary was unreachable through `system.query_log`.
+-- only when the query runs with the join analyze mode on, which `log_query_plans` turns on. The
+-- plan stored for a query with a join therefore carries a `Left`, a `Right` and a `HashTable` group
+-- alongside its I/O and its timings.
 --
 -- The mode has to be set before the interpreter is built, because every join reads it while the
 -- planner constructs it; a join built without it does not even allocate the counters. That makes
@@ -18,21 +18,21 @@ INSERT INTO j_left SELECT number FROM numbers(20000);
 INSERT INTO j_right SELECT number * 2 FROM numbers(5000);
 
 SET log_query_plans = 1;
+-- The plan is captured on the initiator only, and with parallel replicas its share of the join can be empty.
 SELECT count() FROM j_left JOIN j_right USING (k)
-SETTINGS log_comment = '05048_hash', join_algorithm = 'hash' FORMAT Null;
+SETTINGS log_comment = '05048_hash', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 SET log_query_plans = 0;
 
 -- The same query without plan logging must not pay for the counters.
 SELECT count() FROM j_left JOIN j_right USING (k)
-SETTINGS log_comment = '05048_off', join_algorithm = 'hash' FORMAT Null;
+SETTINGS log_comment = '05048_off', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
     'join_stats',
     count(),
-    -- The join's own groups, which are what this is about: none of them appeared before the
-    -- analyze mode was turned on for a logged query.
+    -- The join's own groups, which exist only when the analyze mode is on.
     anyLast(JSONHas(join_stats, 'Left')),
     anyLast(JSONHas(join_stats, 'Right')),
     anyLast(JSONHas(join_stats, 'HashTable')),
@@ -53,7 +53,7 @@ SELECT
 FROM
 (
     SELECT JSONExtractRaw(
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'Join',
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'Join',
                     JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes'))[1],
         'Statistics') AS join_stats
     FROM system.query_log

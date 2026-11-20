@@ -5,7 +5,6 @@
 
 DROP TABLE IF EXISTS t_int;
 DROP TABLE IF EXISTS t_dyn;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_join_swap_table = 'false';

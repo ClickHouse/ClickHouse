@@ -123,8 +123,8 @@ class CompressionCodecDoubleDelta : public ICompressionCodec
 public:
     explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -134,12 +134,12 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
-    String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isDeltaCompression() const override { return true; }
+    [[nodiscard]] String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
 
 private:
     UInt8 data_bytes_size;
@@ -480,20 +480,27 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     return static_cast<UInt32>(dest - original_dest);
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<UInt8> getDataBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
 {
-    if (!column_type->isValueRepresentedByNumber())
+    if (!column_type.isValueRepresentedByNumber())
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not numeric",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    const size_t max_size = column_type->getSizeOfValueInMemory();
+    const size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
 
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -612,7 +619,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 
         // But always check against column_type if available to ensure it is also a valid type
         if (column_type != nullptr)
-            data_bytes_size = getDataBytesSize(column_type);
+            data_bytes_size = *getDataBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
 
         // Finally try to use a user argument if specified.
         if (arguments && !arguments->children.empty())
@@ -636,7 +643,8 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     };
 
-    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func);
+    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func,
+        {.is_applicable_to_type = [](const IDataType & type) { return getDataBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 
 CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size)

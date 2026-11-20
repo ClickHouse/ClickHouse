@@ -84,6 +84,14 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/ssl_certs.xml $CONFIG_DIR/config.d
     # Without this the server applies its 1GiB core_dump.size_limit default, which truncates cores.
     cp -av --dereference "$repo_dir"/tests/config/config.d/core_dump.yaml $CONFIG_DIR/config.d
+    # Named collections of the stateless tests, e.g. `s3_conn` for the S3 emulator started by `start_object_storages`.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/named_collection.xml $CONFIG_DIR/config.d
+    # Anonymous S3 access, so corpus queries reading the emulator by plain URL are not rejected.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/disable_s3_env_credentials.xml $CONFIG_DIR/config.d
+    # Embedded Keeper, for `Replicated*` tables and databases, `KeeperMap` and the `{shard}`/`{replica}` macros.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/keeper_port.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/zookeeper.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/macros.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_enable_global_profiler.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_flush_profile.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
@@ -103,7 +111,7 @@ function configure
 EOL
 
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config)
 }
 
 function collect_jemalloc_profiles
@@ -153,6 +161,27 @@ function filter_exists_and_template
     done
 }
 
+# The S3 (SeaweedFS on :11111, with the stateless tests' `data_minio` uploaded) and Azure (azurite-rs
+# on :10000) emulators the stateless tests use, so fuzzed object storage queries reach the server code.
+function start_object_storages
+{
+    mkdir -p /workspace/seaweedfs
+    TEMP_DIR=/workspace/seaweedfs $repo_dir/ci/jobs/scripts/functional_tests/setup_seaweedfs.sh stateless $repo_dir/tests > seaweedfs.log 2>&1
+
+    ( (ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)") \
+        && exec azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory ) > azurite.log 2>&1 &
+    for _ in {1..30}
+    do
+        if curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ | grep -qE '400|200'
+        then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "azurite-rs did not start"
+    return 1
+}
+
 function stop_server
 {
     timeout --signal TERM --kill-after=10 20 clickhouse-client $NO_AST_FUZZER --query "select elapsed, query from system.processes" ||:
@@ -180,6 +209,8 @@ function fuzz
     else
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
+
+    start_object_storages
 
     mkdir -p /var/run/clickhouse-server
 
@@ -334,11 +365,17 @@ function fuzz
         echo "Fuzzer pid is $fuzzer_pid"
 
         # We need to give timeout some time to execute the underlying command with that many arguments
+        # The fuzzer_pid belongs to the timeout process.
+        actual_fuzzer_pid=''
         elapsed=0
         maximum=50
         while [[ $elapsed -lt $maximum ]]; do
-            if ps -o pid= --ppid "$fuzzer_pid"; then
-                echo "Found underlying PID!"
+            if actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid"); then
+                echo "Found underlying PID $actual_fuzzer_pid"
+                break;
+            # bash reaps an exited timeout at once (keeping its status for wait), so kill -0 fails.
+            elif ! kill -0 "$fuzzer_pid" 2>/dev/null; then
+                echo "The timeout process has exited, not waiting for the fuzzer PID"
                 break;
             else
                 echo "Not found. Trying again..."
@@ -347,12 +384,12 @@ function fuzz
             elapsed=$((elapsed+1))
         done
 
-        # The fuzzer_pid belongs to the timeout process.
-        actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
         if [[ "$IS_ASAN" = "1" ]];
         then
             echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+        elif [[ -z "$actual_fuzzer_pid" ]];
+        then
+            echo "The fuzzer exited before its PID was found, not attaching gdb"
         else
             echo "Attaching gdb to the fuzzer itself"
             gdb -batch -command script.gdb -p $actual_fuzzer_pid &

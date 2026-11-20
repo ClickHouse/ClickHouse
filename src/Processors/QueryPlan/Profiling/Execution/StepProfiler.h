@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <Common/Stopwatch.h>
@@ -19,11 +20,11 @@ namespace DB
 {
 
 
-/// Keyed by the step's index rather than its address: the clocks are read while the query runs
-/// and once it has finished, and by then the plan the steps belonged to may be long gone. The
-/// processors carry the same index, so they can find their clock without the step.
+/// Keyed by the step's index: the clocks are read while the query runs and once it has finished,
+/// and by then the plan the steps belonged to may be long gone. The processors carry the same
+/// index, so they can find their clock without the step.
 using PlanStepGroup = std::pair<UInt64, size_t>;
-using StepWallClocks = std::unordered_map<PlanStepGroup, std::unique_ptr<StepWallClock>, boost::hash<PlanStepGroup>>;
+using StepWallClocks = UnorderedMapWithMemoryTracking<PlanStepGroup, std::unique_ptr<StepWallClock>, boost::hash<PlanStepGroup>>;
 
 /// Everything the statistics of a query are produced from: the clocks the processors stamp while
 /// it runs, and the analyzer each step handed out for shaping what they measured.
@@ -36,19 +37,20 @@ class StepProfiler
 public:
     StepProfiler(const PlanWalk & walk, bool collect_work_intervals_);
 
-    StepWallClock * findClockForStep(UInt64 step_id, size_t group) const;
+    [[nodiscard]] StepWallClock * findClockForStep(UInt64 step_id, size_t group) const;
 
-    const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
+    [[nodiscard]] const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 
-    /// Stamped by the executor when it finishes, so the duration excludes everything the
-    /// query-finish path does afterwards -- serializing and sending the result, in particular.
+    /// Stamped by the executor, so the duration is the execution alone: the pipeline is already
+    /// built when it starts, and the result is sent after it ends.
+    void markExecutionStarted();
     void markExecutionFinished();
 
     /// How long the query executed. Zero until the executor has finished.
-    UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
-    UInt64 getExecutionStartNs() const { return execution_start_ns; }
+    [[nodiscard]] UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
+    [[nodiscard]] UInt64 getExecutionStartNs() const { return execution_start_ns.load(std::memory_order_acquire); }
 
-    bool needCollectWorkIntervals() const;
+    [[nodiscard]] bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
     WorkIntervalsPerThread extractWorkIntervals(UInt64 rebase_origin_ns);
 
@@ -59,7 +61,7 @@ private:
     const PlanAnalysisSnapshot plan_snapshot;
     const StepWallClocks clocks;
 
-    const UInt64 execution_start_ns = clock_gettime_ns();
+    std::atomic<UInt64> execution_start_ns = 0;
     std::atomic<UInt64> execution_time_ns = 0;
 
     std::mutex mutex;
