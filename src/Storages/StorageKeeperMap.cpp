@@ -114,6 +114,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -686,7 +687,7 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromKeeperMap"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromKeeperMap"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -723,7 +724,7 @@ private:
     template<typename KeyContainerPtr>
     void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);
 
-    Strings getAllKeys() const;
+    [[nodiscard]] Strings getAllKeys() const;
 };
 
 VirtualColumnsDescription StorageKeeperMap::createVirtuals()
@@ -1940,6 +1941,11 @@ StoragePtr create(const StorageFactory::Arguments & args)
     UInt64 keys_limit = 0;
     if (engine_args.size() > 1)
         keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[1], "keys_limit");
+
+    if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) && args.columns.hasNotAlias(String(version_column_name)))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column '{}' for KeeperMap engine because it is reserved for a virtual column. Use another name",
+            version_column_name);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);

@@ -304,6 +304,15 @@ bool isTableNameArgument(std::string_view argument)
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
+String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
+{
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
+        return parsed_query->formatForErrorMessage();
+    return String(query);
+}
+
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
@@ -1716,12 +1725,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+            e.addMessage("(in query: {})", queryTextForErrorMessage(full_query, parsed_query));
         throw;
     }
 
     if (have_error)
-        processError(full_query);
+        processError(queryTextForErrorMessage(full_query, parsed_query));
     return !have_error;
 }
 
@@ -4031,7 +4040,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
-                    processError(full_query);
+                    processError(queryTextForErrorMessage(full_query, parsed_query));
 
                 // Stop processing queries if needed.
                 if (have_error && stdout_is_broken)
@@ -4052,7 +4061,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.contains(trimmed_input))
+    if (isExitString(trimmed_input))
         return false;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
@@ -4857,6 +4866,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+        ("vim", "Use emulated vim editing mode.")
     ;
 }
 
@@ -4914,6 +4924,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
+    if (options.contains("vim"))
+        getClientConfiguration().setBool("vim", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
@@ -5302,6 +5314,7 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,
+        .vim = getClientConfiguration().getBool("vim", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
