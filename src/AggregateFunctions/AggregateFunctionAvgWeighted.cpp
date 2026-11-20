@@ -134,11 +134,11 @@ public:
         this->data(place).denominator += local_denominator;
     }
 
-    String getName() const override { return "avgWeighted"; }
+    [[nodiscard]] String getName() const override { return "avgWeighted"; }
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!canBeNativeType<Weight>() || !canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
             return false;

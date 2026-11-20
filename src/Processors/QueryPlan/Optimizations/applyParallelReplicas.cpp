@@ -1,4 +1,6 @@
 #include <functional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -15,11 +17,15 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -39,11 +45,11 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
 
-#include <unordered_set>
 
 namespace DB
 {
@@ -69,7 +75,7 @@ struct ReadToDistribute
     StorageID storage_id;
 };
 
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -118,6 +124,13 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// is planted above it, and a join whose broadcast side reads it is not lifted into one - while the other
     /// subtrees of the query can still be distributed.
     if (mergetree_data.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return false;
+
+    /// A read through `mergeTreeProjection` reads the parts of a projection, but it is serialized as a read of the
+    /// parent table, so a replica would read the parent's own parts instead: a wrong result, or `NOT_FOUND_COLUMN_IN_BLOCK`
+    /// for a column only the projection has. Query-based parallel replicas does not distribute such a read either.
+    /// A projection the optimizer picks for a read of the table keeps the table's storage, so it is not affected.
+    if (typeid_cast<const StorageFromMergeTreeProjection *>(&read.getStorageSnapshot()->storage))
         return false;
 
     /// Top-K filtering puts an internal `__topKFilter` function into the read's PREWHERE and shares a runtime
@@ -202,8 +215,8 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 }
 
 /// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
-/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, or a source step's row-level
-/// filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, or a
+/// source step's row-level filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
 /// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
 /// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
 static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
@@ -224,7 +237,9 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 ///   different set, and an `IN` is supposed to compare against a single set - wrong rows, no exception.
 ///   `rand()` is the example: unlike `now()`, it is not constant-folded (folding needs a `ColumnConst`
 ///   result), so it reaches the replicas as a live function and each evaluates it itself.
-static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
+/// `visited` holds the sets already checked: a set can be referenced from several places, and the sets nested in
+/// a set's plan are checked recursively.
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<const FutureSetFromSubquery *> & visited)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -235,7 +250,7 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
             continue;
         const auto future_set = column_set->getData();
         const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
-        if (!from_subquery)
+        if (!from_subquery || !visited.insert(from_subquery).second)
             continue;
 
         const auto * subquery_plan = from_subquery->getQueryPlan();
@@ -252,6 +267,15 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
             return true;
         }
 
+        /// Every replica runs this plan to build the set, so its reads must pass the rules of the fragment's own reads.
+        if (subtreeHasUnshippableRead(subquery_plan->getRootNode()))
+        {
+            LOG_DEBUG(
+                getLogger("ApplyParallelReplicas"),
+                "Keeping the plan fragment local: an IN-subquery set reads a table that cannot be read on a replica");
+            return true;
+        }
+
         /// `dagContainsNonDeterministicFunction` asks for determinism *within* one query, which is the right
         /// question here: `now()` and friends are folded to their value on the initiator and the value is
         /// what gets serialized, so only a function which is recomputed per row - and therefore per replica -
@@ -264,6 +288,12 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
                 "would build a different one");
             return true;
         }
+
+        /// The sets the plan of this set uses are shipped with it, so they have to pass the same checks.
+        if (checkQueryPlanActionDAGs(
+                subquery_plan->getRootNode(),
+                [&](const ActionsDAG & nested_dag) { return dagReferencesUnshippableSubquerySet(nested_dag, visited); }))
+            return true;
     }
     return false;
 }
@@ -302,6 +332,26 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
             if (predicate(*actions))
                 return true;
     }
+    else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+    {
+        /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
+        if (const auto & element_filter = array_join->getElementFilter())
+            if (predicate(*element_filter))
+                return true;
+    }
+    else if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step))
+    {
+        /// The conditions of `LIMIT ... AFTER` and `LIMIT ... UNTIL` are serialized with the step.
+        if (predicate(limit_range->getConditions()))
+            return true;
+    }
+    else if (const auto * filling = typeid_cast<const FillingStep *>(step))
+    {
+        /// The `INTERPOLATE` expressions of `WITH FILL` are serialized with the step.
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            if (predicate(interpolate->actions))
+                return true;
+    }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
     {
         /// Both are serialized with the read (`ReadFromMergeTree::serialize` writes `row_level_filter` and
@@ -330,7 +380,8 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 /// fragment local instead of shipping it.
 static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
 {
-    return checkQueryPlanActionDAGs(node, dagReferencesUnshippableSubquerySet);
+    UnorderedSetWithMemoryTracking<const FutureSetFromSubquery *> visited;
+    return checkQueryPlanActionDAGs(node, [&](const ActionsDAG & dag) { return dagReferencesUnshippableSubquerySet(dag, visited); });
 }
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor>
@@ -487,6 +538,37 @@ public:
             return;
         }
 
+        /// Run preliminary DISTINCT on replicas; the final DISTINCT stays on the initiator.
+        const auto * distinct_step = typeid_cast<const DistinctStep *>(parent_step);
+        if (distinct_step && distinct_step->isPreliminary())
+        {
+            std::swap(current_node->step, parent_node->step);
+            parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
+
+            /// The limit hint only makes the preliminary DISTINCT stop reading its streams once each has enough distinct rows.
+            /// The last chunk still passes through whole, so the hint does not bound what a replica sends. A final DISTINCT and
+            /// a LIMIT, added below, limit the number of rows sent to the initiator: the final DISTINCT deduplicates the rows of
+            /// all streams, and the LIMIT cuts them to the hint.
+            if (const UInt64 limit_hint = distinct_step->getLimitHint())
+            {
+                const auto & header = current_node->step->getOutputHeader();
+
+                auto & final_distinct_node = nodes.emplace_back();
+                final_distinct_node.step = std::make_unique<DistinctStep>(
+                    header, distinct_step->getSettings(), limit_hint, distinct_step->getColumnNames(), /*pre_distinct_=*/ false);
+                final_distinct_node.step->setStepDescription("local DISTINCT");
+                final_distinct_node.children = {current_node};
+
+                auto & local_limit_node = nodes.emplace_back();
+                local_limit_node.step = std::make_unique<LimitStep>(header, limit_hint, 0);
+                local_limit_node.step->setStepDescription("local LIMIT");
+                local_limit_node.children = {&final_distinct_node};
+
+                parent_node->children = {&local_limit_node};
+            }
+            return;
+        }
+
         const auto * aggregating_step = typeid_cast<const AggregatingStep *>(parent_step);
         if (aggregating_step)
         {
@@ -617,7 +699,7 @@ public:
 
 private:
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
-    bool mustReadTillEnd() const
+    [[nodiscard]] bool mustReadTillEnd() const
     {
         for (const auto & frame : stack)
             if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))
@@ -735,7 +817,7 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
 {
     if (!node)
         return {};
@@ -760,7 +842,7 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
             const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
 
-            std::vector<ReadToDistribute> reads;
+            VectorWithMemoryTracking<ReadToDistribute> reads;
             reads.reserve(storage_ids.size());
             for (const auto & storage_id : storage_ids)
                 reads.push_back({node, storage_id});
@@ -770,14 +852,14 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<ReadToDistribute> reads;
+        VectorWithMemoryTracking<ReadToDistribute> reads;
         for (auto * child : node->children)
         {
             auto child_reads = collectReadsToDistribute(child, consider_merges);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
-        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        UnorderedSetWithMemoryTracking<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
         for (const auto & read : reads)
             if (!seen.insert(read.storage_id).second)
                 return {};
@@ -836,7 +918,7 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
         return;
 
     /// Collect first: the expansion replaces the step of a visited node.
-    std::vector<QueryPlan::Node *> merge_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> merge_nodes;
     Stack stack;
     traverseQueryPlan(
         stack,
@@ -885,7 +967,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     /// of its own to distribute but is shipped inside the fragment and read in full by every replica.
     expandMergeReadsForParallelReplicas(query_plan);
 
-    std::unordered_set<const QueryPlan::Node *> eligible;
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> eligible;
     for (const auto & read : collectReadsToDistribute(root))
         eligible.insert(read.node);
     if (eligible.empty())
@@ -909,7 +991,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
     /// Collect (parent, child index) of every eligible read first, then wrap — avoids mutating the tree
     /// while traversing it.
-    std::vector<std::pair<QueryPlan::Node *, size_t>> to_wrap;
+    VectorWithMemoryTracking<std::pair<QueryPlan::Node *, size_t>> to_wrap;
     Stack stack;
     traverseQueryPlan(
         stack,

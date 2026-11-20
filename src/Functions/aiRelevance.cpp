@@ -70,7 +70,7 @@ public:
     explicit FunctionAiRelevance(ContextPtr context_)
         : context(context_)
     {
-        FunctionBaseAI::throwIfBackgroundExpression(context);
+        FunctionBaseAI::throwIfNotAllowed(context);
     }
 
     String getName() const override { return name; }

@@ -11,6 +11,7 @@ from ci.defs.defs import (
 from ci.defs.job_configs import JobConfigs
 
 # SQLancer, SQLancer++ and the data lake fuzzer (`tests/datalake_fuzzer`) run against two builds,
+# and the SQLLogic and SQLStorm suites against the release one,
 # so this workflow builds both:
 #   * arm_release      - the wrong-result hunt. A sanitizer binary executes SQL
 #                        2-3x slower, so a release build explores several times
@@ -34,6 +35,12 @@ workflow = Workflow.Config(
         *JobConfigs.sqlancer_master_jobs,
         *JobConfigs.sqlancer_pp_jobs,
         *JobConfigs.datalake_fuzzer_jobs,
+        # Fixed third-party SQL suites on the release build. They ran in every PR until
+        # 2026-11: over 30 days 1 of 5169 PR commits failed `SQLLogic test` and none failed
+        # `SQLStorm test`, while `SQLLogic test` took 92 minutes and ended the PR run in a
+        # quarter of the runs.
+        JobConfigs.sqllogic_test_master_job,
+        JobConfigs.sqlstorm_test_job,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,

@@ -530,10 +530,10 @@ struct ArgConstraints
     /// it must be no greater than this value.
     std::optional<Int64> integer_at_most;
 
-    auto toTuple() const { return std::make_tuple(integer_at_most); }
+    [[nodiscard]] auto toTuple() const { return std::make_tuple(integer_at_most); }
     bool operator<(const ArgConstraints & rhs) const { return toTuple() < rhs.toTuple(); }
 
-    bool isUnconstrained() const
+    [[nodiscard]] bool isUnconstrained() const
     {
         return toTuple() == ArgConstraints().toTuple();
     }
@@ -667,7 +667,7 @@ class FunctionStats
 public:
     size_t function_idx = size_t(-1);
 
-    Int64 get(Stat idx) const
+    [[nodiscard]] Int64 get(Stat idx) const
     {
         return counters[idx];
     }
@@ -702,12 +702,12 @@ public:
         }
     }
 
-    bool hasProblem(Problem p) const
+    [[nodiscard]] bool hasProblem(Problem p) const
     {
         return !problems.at(p).empty();
     }
 
-    const String & getProblemError(Problem p) const
+    [[nodiscard]] const String & getProblemError(Problem p) const
     {
         return problems.at(p);
     }
@@ -841,7 +841,7 @@ struct Operation
     /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
     /// If `multirow_query_only`, returns just the query (without "executing function: ") and includes
     /// an ARRAY JOIN with all rows even if `step` is ExecutingFunctionOnOneRow.
-    String describe(bool multirow_query_only = false) const
+    [[nodiscard]] String describe(bool multirow_query_only = false) const
     {
         WriteBufferFromOwnString buf;
 
@@ -2173,7 +2173,9 @@ struct FunctionsStressTestThread
             /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
             /// return false (conservative) because injectivity of the underlying function does not hold
             /// on the mixed-type domain, and the resolver lacks full type information before build().
-            if (!isAnyArgumentDynamicallyTyped(valid_args))
+            /// A result type admitting at most one value is skipped for the same reason: it is known
+            /// only after build(), so the resolver can still claim what the built function declines.
+            if (!isAnyArgumentDynamicallyTyped(valid_args) && !isNothing(removeNullable(result_type)))
             {
                 stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
             }

@@ -8,7 +8,6 @@ doc_type: 'guide'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect Redis server logs with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing Redis.
@@ -28,7 +27,15 @@ Collect Redis server logs with an OpenTelemetry collector and send them to Click
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -179,7 +186,15 @@ Keep this terminal open and generate Redis activity that writes new log entries.
 
 Open **Search**, select **Logs**, and filter for `ServiceName:redis-service`. Select a time range covering your new logs. Expand an entry to inspect `SeverityText` and the parsed fields under `LogAttributes`.
 
-<Image img="/images/clickstack/observability-redis-demo-logs.png" alt="Redis logs in the search view"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Redis logs in the search view](/images/clickstack/observability-redis-demo-logs.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -290,7 +305,15 @@ Leave the terminal open while you verify ingestion. Stop the collector with **Ct
 
 Open **Search**, select **Logs**, filter for `ServiceName:redis-demo`, and select **Last 2 days**. Expand a log entry to inspect the parsed attributes and severity.
 
-<Image img="/images/clickstack/observability-redis-demo-logs.png" alt="Example Redis logs in the search view"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Example Redis logs in the search view](/images/clickstack/observability-redis-demo-logs.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -304,7 +327,15 @@ Open **Search**, select **Logs**, filter for `ServiceName:redis-demo`, and selec
 2. Upload `redis-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
@@ -312,7 +343,15 @@ Filter for `ServiceName:redis-demo` for the sample, or `ServiceName:redis-servic
 
 The dashboard shows log volume and severity. Its **Request rate** chart counts log entries, not Redis commands.
 
-<Image img="/images/clickstack/observability-redis-logs-dashboard.png" alt="Example Redis logs dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Example Redis logs dashboard](/images/clickstack/observability-redis-logs-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

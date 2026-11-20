@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
-CohereProvider::CohereProvider(const String & endpoint_, const String & api_key_)
+CohereProvider::CohereProvider(const String & endpoint_, std::string_view api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
     , uri(endpoint_)
@@ -30,7 +30,7 @@ HTTPHeaderEntries CohereProvider::getHeaders() const
 {
     if (api_key.empty())
         return {};
-    return {{"Authorization", "Bearer " + api_key}};
+    return {{"Authorization", fmt::format("Bearer {}", api_key)}};
 }
 
 void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const ConnectionTimeouts & timeouts, AIRerankResponse & response)
@@ -55,7 +55,7 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, header.value);
+        http_request.set(header.name, String(header.value));
     chassert(!ai_rerank_request.function_name.empty());
     http_request.set("X-ClickHouse-AI-Function", ai_rerank_request.function_name);
     if (!ai_rerank_request.query_id.empty())
