@@ -228,8 +228,6 @@ public:
 
     [[nodiscard]] virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
     [[nodiscard]] virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
-    /// The format of a table that `CREATE TABLE` without an engine creates.
-    [[nodiscard]] virtual DataLakeTableFormat getDefaultTableFormat() const { return getTableFormat(TableMetadata()); }
     [[nodiscard]] std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
 
     virtual ~ICatalog() = default;

@@ -80,9 +80,6 @@ public:
         return table_metadata.getTableFormat();
     }
 
-    /// `CREATE TABLE` without an engine creates a Delta table.
-    DataLakeTableFormat getDefaultTableFormat() const override { return DataLakeTableFormat::DELTA; }
-
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
