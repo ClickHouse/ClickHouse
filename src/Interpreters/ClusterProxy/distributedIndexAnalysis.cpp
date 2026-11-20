@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
@@ -126,7 +127,7 @@ GetPriorityForLoadBalancing::Func replicaIndexPriorityFunc()
     return [](size_t i) { return Priority{static_cast<Int64>(i)}; };
 }
 
-Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
+Scalars buildPartsScalars(const PartNameViews & parts)
 {
     auto column_string = ColumnString::create();
     for (const auto & part : parts)
@@ -142,7 +143,7 @@ Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
 
 std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
     const OptionalVectorSearchParameters & vector_search_parameters,
-    const std::vector<std::string_view> & parts)
+    const PartNameViews & parts)
 {
     static constexpr size_t DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT = 30;
     bool inline_parts = parts.size() < DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT;
@@ -168,45 +169,9 @@ std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage
     return std::make_pair(std::move(scalars), std::move(query));
 }
 
-SharedHeader indexAnalysisSampleBlock()
-{
-    return std::make_shared<const Block>(Block
-    {
-        { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
-        { ColumnArray::create(ColumnTuple::create(Columns{
-              ColumnUInt64::create(), // begin
-              ColumnUInt64::create(), // end
-          })),
-          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
-              std::make_shared<DataTypeUInt64>(), // begin
-              std::make_shared<DataTypeUInt64>(), // end
-          })),
-          "ranges" },
-    });
-}
-
-void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
-{
-    block = convertBLOBColumns(block);
-
-    const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
-    const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
-    const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
-    const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
-    const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
-    const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
-
-    for (size_t i = 0; i < col_part_name.size(); ++i)
-    {
-        auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
-        for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
-            ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
-    }
-}
-
 IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, Connection & connection)
+                                                     const PartNameViews & parts, Connection & connection)
 {
     auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
     auto sample_block = indexAnalysisSampleBlock();
@@ -490,10 +455,10 @@ private:
 
     struct DistributedParts
     {
-        std::vector<std::string_view> local_parts;
+        PartNameViews local_parts;
         size_t local_marks = 0;
         size_t local_rows = 0;
-        std::vector<std::vector<std::string_view>> remote_parts;
+        std::vector<PartNameViews> remote_parts;
         std::vector<size_t> remote_marks;
         std::vector<size_t> remote_rows;
     };
@@ -551,7 +516,7 @@ private:
     };
 
     LocalAnalysisResult executeLocalAnalysis(
-        const std::vector<std::string_view> & local_parts,
+        const PartNameViews & local_parts,
         size_t local_marks,
         size_t local_rows,
         std::pair<std::string, IndexAnalysisPartsRanges> & local_result)
@@ -585,7 +550,7 @@ private:
     void executeRemoteAnalysis(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -600,7 +565,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -739,7 +704,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,
         const std::vector<Connection *> &,
-        const std::vector<std::vector<std::string_view>> &,
+        const std::vector<PartNameViews> &,
         const std::vector<size_t> &,
         const std::vector<size_t> &,
         DistributedIndexAnalysisPartsRanges &)
@@ -751,7 +716,7 @@ private:
     void executeRemoteAnalysisSync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -803,7 +768,7 @@ private:
             for (const auto & [part, replica_ranges] : parts_ranges)
                 resolved_parts.insert(part);
         }
-        std::vector<std::string_view> missing_parts;
+        PartNameViews missing_parts;
         size_t missing_parts_marks = 0;
         size_t missing_parts_rows = 0;
         for (const auto & part_ranges : parts_with_ranges)
@@ -871,6 +836,42 @@ private:
 
 namespace DB
 {
+
+SharedHeader indexAnalysisSampleBlock()
+{
+    return std::make_shared<const Block>(Block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
+        { ColumnArray::create(ColumnTuple::create(Columns{
+              ColumnUInt64::create(), // begin
+              ColumnUInt64::create(), // end
+          })),
+          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
+              std::make_shared<DataTypeUInt64>(), // begin
+              std::make_shared<DataTypeUInt64>(), // end
+          })),
+          "ranges" },
+    });
+}
+
+void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
+{
+    block = convertBLOBColumns(block);
+
+    const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
+    const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
+    const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
+    const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
+    const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
+    const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
+
+    for (size_t i = 0; i < col_part_name.size(); ++i)
+    {
+        auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
+        for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
+            ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
+    }
+}
 
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,

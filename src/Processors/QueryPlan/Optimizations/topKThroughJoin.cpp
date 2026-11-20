@@ -22,6 +22,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -145,6 +146,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
+        if (logical->getPlannedAlgorithm() == JoinAlgorithm::FULL_SORTING_MERGE)
+            return true;
         return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
@@ -386,9 +389,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         /// excludes, because they are created only once. So drop the child plans this probe creates; they are created
         /// again when they are needed. The probe asks a superset of the tables the second pass sees, so its verdict
         /// stays conservative.
-        std::vector<ReadFromMerge *> merges_without_child_plans;
+        VectorWithMemoryTracking<ReadFromMerge *> merges_without_child_plans;
         {
-            std::vector<QueryPlan::Node *> stack{preserved_input_node};
+            VectorWithMemoryTracking<QueryPlan::Node *> stack{preserved_input_node};
             while (!stack.empty())
             {
                 auto * current = stack.back();
@@ -469,9 +472,12 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     join_node->children[preserved_idx] = &new_limit_node;
 
-    /// Re-run optimizations on the modified subtree so the inserted Sort+Limit can
+    /// Re-run optimizations down to the inserted Limit so it can
     /// be picked up by tryOptimizeTopK / tryPushDownLimit etc.
-    return 3;
+    size_t depth = 2;
+    for (const auto * node = parent_node; node != join_node; node = node->children.front())
+        ++depth;
+    return depth;
 }
 
 }

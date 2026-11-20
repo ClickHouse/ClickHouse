@@ -49,11 +49,12 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 ## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="UInt64" default_value="100" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "100"},{"label": "The same as `max_parts_to_merge_at_once` for `MergeTree`: a merge reads all its inputs at once, and the selection of merges keeps the candidate ranges of every partition."}]}]}/>
 
-Threshold for compaction data files in iceberg.
+Max number of data files merged by one compaction merge of an Iceberg table, the same as `max_parts_to_merge_at_once` for `MergeTree`.
+A merge reads all its input files at once, so its memory grows with the number of inputs.
 
 ## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
 
@@ -95,7 +96,7 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "The change was backported to 26.8 and is recorded there."}]}]}/>
 
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 

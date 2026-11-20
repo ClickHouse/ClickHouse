@@ -3,8 +3,8 @@
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/SetSpillable.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <utility>
-#include <vector>
 
 namespace DB
 {
@@ -82,7 +82,7 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
-    std::vector<size_t> constant_columns_after_filter;
+    VectorWithMemoryTracking<size_t> constant_columns_after_filter;
     /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
     /// If not set, it is read from the query context.
     std::optional<bool> optimize_constant_columns_after_filter;
