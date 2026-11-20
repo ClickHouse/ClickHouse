@@ -6,12 +6,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # With `persist_ttl_merge_times`, `merge_with_recompression_ttl_timeout` must survive a table restart and regular merges.
 
+# CI randomizes the server default codec, and a part written with `ZSTD(3)` needs no recompression; pin it to `LZ4`.
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_ttl_recompress_timeout;
     CREATE TABLE t_ttl_recompress_timeout (key UInt64, d DateTime)
     ENGINE = MergeTree ORDER BY key
     TTL d RECOMPRESS CODEC(ZSTD(3))
-    SETTINGS persist_ttl_merge_times = 1, merge_with_recompression_ttl_timeout = 86400, max_number_of_merges_with_ttl_in_pool = 100;
+    SETTINGS persist_ttl_merge_times = 1, merge_with_recompression_ttl_timeout = 86400, max_number_of_merges_with_ttl_in_pool = 100,
+        default_compression_codec = 'LZ4';
 "
 
 # A new part is written with the default codec and has an expired recompression TTL; wait until it is recompressed.
