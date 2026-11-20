@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -1823,8 +1824,8 @@ IcebergMetadata::estimateRead(
 
     using ManifestPrunersByDataSchema = std::unordered_map<Int32, ManifestFilesPrunerCacheEntry>;
 
-    /// Keyed by partition-spec header, manifest schema ID, and data-file schema ID.
-    std::map<std::pair<String, Int32>, ManifestPrunersByDataSchema> file_pruners_by_manifest_identity;
+    /// Keyed by partition-spec header, manifest schema ID, schema header, and data-file schema ID.
+    std::map<std::tuple<String, Int32, String>, ManifestPrunersByDataSchema> file_pruners_by_manifest_identity;
 
     /// Read ahead on the IO thread pool as in `totalRows`, parsed in order on this thread.
     const auto query_status = context->getProcessListElement();
@@ -1849,7 +1850,10 @@ IcebergMetadata::estimateRead(
         if (pruning_filter && !manifest_data_files.empty())
             manifest_pruners
                 = file_pruners_by_manifest_identity
-                      .try_emplace(std::make_pair(files_handle.getPartitionSpecificationHeader(), files_handle.getManifestSchemaId()))
+                      .try_emplace(std::make_tuple(
+                          files_handle.getPartitionSpecificationHeader(),
+                          files_handle.getManifestSchemaId(),
+                          files_handle.getSchemaHeader()))
                       .first;
         for (const auto & data_file : manifest_data_files)
         {

@@ -393,6 +393,7 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         equality_deletes_files_without_deleted,
         partition_specification_header,
         manifest_schema_id,
+        schema_header,
         partition_key_description};
 }
 
@@ -504,6 +505,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         context_,
         manifest_schema_id,
         std::move(*partition_spec_json_string),
+        std::move(*schema_json_string),
         std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
         std::move(partition_key.key_description),
         partition_spec_fields_count,
@@ -524,6 +526,7 @@ ManifestFileIterator::ManifestFileIterator(
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
     String partition_specification_header_,
+    String schema_header_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t partition_spec_fields_count_,
@@ -539,6 +542,7 @@ ManifestFileIterator::ManifestFileIterator(
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , partition_specification_header(std::move(partition_specification_header_))
+    , schema_header(std::move(schema_header_))
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(
           partition_key_description_ ? std::make_shared<const DB::KeyDescription>(std::move(*partition_key_description_)) : nullptr)
