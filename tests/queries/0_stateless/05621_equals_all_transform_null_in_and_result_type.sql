@@ -10,6 +10,13 @@ SELECT 'transform_null_in = 1';
 SELECT NULL = ALL (SELECT NULL), NULL = ALL (SELECT 1), 1 = ALL (SELECT NULL), NULL = ALL (SELECT 1 WHERE 0) SETTINGS transform_null_in = 1;
 SELECT n, n = ALL (SELECT 1), n = ALL (SELECT NULL) FROM (SELECT arrayJoin([1, 2, NULL]) AS n) ORDER BY n SETTINGS transform_null_in = 1;
 
+-- Tuples are compared as by `IN`, so a tuple containing NULL is equal to itself, and a NULL left-hand side
+-- compared with a tuple is decided by `transform_null_in`.
+SELECT 'tuples';
+SELECT (1, NULL) = ALL (SELECT (1, NULL)), (1, NULL) = ALL (SELECT (2, NULL)), (1, NULL) = ALL (SELECT (1, NULL) WHERE 0), NULL = ALL (SELECT (1, 2)), (1, (2, NULL)) = ALL (SELECT (1, (2, NULL))) SETTINGS transform_null_in = 0;
+SELECT (1, NULL) = ALL (SELECT (1, NULL)), (1, NULL) = ALL (SELECT (2, NULL)), (1, NULL) = ALL (SELECT (1, NULL) WHERE 0), NULL = ALL (SELECT (1, 2)), (1, (2, NULL)) = ALL (SELECT (1, (2, NULL))) SETTINGS transform_null_in = 1;
+SELECT number, (number, NULL) = ALL (SELECT (1, NULL)), (number, toNullable(number)) = ALL (SELECT (1, toNullable(1))), (number, CAST(NULL AS Nullable(UInt8))) = ALL (SELECT (1, CAST(NULL AS Nullable(UInt8)))) FROM numbers(3) ORDER BY number;
+
 SELECT 'result type';
 SELECT toTypeName(number = ALL (SELECT 1)), toTypeName(number = ALL (SELECT NULL)), toTypeName(toNullable(number) = ALL (SELECT 1)) FROM numbers(1);
 
