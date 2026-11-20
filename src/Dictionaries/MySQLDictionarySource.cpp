@@ -53,7 +53,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
+[[clang::no_destroy]] static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
