@@ -8,6 +8,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -82,7 +83,7 @@ struct WriteBufferFromS3::PartData
         return buffer;
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         return data_size == 0;
     }
@@ -430,7 +431,7 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    req.SetMetadata(metadataWithIdempotencyId());
+    req.SetMetadata(S3::objectAttributesToAwsMap(metadataWithIdempotencyId()));
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -484,6 +485,9 @@ void WriteBufferFromS3::abortMultipartUpload()
         }
         return;
     }
+
+    /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
@@ -760,7 +764,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    req.SetMetadata(metadataWithIdempotencyId());
+    req.SetMetadata(S3::objectAttributesToAwsMap(metadataWithIdempotencyId()));
     req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
