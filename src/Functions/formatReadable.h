@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

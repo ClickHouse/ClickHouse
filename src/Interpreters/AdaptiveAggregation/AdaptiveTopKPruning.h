@@ -93,7 +93,7 @@ private:
 /// group whose bin is bounded below the merge's threshold, the worst of the `n` best exact counts converted so far (see
 /// `AdaptiveTopKThreshold`), has `n` groups ahead of it, so the merge skips the units, staged records and source cells
 /// of such bins without draining them. The merge takes the buckets with the largest bounds first, so the threshold
-/// rises early.
+/// rises early, and it skips a bucket whole once the threshold is above the bound of the bucket (see `bucketBound`).
 class AdaptiveTopKPruning
 {
 public:
@@ -130,7 +130,12 @@ public:
     void addProducerBins(ProducerBins && bins)
     {
         for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+        {
             count_bound_per_bucket[bucket] += bins.max_bin_per_bucket[bucket];
+            /// A saturated bin holds an unknown number of rows.
+            if (bins.max_bin_per_bucket[bucket] == std::numeric_limits<UInt16>::max())
+                bucket_is_unbounded[bucket] = true;
+        }
         producer_bins.push_back(std::move(bins.counts));
     }
 
@@ -146,6 +151,8 @@ public:
         if (max_count_per_bucket)
             for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
                 count_bound_per_bucket[bucket] += (*max_count_per_bucket)[bucket];
+        else
+            bucket_is_unbounded.fill(true);
     }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
@@ -159,6 +166,14 @@ public:
     /// merge starts.
     [[nodiscard]] bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
 
+    /// Raises the bound of `bucket` to `bound`, a rank that a group of the bucket outside the bins does not
+    /// exceed, such as the NULL key that bucket 0 holds for a method that keeps it in a slot of its own (see
+    /// `AdaptiveTopKNullKey`). Called after the finish barrier, before `orderBuckets`.
+    void raiseBucketBound(size_t bucket, UInt64 bound)
+    {
+        count_bound_per_bucket[bucket] = std::max(count_bound_per_bucket[bucket], bound);
+    }
+
     /// Orders the buckets for the merge by their bounds, `count_bound_per_bucket`. A table without the
     /// largest counts of its buckets is not in this order, which only lets the threshold rise later. Called
     /// once, after the finish barrier and before the merge starts.
@@ -166,6 +181,17 @@ public:
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
     [[nodiscard]] UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
+
+    /// A rank that no group of the bucket exceeds: the sum of every producer's largest bin in the bucket and of the
+    /// bucket's largest count in every table that the merge counts. A bin of the bucket is at most the sum of the
+    /// producers' largest bins in it, and a group counts at most its bin and its counts in those tables. The largest
+    /// value when the bucket has no such bound: a producer's largest bin saturated, or a table that the merge counts
+    /// came without its largest counts. A bucket bounded below the merge's threshold holds no group of the top, so
+    /// the merge skips it without summing its bins.
+    [[nodiscard]] UInt64 bucketBound(size_t bucket) const
+    {
+        return bucket_is_unbounded[bucket] ? std::numeric_limits<UInt64>::max() : count_bound_per_bucket[bucket];
+    }
 
     /// The bounds of a bucket's bins: their sums over the producers' bins, unbounded where a producer's counter
     /// saturated. The merge adds the groups of the tables it counts.
@@ -192,12 +218,12 @@ private:
     /// `boundsForBucket`).
     std::vector<AdaptiveTopKCountBins> producer_bins;
     std::vector<const AggregatedDataVariants *> merge_counted_tables;
-    /// The sum of every producer's largest bin in each bucket and of the bucket's largest count in every table
-    /// that the merge counts and that brought it, which orders the buckets for the merge. It bounds the count
-    /// of every group of the bucket when every such table brought its largest counts: a bucket's largest bin
-    /// is at most the sum of the producers' largest bins in it, and a group of the bucket counts at most the
-    /// sum of the largest counts of the bucket in those tables.
+    /// The sum of every producer's largest bin in each bucket and of the bucket's largest count in every
+    /// table that the merge counts and that brought it, raised by `raiseBucketBound`. It orders the buckets
+    /// for the merge (see `orderBuckets`), and it bounds the ranks of the groups of every bucket but those of
+    /// `bucket_is_unbounded` (see `bucketBound`).
     std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> count_bound_per_bucket{};
+    std::array<bool, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_is_unbounded{};
     std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
 };
 
