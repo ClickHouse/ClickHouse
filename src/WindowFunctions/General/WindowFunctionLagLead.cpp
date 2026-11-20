@@ -80,8 +80,10 @@ public:
                 arguments.at(0, row + distance).appendTo(result);
             else if (arguments.size() > 2)
                 arguments.at(2, row).appendTo(result);
-            else
+            else if (result_type->isDefaultInsertTrivial())
                 result.insertDefault();
+            else
+                result_type->insertDefaultInto(result);
         }
 
         if (is_lead)

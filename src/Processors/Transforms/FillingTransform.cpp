@@ -944,8 +944,10 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
                     /// take value from last row of previous chunk if exists, else use default
                     if (last_row.size() > col_pos && !last_row[col_pos]->empty())
                         column->insertFrom(*last_row[col_pos], 0);
-                    else
+                    else if (name_type.type->isDefaultInsertTrivial())
                         column->insertDefault();
+                    else
+                        name_type.type->insertDefaultInto(*column);
                 }
                 else /// take value from previous row of current chunk
                     column->insertFrom(*res_column, size - 1);
@@ -968,6 +970,19 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
 }
 
 using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn*>;
+
+static void insertTypeDefaults(const MutableColumnRawPtrs & dest, const VectorWithMemoryTracking<size_t> & positions, const Block & header)
+{
+    chassert(dest.size() == positions.size());
+    for (size_t i = 0, size = dest.size(); i < size; ++i)
+    {
+        const auto & type = header.getByPosition(positions[i]).type;
+        if (type->isDefaultInsertTrivial())
+            dest[i]->insertDefault();
+        else
+            type->insertDefaultInto(*dest[i]);
+    }
+}
 
 void FillingTransform::insertFromFillingRow(
     const MutableColumnRawPtrs & filling_columns,
@@ -997,8 +1012,7 @@ void FillingTransform::insertFromFillingRow(
             interpolate_column->insertDefault();
     }
 
-    for (auto * other_column : other_columns)
-        other_column->insertDefault();
+    insertTypeDefaults(other_columns, other_column_positions, input.getHeader());
 
     filling_row_inserted = true;
 }
@@ -1115,8 +1129,7 @@ bool FillingTransform::generateSuffixIfNeeded(
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
         else
-            for (auto * sort_prefix_column : res_sort_prefix_columns)
-                sort_prefix_column->insertDefault();
+            insertTypeDefaults(res_sort_prefix_columns, sort_prefix_positions, input.getHeader());
     }
 
     bool filling_row_changed = false;
@@ -1139,8 +1152,7 @@ bool FillingTransform::generateSuffixIfNeeded(
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
         else
-            for (auto * sort_prefix_column : res_sort_prefix_columns)
-                sort_prefix_column->insertDefault();
+            insertTypeDefaults(res_sort_prefix_columns, sort_prefix_positions, input.getHeader());
     }
     /// new valid filling row was generated but not inserted
     if (filling_row_changed)

@@ -137,6 +137,8 @@ public:
         if (default_is_constant)
             default_column_cast = assert_cast<const ColumnConst &>(*default_column_cast).getDataColumnPtr();
 
+        const bool trivial_default = result_type->isDefaultInsertTrivial();
+
         if (offset_is_constant)
         {
             /// Optimization for the case when we can copy many values at once.
@@ -164,8 +166,13 @@ public:
 
                 if (!src)
                 {
-                    for (Int64 i = 0; i < size; ++i)
-                        result_column->insertDefault();
+                    if (trivial_default)
+                    {
+                        for (Int64 i = 0; i < size; ++i)
+                            result_column->insertDefault();
+                    }
+                    else
+                        result_type->insertManyDefaultsInto(*result_column, static_cast<size_t>(size));
                 }
                 else if (is_const)
                 {
@@ -213,8 +220,10 @@ public:
                 result_column->insertFrom(*source_column_cast, source_is_constant ? 0 : src_idx);
             else if (has_defaults)
                 result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
-            else
+            else if (trivial_default)
                 result_column->insertDefault();
+            else
+                result_type->insertDefaultInto(*result_column);
         }
 
         return result_column;
