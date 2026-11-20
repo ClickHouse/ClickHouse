@@ -28,7 +28,6 @@ instance = cluster.add_instance(
     clickhouse_path_dir="clickhouse_path",
 )
 
-
 # Helpers
 
 async def publish_messages(cluster_inst, subject, messages=(), bytes=None):

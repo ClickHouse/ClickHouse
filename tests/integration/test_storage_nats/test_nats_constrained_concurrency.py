@@ -1,3 +1,7 @@
+# Starts a dedicated ClickHouse cluster with concurrent_threads_soft_limit_num = 1 (concurrency_limit_1.xml)
+# to test NATS consumer progress under constrained concurrency. Kept in a standalone module so that
+# the other tests in test_nats_core.py do not pay the overhead of starting a second server instance.
+
 import asyncio
 import json
 import logging
