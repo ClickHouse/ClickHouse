@@ -831,7 +831,7 @@ of the column type, in statistics file format `V5`, instead of the generic `Fiel
 Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
 the statistics of the parts written with it have to be rematerialized after a downgrade.
 )", 0, \
-        {"26.11", false, false, "New setting"}) \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
