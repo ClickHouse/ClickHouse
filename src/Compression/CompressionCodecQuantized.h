@@ -56,11 +56,8 @@ private:
 
 std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr & codec_desc);
 
-/// `rabitq` and `turboquant` encode the signs of the randomly rotated coordinates, so they assume vectors scattered
-/// around the origin. `UInt8` embeddings are typically signed values shifted by 128: every vector then carries the same
-/// large offset, the sign codes of all vectors become almost identical, and the recall collapses. For these methods, the
-/// elements of an `Array(UInt8)` column, and the elements of the reference vector of a search over it, are shifted by
-/// `-QUANTIZED_CODEC_UINT8_SHIFT` before they are encoded.
+/// `rabitq` and `turboquant` assume vectors centered around the origin, so `UInt8` elements (stored and reference) are
+/// shifted by -128 before encoding.
 constexpr float QUANTIZED_CODEC_UINT8_SHIFT = 128.0f;
 inline bool quantizedCodecShiftsUInt8(std::string_view method)
 {
