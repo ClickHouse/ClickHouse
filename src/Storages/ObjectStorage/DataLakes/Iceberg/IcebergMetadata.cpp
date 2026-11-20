@@ -2189,7 +2189,7 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
-SinkToStoragePtr IcebergMetadata::write(
+StorageWriteSessionPtr IcebergMetadata::beginWrite(
     SharedHeader sample_block,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
@@ -2198,19 +2198,19 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-    {
-        checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
-    }
-    else
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Insert into iceberg is in beta. "
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
+
+    checkTableRootIsQueriedPath("INSERT");
+    return std::make_shared<IcebergWriteSession>(
+        object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
 }
+
 
 void IcebergMetadata::drop(ContextPtr context)
 {

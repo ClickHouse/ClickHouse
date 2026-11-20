@@ -260,6 +260,18 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         getPartitionedWriteAccessCheck());
 }
 
+StorageWriteSessionPtr StorageObjectStorageCluster::beginWrite(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    if (auto session = StorageObjectStorage::createWriteSession(
+            configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context))
+        return session;
+    return IStorage::beginWrite(query, metadata_snapshot, local_context, async_insert);
+}
+
 bool StorageObjectStorageCluster::supportsParallelInsert() const
 {
     if (configuration->isDataLakeConfiguration())

@@ -110,6 +110,15 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
+    StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override
+    {
+        return getNested()->beginWrite(query, metadata_snapshot, context, async_insert);
+    }
+
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
     void drop() override { getNested()->drop(); }

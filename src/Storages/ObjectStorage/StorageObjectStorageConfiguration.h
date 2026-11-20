@@ -266,6 +266,18 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
 
+    /// See `IStorage::beginWrite`. nullptr if the sinks from `write` finish their part of the insert themselves.
+    virtual StorageWriteSessionPtr beginWrite(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        return nullptr;
+    }
+
     [[nodiscard]] virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,

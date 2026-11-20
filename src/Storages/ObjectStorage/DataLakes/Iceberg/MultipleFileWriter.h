@@ -43,7 +43,7 @@ public:
         Poco::JSON::Array::Ptr schema,
         FileNamesGenerator & filename_generator_,
         DataFileUploads & data_file_uploads_,
-        const Iceberg::IcebergPathResolver & path_resolver_,
+        std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
@@ -56,6 +56,8 @@ public:
     void finalize();
     void release();
     void cancel();
+    /// The files of a cancelled writer must not be committed.
+    [[nodiscard]] bool isCancelled() const { return cancelled; }
     void clearAllDataFiles() const;
 
     [[nodiscard]] UInt64 getResultBytes() const;
@@ -103,14 +105,17 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
+    /// Owned by the sink and used only by `finalize`, which only the sink calls.
     DataFileUploads & data_file_uploads;
-    const Iceberg::IcebergPathResolver & path_resolver;
+    /// Shared: `clearAllDataFiles` may run after the sink is destroyed, see `IcebergWriteSession`.
+    std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
+    bool cancelled = false;
 };
 
 #endif

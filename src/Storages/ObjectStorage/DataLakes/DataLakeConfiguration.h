@@ -433,6 +433,26 @@ public:
             catalog);
     }
 
+    StorageWriteSessionPtr beginWrite(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        /// The same format settings as in `write`.
+        return getMetadata()->beginWrite(
+            sample_block,
+            table_id,
+            object_storage,
+            shared_from_this(),
+            format_settings.has_value() ? *format_settings : getFormatSettings(context),
+            context,
+            catalog);
+    }
+
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET

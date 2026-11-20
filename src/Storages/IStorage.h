@@ -10,6 +10,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -562,6 +563,17 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         bool /*async_insert*/);
+
+    /** Starts one `INSERT` into the table. The arguments are the same as in `write`.
+      * The session creates a sink for every stream of the insert, and its `commit` is called once
+      * after all of them finished, e.g. to commit everything the sinks wrote at once.
+      * By default, the sinks are the ones from `write`, which finish their part of the insert themselves, and `commit` does nothing.
+      */
+    virtual StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert);
 
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.

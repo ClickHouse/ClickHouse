@@ -152,11 +152,12 @@ public:
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
     ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
-    SinkToStoragePtr write(
+    /// The table is written only through a session: `write` is not implemented.
+    StorageWriteSessionPtr beginWrite(
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr /*configuration*/,
+        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;

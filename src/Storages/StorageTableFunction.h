@@ -282,6 +282,24 @@ public:
         return storage->write(query, metadata_snapshot, context, async_insert);
     }
 
+    StorageWriteSessionPtr beginWrite(
+            const ASTPtr & query,
+            const StorageMetadataPtr & metadata_snapshot,
+            ContextPtr context,
+            bool async_insert) override
+    {
+        /// The same check as in `write`.
+        auto storage = getNested();
+        auto cached_structure = metadata_snapshot->getSampleBlock();
+        auto nested_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto actual_structure = nested_metadata_snapshot->getSampleBlock();
+        if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
+        {
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
+        }
+        return storage->beginWrite(query, metadata_snapshot, context, async_insert);
+    }
+
     void renameInMemory(const StorageID & new_table_id) override
     {
         std::lock_guard lock{nested_mutex};

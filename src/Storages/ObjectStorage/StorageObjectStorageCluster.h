@@ -45,6 +45,12 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
     bool isObjectStorage() const override { return true; }

@@ -210,6 +210,45 @@ SinkToStoragePtr IStorage::write(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
 }
 
+namespace
+{
+
+/// The sinks from `IStorage::write` finish their part of the insert themselves.
+class StorageWriteSessionWithoutCommit final : public IStorageWriteSession
+{
+public:
+    StorageWriteSessionWithoutCommit(
+        StoragePtr storage_, ASTPtr query_, StorageMetadataPtr metadata_snapshot_, ContextPtr context_, bool async_insert_)
+        : storage(std::move(storage_))
+        , query(std::move(query_))
+        , metadata_snapshot(std::move(metadata_snapshot_))
+        , context(std::move(context_))
+        , async_insert(async_insert_)
+    {
+    }
+
+    SinkToStoragePtr createSink() override { return storage->write(query, metadata_snapshot, context, async_insert); }
+    void commit() override {}
+
+private:
+    const StoragePtr storage;
+    const ASTPtr query;
+    const StorageMetadataPtr metadata_snapshot;
+    const ContextPtr context;
+    const bool async_insert;
+};
+
+}
+
+StorageWriteSessionPtr IStorage::beginWrite(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    bool async_insert)
+{
+    return std::make_shared<StorageWriteSessionWithoutCommit>(shared_from_this(), query, metadata_snapshot, context, async_insert);
+}
+
 void IStorage::truncate(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /* metadata_snapshot */,
