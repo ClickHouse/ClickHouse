@@ -456,7 +456,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(drop_database_holding_drop_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
-    PAUSEABLE_ONCE(time_series_rename_pause_after_first_inner_table) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
@@ -566,7 +565,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    PAUSEABLE(silk_fiber_socket_send_timeout_expires_after_write)
 
 namespace FailPoints
 {
