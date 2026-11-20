@@ -466,7 +466,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     std::vector<NameSet> storage_columns_guarding_throwing_condition;
     for (size_t i = 0; i < infos.size(); ++i)
     {
-        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(infos[i].node.getDAGNode()))
+        /// The AST-based optimization (the old analyzer with `query_plan_optimize_prewhere` disabled) has no DAG nodes.
+        const auto * dag_node = infos[i].node.getDAGNode();
+        if (!infos[i].viable || infos[i].expensive || !dag_node || !conditionMayThrow(dag_node))
             continue;
         for (size_t j = 0; j < i; ++j)
         {
