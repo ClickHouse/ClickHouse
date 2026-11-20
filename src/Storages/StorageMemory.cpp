@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <functional>
+#include <unordered_map>
 
 #include <Common/CurrentThread.h>
 #include <Formats/FormatSettings.h>
@@ -599,7 +600,9 @@ static Block logicalDefaultInputs(
         const Block & stored;
         const NameSet & materialized_names;
         NameSet inputs;
+        NameSet whole_inputs;
         NameSet subcolumns;
+        std::unordered_map<String, String> subcolumn_parents;
         NameSet expanded;
 
         void expand(const String & name)
@@ -622,11 +625,41 @@ static Block logicalDefaultInputs(
         {
             /// `a.v` has to be a column of the block before the default that names it is analyzed.
             subcolumns.insert(name);
-            consider(parent);
+            subcolumn_parents[name] = parent;
+            consider(parent, /*parent_only=*/ true);
         }
 
-        void consider(const String & name)
+        void consider(const String & name, bool parent_only = false)
         {
+            /// An explicitly declared dotted column or alias takes precedence over `parent.member`.
+            if (columns.tryGetColumn(GetColumnsOptions::All, name))
+            {
+                if (columns.tryGetPhysical(name))
+                {
+                    /// A column this statement itself materializes is computed from its default.
+                    /// A column already stored, or one the read path would fill with the type default, is an input.
+                    if (materialized_names.contains(name) && !stored.has(name))
+                    {
+                        expand(name);
+                        /// `CLEAR COLUMN n.a` has no default. The retained sibling still owns the array sizes.
+                        if (!columns.hasDefault(name))
+                        {
+                            if (const auto * sibling = findNestedSizesSource(stored, name))
+                                inputs.insert(sibling->name);
+                        }
+                    }
+                    else
+                    {
+                        inputs.insert(name);
+                        if (!parent_only)
+                            whole_inputs.insert(name);
+                    }
+                }
+                else if (columns.hasDefault(name))
+                    expand(name);
+                return;
+            }
+
             if (auto subcolumn = columns.tryGetSubcolumn(name); subcolumn && subcolumn->isSubcolumn())
             {
                 recordSubcolumn(name, subcolumn->getNameInStorage());
@@ -649,25 +682,6 @@ static Block logicalDefaultInputs(
                 }
             }
 
-            if (columns.tryGetPhysical(name))
-            {
-                /// A column this statement itself materializes is computed from its default.
-                /// A column already stored, or one the read path would fill with the type default, is an input.
-                if (materialized_names.contains(name) && !stored.has(name))
-                {
-                    expand(name);
-                    /// `CLEAR COLUMN n.a` has no default. The retained sibling still owns the array sizes.
-                    if (!columns.hasDefault(name))
-                    {
-                        if (const auto * sibling = findNestedSizesSource(stored, name))
-                            inputs.insert(sibling->name);
-                    }
-                }
-                else
-                    inputs.insert(name);
-                return;
-            }
-
             if (columns.hasDefault(name))
                 expand(name);
         }
@@ -677,7 +691,7 @@ static Block logicalDefaultInputs(
     for (const auto & column : materialized)
         materialized_names.insert(column.name);
 
-    DependencyWalker walker{columns, stored, materialized_names, {}, {}, {}};
+    DependencyWalker walker{columns, stored, materialized_names, {}, {}, {}, {}, {}};
     for (const auto & column : materialized)
         walker.consider(column.name);
 
@@ -695,7 +709,7 @@ static Block logicalDefaultInputs(
             /// `decompress` shares the column when it is already plain. Clone so evaluation cannot rewrite storage.
             auto plain = column.column->decompress();
             logical.insert({plain->cloneResized(plain->size()), column.type, column.name});
-            if (!column.type->equals(*physical->type))
+            if (walker.whole_inputs.contains(name) && !column.type->equals(*physical->type))
                 to_convert.emplace_back(column.name, physical->type);
         }
         else if (rows > 0)
@@ -724,6 +738,22 @@ static Block logicalDefaultInputs(
         }
     }
 
+    /// A type change of a parent also changes the requested subcolumn's type. Convert only that
+    /// subcolumn when the rest of the parent is not an input, matching selective Memory reads.
+    for (const auto & [name, parent] : walker.subcolumn_parents)
+    {
+        const auto current_parent = columns.tryGetPhysical(parent);
+        if (!current_parent || !stored.has(parent))
+            continue;
+
+        const auto & old_parent = stored.getByName(parent);
+        if (old_parent.type->equals(*current_parent->type))
+            continue;
+
+        const auto subcolumn_type = current_parent->type->tryGetSubcolumnType(name.substr(parent.size() + 1));
+        to_convert.emplace_back(name, subcolumn_type);
+    }
+
     /// With no physical inputs, `logical.rows()` is 0. Establish the saved row count before alias evaluation.
     /// The name has to miss every real column: a user column may itself be called `_dummy`.
     if (logical.columns() == 0)
@@ -736,9 +766,6 @@ static Block logicalDefaultInputs(
             std::make_shared<DataTypeUInt8>(),
             placeholder});
     }
-
-    if (!to_convert.empty())
-        performRequiredConversions(logical, to_convert, context, columns.getDefaults());
 
     /// Extract a subcolumn only once its parent is already in the block. A parent this statement
     /// is still materializing is extracted later, after that parent has a row for every stored row.
@@ -775,6 +802,9 @@ static Block logicalDefaultInputs(
             extract_actions->execute(logical);
         }
     }
+
+    if (!to_convert.empty())
+        performRequiredConversions(logical, to_convert, context, columns.getDefaults());
 
     return logical;
 }
