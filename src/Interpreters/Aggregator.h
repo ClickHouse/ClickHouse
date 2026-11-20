@@ -462,7 +462,8 @@ public:
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the
     /// session with its count bins when the aggregation prunes by the top-K; the bins take the rows of
     /// `local_variants`, the producer's own table, as well. A producer that never froze has no bins and hands
-    /// `local_variants` over for the merge to count instead. Counts the producer toward the verdict of the
+    /// `local_variants` over for the merge to count instead. Adds the rank of the NULL key of its table to
+    /// the session for a top-K (see `AdaptiveTopKNullKey`). Counts the producer toward the verdict of the
     /// run, and indexes the cells of a single-level table by the partitions of the layout for the merges.
     /// Every producer with the adaptive context calls it before the finish barrier, so the session holds
     /// every producer's contribution by the time the last finisher assembles the merge.
@@ -484,13 +485,14 @@ public:
     /// frees them, while their spills have not ended at the finish barrier. Returns the released bytes.
     size_t spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const;
 
-    /// Decides once, after the finish barrier and before the merge starts, how the merge uses the top-K it feeds.
-    /// The merge prunes by the count bins where `mergePrunesByTopK` says it can, and the buckets are then ordered for
-    /// it by their bin bounds; otherwise the pruning is dropped, and the tables take the bucket merge only if some
-    /// producer froze (see `AdaptiveAggregationSession::mergesByBuckets`). The threshold that the merge threads share
-    /// (see `AdaptiveTopKThreshold`) needs only exact ranks of the converted units, so it is created for every bucket
-    /// merge but an external one, which outputs partial states. It settles an ascending top-K unless the merge collects
-    /// the statistics, which need every group.
+    /// Decides once, after the finish barrier and before the merge starts, how the merge uses the top-K it
+    /// feeds. The merge prunes by the count bins where `mergePrunesByTopK` says it can: bucket 0 then takes
+    /// the bound of the NULL key into its own (see `AdaptiveTopKNullKey`), and the buckets are ordered for it
+    /// by their bounds. Otherwise the pruning is dropped, and the tables take the bucket merge only if some
+    /// producer froze (see `AdaptiveAggregationSession::mergesByBuckets`). The threshold that the merge
+    /// threads share (see `AdaptiveTopKThreshold`) is created for every bucket merge but an external one,
+    /// which outputs partial states, and takes a rank of the NULL key before the merge. It settles an
+    /// ascending top-K unless the merge collects the statistics, which need every group.
     void prepareAdaptiveTopK(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
@@ -1296,14 +1298,32 @@ private:
     template <typename Method, typename Table, typename ForEachSourceTable>
     void adoptSourceNullKeys(Table & table, const ForEachSourceTable & for_each_source_table, AdaptiveMergeTask & task) const;
 
-    /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
-    /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition
-    /// `for_each_in_memory_partition` hands out and the records of every spilled block `for_each_spilled_block` reads
-    /// back, in the count bins `alive_bins` keeps (all bins when null), and puts the hashes of its best groups by the
-    /// count into `task.best_hashes`. The counting table and `top_k` copy the string-like keys of spilled records they
-    /// keep into `arena`. With a descending order `top_k` keeps the best groups up to date while they are counted, and
-    /// an ascending order selects them by a pass over the counted groups. Either drops the groups ranked worse than
-    /// `threshold`. Adds the records the bins skipped to `pruned_records`. Returns the unit's group count.
+    /// Discards the NULL keys of the sources of a merge unit with their states, as `adoptSourceCells`
+    /// discards a cell whose group cannot reach the top. `for_each_source_table` is as for
+    /// `adoptSourceNullKeys`.
+    template <typename Method, typename ForEachSourceTable>
+    void discardSourceNullKeys(const ForEachSourceTable & for_each_source_table) const;
+
+    /// What the first pass of a count-first unit found (see `selectCountFirstBestGroups`).
+    struct CountFirstSelection
+    {
+        /// The groups of the unit, the NULL key included.
+        size_t groups = 0;
+        /// Whether the NULL key is among the best groups.
+        bool keeps_null_key = false;
+    };
+
+    /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its
+    /// source cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every
+    /// partition `for_each_in_memory_partition` hands out and the records of every spilled block
+    /// `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when null), and
+    /// puts the hashes of its best groups by the count into `task.best_hashes`. The counting table and
+    /// `top_k` copy the string-like keys of spilled records they keep into `arena`. With a descending order
+    /// `top_k` keeps the best groups up to date while they are counted, and an ascending order selects them
+    /// by a pass over the counted groups. Either drops the groups ranked worse than `threshold`.
+    /// `null_key_count`, when set, is the count of the NULL key of the sources (see `adoptSourceNullKeys`), a
+    /// group that the counting table does not hold, and that competes with the counted groups by its count.
+    /// Adds the records the bins skipped to `pruned_records`.
     template <
         typename Method,
         typename Table,
@@ -1311,7 +1331,7 @@ private:
         typename TopK,
         typename ForEachInMemoryPartition,
         typename ForEachSpilledBlock>
-    size_t selectCountFirstBestGroups(
+    CountFirstSelection selectCountFirstBestGroups(
         Table & counting_table,
         const ForEachCell & for_each_cell,
         const bool * alive_bins,
@@ -1319,6 +1339,7 @@ private:
         const AdaptiveTopKThreshold & threshold,
         const ForEachInMemoryPartition & for_each_in_memory_partition,
         const ForEachSpilledBlock & for_each_spilled_block,
+        std::optional<UInt64> null_key_count,
         Arena * arena,
         AdaptiveMergeTask & task,
         size_t & pruned_records) const;
@@ -1355,9 +1376,10 @@ private:
         std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
         AdaptiveTopKThreshold * table_threshold) const;
 
-    /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
-    /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
-    UInt64 adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
+    /// The rank of the NULL key in `variants`, a producer's table, as `bucketTopKRank` reads it, for a
+    /// method that keeps the NULL key in a slot of its own (see `keeps_null_key_slot`). Nothing for another
+    /// method or for a table without the NULL key.
+    std::optional<UInt64> adaptiveNullKeyRank(AggregatedDataVariants & variants) const;
 
     /// Adds the groups that the tables of the producers that never froze hold in bucket `bucket` (see
     /// `AdaptiveTopKPruning::isMergeCounted`) to the bucket's `bounds`, finding the bucket's partitions in
