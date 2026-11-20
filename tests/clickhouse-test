@@ -1875,6 +1875,66 @@ class SettingsRandomizer:
         "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
             [0, 256, 1048576], weights=[1, 1, 3]
         )[0],
+        # The Parquet settings below change the file layout and the reader's code paths, never the rows a
+        # query returns. A test that observes the layout or the pruning pins the setting. The settings that
+        # change a written or inferred type are not randomized.
+        "input_format_parquet_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_bloom_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_page_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_use_offset_index": lambda: random.random() > 0.1,
+        "input_format_parquet_verify_checksums": lambda: random.random() > 0.2,
+        "input_format_parquet_enable_row_group_prefetch": lambda: random.random() > 0.2,
+        "input_format_parquet_preserve_order": lambda: random.random() < 0.2,
+        # 0 seeks over every gap between two ranges of a local file, 1 MiB reads through the gaps of a small file
+        "input_format_parquet_local_file_min_bytes_for_seek": lambda: random.choices(
+            [0, 1, 8192, 1024 * 1024], weights=[1, 1, 4, 1]
+        )[0],
+        # Blocks of a hundred rows are left to the tests that need them
+        "input_format_parquet_max_block_size": lambda: random.choices(
+            [1000, 8192, 65409], weights=[1, 2, 4]
+        )[0],
+        # 0 disables it
+        "input_format_parquet_prefer_block_bytes": lambda: random.choices(
+            [0, 64 * 1024, 1024 * 1024, 65409 * 256], weights=[1, 1, 1, 4]
+        )[0],
+        "input_format_parquet_memory_low_watermark": lambda: random.choices(
+            [0, 1, 1024 * 1024, 2 * 1024 * 1024, 64 * 1024 * 1024], weights=[1, 1, 1, 4, 1]
+        )[0],
+        "input_format_parquet_memory_high_watermark": lambda: random.choices(
+            [0, 1, 1024 * 1024, 64 * 1024 * 1024, 4 * 1024 * 1024 * 1024], weights=[1, 1, 1, 1, 4]
+        )[0],
+        # The floors keep the largest write of the tests (a few million rows) at a few thousand row groups
+        # and tens of thousands of pages; one-row groups and pages are left to the tests that need them.
+        "output_format_parquet_row_group_size": lambda: random.choices(
+            [1000, 10000, 100000, 1000000], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_row_group_size_bytes": lambda: random.choices(
+            [64 * 1024, 1024 * 1024, 16 * 1024 * 1024, 512 * 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        # The page size is checked once per batch, so 1 makes every batch a page
+        "output_format_parquet_data_page_size": lambda: random.choices(
+            [1, 1024, 64 * 1024, 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_batch_size": lambda: random.choices(
+            [100, 1024, 8192], weights=[1, 3, 1]
+        )[0],
+        "output_format_parquet_write_page_index": lambda: random.random() > 0.1,
+        "output_format_parquet_write_bloom_filter": lambda: random.random() > 0.1,
+        "output_format_parquet_bloom_filter_bits_per_value": lambda: random.choice([1, 6, 10.5, 41]),
+        # 0 writes the bloom filters of a row group right after it, a large value near the end of the file
+        "output_format_parquet_bloom_filter_flush_threshold_bytes": lambda: random.choice(
+            [0, 1024 * 1024, 128 * 1024 * 1024]
+        ),
+        "output_format_parquet_compression_method": lambda: random.choices(
+            ["zstd", "lz4", "snappy", "gzip", "brotli", "none"], weights=[3, 1, 1, 1, 1, 1]
+        )[0],
+        "output_format_parquet_parallel_encoding": lambda: random.random() > 0.2,
+        # 0 disables dictionary encoding, 1 abandons the dictionary after the first batch
+        "output_format_parquet_max_dictionary_size": lambda: random.choices(
+            [0, 1, 1024, 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_write_checksums": lambda: random.random() > 0.2,
+        "output_format_parquet_use_alp_encoding": lambda: random.random() < 0.2,
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -2803,6 +2863,7 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "enable_adaptive_codec_selection": lambda: random.randint(0, 1),
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
         ),

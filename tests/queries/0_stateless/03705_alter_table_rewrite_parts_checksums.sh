@@ -47,7 +47,8 @@ settings
   map_serialization_version_for_zero_level_parts='basic',
   map_serialization_version='basic',
   enable_block_number_column=0,
-  enable_block_offset_column=0
+  enable_block_offset_column=0,
+  enable_adaptive_codec_selection=0
 ;
 insert into test_materialize select number, repeat('a', number), [1 + number/10e3, 0 + number/10e3] from numbers(10e3) settings max_block_size=1e6;
 -- { echo }
