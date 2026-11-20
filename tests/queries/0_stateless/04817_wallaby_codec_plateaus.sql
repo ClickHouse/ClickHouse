@@ -1,5 +1,5 @@
--- Regression test: piecewise-constant data with a small decimal range must take the XOR path,
--- which collapses plateaus into runs, instead of being forced into a per-value decimal packing.
+-- Piecewise-constant data must collapse into runs: a plateau costs a few bits, whatever its length,
+-- instead of a fraction of a bit per value.
 -- https://github.com/ClickHouse/ClickHouse/pull/113575
 
 SET enable_wallaby_codec = 1;

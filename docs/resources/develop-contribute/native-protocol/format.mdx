@@ -1494,7 +1494,7 @@ The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs 
 
 `0xa1` (`GDeflate`) is an **experimental** Deflate variant whose chunks a GPU can expand in parallel. A table can be created with `CODEC(GDeflate)` only when the `enable_gdeflate_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
-`0xa2` (`Wallaby`) is an **experimental** lossless codec for `Float32` and `Float64` columns that splits data into vectors of 1024 values and adaptively picks the cheapest of several encodings per vector (constant collapse, integerization with Frame-of-Reference or zigzag-delta bit-packing, XOR against a ring of 256 recent reference values, or raw). A table can be created with `CODEC(Wallaby)` only when the `enable_wallaby_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
+`0xa2` (`Wallaby`) is an **experimental** lossless codec for `Float32` and `Float64` columns that turns the values of every chunk of up to 16384 values into integers (numerators of a common denominator, multiples of a constant, or bit patterns), predicts them from the previous ones, and codes the residuals with an entropy coder (tANS) whose alphabet is fitted to the chunk; the block starts with a byte that holds the format version and the float width. A table can be created with `CODEC(Wallaby)` only when the `enable_wallaby_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 ### Checksum {#checksum}
 

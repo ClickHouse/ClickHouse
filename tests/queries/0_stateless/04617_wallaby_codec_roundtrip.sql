@@ -30,7 +30,7 @@ TRUNCATE TABLE wallaby32; INSERT INTO wallaby32 SELECT i, f FROM base32;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN wallaby64 AS a USING i;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN wallaby32 AS a USING i;
 
-SELECT '# Real doubles (XOR path)';
+SELECT '# Real doubles (bit patterns)';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, sin(number / 100) * exp(number % 40) FROM numbers(10000);
 TRUNCATE TABLE wallaby64; INSERT INTO wallaby64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;

@@ -4,7 +4,7 @@
 # Decimal series with exceptions (occasional high-precision values)
 10000	0
 10000	0
-# Real doubles (XOR path)
+# Real doubles (bit patterns)
 10000	0
 10000	0
 # Arbitrary bit patterns, including NaN payloads, infinities, denormals
