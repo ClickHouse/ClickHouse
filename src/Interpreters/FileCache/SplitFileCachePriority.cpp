@@ -45,8 +45,9 @@ SplitFileCachePriority::SplitFileCachePriority(
     const std::string & description_)
     : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , system_segment_size_ratio(system_segment_size_ratio_)
-    , max_data_segment_size(getRatio(max_size_, (1 - system_segment_size_ratio)))
-    , max_data_segment_elements(getRatio(max_elements_, (1 - system_segment_size_ratio)))
+    /// The two parts add up to the total.
+    , max_data_segment_size(max_size_ - getRatio(max_size_, system_segment_size_ratio))
+    , max_data_segment_elements(max_elements_ - getRatio(max_elements_, system_segment_size_ratio))
     , max_system_segment_size(getRatio(max_size_, system_segment_size_ratio))
     , max_system_segment_elements(getRatio(max_elements_, system_segment_size_ratio))
     , log(getLogger("SplitFileCachePriority(" + description_ + ")"))
@@ -134,10 +135,10 @@ bool SplitFileCachePriority::modifySizeLimits(
     if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
-    const size_t new_data_size = getRatio(max_size_, (1 - system_segment_size_ratio));
-    const size_t new_data_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
     const size_t new_system_size = getRatio(max_size_, system_segment_size_ratio);
     const size_t new_system_elements = getRatio(max_elements_, system_segment_size_ratio);
+    const size_t new_data_size = max_size_ - new_system_size;
+    const size_t new_data_elements = max_elements_ - new_system_elements;
 
     /// Remember data limits to roll back if the system update throws, so we never leave the
     /// split priority partially resized. The rollback cannot throw (data already fit these).
@@ -180,10 +181,10 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfoForResize(
     const CacheStateGuard::Lock & lock)
 {
     /// Compute per-segment desired limits and delegate to each inner priority.
-    size_t desired_data_size = getRatio(desired_max_size, 1 - system_segment_size_ratio);
     size_t desired_system_size = getRatio(desired_max_size, system_segment_size_ratio);
-    size_t desired_data_elements = getRatio(desired_max_elements, 1 - system_segment_size_ratio);
+    size_t desired_data_size = desired_max_size - desired_system_size;
     size_t desired_system_elements = getRatio(desired_max_elements, system_segment_size_ratio);
+    size_t desired_data_elements = desired_max_elements - desired_system_elements;
 
     auto info = getPriority(SegmentType::Data).collectEvictionInfoForResize(
         desired_data_size, desired_data_elements, origin_info, lock);

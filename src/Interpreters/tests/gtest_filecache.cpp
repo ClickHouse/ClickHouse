@@ -2160,6 +2160,281 @@ catch (...)
     throw;
 }
 
+namespace
+{
+    DB::FileCacheSettings slruSettings(size_t max_size, size_t max_elements)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = max_size;
+        settings[FileCacheSetting::max_elements] = max_elements;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::background_download_threads] = 0;
+        return settings;
+    }
+
+    /// Downloads the next `size` bytes of `segment` and completes it, which leaves it partially downloaded
+    /// while the caller keeps a holder of it.
+    void downloadPart(const FileSegmentPtr & segment, size_t size)
+    {
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(size, 1000, failure_reason)) << failure_reason;
+        const auto key = segment->key().toString();
+        fs::create_directories(fs::path(cache_base_path) / key.substr(0, 3) / key);
+        std::string data(size, '0');
+        segment->write(data.data(), size, segment->getCurrentWriteOffset());
+        FileSegment::complete(FileSegmentPtr(segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+    }
+}
+
+TEST_F(FileCacheTest, SLRULendingIsOptIn)
+{
+    ServerUUID::setRandomForUnitTests();
+    CacheStateGuard state_guard;
+    /// Probationary is 15 bytes, protected is empty.
+    SLRUFileCachePriority fixed_shares(IFileCachePriority::QueueType::Main, 30, 6, 0.5, "test_slru_fixed_shares");
+    SLRUFileCachePriority lending(
+        IFileCachePriority::QueueType::Main, 30, 6, 0.5, "test_slru_lending", nullptr, nullptr, /* lend_unused_protected_capacity */ true);
+
+    auto lock = state_guard.lock();
+    ASSERT_FALSE(fixed_shares.canFit(20, 1, lock));
+    ASSERT_TRUE(lending.canFit(20, 1, lock));
+}
+
+TEST_F(FileCacheTest, SLRUSharesAddUpToTotal)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    auto settings = slruSettings(/* max_size */ 5, /* max_elements */ 5);
+    settings[FileCacheSetting::max_file_segment_size] = 1;
+    auto cache = DB::FileCache("slru_shares", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("slru_shares_key");
+    const size_t file_size = -1;
+
+    auto add = [&](size_t offset)
+    {
+        download(cache.getOrSet(key, offset, 1, file_size, {}, 0, user));
+        ASSERT_LE(cache.getUsedCacheSize(), 5);
+        ASSERT_LE(cache.getFileSegmentsNum(), 5);
+        ASSERT_NO_THROW(cache.getFileSegmentInfos(user.user_id));
+    };
+
+    add(0);
+    add(1);
+    increasePriority(cache.getOrSet(key, 0, 1, file_size, {}, 0, user));
+    increasePriority(cache.getOrSet(key, 1, 1, file_size, {}, 0, user));
+    assertProtected(cache.dumpQueue(), { Range(0, 0), Range(1, 1) });
+
+    /// Probationary borrows the last free byte of protected, and then has to evict.
+    for (size_t offset = 2; offset < 6; ++offset)
+        add(offset);
+    assertProbationary(cache.dumpQueue(), { Range(3, 3), Range(4, 4), Range(5, 5) });
+
+    /// 5 at ratio 0.5: protected 3 and probationary 2.
+    {
+        CacheStateGuard state_guard;
+        SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 5, 5, 0.5, "test_slru_shares");
+        auto lock = state_guard.lock();
+        ASSERT_EQ(priority.getProtectedSizeLimit(lock), 3);
+        ASSERT_FALSE(priority.canFit(3, 1, lock));
+        ASSERT_TRUE(priority.canFit(2, 1, lock));
+    }
+
+    /// The same for the data and the system part of a split cache.
+    {
+        std::vector<std::pair<size_t, size_t>> part_limits;
+        auto creator = [&](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t, String desc)
+            -> IFileCachePriorityPtr
+        {
+            part_limits.emplace_back(max_size, max_elements);
+            return std::make_unique<SLRUFileCachePriority>(queue_type, max_size, max_elements, size_ratio, desc);
+        };
+        SplitFileCachePriority priority(IFileCachePriority::QueueType::Main, creator, 5, 5, 0.5, 0.5, "test_split_shares");
+        ASSERT_EQ(part_limits.size(), 2u);
+        ASSERT_EQ(part_limits[0].first + part_limits[1].first, 5u);
+        ASSERT_EQ(part_limits[0].second + part_limits[1].second, 5u);
+    }
+}
+
+TEST_F(FileCacheTest, SLRUPromotionTakesBackAndDowngrades)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// 10 bytes in each queue.
+    auto cache = DB::FileCache("slru_promotion_take_back", slruSettings(/* max_size */ 20, /* max_elements */ 10));
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("slru_promotion_take_back_key");
+    const size_t file_size = -1;
+
+    for (size_t offset = 0; offset < 8; offset += 2)
+        download(cache.getOrSet(key, offset, 2, file_size, {}, 0, user));
+    for (size_t offset = 0; offset < 8; offset += 2)
+        increasePriority(cache.getOrSet(key, offset, 2, file_size, {}, 0, user));
+
+    /// Probationary borrows 2 bytes of protected's share.
+    for (size_t offset = 10; offset < 22; offset += 4)
+        download(cache.getOrSet(key, offset, 4, file_size, {}, 0, user));
+    assertProtected(cache.dumpQueue(), { Range(0, 1), Range(2, 3), Range(4, 5), Range(6, 7) });
+    assertProbationary(cache.dumpQueue(), { Range(10, 13), Range(14, 17), Range(18, 21) });
+
+    /// The promotion takes these 2 bytes back, so it downgrades only one 2-byte segment,
+    /// for which probationary evicts its oldest releasable segment.
+    const auto downgraded_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments];
+    increasePriority(cache.getOrSet(key, 10, 4, file_size, {}, 0, user));
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments] - downgraded_before, 1);
+    assertProtected(cache.dumpQueue(), { Range(2, 3), Range(4, 5), Range(6, 7), Range(10, 13) });
+    assertProbationary(cache.dumpQueue(), { Range(18, 21), Range(0, 1) });
+    ASSERT_EQ(cache.getUsedCacheSize(), 16);
+    ASSERT_NO_THROW(cache.getFileSegmentInfos(user.user_id));
+}
+
+TEST_F(FileCacheTest, SLRUProtectedGrowthTakesBackLentCapacity)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// 15 bytes in each queue.
+    auto cache = DB::FileCache("slru_growth_take_back", slruSettings(/* max_size */ 30, /* max_elements */ 10));
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("slru_growth_take_back_key");
+    const size_t file_size = -1;
+
+    /// A partially downloaded segment, promoted to protected, where it grows later.
+    auto holder = cache.getOrSet(key, 0, 10, file_size, {}, 0, user);
+    auto segment = holder->getSingleFileSegment();
+    downloadPart(segment, 2);
+    ASSERT_EQ(segment->state(), State::PARTIALLY_DOWNLOADED);
+    segment->increasePriority();
+    assertProtected(cache.dumpQueue(), { Range(0, 9) });
+
+    /// Probationary borrows 10 bytes of protected's share, which keeps 5 bytes.
+    for (size_t offset = 10; offset < 35; offset += 5)
+        download(cache.getOrSet(key, offset, 5, file_size, {}, 0, user));
+    ASSERT_EQ(cache.getUsedCacheSize(), 27);
+
+    /// Protected has nothing to downgrade, so the growth takes 5 bytes back, and probationary evicts for them.
+    const auto evicted_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedFileSegments];
+    downloadPart(segment, 8);
+    ASSERT_EQ(segment->state(), State::DOWNLOADED);
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedFileSegments] - evicted_before, 1);
+    assertProtected(cache.dumpQueue(), { Range(0, 9) });
+    assertProbationary(cache.dumpQueue(), { Range(15, 19), Range(20, 24), Range(25, 29), Range(30, 34) });
+    ASSERT_EQ(cache.getUsedCacheSize(), 30);
+    ASSERT_NO_THROW(cache.getFileSegmentInfos(user.user_id));
+}
+
+TEST_F(FileCacheTest, SLRUGrowthReservesTakeBack)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// 15 bytes in each queue.
+    auto cache = DB::FileCache("slru_growth_reserves_take_back", slruSettings(/* max_size */ 30, /* max_elements */ 10));
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("slru_growth_reserves_take_back_key");
+    const size_t file_size = -1;
+
+    auto holder = cache.getOrSet(key, 0, 10, file_size, {}, 0, user);
+    auto segment = holder->getSingleFileSegment();
+    downloadPart(segment, 2);
+    segment->increasePriority();
+    assertProtected(cache.dumpQueue(), { Range(0, 9) });
+
+    /// Probationary borrows all 13 bytes which protected does not use.
+    download(cache.getOrSet(key, 10, 10, file_size, {}, 0, user));
+    for (size_t offset = 20; offset < 35; offset += 5)
+        download(cache.getOrSet(key, offset, 5, file_size, {}, 0, user));
+    download(cache.getOrSet(key, 35, 3, file_size, {}, 0, user));
+    ASSERT_EQ(cache.getUsedCacheSize(), 30);
+
+    /// The growth reserves 8 of the borrowed bytes and pauses before it evicts for them.
+    const std::string pause_point = "file_cache_pause_before_do_eviction";
+    FailPointInjection::enableFailPoint(pause_point);
+    std::thread growth([&]
+    {
+        DB::ThreadStatus growth_thread_status;
+        downloadPart(segment, 8);
+    });
+    SCOPE_EXIT({
+        FailPointInjection::disableFailPoint(pause_point);
+        if (growth.joinable())
+            growth.join();
+    });
+    FailPointInjection::waitForPause(pause_point);
+
+    /// So a promotion meanwhile can take back only the other 5: it would have to downgrade for the rest,
+    /// and protected holds nothing releasable, so [10, 19] stays in probationary.
+    increasePriority(cache.getOrSet(key, 10, 10, file_size, {}, 0, user));
+    assertProtected(cache.dumpQueue(), { Range(0, 9) });
+
+    FailPointInjection::disableFailPoint(pause_point);
+    growth.join();
+    ASSERT_EQ(segment->state(), State::DOWNLOADED);
+    assertProtected(cache.dumpQueue(), { Range(0, 9) });
+    assertProbationary(cache.dumpQueue(), { Range(30, 34), Range(35, 37), Range(10, 19) });
+    ASSERT_NO_THROW(cache.getFileSegmentInfos(user.user_id));
+}
+
+TEST_F(FileCacheTest, SLRUDynamicResizeKeepsLentCapacity)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    auto settings = slruSettings(/* max_size */ 30, /* max_elements */ 10);
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+    auto cache = std::make_shared<DB::FileCache>("slru_resize_lent", settings);
+    cache->initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("slru_resize_lent_key");
+
+    /// 25 bytes in probationary, 10 of them borrowed from protected.
+    for (size_t offset = 0; offset < 25; offset += 5)
+        download(cache->getOrSet(key, offset, 5, /* file_size */ -1, {}, 0, user));
+
+    DB::FileCacheSettings actual_settings = settings;
+    auto resize = [&](size_t max_size)
+    {
+        DB::FileCacheSettings new_settings = actual_settings;
+        new_settings[FileCacheSetting::max_size] = max_size;
+        ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+    };
+
+    /// Growing the cache evicts nothing.
+    resize(40);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 40);
+    ASSERT_EQ(cache->getUsedCacheSize(), 25);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 5);
+
+    /// Shrinking it to 20 keeps 10 + 9 bytes in probationary (protected keeps one byte of its share).
+    resize(20);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 20);
+    ASSERT_EQ(cache->getUsedCacheSize(), 15);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 3);
+
+    /// A resize which fails to evict restores the previous limits and all entries, which still borrow.
+    {
+        FailPointInjection::enableFailPoint("file_cache_dynamic_resize_fail_to_evict");
+        SCOPE_EXIT({ FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict"); });
+        resize(10);
+    }
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 20);
+    ASSERT_EQ(cache->getUsedCacheSize(), 15);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 3);
+    ASSERT_NO_THROW(cache->getFileSegmentInfos(user.user_id));
+}
+
 TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 {
     /// Test that SLRU dynamic resize correctly evicts from both sub-queues

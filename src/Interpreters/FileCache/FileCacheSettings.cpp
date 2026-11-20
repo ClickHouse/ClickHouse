@@ -325,14 +325,14 @@ void FileCacheSettings::validate()
 
         const size_t max_size = settings[FileCacheSetting::max_size];
         const double ratio = settings[FileCacheSetting::slru_size_ratio];
-        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), get_ratio(size, 1 - ratio)); };
+        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), size - get_ratio(size, ratio)); };
 
         size_t smallest_queue_size = get_smallest_queue_size(max_size);
         if (settings[FileCacheSetting::use_split_cache])
         {
             const double system_ratio = settings[FileCacheSetting::split_cache_ratio];
             smallest_queue_size = std::min(
-                get_smallest_queue_size(get_ratio(max_size, 1 - system_ratio)),
+                get_smallest_queue_size(max_size - get_ratio(max_size, system_ratio)),
                 get_smallest_queue_size(get_ratio(max_size, system_ratio)));
         }
 
