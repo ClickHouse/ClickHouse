@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
+    extern const SettingsBool input_format_tsv_enum_as_number;
 }
 
 namespace ErrorCodes
@@ -484,7 +485,7 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 /// `tryConvertToColumnType` and an `IN` set read it as a name.
 static bool equalityReadsStringAsEnumNumber(const DataTypePtr & constant_type, const DataTypePtr & expr_type, const ContextPtr & context)
 {
-    return getFormatSettings(context).tsv.enum_as_number && comparesStringWithEnum(constant_type, expr_type);
+    return comparesStringWithEnum(constant_type, expr_type) && context->getSettingsRef()[Setting::input_format_tsv_enum_as_number];
 }
 
 /// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
