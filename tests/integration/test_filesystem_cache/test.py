@@ -1304,6 +1304,7 @@ cache_dynamic_resize_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>
@@ -1685,6 +1686,7 @@ cache_dynamic_resize_slru_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize_slru>
                 <type>cache</type>
@@ -2096,6 +2098,7 @@ cache_dynamic_settings_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>
