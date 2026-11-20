@@ -48,8 +48,8 @@ tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
         grep -v -e ':--' -e ':#' |
-        # to exclude clickhouse-local flags: --only-system-tables and --no-system-tables.
-        grep -v -e '--[a-zA-Z-]*system[a-zA-Z-]*' |
+        # to exclude client flags: --only-system-tables, --no-system-tables, and settings such as --show_data_lake_catalogs_in_system_tables.
+        grep -v -e '--[a-zA-Z_-]*system[a-zA-Z_-]*' |
         cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_database_column[@]}"; do

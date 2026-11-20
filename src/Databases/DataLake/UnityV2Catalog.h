@@ -144,6 +144,11 @@ private:
         const std::string & route,
         const Poco::URI::QueryParameters & params = {}) const;
 
+    /// Call this after a plain GET showed that the table is a streaming table or a materialized view.
+    /// Such a table is readable only if its owner enabled external data access or Compatibility Mode.
+    /// The string is the Databricks error when the description is null.
+    std::pair<Poco::JSON::Object::Ptr, std::string> tryGetStreamingTableOrMaterializedViewAsManaged(const std::string & full_table_name) const;
+
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
         std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
