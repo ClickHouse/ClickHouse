@@ -129,6 +129,9 @@
     M(PaimonMetadataFilesCacheHits, "Number of times paimon metadata files have been found in the cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheMisses, "Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(PaimonMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the paimon metadata cache.", ValueType::Number) \
+    M(DeltaLakeMetadataCacheHits, "Number of times the data files of a Delta Lake snapshot have been found in the Delta Lake metadata cache.", ValueType::Number) \
+    M(DeltaLakeMetadataCacheMisses, "Number of times the data files of a Delta Lake snapshot have not been found in the Delta Lake metadata cache and had to be listed from the log.", ValueType::Number) \
+    M(DeltaLakeMetadataCacheWeightLost, "Approximate number of bytes evicted from the Delta Lake metadata cache.", ValueType::Number) \
     M(TimeSeriesMetricFamiliesDeduplicationCacheHits, "Number of rows not written to the metric families tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
     M(TimeSeriesMetricFamiliesDeduplicationCacheMisses, "Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
     M(TimeSeriesTagsDeduplicationCacheHits, "Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \

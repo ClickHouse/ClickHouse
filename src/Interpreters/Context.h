@@ -131,6 +131,7 @@ class QueryMaxThreadsSnapshot;
 using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
+class DeltaLakeMetadataCache;
 class ParquetMetadataCache;
 #if USE_GPU
 namespace GPU
@@ -1872,6 +1873,13 @@ public:
     void updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PaimonMetadataFilesCache> getPaimonMetadataFilesCache() const;
     void clearPaimonMetadataFilesCache() const;
+#endif
+
+#if USE_DELTA_KERNEL_RS
+    void setDeltaLakeMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateDeltaLakeMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<DeltaLakeMetadataCache> getDeltaLakeMetadataCache() const;
+    void clearDeltaLakeMetadataCache() const;
 #endif
 
 #if USE_PARQUET

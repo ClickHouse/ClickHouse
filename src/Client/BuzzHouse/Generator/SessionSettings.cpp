@@ -2243,6 +2243,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_iceberg_metadata_files_cache", trueOrFalseSetting},
     {"use_page_cache_lookahead_for_text_index", trueOrFalseSettingNoOracle},
     {"use_paimon_metadata_files_cache", trueOrFalseSetting},
+    {"use_delta_lake_metadata_cache", trueOrFalseSetting},
     {"use_legacy_to_time", trueOrFalseSettingNoOracle},
     {"use_lz4_library_decompression", trueOrFalseSetting},
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
