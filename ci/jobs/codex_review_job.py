@@ -8,7 +8,11 @@ the app the job requires to be authenticated up front (`enable_gh_auth=True`).
 The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
 then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
 so the top-level comment is always authored by the pre-authenticated app, not
-the agent's account.
+the agent's account. When the summary's Final Verdict is `✅ Approve`, the job also
+submits an `APPROVE` review on the reviewed commit, so the approval is recorded
+on GitHub (needed for compliance); any other verdict dismisses the app's earlier
+approvals of the PR. A review whose sessions the provider stopped as a cybersecurity risk does not
+approve: its summary comes from the fallback model and can miss a finding.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -19,6 +23,7 @@ non-zero exit code and a missing/empty review file — so both are checked here.
 """
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -28,6 +33,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
@@ -52,6 +58,16 @@ FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
 REVIEW_HEADER = "#### AI Review"
+STATUS_PREFIX = "Status:"
+VERDICT_APPROVE = "✅ Approve"
+VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
+VERDICT_BLOCK = "❌ Block"
+# The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
+_VERDICT_PATTERNS = {
+    VERDICT_APPROVE: r"✅\s*(?i:approve)",
+    VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
+    VERDICT_BLOCK: r"❌\s*(?i:block)",
+}
 
 
 def _join_prompt(*sections):
@@ -188,6 +204,10 @@ to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SK
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
 Do NOT post the summary yourself: the job script will post it after you finish.
+The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
+bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
+`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+makes it submit a GitHub approval of the PR on your behalf.
 """
 
 
@@ -211,6 +231,104 @@ def _post_review():
         ],
         check=True,
     )
+
+
+_APPROVED_REVIEWS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      viewerDidAuthor
+      headRefOid
+      reviews(states: [APPROVED], first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { databaseId viewerDidAuthor commit { oid } }
+      }
+    }
+  }
+}
+"""
+
+
+def _review_approves():
+    """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
+    a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
+    No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
+    with open(REVIEW_FILE, encoding="utf-8") as f:
+        _, found, section = f.read().rpartition("Final Verdict")
+    if not found:
+        print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
+        return False
+
+    def find_verdicts(text):
+        text = text.replace("*", "")
+        return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
+
+    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
+    verdicts = find_verdicts(status.group(1)) if status else []
+    if not verdicts:
+        verdicts = find_verdicts(section)
+    if verdicts != [VERDICT_APPROVE]:
+        print(f"Final Verdict in {REVIEW_FILE} is not an approval, found verdicts: {verdicts}")
+        return False
+    return True
+
+
+def _update_approval(info, cyber_risk_flagged):
+    """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
+    otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
+    keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
+    for different commits may finish in any order, and only the head commit's verdict is current.
+    Raises on failure, failing the job."""
+    repo = _pr_repository(info)
+    owner, name = repo.split("/")
+    variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
+    own_approvals = []
+    while True:
+        pr = GH._gh_graphql_json(_APPROVED_REVIEWS_QUERY, variables)["data"]["repository"]["pullRequest"]
+        if pr["viewerDidAuthor"]:
+            print("The PR is authored by the reviewing app, which cannot approve its own PR")
+            return
+        own_approvals += [r for r in pr["reviews"]["nodes"] if r["viewerDidAuthor"]]
+        page = pr["reviews"]["pageInfo"]
+        if not page["hasNextPage"]:
+            break
+        variables["after"] = page["endCursor"]
+
+    # The last fetched page has the latest head, closest to the update below.
+    if pr["headRefOid"] != info.sha:
+        print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
+        return
+
+    if cyber_risk_flagged:
+        print("Not approving: a review session was stopped as a cybersecurity risk")
+    elif _review_approves():
+        if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
+            print(f"Commit {info.sha} is already approved")
+            return
+        print(f"Approving commit {info.sha}")
+        GH.api(
+            f"/repos/{repo}/pulls/{info.pr_number}/reviews",
+            method="POST",
+            payload={
+                "commit_id": info.sha,
+                "event": "APPROVE",
+            },
+            strict=True,
+        )
+        return
+
+    for r in own_approvals:
+        print(f"Dismissing approval {r['databaseId']}: the review no longer approves the PR")
+        GH.api(
+            f"/repos/{repo}/pulls/{info.pr_number}/reviews/{r['databaseId']}/dismissals",
+            method="PUT",
+            payload={
+                "event": "DISMISS",
+                "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
+            },
+            strict=True,
+        )
 
 
 def _add_cyber_risk_note(flagged_sessions, review_model):
@@ -299,7 +417,7 @@ def _run_codex_once(prompt, model):
         )
 
 
-def _run(prompt):
+def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
     Each attempt re-fetches secrets and re-runs the agent. The attempt counts
@@ -309,7 +427,6 @@ def _run(prompt):
     last_error = None
     model = MODEL
     review_model = model
-    flagged_sessions = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
@@ -367,7 +484,15 @@ def review():
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt)
+    flagged_sessions = []
+    try:
+        _run(prompt, flagged_sessions)
+    except Exception:
+        # A stopped session must not leave an earlier approval behind when the retries then fail.
+        if flagged_sessions:
+            _update_approval(info, cyber_risk_flagged=True)
+        raise
+    _update_approval(info, bool(flagged_sessions))
 
 
 if __name__ == "__main__":
