@@ -2316,8 +2316,8 @@ void MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(const StorageInMemory
         };
 
         add("sorting key", metadata.sorting_key.expression_list_ast, metadata.sorting_key.column_names);
-        if (metadata.isPrimaryKeyDefined())
-            add("primary key", metadata.primary_key.expression_list_ast, metadata.primary_key.column_names);
+        /// An undefined primary key mirrors the sorting key, and `MODIFY ORDER BY` turns it into a defined one.
+        add("primary key", metadata.primary_key.expression_list_ast, metadata.primary_key.column_names);
         add("sampling key", metadata.sampling_key.expression_list_ast, metadata.sampling_key.column_names);
         for (const auto & index : metadata.secondary_indices)
             if (!index.isImplicitlyCreated())
@@ -2333,8 +2333,8 @@ void MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(const StorageInMemory
 
         const auto & [owner, name] = violation;
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The expression {} of the {} has the same name as the column {}, so writing the table would replace the values "
-            "of the column with the values of the expression. Rename the column or change the expression. "
+            "The expression {} of the {} has the same name as the column {}, so the table would use one in place of the "
+            "other when it is written or queried. Rename the column or change the expression. "
             "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'",
             name, owner, backQuote(name));
     }

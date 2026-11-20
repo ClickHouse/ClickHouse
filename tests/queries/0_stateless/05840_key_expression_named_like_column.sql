@@ -60,6 +60,7 @@ DROP TABLE t_ok;
 CREATE TABLE t_legacy (x String, `lower(x)` String) ENGINE = MergeTree ORDER BY lower(x) SETTINGS allow_suspicious_indices = 1;
 INSERT INTO t_legacy VALUES ('B', 'q');
 ALTER TABLE t_legacy ADD COLUMN z UInt8;
+ALTER TABLE t_legacy ADD COLUMN y String, MODIFY ORDER BY (lower(x), y);
 ALTER TABLE t_legacy ADD INDEX il lower(x) TYPE minmax; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_legacy ADD INDEX il lower(x) TYPE minmax SETTINGS allow_suspicious_indices = 1;
 ALTER TABLE t_legacy RESET SETTING allow_suspicious_indices;

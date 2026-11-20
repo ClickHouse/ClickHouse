@@ -1215,7 +1215,7 @@ public:
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     /// Throws if an element of the sorting, primary or sampling key or of a skip index is not the column itself but has
-    /// the name of a stored column: blocks address columns by name, so writing would replace that column with the element.
+    /// the name of a stored column: writes and key analysis address columns by name, so one would be used for the other.
     /// With `old_metadata`, only an element that it does not have already is refused.
     static void checkKeyExpressionsNotNamedLikeColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
 
