@@ -52,7 +52,8 @@ namespace impl
     constexpr inline std::string_view hex_digit_to_char_lowercase_table = "0123456789abcdef";
 
     /// Maps 0..255 to 00..FF or 00..ff correspondingly.
-    constexpr inline std::string_view hex_byte_to_char_uppercase_table = //
+    /// Cache-line aligned: an entry crossing a cache line costs a split load per access.
+    alignas(64) constexpr inline char hex_byte_to_char_uppercase_table[] = //
         "000102030405060708090A0B0C0D0E0F"
         "101112131415161718191A1B1C1D1E1F"
         "202122232425262728292A2B2C2D2E2F"
@@ -70,7 +71,7 @@ namespace impl
         "E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF"
         "F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF";
 
-    constexpr inline std::string_view hex_byte_to_char_lowercase_table = //
+    alignas(64) constexpr inline char hex_byte_to_char_lowercase_table[] = //
         "000102030405060708090a0b0c0d0e0f"
         "101112131415161718191a1b1c1d1e1f"
         "202122232425262728292a2b2c2d2e2f"
@@ -89,7 +90,7 @@ namespace impl
         "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
 
     /// Maps 0..255 to 00000000..11111111 correspondingly.
-    constexpr inline std::string_view bin_byte_to_char_table = //
+    alignas(64) constexpr inline char bin_byte_to_char_table[] = //
         "0000000000000001000000100000001100000100000001010000011000000111"
         "0000100000001001000010100000101100001100000011010000111000001111"
         "0001000000010001000100100001001100010100000101010001011000010111"
