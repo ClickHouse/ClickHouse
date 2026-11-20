@@ -9,6 +9,7 @@
 <test>
     <settings>
         <max_threads>1</max_threads>
+        <use_columns_cache>0</use_columns_cache>
     </settings>
 
     <query>
