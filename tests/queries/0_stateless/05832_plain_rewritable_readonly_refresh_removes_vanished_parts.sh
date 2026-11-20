@@ -69,3 +69,66 @@ WHERE database = currentDatabase() AND table = 'reader' GROUP BY _state ORDER BY
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE writer SYNC"
+
+# A writer created again on the same path gives its new parts the names of the removed ones.
+disk_path_2="${CLICKHOUSE_DISKS_FILES}/05832/${CLICKHOUSE_DATABASE}_2/"
+writer2_ddl="
+CREATE TABLE writer2 (x UInt64) ORDER BY tuple()
+SETTINGS table_disk = true, old_parts_lifetime = 0, cleanup_delay_period = 0, max_cleanup_delay_period = 1,
+  cleanup_delay_period_random_add = 0,
+  disk = disk(
+      name = 05832_writer2_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      metadata_snapshot_write_delay_ms = 0,
+      path = '${disk_path_2}')"
+
+${CLICKHOUSE_CLIENT} --query "$writer2_ddl"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES writer2"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer2 SELECT number * 2 FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer2 SELECT number * 2 FROM numbers(2)"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE reader2 (x UInt64) ORDER BY tuple()
+SETTINGS table_disk = true,
+  disk = disk(
+      readonly = true,
+      name = 05832_reader2_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = '${disk_path_2}')
+"
+
+# The query condition cache remembers that all_1_1_0 has no row with x = 1 (its rows 0 and 2 keep it from being pruned).
+# The uncompressed cache is keyed by the file path, which the new all_1_1_0 shares, so it is off.
+filtered_count="SELECT count() FROM reader2 PREWHERE x = 1
+    SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, use_uncompressed_cache = 0"
+${CLICKHOUSE_CLIENT} --query "
+SELECT groupArraySorted(10)(name) FROM system.parts WHERE database = currentDatabase() AND table = 'reader2' AND active"
+${CLICKHOUSE_CLIENT} --query "$filtered_count"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES writer2"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE writer2 FINAL"
+while clickhouse_test_time_left; do
+    [[ $(${CLICKHOUSE_CLIENT} --query "
+        SELECT countIf(_state != 'Active') = 0 AND count() = 1 FROM system.parts
+        WHERE database = currentDatabase() AND table = 'writer2'") == 1 ]] && break
+    sleep 0.1
+done
+${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 05832_reader2_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query "
+SELECT groupArraySorted(10)(name) FROM system.parts WHERE database = currentDatabase() AND table = 'reader2' AND active"
+
+# The new all_1_1_0 is covered by the reader's all_1_2_1, whose directory is gone.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer2 SYNC"
+${CLICKHOUSE_CLIENT} --query "$writer2_ddl"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer2 SELECT 1 FROM numbers(5)"
+${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 05832_reader2_${CLICKHOUSE_DATABASE}"
+
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM reader2 SETTINGS use_uncompressed_cache = 0"
+${CLICKHOUSE_CLIENT} --query "$filtered_count"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE reader2 SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer2 SYNC"

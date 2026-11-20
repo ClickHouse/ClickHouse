@@ -4000,10 +4000,52 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     }
 
     std::set<MergeTreePartInfo> listed_parts;
+    ActiveDataPartSet top_listed_parts(format_version);
     for (const auto & part : parts_to_load)
+    {
         listed_parts.insert(part.info);
+        std::ignore = top_listed_parts.tryAdd(part.name);
+    }
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
+
+    /// Unlisted parts are erased: `seed` never reloads a part that is still known, even `Outdated`, when it is listed again.
+    auto forget_unlisted_parts = [&](const auto & should_forget)
+    {
+        DataPartsVector gone_parts;
+        {
+            auto part_lock = lockParts();
+            DataPartsVector unlisted_parts;
+            for (auto state : {DataPartState::Active, DataPartState::Outdated})
+                for (const auto & part : getDataPartsStateRange(state))
+                    if (scanned_disks.contains(part->getDataPartStorage().getDiskName()) && !listed_parts.contains(part->info)
+                        && should_forget(part->info))
+                        unlisted_parts.push_back(part);
+
+            outdateRemovedPartsLocally(unlisted_parts, part_lock);
+
+            for (const auto & part : unlisted_parts)
+            {
+                /// As in `grabOldParts`: its delete bitmaps may hold the kills of another part.
+                if (isPinnedByDeleteBitmap(*part, part_lock))
+                    continue;
+                modifyPartState(part, DataPartState::Deleting, part_lock);
+                gone_parts.push_back(part);
+            }
+        }
+
+        if (!gone_parts.empty())
+            LOG_INFO(log, "Forgetting {} parts whose directories are gone: [{}]", gone_parts.size(), fmt::join(getPartsNames(gone_parts), ", "));
+        removePartsFinally(gone_parts);
+        return !gone_parts.empty();
+    };
+
+    auto is_uncovered = [&](const MergeTreePartInfo & info) { return top_listed_parts.getContainingPart(info).empty(); };
+
+    /// A part no listed part covers is forgotten first, so it does not cover its replacements. A writer can then reuse its name
+    /// (block numbers restart from the parts on disk), and the query condition cache still holds verdicts for that name.
+    if (forget_unlisted_parts(is_uncovered) && getStorageID().hasUUID())
+        getContext()->clearQueryConditionCache();
 
     PartLoadingTreeNodes parts_to_add;
 
@@ -4092,31 +4134,8 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     has_lightweight_delete_parts = have_lightweight_in_parts;
     transactions_enabled = have_parts_with_version_metadata;
 
-    /// Unlisted parts are erased: `seed` never reloads a part that is still known, even `Outdated`, when it is listed again.
-    DataPartsVector gone_parts;
-    {
-        auto part_lock = lockParts();
-        DataPartsVector unlisted_parts;
-        for (auto state : {DataPartState::Active, DataPartState::Outdated})
-            for (const auto & part : getDataPartsStateRange(state))
-                if (scanned_disks.contains(part->getDataPartStorage().getDiskName()) && !listed_parts.contains(part->info))
-                    unlisted_parts.push_back(part);
-
-        outdateRemovedPartsLocally(unlisted_parts, part_lock);
-
-        for (const auto & part : unlisted_parts)
-        {
-            /// As in `grabOldParts`: its delete bitmaps may hold the kills of another part.
-            if (isPinnedByDeleteBitmap(*part, part_lock))
-                continue;
-            modifyPartState(part, DataPartState::Deleting, part_lock);
-            gone_parts.push_back(part);
-        }
-    }
-
-    if (!gone_parts.empty())
-        LOG_INFO(log, "Forgetting {} parts whose directories are gone: [{}]", gone_parts.size(), fmt::join(getPartsNames(gone_parts), ", "));
-    removePartsFinally(gone_parts);
+    /// The rest are covered by a listed part. Forgotten only after it is committed, so their rows stay visible meanwhile.
+    forget_unlisted_parts([](const MergeTreePartInfo &) { return true; });
 
     auto old_parts = grabOldParts(true);
 
