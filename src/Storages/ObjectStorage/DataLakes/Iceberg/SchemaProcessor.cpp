@@ -951,7 +951,7 @@ std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & fi
     return parseIcebergDefaultValue(value, iceberg_type, type, field->getValue<bool>(f_required), field_name);
 }
 
-std::string IcebergSchemaProcessor::default_link{};
+[[clang::no_destroy]] std::string IcebergSchemaProcessor::default_link{};
 
 std::optional<String> IcebergSchemaProcessor::findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema)
 {
@@ -1713,6 +1713,24 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
                 {
                     if (type.isString() && canonicalizeTypeName(type.extract<String>()) == Iceberg::f_time)
                         result.insert(field_id);
+                });
+    }
+    return result;
+}
+
+std::unordered_map<Int64, String> IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_map<Int64, String> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var & type)
+                {
+                    if (type.isString())
+                        result.emplace(field_id, canonicalizeTypeName(type.extract<String>()));
                 });
     }
     return result;
