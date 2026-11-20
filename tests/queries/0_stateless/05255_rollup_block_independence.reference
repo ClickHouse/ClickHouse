@@ -37,6 +37,6 @@ cube, two keys	1	1	5841225	390
 05255-skip-3-sum-float-many-blocks	sum	0	1	0	0
 05255-skip-4-sum-int64-one-block	sum	0	0	0	0
 05255-skip-5-sum-int64-independent-partitions	sum	1	1	0	0
-05255-skip-6-sum-int64-adaptive	sum	1	1	1	0
+05255-skip-6-sum-int64-adaptive	sum	1	0	1	0
 skip merging engaged	Skip merging: 1
 skip merging disabled	Skip merging: 0

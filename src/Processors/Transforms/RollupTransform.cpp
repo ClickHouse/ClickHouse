@@ -7,8 +7,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 
+#include <algorithm>
+#include <array>
 #include <string_view>
-#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -23,8 +24,7 @@ namespace
 
 /// Aggregates whose state merge is exactly associative and commutative. Any other name, including
 /// another combinator spelling, counts as order-sensitive.
-const std::unordered_set<std::string_view> exactly_commutative_merges
-{
+constexpr auto exactly_commutative_merges = std::to_array<std::string_view>({
     "count", "countIf",
     "sum", "sumIf",
     "min", "minIf",
@@ -33,7 +33,7 @@ const std::unordered_set<std::string_view> exactly_commutative_merges
     "groupBitAnd", "groupBitAndIf",
     "groupBitOr", "groupBitOrIf",
     "groupBitXor", "groupBitXorIf",
-};
+});
 
 /// Floating-point addition and comparison are not associative, so the merges above stay exact only
 /// for these argument types.
@@ -83,7 +83,7 @@ bool hasExactlyCommutativeMerge(const IAggregateFunction & function)
     if (!properties || properties->is_order_dependent)
         return false;
 
-    if (!exactly_commutative_merges.contains(std::string_view{name}))
+    if (!std::ranges::contains(exactly_commutative_merges, std::string_view{name}))
         return false;
 
     for (const auto & argument_type : function.getArgumentTypes())

@@ -169,9 +169,11 @@ SETTINGS max_block_size = 100, group_by_two_level_threshold = 1;
 -- Each run below carries its own log comment, so the profile events can be read back per run. Runs
 -- 1, 5 and 6 receive several blocks and only exactly merging aggregates, so they report the skipped
 -- merge; 2 and 3 hold an aggregate that does not merge exactly, and 4 receives a single block. The
--- second column says whether the run split its input at all, which is what makes 2 and 3 reporting
--- nothing a statement about the aggregate rather than about the input; the third says which runs
--- used the adaptive algorithm; the fourth says that no run reached the external aggregation limit.
+-- second column says whether the run converted a hash table to two-level, which is what splits the
+-- input of runs 1, 2, 3 and 5 and makes 2 and 3 reporting nothing a statement about the aggregate
+-- rather than about the input; the third says which runs used the adaptive algorithm, which splits
+-- the input of run 6 without that conversion; the fourth says that no run reached the external
+-- aggregation limit.
 
 SELECT a, b, sum(v) FROM rollup_blocks GROUP BY a, b WITH ROLLUP
 SETTINGS log_comment = '05255-skip-1-sum-int64-many-blocks', log_queries = 1,
