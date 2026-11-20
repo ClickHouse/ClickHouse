@@ -396,13 +396,13 @@ bool mayStopReadingEarly(const SelectQueryInfo & query_info)
 /// records its own row subset; it counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
 {
-    /// The read may return only some of the rows for a reason that is not attributed to the columns it depends on: it
-    /// limits or samples them, skips deleted rows, may stop early, or filters them by a predicate whose columns are not
-    /// known.
+    /// The read may return only some of the rows for a reason other than predicates attributed to the columns they read:
+    /// it limits or samples them, skips deleted rows, may stop early, or filters them by a predicate that is not
+    /// attributed (see `getColumnsReadByPredicates`).
     bool may_drop_rows = false;
     /// The stored columns read by the predicates that may drop rows of the read, if each of them is attributed to the
-    /// columns it reads (see `getFilteredColumns`); unset without such predicates.
-    std::optional<NameSet> filtered_columns;
+    /// columns it reads (see `getColumnsReadByPredicates`); unset without such predicates.
+    std::optional<NameSet> columns_read_by_predicates;
     /// The read may return values that the statistics did not measure.
     bool may_rewrite_values = false;
     /// The `n` of a top-K read (`ORDER BY ... LIMIT n`), see `mayDropRows`. The `__topKFilter` PREWHERE that a later
@@ -415,15 +415,15 @@ struct ReadCoverage
     /// have been seen. So if nothing else drops rows, it keeps all `selected_rows` if there are at most `n`.
     [[nodiscard]] bool mayDropRows(UInt64 selected_rows) const
     {
-        return may_drop_rows || filtered_columns || (top_k_limit && selected_rows > *top_k_limit);
+        return may_drop_rows || columns_read_by_predicates || (top_k_limit && selected_rows > *top_k_limit);
     }
 
-    /// `filtered_columns` if the attributed predicates are the only possible cause of dropped rows. Whether a top-K read
-    /// drops rows depends on the estimated rows, which the predicates decide, so with a top-K limit they are not
-    /// attributed.
-    [[nodiscard]] const NameSet * attributedFilteredColumns() const
+    /// The columns that decide which rows are dropped, `columns_read_by_predicates`, if the attributed predicates are the
+    /// only possible cause of dropped rows. Whether a top-K read drops rows depends on the estimated rows, which the
+    /// predicates decide, so with a top-K limit they are not attributed.
+    [[nodiscard]] const NameSet * columnsDecidingDroppedRows() const
     {
-        return filtered_columns && !may_drop_rows && !top_k_limit ? &*filtered_columns : nullptr;
+        return columns_read_by_predicates && !may_drop_rows && !top_k_limit ? &*columns_read_by_predicates : nullptr;
     }
 
     /// Records in the column statistics of `stats` what the read may drop or rewrite. Rows dropped only by attributed
@@ -433,7 +433,7 @@ struct ReadCoverage
     {
         if (mayDropRows(selected_rows))
         {
-            if (const auto * columns = attributedFilteredColumns())
+            if (const auto * columns = columnsDecidingDroppedRows())
             {
                 for (auto & [column_name, column_stats] : stats.column_stats)
                     column_stats.addTransformation(columns->contains(column_name) ? RowSubset : FilterOnOtherColumns);
@@ -520,7 +520,7 @@ struct StatsUnderFilter
 /// column of the table (a column computed by the read, a virtual column, a subcolumn, a correlated column), contains
 /// `arrayJoin`, or a function whose result is not determined by its arguments (e.g. `rowNumberInAllBlocks`, whose
 /// predicate selects rows by their position, or `rand`).
-std::optional<NameSet> getFilteredColumns(const ReadFromMergeTree & reading, const ActionsDAG::Node * parent_predicate)
+std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & reading, const ActionsDAG::Node * parent_predicate)
 {
     ActionsDAG::NodeRawConstPtrs predicates;
     if (parent_predicate)
@@ -549,7 +549,7 @@ std::optional<NameSet> getFilteredColumns(const ReadFromMergeTree & reading, con
         predicates.insert(predicates.end(), filter_actions_dag->getOutputs().begin(), filter_actions_dag->getOutputs().end());
 
     const auto & columns = reading.getStorageMetadata()->getColumns();
-    NameSet filtered_columns;
+    NameSet columns_read;
     const bool is_attributed = visitReachableNodes(
         predicates,
         [&](const ActionsDAG::Node * node)
@@ -559,7 +559,7 @@ std::optional<NameSet> getFilteredColumns(const ReadFromMergeTree & reading, con
                 case ActionsDAG::ActionType::INPUT:
                     if (!columns.hasPhysical(node->result_name) || columns_computed_by_read.contains(node->result_name))
                         return VisitResult::Stop;
-                    filtered_columns.insert(node->result_name);
+                    columns_read.insert(node->result_name);
                     return VisitResult::Continue;
                 case ActionsDAG::ActionType::FUNCTION:
                     if (!node->function_base || node->function_base->isStateful() || !node->function_base->isDeterministicInScopeOfQuery())
@@ -574,7 +574,7 @@ std::optional<NameSet> getFilteredColumns(const ReadFromMergeTree & reading, con
         });
     if (!is_attributed)
         return {};
-    return filtered_columns;
+    return columns_read;
 }
 
 /// The coverage of a MergeTree read of `parts`. The estimate accounts for `filter`, so it describes a subset of the rows
@@ -600,7 +600,7 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
     ReadCoverage coverage{
         .may_drop_rows = has_unattributed_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
             || mayStopReadingEarly(query_info),
-        .filtered_columns = {},
+        .columns_read_by_predicates = {},
         /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
         /// `FINAL` read counts, so that new merge modes fail closed.
         .may_rewrite_values = has_on_the_fly_data_changes || query_info.isFinal()
@@ -610,8 +610,8 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
     };
     if (has_attributable_predicates)
     {
-        coverage.filtered_columns = getFilteredColumns(reading, parent_predicate);
-        if (!coverage.filtered_columns)
+        coverage.columns_read_by_predicates = getColumnsReadByPredicates(reading, parent_predicate);
+        if (!coverage.columns_read_by_predicates)
             coverage.may_drop_rows = true;
     }
     return coverage;
@@ -782,7 +782,7 @@ std::optional<RelationStats> estimateDirectRelationStats(QueryPlan::Node & node,
         const ReadCoverage coverage{
             .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
                 || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
-            .filtered_columns = {},
+            .columns_read_by_predicates = {},
             .may_rewrite_values = false,
             .top_k_limit = std::nullopt};
 

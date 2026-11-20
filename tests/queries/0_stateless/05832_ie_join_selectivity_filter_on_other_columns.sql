@@ -1,6 +1,6 @@
 -- The statistics-based choice of the IEJoin key conditions over a join input filtered on other columns.
 -- A predicate that does not read an operand leaves its value range representative (`FilterOnOtherColumns`),
--- under the assumption that the operand is independent of the filtered columns, so the conditions are still
+-- under the assumption that the operand is independent of the columns the predicate reads, so the conditions are still
 -- chosen by selectivity. A predicate that reads an operand, or a row drop that is not attributed to the columns
 -- a predicate reads, makes the choice fall back to the first two conditions in syntax order.
 -- The conditions chosen by selectivity are `a1 < b1 AND a3 < b3`; the syntax order is `a1 < b1 AND a2 < b2`.
