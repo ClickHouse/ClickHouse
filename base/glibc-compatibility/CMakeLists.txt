@@ -48,8 +48,9 @@ if (GLIBC_COMPATIBILITY)
         # of the sysroot (see cmake/linux/default_libs.cmake). It's copied to a stable path that the link
         # flags reference, and every executable links `glibc-compatibility`, which depends on the copy.
         add_library(glibc-compatibility-crt1 OBJECT crt/aarch64/crt1.c)
-        # Runs before the sanitizer runtimes are initialized.
-        target_compile_options(glibc-compatibility-crt1 PRIVATE -fno-sanitize=all -fno-stack-protector)
+        # Runs before the sanitizer runtimes are initialized. Not LTO: `__libc_csu_init` and `__libc_csu_fini` are
+        # referenced only from the inline assembly of `_start`, which LTO does not see (as for musl's startup objects).
+        target_compile_options(glibc-compatibility-crt1 PRIVATE -fno-sanitize=all -fno-stack-protector -fno-lto -fno-whole-program-vtables)
         set_target_properties(glibc-compatibility-crt1 PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
