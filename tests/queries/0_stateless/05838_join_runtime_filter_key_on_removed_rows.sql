@@ -53,7 +53,15 @@ CREATE TABLE t (x UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number % 2 AS x, if(x = 0, [], [1, 2]) FROM numbers(100000);
 SELECT count() FROM (SELECT x, a FROM t ARRAY JOIN arr AS a) AS q JOIN r ON intDiv(100, q.x) = r.k;
 
--- A key that cannot throw still reaches the scan below the lower join.
+-- A single join, with a WHERE that is not filtered atom by atom together with the runtime filter.
+CREATE TABLE p2 (id UInt64, b UInt8, s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO p2 SELECT number, number % 10 != 0 AS b, if(b = 0, 'bad', '1.2.3.4') FROM numbers(100000);
+CREATE TABLE r32 (k UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO r32 VALUES (16909060);
+SELECT count() FROM p2 JOIN r32 ON IPv4StringToNum(p2.s) = r32.k WHERE p2.b = 1 SETTINGS query_plan_merge_filters = 0;
+SELECT count() FROM p2 JOIN r32 ON IPv4StringToNum(p2.s) = r32.k WHERE p2.b SETTINGS optimize_move_to_prewhere = 0;
+
+-- A key that cannot throw still reaches the scan below the lower join (`Runtime filters:` of its PREWHERE).
 CREATE TABLE r64 (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO r64 VALUES (5);
-SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2);
+SELECT countIf(explain LIKE '%Runtime filters:%_CAST(id32%') FROM (EXPLAIN SELECT count() FROM p JOIN g ON p.id = g.id JOIN r64 ON p.id32 = r64.k WHERE p.b + g.flag = 2 SETTINGS optimize_move_to_prewhere = 1);
