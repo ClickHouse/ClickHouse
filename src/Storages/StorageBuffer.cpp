@@ -648,8 +648,23 @@ void StorageBuffer::read(
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
+        /// The query can name a table that forwards the read here (a materialized view, an `Alias` or another `Buffer`).
+        /// Name this table instead, otherwise the buffers' analyzer does not swap the buffers in and reads that table again.
+        IQueryTreeNode::ReplacementMap replacement_map;
+        if (query_info.table_expression)
+        {
+            auto buffers_table_expression = std::make_shared<TableNode>(storage, local_context);
+            buffers_table_expression->setAlias(query_info.table_expression->getAlias());
+            if (const auto * table_node = query_info.table_expression->as<TableNode>())
+            {
+                if (auto table_expression_modifiers = table_node->getTableExpressionModifiers())
+                    buffers_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+            }
+            replacement_map.emplace(query_info.table_expression.get(), std::move(buffers_table_expression));
+        }
+
         /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
-        auto query_tree = query_info.query_tree->clone();
+        auto query_tree = query_info.query_tree->cloneAndReplace(replacement_map);
         removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
 
         auto interpreter

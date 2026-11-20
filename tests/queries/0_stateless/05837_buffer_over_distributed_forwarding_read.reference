@@ -1,0 +1,21 @@
+buffer
+1
+2
+3
+materialized view
+1
+2
+3
+1	1
+2	1
+3	1
+alias
+1
+2
+3
+buffer over buffer
+1
+2
+3
+4
+10
