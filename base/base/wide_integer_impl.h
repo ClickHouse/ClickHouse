@@ -586,6 +586,17 @@ struct integer<Bits, Signed>::_impl
             return static_cast<T>(n.items[little(0)]);
     }
 
+    /// With such a `long double`, the general conversion of a two-item value rounds only once, because `res * (2^64 - 1) + res`
+    /// is exactly `res * 2^64` in its loop: the exact sum of both items, rounded to nearest, gives the same result.
+    static constexpr bool two_items_convert_in_one_rounding = item_count == 2 && lowest_item_converts_directly;
+
+    constexpr static long double two_items_to_long_double(const integer<Bits, Signed> & n) noexcept
+    {
+        using HighItem = std::conditional_t<std::is_same_v<Signed, signed>, signed_base_type, base_type>;
+        return static_cast<long double>(static_cast<HighItem>(n.items[little(1)])) * 0x1p64L
+            + static_cast<long double>(n.items[little(0)]);
+    }
+
     template <typename T>
     constexpr static auto to_Integral(T f) noexcept
     {
@@ -1746,6 +1757,9 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<long double>(*this);
 
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return _impl::two_items_to_long_double(*this);
+
     if (_impl::operator_eq(*this, 0))
         return 0;
 
@@ -1774,6 +1788,9 @@ constexpr integer<Bits, Signed>::operator double() const noexcept
     if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<double>(*this);
 
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return static_cast<double>(_impl::two_items_to_long_double(*this));
+
     return static_cast<double>(static_cast<long double>(*this));
 }
 
@@ -1782,6 +1799,9 @@ constexpr integer<Bits, Signed>::operator float() const noexcept
 {
     if (_impl::lowest_item_converts_directly && _impl::fits_in_lowest_item(*this))
         return _impl::template lowest_item_to_floating_point<float>(*this);
+
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return static_cast<float>(_impl::two_items_to_long_double(*this));
 
     return static_cast<float>(static_cast<long double>(*this));
 }
