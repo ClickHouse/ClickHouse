@@ -60,10 +60,10 @@ public:
         UInt64 terminalStateGeneration() const { return terminal_state_generation.load(); }
         /// Whether the `Processing` state is only an observation of a `processing` node held by
         /// another processor (see `processing_observed_in_keeper_time`).
-        bool isProcessingObservedInKeeper() const { return processing_observed_in_keeper_time.load() != 0; }
+        [[nodiscard]] bool isProcessingObservedInKeeper() const { return processing_observed_in_keeper_time.load() != 0; }
         /// Whether such an observation is still trusted, i.e. it is younger than `ttl_seconds`.
         /// A zero TTL trusts nothing: keeper is checked on every attempt.
-        bool isProcessingObservedInKeeperTrusted(size_t ttl_seconds) const;
+        [[nodiscard]] bool isProcessingObservedInKeeperTrusted(size_t ttl_seconds) const;
 
         std::string getException() const;
 
@@ -192,7 +192,7 @@ public:
     /// The last `trySetProcessing` returned `false` only because a concurrent local attempt
     /// (another thread, or another table sharing the keeper path) held `processing_lock`:
     /// neither keeper nor the cached state was consulted, so the outcome is unknown.
-    bool isSetProcessingContended() const { return set_processing_contended; }
+    [[nodiscard]] bool isSetProcessingContended() const { return set_processing_contended; }
     /// Reset processing
     /// (file will not be set neither as Failed nor Processed,
     /// simply Processing state will be cancelled).

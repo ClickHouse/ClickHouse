@@ -254,7 +254,7 @@ public:
         std::map<OrderingDomain, std::set<std::string>> unresolved_set_processing_per_domain TSA_GUARDED_BY(next_mutex);
         std::condition_variable set_processing_resolved_cv;
 
-        OrderingDomain getOrderingDomain(const std::string & path) const;
+        [[nodiscard]] OrderingDomain getOrderingDomain(const std::string & path) const;
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         /// Whether one more ordering barrier fits into `max_ordering_barriers`. If not, blocks
         /// the rest of the listing pass, see `ordering_barriers_overflowed`.
@@ -303,7 +303,7 @@ public:
         /// The replays among the taken files are added to `in_flight_replays_per_domain` and to `taken_replays`.
         ObjectInfos takeDueForeignProcessingRechecks(std::vector<std::string> & taken_replays) TSA_REQUIRES(next_mutex);
         /// When the recheck of `pending` is due, judging by the most recent cached observation.
-        time_t getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const;
+        [[nodiscard]] time_t getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const;
         std::vector<PendingRecheck> takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
         /// Queues a recheck of a file skipped because of the foreign `processing` observation in `status`.
         void queueForeignProcessingRecheck(ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status) TSA_REQUIRES(next_mutex);
