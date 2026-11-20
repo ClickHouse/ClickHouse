@@ -155,7 +155,7 @@ public:
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
-    bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
+    [[nodiscard]] bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
 
     void chmod(const String & path, mode_t mode) override;
 
