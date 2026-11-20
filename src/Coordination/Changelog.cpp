@@ -4432,7 +4432,31 @@ void Changelog::finalizeChangelogsAfterRead(
                     const auto source_disk = description->disk;
                     const auto source_path = description->path;
                     /// A failed move is logged, and the changelog stays where it is.
-                    std::ignore = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+                    const auto move_result = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+                    /// As in the background moves, the unpublished destination must not survive: it may
+                    /// be complete and match its move marker, so it would resurrect the range on restart
+                    /// after `writeAt` rewrites or supersedes it. If it cannot be removed, the failure is
+                    /// kept on the changelog, and `writeAt` rejects a rewrite that would touch the range.
+                    if (!move_result && move_result.error() != KeeperMoveError::DestinationPublishedSourceRemovalFailed
+                        && description->withReadLock([&] { return description->disk != disk; }))
+                    {
+                        try
+                        {
+                            LOG_WARNING(
+                                log,
+                                "Removing unpublished copy {} of changelog {} from disk {} after a failed move at startup",
+                                source_path,
+                                description->getPathSafe(),
+                                disk->getName());
+                            /// A leftover move marker without its destination is an orphan that startup removes.
+                            removeKeeperFileIfExists(disk, source_path);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, fmt::format("Failed to remove unpublished copy {} of changelog", source_path));
+                            description->setMoveError(std::current_exception());
+                        }
+                    }
                 });
         }
         pool.wait();
@@ -4922,6 +4946,13 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                 description = std::prev(index_changelog)->second;
 
             description->waitAllAsyncOperations();
+            /// The rewrite supersedes every later changelog, which is removed below. Removal unlinks only
+            /// the registered file: a copy left on another disk by a failed move of a superseded changelog
+            /// would resurrect its obsolete entries on restart. Wait for the moves of the superseded
+            /// changelogs, and reject the rewrite before modifying anything if one of them left such a copy.
+            for (auto itr = existing_changelogs.upper_bound(index); itr != existing_changelogs.end(); ++itr)
+                itr->second->waitAllAsyncOperations();
+
             /// if the changelog is broken at end, we cannot append it with new logs
             /// we create a new file starting with the required index
             if (description->broken_at_end)
