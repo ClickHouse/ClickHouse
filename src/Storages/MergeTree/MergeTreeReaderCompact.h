@@ -53,6 +53,10 @@ protected:
         size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
         MutableColumns & res_columns, Columns & shared_columns);
 
+    /// Whether the first mark range of the task is served from the columns cache without touching
+    /// the part, so a prefetch of it would read data that is not needed. See `MergeTreeReaderWide::canServeFirstRangeFromCache`.
+    bool canServeFirstRangeFromCache() const;
+
     /// Read the granule `mark` of `rows_to_read` rows from the part, appending it to `res_columns`:
     /// the columns `columns_mask` selects, or all of them that are in the part if it is null.
     virtual void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) = 0;
