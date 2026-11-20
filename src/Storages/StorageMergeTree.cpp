@@ -1588,6 +1588,10 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     assertNotReadonly();
     auto context_copy = Context::createCopy(query_context);
 
+    /// Unlike `StorageReplicatedMergeTree::updateLightweight`, the partitions of the scoped commands are
+    /// not resolved here: a single global block number is allocated (not one per affected partition),
+    /// and no pending mutation entry is persisted, so the partition expression is evaluated only once,
+    /// by `MutationsInterpreter` while it produces the patch.
     PlainLightweightUpdateHolder update_holder;
     update_holder.update_lock = getLockForLightweightUpdate(commands, context_copy);
     update_holder.block_holder = allocateBlockNumber(CommittingBlock::Op::Update);
