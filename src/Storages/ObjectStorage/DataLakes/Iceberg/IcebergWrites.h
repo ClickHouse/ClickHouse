@@ -199,7 +199,7 @@ private:
     std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
-    Int64 current_schema_id;
+    Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
@@ -212,12 +212,17 @@ private:
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    /// Reads the latest committed metadata, which the data files are written with. Called on the first chunk.
+    void initializeFromLatestMetadata();
+    /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
     bool initializeMetadata();
+    /// Makes the latest committed metadata the base of the next commit attempt.
+    void rebaseOnLatestMetadata();
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
-    Int64 partition_spec_id;
+    Int64 partition_spec_id = 0;
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
@@ -234,7 +239,7 @@ private:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
-    CompressionMethod metadata_compression_method;
+    CompressionMethod metadata_compression_method = CompressionMethod::None;
     /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
     String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;

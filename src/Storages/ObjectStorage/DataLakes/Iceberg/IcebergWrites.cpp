@@ -26,6 +26,7 @@
 #include <Functions/identity.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
@@ -43,6 +44,7 @@
 #include <base/Decimal.h>
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
+#include <base/sleep.h>
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
@@ -55,10 +57,12 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <random>
 #include <sstream>
 
 #if USE_AVRO
@@ -91,6 +95,8 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_commit_retry_initial_backoff_ms;
+    extern const SettingsUInt64 iceberg_insert_commit_retry_max_backoff_ms;
 }
 
 namespace DataLakeStorageSetting
@@ -1295,6 +1301,10 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+}
+
+void IcebergStorageSink::initializeFromLatestMetadata()
+{
     /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
     /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
     /// rather than let the first commit build on a file the table never committed.
@@ -1305,7 +1315,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.table_path,
         *data_lake_settings,
         persistent_table_components.metadata_cache,
-        context_,
+        context,
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
@@ -1355,12 +1365,12 @@ IcebergStorageSink::IcebergStorageSink(
         if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
         {
             partititon_spec = current_partition_spec;
-            Block extended_block_for_sorting = *sample_block_;
+            Block extended_block_for_sorting = *sample_block;
             if (!sort_description.column_names.empty())
                 sortBlockByKeyDescription(extended_block_for_sorting, sort_description, context);
 
             if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context_, std::make_shared<const Block>(extended_block_for_sorting));
+                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context, std::make_shared<const Block>(extended_block_for_sorting));
             break;
         }
     }
@@ -1378,6 +1388,12 @@ void IcebergStorageSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
+
+    /// A parallel insert creates `max_insert_threads` sinks and many of them may receive no data. Such a sink
+    /// commits nothing, so it does not look up the latest metadata either, which lists the metadata directory.
+    if (!metadata)
+        initializeFromLatestMetadata();
+
     total_rows += chunk.getNumRows();
 
     size_t start_columns_size = chunk.getNumColumns();
@@ -1505,25 +1521,38 @@ void IcebergStorageSink::finalizeBuffers()
 
     snapshot_id = MetadataGenerator(metadata).generateSnapshotId();
 
-    /// TODO: there's a chance that initializeMetadata() doesn't succeed within MAX_TRANSACTION_RETRIES without throwing, perhaps we should fail in this case
-    size_t i = 0;
-    bool successed_write = false;
-    while (i < MAX_TRANSACTION_RETRIES)
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_backoff_ms = settings[Setting::iceberg_insert_commit_retry_max_backoff_ms];
+    UInt64 backoff_ms = std::min<UInt64>(settings[Setting::iceberg_insert_commit_retry_initial_backoff_ms], max_backoff_ms);
+
+    for (size_t attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
+        if (attempt > 0)
+        {
+            /// The writers that lost the same race would otherwise look up the new base and commit at the same moment
+            /// again, and only one of them would win again. The delay is taken before the lookup, so that the base
+            /// the next attempt commits on is as recent as possible.
+            if (backoff_ms > 0)
+            {
+                sleepForMilliseconds(std::uniform_int_distribution<UInt64>(0, backoff_ms)(thread_local_rng));
+                backoff_ms = backoff_ms > max_backoff_ms / 2 ? max_backoff_ms : backoff_ms * 2;
+            }
+            if (auto process_list_element = context->getProcessListElement())
+                process_list_element->checkTimeLimit();
+
+            rebaseOnLatestMetadata();
+        }
+
         if (initializeMetadata())
         {
-            successed_write = true;
             committed = true;
-            break;
+            return;
         }
-        ++i;
     }
-    if (!successed_write)
-    {
-        /// The last conflict kept the files for a retry that will not happen.
-        removeDataFilesAndManifests();
-        throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
-    }
+
+    /// The last conflict kept the files for a retry that will not happen.
+    removeDataFilesAndManifests();
+    throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
 }
 
 void IcebergStorageSink::releaseBuffers()
@@ -1567,6 +1596,56 @@ void IcebergStorageSink::removeDataFilesAndManifests()
             tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_filename_in_storage));
         }
     }
+}
+
+void IcebergStorageSink::rebaseOnLatestMetadata()
+{
+    /// When retrying after a metadata conflict, we must read the actual latest
+    /// metadata version, not the explicitly specified one. If a table was created
+    /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
+    /// loop must still discover the real latest version to advance past it.
+    /// Otherwise the loop keeps regenerating the same target version and fails.
+    auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
+        object_storage,
+        catalog,
+        table_id.getTableName(),
+        persistent_table_components.table_path,
+        *data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        getLogger("IcebergWrites").get(),
+        persistent_table_components.table_uuid,
+        persistent_table_components.metadata_compression_method,
+        /* ignore_metadata_pointer_overrides */ true);
+    base_catalog_metadata_location = std::move(catalog_metadata_location);
+
+    LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
+
+    metadata_compression_method = compression_method;
+    filename_generator.setBaseMetadataFile(last_version, metadata_path);
+
+    metadata = deepCopy(getMetadataJSONObject(
+        metadata_path,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        getLogger("IcebergWrites"),
+        compression_method,
+        persistent_table_components.table_uuid));
+
+    auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+    if (new_schema_id != current_schema_id)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
+
+    auto schemas = metadata->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i));
+        }
+    }
+    /// The partition spec stays as on the first attempt. The manifests are already written with it.
 }
 
 bool IcebergStorageSink::initializeMetadata()
@@ -1623,57 +1702,8 @@ bool IcebergStorageSink::initializeMetadata()
         if (!retry_because_of_metadata_conflict)
             removeDataFilesAndManifests();
 
+        /// After a conflict the caller rebases the next attempt with `rebaseOnLatestMetadata`.
         best_effort_remove(storage_manifest_list_name);
-
-        if (retry_because_of_metadata_conflict)
-        {
-            /// When retrying after a metadata conflict, we must read the actual latest
-            /// metadata version, not the explicitly specified one. If a table was created
-            /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
-            /// loop must still discover the real latest version to advance past it.
-            /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
-                object_storage,
-                catalog,
-                table_id.getTableName(),
-                persistent_table_components.table_path,
-                *data_lake_settings,
-                persistent_table_components.metadata_cache,
-                context,
-                getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid,
-                persistent_table_components.metadata_compression_method,
-                /* ignore_metadata_pointer_overrides */ true);
-            base_catalog_metadata_location = std::move(catalog_metadata_location);
-
-            LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
-
-            metadata_compression_method = compression_method;
-            filename_generator.setBaseMetadataFile(last_version, metadata_path);
-
-            metadata = deepCopy(getMetadataJSONObject(
-                metadata_path,
-                object_storage,
-                persistent_table_components.metadata_cache,
-                context,
-                getLogger("IcebergWrites"),
-                compression_method,
-                persistent_table_components.table_uuid));
-
-            auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-            if (new_schema_id != current_schema_id)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
-
-            auto schemas = metadata->getArray(Iceberg::f_schemas);
-            for (size_t i = 0; i < schemas->size(); ++i)
-            {
-                if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-                {
-                    current_schema = schemas->getObject(static_cast<UInt32>(i));
-                }
-            }
-            /// The partition spec stays as on the first attempt. The manifests are already written with it.
-        }
     };
 
     try
