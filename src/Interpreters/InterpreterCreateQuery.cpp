@@ -3365,7 +3365,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        InterpreterCreateQuery create_interpreter(query_ptr, create_context);
+        create_interpreter.setInternal(internal);
+        [[maybe_unused]] bool done = create_interpreter.doCreateTable(create, properties, ddl_guard, mode);
         ddl_guard.reset();
         chassert(done);
         created = true;
