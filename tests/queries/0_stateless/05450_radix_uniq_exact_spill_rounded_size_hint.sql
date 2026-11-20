@@ -4,7 +4,7 @@
 -- Small blocks keep the memory of the rest of the query small, and so do two threads for the builds of the buckets:
 -- each build holds a set of up to 2 MiB, sized for all the copies of its keys that the spills wrote.
 
-SET max_threads = 8, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192, count_distinct_optimization = 0,
+SET max_threads = 8, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192,
     optimize_uniq_exact_radix_partitioning = 1, collect_hash_table_stats_during_aggregation = 1,
     max_bytes_ratio_before_external_group_by = 0;
 
