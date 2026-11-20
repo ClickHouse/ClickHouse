@@ -39,7 +39,7 @@ def cluster():
         )
         # Apache ZooKeeper rather than Keeper: Keeper changes the `cversion` of the parent on a write
         # to a child, which the update loop of the server polls, and that would hide a replica
-        # missing the rewrite of an entry it could not read (test_zookeeper_storage_missing_key_rewritten).
+        # missing a write to an entry (test_zookeeper_storage_missing_key_rewritten).
         cluster.add_instance(
             "node_with_keeper_encrypted",
             main_configs=[
@@ -457,7 +457,8 @@ def test_zookeeper_storage_missing_key(cluster):
 def test_zookeeper_storage_missing_key_rewritten(cluster):
     # node1 holds key A (the module configuration), node2 holds key B alone: node2 skips the entry
     # node1 writes. node1 then gets key B as the current key and rewrites the entry with it, and
-    # node2 loads the entry without a restart, although the set of entries did not change.
+    # node2 loads the entry without a restart, although the set of entries did not change. node2
+    # picks up the next write to the entry as well.
     node1 = cluster.instances["node_with_keeper_encrypted"]
     node2 = cluster.instances["node_with_keeper_2_encrypted"]
 
@@ -485,6 +486,14 @@ def test_zookeeper_storage_missing_key_rewritten(cluster):
         node2,
         "SELECT collection['key1'] FROM system.named_collections WHERE name = 'rewritten'",
         "2",
+    )
+
+    # The entry is readable by node2 now, and it keeps following the writes to it.
+    node1.query("ALTER NAMED COLLECTION rewritten SET key1=3")
+    assert_eq_with_retry(
+        node2,
+        "SELECT collection['key1'] FROM system.named_collections WHERE name = 'rewritten'",
+        "3",
     )
 
     # Back to the module's configuration for the other tests.

@@ -288,7 +288,7 @@ public:
 
     std::string getReplicationId() const override { return root_path; }
 
-    /// Return true if children changed.
+    /// Return true if the set of entries or an entry changed.
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::waitUpdate");
@@ -306,7 +306,7 @@ public:
 
         if (event->tryWait(timeout))
         {
-            /// Children changed before timeout.
+            /// A watch set by `list` or `read` fired before timeout.
             return true;
         }
 
@@ -346,9 +346,23 @@ public:
         return getClient()->exists(getPath(file_name));
     }
 
+    /// Leaves a watch on the entry, which makes `waitUpdate` return once the entry is written again
+    /// or removed: the watch set by `list` reports changes of the set of entries, not of their data.
+    /// A watch fires once; the reload it causes reads the entry again, which sets the next one.
     std::string read(const std::string & file_name) const override
     {
-        return readHook(readRaw(file_name));
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
+        auto client = getClient();
+
+        Coordination::EventPtr event;
+        {
+            std::lock_guard lock{state_mutex};
+            if (!wait_event)
+                wait_event = std::make_shared<Poco::Event>();
+            event = wait_event;
+        }
+
+        return readHook(client->get(getPath(file_name), nullptr, event));
     }
 
     std::string readRaw(const std::string & file_name) const override
@@ -404,21 +418,6 @@ public:
         if (code == Coordination::Error::ZNONODE)
             return false;
         throw Coordination::Exception::fromPath(code, getPath(file_name));
-    }
-
-protected:
-    /// `readRaw`, and makes `waitUpdate` return once the entry is written again or removed: the
-    /// watch set by `list` reports changes of the set of entries, not of their data.
-    std::string readRawWatched(const std::string & file_name) const
-    {
-        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::readRawWatched");
-        auto client = getClient();
-
-        std::lock_guard lock{state_mutex};
-        if (!wait_event)
-            wait_event = std::make_shared<Poco::Event>();
-
-        return client->get(getPath(file_name), nullptr, wait_event);
     }
 
 private:
@@ -526,13 +525,6 @@ public:
         return std::string(out.str());
     }
 
-protected:
-    /// Whether the key the entry is encrypted with is configured; `readHook` throws otherwise.
-    [[nodiscard]] bool hasKeyFor(const std::string & data) const
-    {
-        return keys.all_keys.contains(readHeader(data).key_fingerprint);
-    }
-
 private:
     /// HMAC-SHA256.
     static constexpr size_t backup_mac_size = 32;
@@ -602,23 +594,7 @@ class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedColle
 
 class NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>
 {
-public:
     using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>::NamedCollectionsMetadataStorageEncrypted;
-
-    std::string read(const std::string & file_name) const override
-    {
-        std::string data = readRaw(file_name);
-
-        /// An entry encrypted with a key this server lacks is skipped (see `getAll`), and loads once a
-        /// server holding that key rewrites it with a key this server has, as `ALTER NAMED COLLECTION`
-        /// does after a key rotation. `waitUpdate` reports a change of the set of entries, not a write
-        /// to an entry, so such an entry is read again with a watch on it, which also covers a rewrite
-        /// between the two reads.
-        if (!hasKeyFor(data))
-            data = readRawWatched(file_name);
-
-        return readHook(data);
-    }
 };
 
 #endif
@@ -670,7 +646,7 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             /// The entry is encrypted with a key which is not configured, for example a key removed
             /// after a rotation before every entry was rewritten. The other collections stay available;
             /// the entry is kept in the storage and loads again once its key is configured, or once
-            /// another server rewrites it with a configured key (see `ZooKeeperStorageEncrypted::read`).
+            /// another server rewrites it with a configured key (see `ZooKeeperStorage::read`).
             if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
             {
                 /// The name is for the server log only: this may run in the thread of a query (a reload
