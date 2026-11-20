@@ -38,8 +38,10 @@ public:
     ~StatisticsBasic() override;
 
     void build(const ColumnPtr & column) override;
-    /// A NULL bound leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
-    void build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+    /// A summary of data that was not read (e.g. a data lake file). A NULL bound leaves min/max unknown, so they miss the
+    /// values of the rows unless all of them are NULL (see `minMaxCoversAllValues`); `null_count` counts only for a column
+    /// whose default is NULL, and nullopt leaves the NULLs of the rows uncounted (see `nullCountCoversAllRows`).
+    void build(UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
@@ -58,6 +60,14 @@ public:
     [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
     [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
     [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
+    /// Whether `min` and `max` bound every non-NULL value of the rows counted. Bounds built from a column always do: a
+    /// NULL bound there means that no value was non-NULL. A summary without bounds for rows that may be non-NULL has
+    /// values that the bounds merged with it miss.
+    [[nodiscard]] bool minMaxCoversAllValues() const { return min_max_covers_all_values; }
+    /// Whether the NULL count counts the NULLs of every row counted. A count built from a column always does. A summary
+    /// without a NULL count for rows that may be NULL counts none of them, so the count merged with it is only a lower
+    /// bound.
+    [[nodiscard]] bool nullCountCoversAllRows() const { return null_count_covers_all_rows; }
     [[nodiscard]] bool hasSum() const { return sum != nullptr; }
 
     [[nodiscard]] const Field & getMin() const { return min; }
@@ -83,6 +93,10 @@ private:
     bool tracks_string = false;
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
+    /// See `minMaxCoversAllValues` and `nullCountCoversAllRows`. Not serialized: only a summary clears them, and summaries
+    /// are never written.
+    bool min_max_covers_all_values = true;
+    bool null_count_covers_all_rows = true;
 
     /// The state of `sum` over the values, allocated only for the types of `canStatisticsTrackSum`, because the parts
     /// keep the statistics of every column in memory. Null also when deserialized from older code that did not write

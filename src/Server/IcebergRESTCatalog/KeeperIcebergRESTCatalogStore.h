@@ -27,7 +27,7 @@ struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
-    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
+    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTables`.
     ZooKeeperNodeVersion version{};
 };
 
@@ -41,7 +41,8 @@ struct UpdateNamespacePropertiesResult
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
 /// Work in progress, not ready for production use.
-/// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`. `<root>/namespaces` and `<root>/tables_by_uuid` are created with the warehouse.
+/// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`.
+/// `<root>/namespaces` and `<root>/tables_by_uuid` are created with the warehouse.
 /// A warehouse dropped and created again gets a new uuid. So a request that still holds the old warehouse cannot write into the new one.
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
@@ -116,15 +117,30 @@ public:
         Updated,
         /// The node changed since `expected` was read.
         VersionMismatch,
-        TableMissing,
-        /// The name exists, but it was dropped and re-created with another uuid.
-        UuidMismatch,
+        /// The table with the expected uuid was dropped. A new table with the same name and another uuid may exist.
+        UuidNodeMissing,
     };
 
-    /// Replaces the metadata location only if the uuid node still has `expected.version`.
+    struct TableUpdate
+    {
+        IcebergNamespaceName ns;
+        String table;
+        /// The set is applied only if the uuid node still has `expected.version`.
+        IcebergTablePointer expected;
+        /// An empty metadata location only checks that the node still has `expected.version`.
+        IcebergTablePointer new_pointer;
+    };
+
+    struct UpdateTablesResult
+    {
+        UpdateTableResult result = UpdateTableResult::Updated;
+        /// Position in `updates` of the table whose check or set failed. Unused when `result` is `Updated`.
+        size_t failed_index = 0;
+    };
+
+    /// Moves every table pointer in one multi, so either every table moves or none does.
     /// Throws `KeeperException` for session or hardware errors. The caller must treat those as an unknown outcome.
-    UpdateTableResult updateTable(
-        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer);
+    UpdateTablesResult updateTables(const std::vector<TableUpdate> & updates);
 
 private:
     /// Returns the current session. Syncs the root once per new session.
