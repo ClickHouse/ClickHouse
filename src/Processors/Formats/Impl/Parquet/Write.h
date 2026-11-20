@@ -53,8 +53,7 @@ struct WriteOptions
     /// Encode `FLOAT` and `DOUBLE` columns with `ALP` instead of `encoding`, without a dictionary.
     /// See `writeColumnImpl` for the reasoning.
     bool use_alp_encoding = false;
-    /// Write data pages as `DataPageV2`: levels uncompressed in front of the values, only the values
-    /// compressed, and pages on record boundaries. See `writeColumnImpl`.
+    /// Write data pages as `DataPageV2` instead of `DataPage`.
     bool use_data_page_v2 = false;
 
     bool write_column_chunk_statistics = true;

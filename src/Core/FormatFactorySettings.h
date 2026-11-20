@@ -1422,7 +1422,7 @@ Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `
 )", 0, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, output_format_parquet_use_data_page_v2, false, R"(
-Write Parquet data pages as `DataPageV2` instead of `DataPage` (V1). A `DataPageV2` page stores the repetition and definition levels uncompressed in front of the values and compresses only the values, so a reader can get nulls, array sizes and row boundaries without decompressing the values. Its header carries the numbers of rows and nulls, and every page begins at a row boundary. A page whose values do not get smaller with the compression method is stored uncompressed, which saves decompression on read. Disabled by default because other writers (Arrow, arrow-rs, parquet-java) write V1 pages by default, and some readers do not support `DataPageV2`.
+Write Parquet data pages as `DataPageV2` instead of `DataPage` (V1). `DataPageV2` stores the repetition and definition levels uncompressed, so that readers can get nulls and array sizes without decompressing the values, records the numbers of rows and nulls in the page header, and starts pages at row boundaries. Some Parquet readers do not support `DataPageV2`.
 )", 0, \
         {"26.12", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(

@@ -1067,6 +1067,18 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
     return scratch;
 }
 
+/// Like `compress`, for a `DataPageV2`: its first `levels_size` bytes, the levels, are not compressed.
+/// As in Arrow, values that the compression doesn't make smaller stay uncompressed, so that the reader
+/// doesn't spend time on decompressing them. `source` is returned iff the values are not compressed.
+PODArray<char> & compressDataPageV2(PODArray<char> & source, size_t levels_size, PODArray<char> & scratch, CompressionMethod method, int level)
+{
+    if (method == CompressionMethod::None || source.size() == levels_size)
+        return source;
+    scratch.assign(source.begin(), source.begin() + levels_size);
+    compressAppend(source.data() + levels_size, source.size() - levels_size, scratch, method, level);
+    return scratch.size() < source.size() ? scratch : source;
+}
+
 /// The most bytes the RLE / bit-packed hybrid encoding of `size` values of `bit_width` bits can take,
 /// with some slack: the size of the longest single run on top.
 size_t maxRLESize(size_t bit_width, size_t size)
@@ -1876,14 +1888,13 @@ void writeColumnImpl(
             s.indexes.offset_index_valid = false;
         }
 
-        /// A `DataPageV2` must hold whole records. The pages around a record that is split anyway,
-        /// because it doesn't fit a page at all (see `max_record_bytes`), are written as V1.
-        const bool page_starts_record = s.max_rep == 0 || s.rep[def_offset] == 0;
-        const bool data_page_v2 = options.use_data_page_v2 && page_starts_record && page_ends_record;
+        /// A `DataPageV2` must hold whole records. A record that doesn't fit a page at all (see
+        /// `max_record_bytes`) is split anyway, and from that page on the column chunk is written as
+        /// V1, so that no V2 page follows a page that ends in the middle of a record.
+        const bool data_page_v2 = options.use_data_page_v2 && s.indexes.offset_index_valid;
 
-        /// Concatenate encoded rep, def, and data. A V1 page compresses all of it, with the length of
-        /// the levels in front of them. A `DataPageV2` compresses only the data, and has the lengths
-        /// of the levels in its header.
+        /// Concatenate encoded rep, def, and data. The levels of a V1 page have a length prefix,
+        /// those of a `DataPageV2` have their lengths in the header.
 
         size_t rep_size = 0;
         size_t def_size = 0;
@@ -1908,8 +1919,6 @@ void writeColumnImpl(
                 ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
         }
 
-        const size_t levels_size = encoded.size();
-
         /// Append the values, and reset the encoder for the next page.
         with_encoder([&](auto & encoder) { encoder.flush(encoded); });
 
@@ -1925,24 +1934,9 @@ void writeColumnImpl(
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
 
         size_t uncompressed_size = encoded.size();
-        PODArray<char> * compressed_ptr = &encoded;
-        /// Only for a `DataPageV2`: whether its values are compressed. As in Arrow, values that the
-        /// compression doesn't make smaller are stored uncompressed, so that the reader doesn't spend
-        /// time on decompressing them. A page without values (all nulls) has nothing to compress.
-        bool values_compressed = false;
-        if (!data_page_v2)
-        {
-            compressed_ptr = &compress(encoded, compressed_maybe, s.compression, s.compression_level);
-        }
-        else if (s.compression != CompressionMethod::None && encoded.size() > levels_size)
-        {
-            compressed_maybe.assign(encoded.begin(), encoded.begin() + levels_size);
-            compressAppend(encoded.data() + levels_size, encoded.size() - levels_size, compressed_maybe, s.compression, s.compression_level);
-            values_compressed = compressed_maybe.size() < encoded.size();
-            if (values_compressed)
-                compressed_ptr = &compressed_maybe;
-        }
-        auto & compressed = *compressed_ptr;
+        auto & compressed = data_page_v2
+            ? compressDataPageV2(encoded, rep_size + def_size, compressed_maybe, s.compression, s.compression_level)
+            : compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed page is too big: {}", compressed.size());
@@ -1968,15 +1962,13 @@ void writeColumnImpl(
             header.__isset.data_page_header_v2 = true;
             auto & d = header.data_page_header_v2;
             d.__set_num_values(static_cast<Int32>(def_count));
-            /// Every level below the maximum definition level, also of an empty or null array:
-            /// `num_values - num_nulls` is the number of values in the page.
+            /// Includes empty and null arrays, as in Arrow: `num_values - num_nulls` is the number of encoded values.
             d.__set_num_nulls(static_cast<Int32>(def_count - data_count));
             d.__set_num_rows(static_cast<Int32>(row_count));
             d.__set_encoding(page_encoding);
             d.__set_definition_levels_byte_length(static_cast<Int32>(def_size));
             d.__set_repetition_levels_byte_length(static_cast<Int32>(rep_size));
-            /// Set even if true, which is the default, as Arrow and arrow-rs do.
-            d.__set_is_compressed(values_compressed);
+            d.__set_is_compressed(&compressed != &encoded);
             if (options.write_page_statistics)
                 d.__set_statistics(page_stats);
         }
