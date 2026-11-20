@@ -2580,7 +2580,13 @@ bool floatColumnHasNegativeZero(const IColumn & column)
         return false;
     }
     if (const auto * col_dynamic = typeid_cast<const ColumnDynamic *>(&column))
+    {
+        /// Shared-variant values are serialized to a String and cannot be scanned cheaply, so treat a
+        /// non-empty shared variant as possibly holding a negative zero and normalize conservatively.
+        if (!col_dynamic->getSharedVariant().empty())
+            return true;
         return floatColumnHasNegativeZero(col_dynamic->getVariantColumn());
+    }
     if (const auto * col_object = typeid_cast<const ColumnObject *>(&column))
     {
         for (const auto & [path, path_column] : col_object->getTypedPaths())
@@ -2589,6 +2595,9 @@ bool floatColumnHasNegativeZero(const IColumn & column)
         for (const auto & [path, path_column] : col_object->getDynamicPaths())
             if (floatColumnHasNegativeZero(*path_column))
                 return true;
+        /// Shared-data values are serialized and not scannable cheaply; normalize conservatively if present.
+        if (!col_object->getSharedDataNestedColumn().getData().empty())
+            return true;
         return false;
     }
     return false;
@@ -2656,6 +2665,21 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     /// A CAST reads the date out of a longer date-time string, while the parser requires the whole string
     /// to be a date, so a String source to Date/Date32 goes through the parser.
     if (isStringOrFixedString(*from) && isDateOrDate32(*to_inner))
+        return false;
+
+    /// A reduced-precision float widened by a CAST keeps its exact bits, while the parser reads its shortest
+    /// text (e.g. Float32 0.1 widens to 0.10000000149..., the parser gives 0.1), so only an identical float
+    /// type matches.
+    if (isFloat(*from) && isFloat(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST reads a number into Time/Time64 as whole seconds, while the parser reads it as ticks.
+    if (isTimeOrTime64(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST writes an Array/Tuple/Map/Variant/Object source in ClickHouse text, not the JSON text the
+    /// parser round trips through, so a structural source to String goes through the parser.
+    if (isStringOrFixedString(*to_inner) && (from->haveSubtypes() || isDynamic(*from)))
         return false;
 
     if (!isNumber(*to_inner) || from->equals(*to_inner))
