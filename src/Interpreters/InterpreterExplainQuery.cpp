@@ -61,7 +61,9 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
@@ -724,17 +726,17 @@ struct ExplainSettings : public Settings
     using Settings::boolean_settings;
     using Settings::integer_settings;
 
-    bool has(const std::string & name_) const
+    [[nodiscard]] bool has(const std::string & name_) const
     {
         return hasBooleanSetting(name_) || hasIntegerSetting(name_);
     }
 
-    bool hasBooleanSetting(const std::string & name_) const
+    [[nodiscard]] bool hasBooleanSetting(const std::string & name_) const
     {
         return boolean_settings.count(name_) > 0;
     }
 
-    bool hasIntegerSetting(const std::string & name_) const
+    [[nodiscard]] bool hasIntegerSetting(const std::string & name_) const
     {
         return integer_settings.count(name_) > 0;
     }
@@ -757,7 +759,7 @@ struct ExplainSettings : public Settings
         it->second.get() = value;
     }
 
-    std::string getSettingsList() const
+    [[nodiscard]] std::string getSettingsList() const
     {
         std::string res;
         for (const auto & setting : boolean_settings)
@@ -1126,7 +1128,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ false);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1224,13 +1226,29 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (settings.query_plan_options.fragments)
             {
-                if (settings.json)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
                 if (settings.query_plan_options.distributed)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
                 if (!settings.optimize)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
             }
+
+            /// The `json = 1` document: a one-element array holding `element`, written as one record. `fragments = 1`
+            /// writes its keys in camelCase, the keys of the steps too, so a reader of it sees one style.
+            const auto write_json = [&](std::unique_ptr<JSONBuilder::JSONMap> element, bool camel_case_keys)
+            {
+                auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
+                plan_array->add(std::move(element));
+
+                auto format_settings = getFormatSettings(query_context);
+                format_settings.json.quote_64bit_integers = false;
+
+                JSONBuilder::FormatSettings json_format_settings{.settings = format_settings, .camel_case_keys = camel_case_keys};
+                JSONBuilder::FormatContext format_context{.out = buf};
+
+                plan_array->format(json_format_settings, format_context);
+
+                single_record = true;
+            };
 
             QueryPlan plan;
 
@@ -1261,7 +1279,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                     const auto build_explain = [&](const FragmentGraph & graph)
                     {
-                        if (settings.query_plan_options.tree)
+                        if (settings.json)
+                            write_json(explainAsFragmentsJSON(graph, settings.query_plan_options), /*camel_case_keys=*/ true);
+                        else if (settings.query_plan_options.tree)
                             explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
                         else
                             explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
@@ -1294,18 +1314,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
-                auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
-                plan_array->add(std::move(plan_map));
-
-                auto format_settings = getFormatSettings(query_context);
-                format_settings.json.quote_64bit_integers = false;
-
-                JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
-                JSONBuilder::FormatContext format_context{.out = buf};
-
-                plan_array->format(json_format_settings, format_context);
-
-                single_record = true;
+                write_json(std::move(plan_map), /*camel_case_keys=*/ false);
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
@@ -1461,7 +1470,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// previously done here), so invalid settings are still rejected, just without re-parsing.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
-            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            /// ignore_quota / ignore_limits during planning (e.g. `system.one` is exempt from the quota).
             auto & analyzed = getAnalyzedInnerQuery();
 
             /// A query that fell back to local execution is a plain local query and is analyzable.
@@ -1501,7 +1510,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+            PrettyNamesPerPlan precomputed_pretty_names
+                = QueryPlanFormat::buildPrettyNamesPerPlan(plan, /*only_built_child_plans=*/ false);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
@@ -1550,7 +1560,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 planning_ns += watch.elapsed();
 
-                step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+                step_profiler = std::make_shared<StepProfiler>(PlanWalk::of(plan, /*only_built_child_plans=*/ false), analyzed.time);
                 pipeline.setStepProfiler(step_profiler);
 
                 CompletedPipelineExecutor executor(pipeline);
@@ -1571,7 +1581,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, watch.getStart(), execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, *step_profiler, watch.getStart(), execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

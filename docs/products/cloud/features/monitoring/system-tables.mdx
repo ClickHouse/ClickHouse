@@ -7,8 +7,6 @@ sidebarTitle: 'System tables'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 All ClickHouse instances come with a set of [system tables](/reference/system-tables/overview) contained in the `system` database that contain information about:
 
 - Server states, processes, and environment.
@@ -53,7 +51,15 @@ You can also use these queries to [create a custom dashboard](https://clickhouse
 
 ClickHouse comes with a built-in advanced observability dashboard feature which can be accessed by `$HOST:$PORT/dashboard` (requires user and password) that shows Cloud Overview metrics contained in `system.dashboards`.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Native advanced observability dashboard" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Native advanced observability dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 This dashboard requires direct authentication to the ClickHouse instance and is separate from the [Cloud Console Advanced Dashboard](/products/cloud/features/monitoring/cloud-console#advanced-dashboard), which is accessible through the Cloud Console UI without additional authentication.

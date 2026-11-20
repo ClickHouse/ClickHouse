@@ -471,6 +471,12 @@ bool ColumnStatistics::hasMinMax() const
     return false;
 }
 
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -480,6 +486,17 @@ UInt64 ColumnStatistics::getNullCount() const
             return basic.getNullCount();
     }
     return 0;
+}
+
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
 }
 
 UInt64 ColumnStatistics::getNonNullRowCount() const
@@ -541,11 +558,17 @@ Estimate ColumnStatistics::getEstimate() const
                 info.estimated_min = basic_stats.getMin();
             if (!basic_stats.getMax().isNull())
                 info.estimated_max = basic_stats.getMax();
+            info.min_max_covers_all_values = basic_stats.minMaxCoversAllValues();
         }
         if (basic_stats.hasNullCount())
+        {
             info.estimated_null_count = basic_stats.getNullCount();
+            info.null_count_covers_all_rows = basic_stats.nullCountCoversAllRows();
+        }
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -614,7 +637,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
-    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
 {
     SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
     ColumnStatisticsDescription stats_desc;
@@ -1085,6 +1108,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 {
     return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    return WhichDataType(data_type).isIntegerOrDecimal();
 }
 
 }

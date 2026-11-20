@@ -1,0 +1,21 @@
+t < fromUnixTimestamp64Nano(-1500000001, 'UTC')
+500
+500	0	499
+500	0	499
+t <= fromUnixTimestamp64Nano(-1500000001, 'UTC')
+600
+501	0	500
+501	0	500
+t = fromUnixTimestamp64Nano(-1950000001, 'UTC')
+100
+1	50	50
+1	50	50
+t = fromUnixTimestamp64Nano(-1999500000, 'UTC')
+1
+1	1	1
+1	1	1
+-2000000000	1
+-1	1
+-999500000	1
+-1500000	1
+1000000000	1
