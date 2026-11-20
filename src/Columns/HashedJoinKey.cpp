@@ -187,7 +187,7 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
     if (layout == Layout::PerRow)
     {
         for (size_t row = begin; row < end; ++row)
-            if (!skip[row])
+            if (!skip || !skip[row])
                 keys[row - begin] = build(row);
     }
     else
@@ -200,8 +200,9 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
             UInt128 * chunk_keys = keys + (chunk_begin - begin);
             /// 16 bits, so that the counting loop adds 16-bit lanes.
             UInt16 num_skipped = 0;
-            for (size_t row = chunk_begin; row < chunk_end; ++row)
-                num_skipped += skip[row] != 0;
+            if (skip)
+                for (size_t row = chunk_begin; row < chunk_end; ++row)
+                    num_skipped += skip[row] != 0;
 
             /// The kernel hashes every row it is given. When few rows are skipped, hashing them too costs less than
             /// listing the other rows.
@@ -239,7 +240,7 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     for (size_t row = begin; row < end; ++row)
-        chassert(skip[row] || keys[row - begin] == build(row));
+        chassert((skip && skip[row]) || keys[row - begin] == build(row));
 #endif
 }
 

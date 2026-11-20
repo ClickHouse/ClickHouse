@@ -20,7 +20,7 @@ public:
     [[nodiscard]] UInt128 build(size_t row) const { return ColumnsHashing::hash128(row, key_columns.size(), key_columns); }
 
     /// Sets `keys[i - begin]` to `build(i)` for the rows [begin, end). The keys of the rows `i` with `skip[i] != 0` may be
-    /// left unset.
+    /// left unset. `skip` may be nullptr, then no row is skipped.
     void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 
 private:
