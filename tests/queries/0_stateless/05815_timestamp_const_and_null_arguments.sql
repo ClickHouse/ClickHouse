@@ -13,7 +13,7 @@ WHERE d = '2023-01-01' ORDER BY ALL;
 SELECT timestamp(materialize('2025-01-01'), nt) FROM (SELECT arrayJoin([CAST('01:00:00' AS Nullable(String)), NULL]) AS nt) ORDER BY ALL;
 SELECT timestamp(materialize('2025-01-01'), nt) FROM (SELECT arrayJoin([CAST('01:00:00' AS Nullable(String)), NULL]) AS nt) ORDER BY ALL
 SETTINGS short_circuit_function_evaluation_for_nulls = 0;
-SELECT timestamp(materialize('2025-01-01'), lt) FROM (SELECT arrayJoin([toLowCardinality(CAST('01:00:00' AS Nullable(String))), NULL]) AS lt) ORDER BY ALL
+SELECT timestamp(materialize('2025-01-01'), lt) FROM values('lt LowCardinality(Nullable(String))', ('01:00:00'), (NULL)) ORDER BY ALL
 SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT timestamp(nfs) FROM (SELECT arrayJoin([CAST('2025-01-01' AS Nullable(FixedString(10))), NULL]) AS nfs) ORDER BY ALL
 SETTINGS short_circuit_function_evaluation_for_nulls = 0;
