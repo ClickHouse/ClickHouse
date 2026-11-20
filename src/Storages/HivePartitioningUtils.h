@@ -21,6 +21,8 @@ std::string_view getPartitionValueFromPath(
     const HivePartitioningKeysAndValues & keys_and_values, const std::string & column_name, const std::string & path);
 
 /// Converts the value of the Hive partition column `column_name` in `path` to `type`, throws `TYPE_MISMATCH` if `type` cannot hold it.
+/// The value is percent-decoded and `__HIVE_DEFAULT_PARTITION__` gives NULL, or the type default for a type that cannot
+/// hold NULL when `hive_format_settings.null_as_default` is set.
 Field convertPartitionValueToType(
     std::string_view value,
     const IDataType & type,

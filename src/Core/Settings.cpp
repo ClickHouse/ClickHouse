@@ -10571,6 +10571,7 @@ As each series represents a node in Keeper, it is recommended to have no more th
         {"25.1", 1000, 1000, "A new setting"}) \
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+Partition values are percent-decoded (`a%20b` reads as `a b`, an invalid escape stays as it is), and the directory `name=__HIVE_DEFAULT_PARTITION__` gives NULL, or the type default for a column that is not `Nullable` when `input_format_null_as_default` is enabled, as Hive-style writers such as pyarrow, DuckDB and Polars encode them.
 )", 0, \
         {"25.1", false, true, "Enabled the setting by default."}, \
         {"24.8", false, false, "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."}) \
