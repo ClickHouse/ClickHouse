@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace ErrorCodes
@@ -1307,6 +1308,15 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{ .new_node = new_or_node, .common_expressions = {} };
 }
 
+/// True if `node` may throw on rows on which it was skipped by short-circuit evaluation.
+static bool canThrowIfExecutedEarlier(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto short_circuit = context->getSettingsRef()[Setting::short_circuit_function_evaluation];
+    if (short_circuit == ShortCircuitFunctionEvaluation::DISABLE)
+        return false;
+    return canBeSkippedByShortCircuit(node, short_circuit == ShortCircuitFunctionEvaluation::FORCE_ENABLE, /*only_functions_that_can_throw=*/ true);
+}
+
 static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * or_node = node->as<FunctionNode>();
@@ -1385,6 +1395,40 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     chassert(!common_exprs.empty());
 
+    /// The longest sequence of conditions that every disjunct starts with.
+    auto get_and_arguments = [&flattened_ands](const QueryTreeNodePtr & original_or_argument) -> const QueryTreeNodes &
+    {
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
+        return or_argument->as<FunctionNode &>().getArguments().getNodes();
+    };
+    const auto & first_and_arguments = get_and_arguments(or_argument_nodes.front());
+    QueryTreeNodePtrWithHashSet leading_exprs_set;
+    for (size_t i = 0; i < first_and_arguments.size(); ++i)
+    {
+        const auto & leading_expr = keys(first_and_arguments[i]);
+        bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
+        {
+            const auto & and_arguments = get_and_arguments(or_argument);
+            return i < and_arguments.size() && keys(and_arguments[i]) == leading_expr;
+        });
+        if (!starts_every_disjunct)
+            break;
+        leading_exprs_set.insert(leading_expr);
+    }
+
+    /// A disjunct evaluates its conditions in order, so a common condition that can throw stays in the
+    /// disjuncts unless every disjunct starts with it.
+    std::erase_if(common_exprs, [&](const QueryTreeNodePtr & expr)
+    {
+        if (leading_exprs_set.contains(keys(expr)) || !canThrowIfExecutedEarlier(expr, context))
+            return false;
+        common_exprs_set.erase(keys(expr));
+        return true;
+    });
+    if (common_exprs.empty())
+        return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, keys, context);
+
     QueryTreeNodePtrWithHashSet new_or_arguments_set;
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
@@ -1438,28 +1482,6 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
-
-    /// The longest sequence of conditions that every disjunct starts with.
-    auto get_and_arguments = [&flattened_ands](const QueryTreeNodePtr & original_or_argument) -> const QueryTreeNodes &
-    {
-        auto it = flattened_ands.find(original_or_argument);
-        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
-        return or_argument->as<FunctionNode &>().getArguments().getNodes();
-    };
-    const auto & first_and_arguments = get_and_arguments(or_argument_nodes.front());
-    QueryTreeNodePtrWithHashSet leading_exprs_set;
-    for (size_t i = 0; i < first_and_arguments.size(); ++i)
-    {
-        const auto & leading_expr = keys(first_and_arguments[i]);
-        bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
-        {
-            const auto & and_arguments = get_and_arguments(or_argument);
-            return i < and_arguments.size() && keys(and_arguments[i]) == leading_expr;
-        });
-        if (!starts_every_disjunct)
-            break;
-        leading_exprs_set.insert(leading_expr);
-    }
 
     auto leading_exprs_end = std::stable_partition(
         common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(keys(expr)); });
@@ -1550,10 +1572,14 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
             auto & common_expressions = result.common_expressions;
             for (size_t i = 0; i < result.leading_common_expressions; ++i)
                 insert_possible_new_top_level_arg(std::move(common_expressions[i]));
-            if (result.new_node != nullptr)
+            /// The other common conditions cannot throw, so they keep guarding a remaining disjunction that can.
+            const bool guard_new_node = result.new_node != nullptr && canThrowIfExecutedEarlier(result.new_node, context);
+            if (result.new_node != nullptr && !guard_new_node)
                 insert_possible_new_top_level_arg(std::move(result.new_node));
             for (size_t i = result.leading_common_expressions; i < common_expressions.size(); ++i)
                 insert_possible_new_top_level_arg(std::move(common_expressions[i]));
+            if (guard_new_node)
+                insert_possible_new_top_level_arg(std::move(result.new_node));
         }
         else
         {

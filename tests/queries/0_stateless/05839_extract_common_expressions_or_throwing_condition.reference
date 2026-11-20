@@ -1,0 +1,9 @@
+9
+9
+9
+2
+9
+6
+WHERE and(notEquals(__table1.s, \'zz\'), or(and(notEquals(__table1.x, 0), greater(intDiv(10, __table1.x), 0)), and(greater(__table1.y, 5), greater(intDiv(10, __table1.x), 0))))
+WHERE and(like(__table1.s, \'%1%\'), or(greater(__table1.y, 5), less(__table1.y, 2)))
+WHERE and(notEquals(__table1.x, 0), greater(intDiv(10, __table1.x), 0), or(greater(__table1.y, 2), less(__table1.y, 2)))
