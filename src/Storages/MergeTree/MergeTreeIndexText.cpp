@@ -91,7 +91,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
-    extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
+    extern const MergeTreeSettingsBool enable_text_index_phrase_search;
 }
 
 namespace Setting
@@ -2626,10 +2626,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
-    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
+    if (positions && !settings[MergeTreeSetting::enable_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
-            "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
+            "Text index argument '{}' is in Beta. Enable it with the MergeTree setting "
+            "`enable_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
     if (auto position_increment_gap = extractFieldOption<UInt64>(options, ARGUMENT_POSITION_INCREMENT_GAP))
     {

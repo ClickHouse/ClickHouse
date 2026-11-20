@@ -851,10 +851,11 @@ Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0, \
         {"26.6", "none", "none", "New setting"}) \
-    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
-Allow creating text indexes with the experimental `support_phrase_search` argument
+    DECLARE_WITH_ALIAS(Bool, enable_text_index_phrase_search, false, R"(
+Allow creating text indexes with the `support_phrase_search` argument,
 which stores token positions to support exact phrase matching.
-)", EXPERIMENTAL, \
+)", BETA, allow_experimental_text_index_phrase_search, \
+        {"26.11", false, false, "Make phrase search Beta. Added an alias for setting `allow_experimental_text_index_phrase_search`."}, \
         {"26.7", false, false, "New setting"}) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.

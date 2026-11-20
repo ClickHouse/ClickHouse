@@ -7,6 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
@@ -93,8 +94,8 @@ CREATE TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
-                                [, position_increment_gap = G ] -- experimental
+                                [, support_phrase_search = 0 | 1 ] -- beta
+                                [, position_increment_gap = G ] -- beta
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -134,8 +135,8 @@ ALTER TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
-                                [, position_increment_gap = G ] -- experimental
+                                [, support_phrase_search = 0 | 1 ] -- beta
+                                [, position_increment_gap = G ] -- beta
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -565,25 +566,21 @@ See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ⁵ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
 
-**Experimental: Support phrase search argument (optional)**.
+**Phrase search support (optional)**.
 
-Experimental parameter `support_phrase_search` (default: `0`) controls whether the index stores token positions.
+<BetaBadge/>
+
+Parameter `support_phrase_search` (default: `0`) controls whether the index stores token positions.
 When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
 Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
-The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
-Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to be enabled.
+Creating an index with `support_phrase_search = 1` requires the MergeTree setting [`enable_text_index_phrase_search`](/reference/settings/merge-tree-settings/enable#enable_text_index_phrase_search) to be enabled.
 Set `support_phrase_search = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
-For an index on an `Array` column, the tokens of all elements of a row share one sequence of positions, and experimental parameter `position_increment_gap` (default: `63`, between `1` and `127`) sets the number of free positions between two elements.
+For an index on an `Array` column, the tokens of all elements of a row share one sequence of positions, and parameter `position_increment_gap` (default: `63`, between `1` and `127`) sets the number of free positions between two elements.
 The gap keeps a phrase within one element, as [`hasPhrase`](#functions-example-hasphrase) requires, so that the function is answered by direct reads from the index.
 A larger gap increases the size of the positions.
 Elements without tokens (empty strings, `NULL`) add no gap.
 The parameter requires `support_phrase_search = 1`. A phrase never spans two elements, also with the `array` tokenizer, where every element is one token.
-
-<Warning>
-This argument is experimental and should only be used for testing.
-Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to enable storing positions.
-</Warning>
 
 <details markdown="1">
 
