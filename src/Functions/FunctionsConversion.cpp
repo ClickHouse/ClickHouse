@@ -2731,25 +2731,25 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(
         }
 
         if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+            return createNumberToEnumWrapper<ColumnInt8, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+            return createNumberToEnumWrapper<ColumnInt16, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt32, EnumType>();
+            return createNumberToEnumWrapper<ColumnInt32, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt64, EnumType>();
+            return createNumberToEnumWrapper<ColumnInt64, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
+            return createNumberToEnumWrapper<ColumnUInt8, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
+            return createNumberToEnumWrapper<ColumnUInt16, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
+            return createNumberToEnumWrapper<ColumnUInt32, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
+            return createNumberToEnumWrapper<ColumnUInt64, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
+            return createNumberToEnumWrapper<ColumnFloat32, EnumType>(requested_result_is_nullable);
         else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+            return createNumberToEnumWrapper<ColumnFloat64, EnumType>(requested_result_is_nullable);
     }
     else if (isEnum(from_type))
     {
@@ -2855,11 +2855,11 @@ FunctionCast::WrapperType FunctionCast::createStringToEnumWrapper(bool requested
 }
 
 template <typename ColumnNumberType, typename EnumType>
-FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
+FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested_result_is_nullable) const
 {
     using FieldType = EnumType::FieldType;
 
-    const bool accurate_or_null = cast_type == CastType::accurateOrNull;
+    const bool accurate_or_null = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
 
     return [function_name = cast_name, accurate_or_null] (
         ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
@@ -2915,7 +2915,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
             else
             {
                 FieldType converted_value;
-                if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
+                if (!isFinite(in_data[i]) || !accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
                 /// Validate that value exists in Enum (throws if not found)

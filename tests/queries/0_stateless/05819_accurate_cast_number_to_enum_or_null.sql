@@ -18,3 +18,13 @@ SELECT accurateCastOrDefault(toInt16(300), 'Enum16(\'a\' = 1)', 'a'::Enum16('a' 
 SELECT accurateCast(toUInt8(2), 'Enum8(\'a\' = 1)'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT CAST(toUInt8(2), 'Enum8(\'a\' = 1)'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT CAST(toInt16(300), 'Enum8(\'a\' = 1)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(materialize(nan), 'Enum8(\'a\' = 0)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(materialize(nan), 'Enum16(\'a\' = 0)'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Array and map elements cannot hold NULL, so they convert strictly.
+SET enable_nullable_tuple_type = 1;
+SELECT accurateCastOrNull(tuple(materialize([toUInt8(1)])), 'Nullable(Tuple(Array(Enum8(\'a\' = 1))))');
+SELECT accurateCastOrNull(tuple(materialize(map('k', toUInt8(1)))), 'Nullable(Tuple(Map(String, Enum8(\'a\' = 1))))');
+SELECT accurateCastOrNull(tuple(materialize([toUInt8(2)])), 'Nullable(Tuple(Array(Enum8(\'a\' = 1))))'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT accurateCastOrNull(tuple(materialize(toUInt8(2))), 'Nullable(Tuple(Enum8(\'a\' = 1)))');
+SELECT accurateCastOrNull(tuple(materialize(toUInt8(1))), 'Nullable(Tuple(Enum8(\'a\' = 1)))');
