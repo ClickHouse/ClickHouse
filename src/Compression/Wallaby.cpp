@@ -9,7 +9,6 @@
 #include <cstring>
 #include <memory>
 #include <numeric>
-#include <queue>
 #include <vector>
 
 /** Wallaby: lossless compression of `Float32` and `Float64` columns.
@@ -345,9 +344,45 @@ struct AnsEncodeSymbol
     UInt8 max_bits = 0;
 };
 
+/// log2 of the integers up to the largest frequency plus one.
+const double * log2Table()
+{
+    static std::vector<double> table = []
+    {
+        std::vector<double> t((1u << MAX_TABLE_LOG) + 2);
+        t[0] = 0;
+        for (UInt32 i = 1; i < t.size(); ++i)
+            t[i] = std::log2(double(i));
+        return t;
+    }();
+    return table.data();
+}
+
+using HeapItem = std::pair<double, UInt32>;
+
+/// Replaces the top of a binary heap (the first element in the order of `before`) and restores the heap.
+template <typename Before>
+void replaceHeapTop(HeapItem * heap, size_t size, HeapItem item, Before before)
+{
+    size_t i = 0;
+    while (true)
+    {
+        size_t child = 2 * i + 1;
+        if (child >= size)
+            break;
+        if (child + 1 < size && before(heap[child + 1], heap[child]))
+            ++child;
+        if (!before(heap[child], item))
+            break;
+        heap[i] = heap[child];
+        i = child;
+    }
+    heap[i] = item;
+}
+
 /// Scales the counts to frequencies with the sum of exactly 2^table_log; every present symbol gets at least 1.
 /// Greedy by the change of the total code length, which is optimal for this separable convex objective.
-void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, UInt16 * freqs)
+void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, UInt16 * freqs, std::vector<HeapItem> & heap)
 {
     const UInt32 size = 1u << table_log;
     UInt64 total = 0;
@@ -381,40 +416,92 @@ void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, U
         return;
 
     /// The frequency can reach 2^table_log (a single symbol), which does not fit UInt16 only for table_log == 16.
-    using Item = std::pair<double, UInt32>;
+    const double * lg = log2Table();
+    heap.clear();
     if (diff > 0)
     {
-        auto gain = [&](UInt32 s) { return counts[s] * std::log2(double(freqs[s] + 1) / freqs[s]); };
-        std::priority_queue<Item> heap;
+        /// The largest gain first.
+        auto before = [](const HeapItem & a, const HeapItem & b) { return a > b; };
+        auto gain = [&](UInt32 s) { return counts[s] * (lg[freqs[s] + 1] - lg[freqs[s]]); };
         for (UInt32 s = 0; s < alphabet; ++s)
             if (counts[s])
-                heap.push({gain(s), s});
+                heap.push_back({gain(s), s});
+        /// The greedy choice is the `diff` largest of all the steps of all the symbols, and the steps of a symbol
+        /// decrease. Most often they are the first steps of `diff` symbols: a selection finds them without a heap.
+        const size_t steps = size_t(diff);
+        if (steps <= heap.size())
+        {
+            if (steps < heap.size())
+                std::nth_element(heap.begin(), heap.begin() + Int64(steps), heap.end(), before);
+            const HeapItem last = *std::min_element(heap.begin(), heap.begin() + Int64(steps));
+            bool first_steps_only = true;
+            for (size_t i = 0; i < steps && first_steps_only; ++i)
+            {
+                UInt32 s = heap[i].second;
+                first_steps_only = HeapItem{counts[s] * (lg[freqs[s] + 2] - lg[freqs[s] + 1]), s} < last;
+            }
+            if (first_steps_only)
+            {
+                for (size_t i = 0; i < steps; ++i)
+                    ++freqs[heap[i].second];
+                return;
+            }
+        }
+        std::make_heap(heap.begin(), heap.end(), [](const HeapItem & a, const HeapItem & b) { return a < b; });
         while (diff > 0)
         {
-            UInt32 s = heap.top().second;
-            heap.pop();
+            UInt32 s = heap[0].second;
             ++freqs[s];
             --diff;
-            heap.push({gain(s), s});
+            replaceHeapTop(heap.data(), heap.size(), {gain(s), s}, before);
         }
     }
     else
     {
-        auto loss = [&](UInt32 s) { return counts[s] * std::log2(double(freqs[s]) / (freqs[s] - 1)); };
-        std::priority_queue<Item, std::vector<Item>, std::greater<Item>> heap;
+        /// The smallest loss first.
+        auto before = [](const HeapItem & a, const HeapItem & b) { return a < b; };
+        auto loss = [&](UInt32 s) { return counts[s] * (lg[freqs[s]] - lg[freqs[s] - 1]); };
         for (UInt32 s = 0; s < alphabet; ++s)
             if (freqs[s] > 1)
-                heap.push({loss(s), s});
+                heap.push_back({loss(s), s});
+        /// The same with the smallest losses, whose steps increase.
+        const size_t steps = size_t(-diff);
+        if (steps <= heap.size())
+        {
+            if (steps < heap.size())
+                std::nth_element(heap.begin(), heap.begin() + Int64(steps), heap.end(), before);
+            const HeapItem last = *std::max_element(heap.begin(), heap.begin() + Int64(steps));
+            bool first_steps_only = true;
+            for (size_t i = 0; i < steps && first_steps_only; ++i)
+            {
+                UInt32 s = heap[i].second;
+                if (freqs[s] > 2)
+                    first_steps_only = last < HeapItem{counts[s] * (lg[freqs[s] - 1] - lg[freqs[s] - 2]), s};
+            }
+            if (first_steps_only)
+            {
+                for (size_t i = 0; i < steps; ++i)
+                    --freqs[heap[i].second];
+                return;
+            }
+        }
+        std::make_heap(heap.begin(), heap.end(), [](const HeapItem & a, const HeapItem & b) { return a > b; });
+        size_t heap_size = heap.size();
         while (diff < 0)
         {
-            if (heap.empty())
+            if (!heap_size)
                 logicalError("cannot normalize the histogram");
-            UInt32 s = heap.top().second;
-            heap.pop();
+            UInt32 s = heap[0].second;
             --freqs[s];
             ++diff;
             if (freqs[s] > 1)
-                heap.push({loss(s), s});
+                replaceHeapTop(heap.data(), heap_size, {loss(s), s}, before);
+            else
+            {
+                --heap_size;
+                if (heap_size)
+                    replaceHeapTop(heap.data(), heap_size, heap[heap_size], before);
+            }
         }
     }
 }
@@ -422,10 +509,11 @@ void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, U
 /// The cost in bits of coding the counts with the normalized frequencies.
 double normalizedCost(const UInt32 * counts, const UInt16 * freqs, UInt32 alphabet, UInt32 table_log)
 {
+    const double * lg = log2Table();
     double bits = 0;
     for (UInt32 s = 0; s < alphabet; ++s)
         if (counts[s])
-            bits += counts[s] * (double(table_log) - std::log2(double(freqs[s])));
+            bits += counts[s] * (double(table_log) - lg[freqs[s]]);
     return bits;
 }
 
@@ -677,6 +765,45 @@ struct TokenTable
     }
 };
 
+/// The best order (up to max_k) of the Exp-Golomb code for a set of numbers, from the histogram of their bit
+/// lengths (65 entries), and the approximate size with it: a number of b bits takes about
+/// 2 * max(b - k, 0) + 1 + k bits with the order k.
+UInt32 bestExpGolombOrder(const UInt32 * lengths, UInt32 max_k, UInt64 & best_bits)
+{
+    /// An order above the longest number only adds bits.
+    UInt32 top = 64;
+    while (top && !lengths[top])
+        --top;
+    UInt32 best_k = 0;
+    best_bits = ~UInt64(0);
+    for (UInt32 k = 0; k <= std::min(max_k, top); ++k)
+    {
+        UInt64 bits = 0;
+        for (UInt32 b = 0; b <= top; ++b)
+            bits += UInt64(lengths[b]) * (2 * (b > k ? b - k : 0) + 1 + k);
+        if (bits < best_bits)
+        {
+            best_bits = bits;
+            best_k = k;
+        }
+    }
+    return best_k;
+}
+
+/// The approximate size of the frequencies of one context in the header of the model, as `writeModel` codes them.
+UInt64 frequencyHeaderBits(const UInt16 * f, UInt32 alphabet)
+{
+    UInt32 lengths[65] = {};
+    for (UInt32 t = 0; t + 1 < alphabet; ++t)
+        ++lengths[bitLength(f[t])];
+    UInt64 exp_golomb = 0;
+    bestExpGolombOrder(lengths, 12, exp_golomb);
+    UInt64 length_prefixed = 0;
+    for (UInt32 b = 0; b <= MAX_TABLE_LOG + 1; ++b)
+        length_prefixed += UInt64(lengths[b]) * (4 + (b > 1 ? b - 1 : 0));
+    return std::min(exp_golomb, length_prefixed) + 4;
+}
+
 void writeModel(BitWriter & w, const StreamModel & m)
 {
     w.put(m.fixed, 1);
@@ -691,24 +818,10 @@ void writeModel(BitWriter & w, const StreamModel & m)
         w.put(m.msb, 3);
     }
 
-    /// The best order of the Exp-Golomb code for a set of numbers, from the histogram of their bit lengths:
-    /// a number of b bits takes about 2 * max(b - k, 0) + 1 + k bits with the order k.
     auto bestOrder = [](const UInt32 * lengths, UInt32 max_k)
     {
-        UInt32 best_k = 0;
-        UInt64 best = ~UInt64(0);
-        for (UInt32 k = 0; k <= max_k; ++k)
-        {
-            UInt64 bits = 0;
-            for (UInt32 b = 0; b <= 64; ++b)
-                bits += UInt64(lengths[b]) * (2 * (b > k ? b - k : 0) + 1 + k);
-            if (bits < best)
-            {
-                best = bits;
-                best_k = k;
-            }
-        }
-        return best_k;
+        UInt64 unused_bits = 0;
+        return bestExpGolombOrder(lengths, max_k, unused_bits);
     };
 
     w.put(m.dict.size(), 13);
@@ -1332,7 +1445,8 @@ struct StreamEncoder
     std::vector<UInt32> fine_used;
     std::vector<UInt32> fixed_hist;
     ClassLayout layout;
-    double estimated_bits = 0;       /// payload and model: estimated by `analyze`, refined by `finalize`
+    double estimated_bits = 0;       /// the payload: estimated by `analyze`, exact after `complete`
+    double counted_bits = 0;         /// the payload and the model: estimated by `count` from the counts of the tokens
 
     /// --- Tokens.
     StreamModel model;
@@ -1355,12 +1469,16 @@ struct StreamEncoder
     UInt64 model_bits = 0;
     std::vector<UInt32> slots;
     std::vector<UInt16> slot_tok;
+    bool dict_counted = false;       /// `slots` and `slot_tok` are filled
+    bool direct_slots = false;       /// the slot of a value is its offset from the minimum, not a hash
+    UInt32 run_tok[MAX_RUN_EXP + 1] = {};
     std::vector<UInt16> id2tok;
     std::vector<UInt16> ans_bits;
     std::vector<UInt8> ans_nbits;
     std::vector<UInt32> tmp;
     std::vector<UInt32> touched;
     std::vector<UInt16> freq_scratch;
+    std::vector<HeapItem> heap_scratch;
     AnsEncodeTable enc_tables[MAX_CONTEXTS];
 
     StreamEncoder()
@@ -1414,7 +1532,8 @@ struct StreamEncoder
     }
 
     /// Looks at a sample of the residuals: every `1 << skip_log`-th stripe. Chooses the family of bins and the
-    /// zero handling, and estimates the coded size of all the values. `try_fixed` allows the fixed-width bins.
+    /// zero handling (the estimate of the size that it leaves does not know about the dictionary).
+    /// `try_fixed` allows the fixed-width bins.
     void analyze(const Int64 * r, UInt32 count, bool try_fixed, UInt32 skip_log)
     {
         const double * xlx = xlog2xTable();
@@ -1631,57 +1750,40 @@ struct StreamEncoder
         if (!model.fixed)
             layout.init(model.split, model.msb);
         estimated_bits = best.bits;
-
-        /// --- A rough estimate of what the dictionary will save, from repeated values of a small sample.
-        Int64 sample[DICT_SAMPLE];
-        UInt32 ns = sampleForDictionary(sample);
-        if (ns < 16)
-            return;
-        double total = model.runs ? double(nonzero) + zero_runs : double(sampled);
-        double log_total = std::log2(total * scale);
-        double carrying = 0;   /// values that carry raw bits, in the whole stream
-        for (const FineInfo & fi : infos)
-            if (fi.mag_base >= (UInt64(1) << model.split) || model.fixed)
-                carrying += fi.count * scale;
-        double sample_scale = carrying / ns;
-        double gain = 0;
-        for (UInt32 i = 0; i < ns;)
-        {
-            UInt32 j = i;
-            while (j < ns && sample[j] == sample[i])
-                ++j;
-            if (j - i >= 2)
-            {
-                double c = double(j - i) * sample_scale;
-                /// The class of the value is not rarer than the value itself; assume it is a few times as frequent.
-                double class_cost = log_total - std::log2(c * 4) + valueBits(sample[i]);
-                double exact_cost = log_total - std::log2(c);
-                double g = c * (class_cost - exact_cost) - DICT_HEADER_BITS;
-                if (g > 0)
-                    gain += g;
-            }
-            i = j;
-        }
-        estimated_bits -= gain;
     }
 
-    /// Tokenizes all the residuals with the analyzed family and builds the final model.
+    /// Does all the work for the stream that was analyzed: tokenizes the residuals with the chosen family of
+    /// bins and builds the model.
     void finalize()
+    {
+        count();
+        complete();
+    }
+
+    /// The first stage: the bins of the values, the dictionary, the alphabet and the counts of its tokens.
+    /// Leaves an estimate of the size in `counted_bits`, which is enough to compare candidates.
+    void count()
     {
         const double * xlx = xlog2xTable();
         const Int64 * r = data;
         const bool runs = model.runs;
 
         /// --- The exact range for the fixed bins: the analysis has seen only a sample.
-        if (model.fixed)
+        Int64 rmin = r[0];
+        Int64 rmax = r[0];
+        bool have_range = false;
+        auto findRange = [&]
         {
-            Int64 rmin = r[0];
-            Int64 rmax = r[0];
             for (UInt32 i = 1; i < n; ++i)
             {
                 rmin = std::min(rmin, r[i]);
                 rmax = std::max(rmax, r[i]);
             }
+            have_range = true;
+        };
+        if (model.fixed)
+        {
+            findRange();
             model.fmin = rmin;
             UInt64 range = UInt64(rmax) - UInt64(rmin);
             while (model.shift < MAX_RAW_BITS && (range >> model.shift) >= MAX_FIXED_BINS)
@@ -1716,7 +1818,7 @@ struct StreamEncoder
 
         /// --- Dictionary: exact values that are frequent enough to deserve own symbols.
         promoted.clear();
-        bool counted = false;
+        dict_counted = false;
         {
             Int64 sample[DICT_SAMPLE];
             UInt32 ns = sampleForDictionary(sample);
@@ -1725,46 +1827,89 @@ struct StreamEncoder
                 dup += sample[i] == sample[i - 1];
             if (ns >= 16 && dup * 50 >= ns)
             {
-                /// Count all exact values with an open-addressing hash table, and remember the slot of every
-                /// value: the tokens are then found without hashing again. A dictionary cannot hold more
-                /// than the alphabet, so a small table is tried first: it stays in the cache.
+                /// Count all exact values, and remember the slot of every value: the tokens are then found
+                /// without looking the values up again.
                 slots.resize(n);
-                UInt32 cap = std::min<UInt32>(std::bit_ceil(n * 2), 2 * MAX_ALPHABET);
-                while (true)
+                UInt32 * const slot_of = slots.data();
+                if (!have_range)
+                    findRange();
+                const UInt64 range = UInt64(rmax) - UInt64(rmin);
+                direct_slots = range < 2 * UInt64(n);
+                UInt32 cap;
+                UInt32 num_slots = 0;
+                if (direct_slots)
                 {
+                    /// A narrow range: the value, counted from the minimum, is its slot. No hashing, no collisions.
+                    cap = UInt32(range) + 1;
                     if (hash_keys.size() < cap)
                         hash_keys.resize(cap);
                     hash_counts.assign(cap, 0);
-                    hash_slots.clear();
-                    const UInt32 hmask = cap - 1;
-                    const UInt32 hshift = 64 - std::countr_zero(cap);
-                    const size_t limit = cap / 2;
-                    bool overflow = false;
+                    hash_slots.resize(std::min(cap, n));
+                    UInt64 * const keys = hash_keys.data();
+                    UInt32 * const counts = hash_counts.data();
+                    UInt32 * const used = hash_slots.data();
                     for (UInt32 i = 0; i < n; ++i)
                     {
                         Int64 v = r[i];
                         if (v == 0 && runs)
                             continue;
-                        UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
-                        while (hash_counts[h] && hash_keys[h] != UInt64(v))
-                            h = (h + 1) & hmask;
-                        if (hash_counts[h]++ == 0)
+                        UInt32 h = UInt32(UInt64(v) - UInt64(rmin));
+                        if (counts[h]++ == 0)
                         {
-                            hash_keys[h] = UInt64(v);
-                            hash_slots.push_back(h);
-                            if (hash_slots.size() > limit)
-                            {
-                                overflow = true;
-                                break;
-                            }
+                            keys[h] = UInt64(v);
+                            used[num_slots++] = h;
                         }
-                        slots[i] = h;
+                        slot_of[i] = h;
                     }
-                    if (!overflow)
-                        break;
-                    cap = std::bit_ceil(n * 2);
                 }
-                counted = true;
+                else
+                {
+                    /// An open-addressing hash table. A dictionary cannot hold more than the alphabet, so a small
+                    /// table is tried first: it stays in the cache. Unless the sample has so few repetitions
+                    /// that the small table is going to overflow.
+                    const bool many = ns == DICT_SAMPLE && dup * 12 < ns;
+                    cap = many ? std::bit_ceil(n * 2) : std::min<UInt32>(std::bit_ceil(n * 2), 2 * MAX_ALPHABET);
+                    while (true)
+                    {
+                        if (hash_keys.size() < cap)
+                            hash_keys.resize(cap);
+                        hash_counts.assign(cap, 0);
+                        const UInt32 limit = cap / 2;
+                        hash_slots.resize(limit + 1);
+                        UInt64 * const keys = hash_keys.data();
+                        UInt32 * const counts = hash_counts.data();
+                        UInt32 * const used = hash_slots.data();
+                        const UInt32 hmask = cap - 1;
+                        const UInt32 hshift = 64 - std::countr_zero(cap);
+                        num_slots = 0;
+                        bool overflow = false;
+                        for (UInt32 i = 0; i < n; ++i)
+                        {
+                            Int64 v = r[i];
+                            if (v == 0 && runs)
+                                continue;
+                            UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
+                            while (counts[h] && keys[h] != UInt64(v))
+                                h = (h + 1) & hmask;
+                            if (counts[h]++ == 0)
+                            {
+                                keys[h] = UInt64(v);
+                                used[num_slots++] = h;
+                                if (num_slots > limit)
+                                {
+                                    overflow = true;
+                                    break;
+                                }
+                            }
+                            slot_of[i] = h;
+                        }
+                        if (!overflow)
+                            break;
+                        cap = std::bit_ceil(n * 2);
+                    }
+                }
+                hash_slots.resize(num_slots);
+                dict_counted = true;
                 slot_tok.assign(cap, NO_TOKEN);
                 const double log_total = xlx[items] / items;
                 for (UInt32 h : hash_slots)
@@ -1793,16 +1938,22 @@ struct StreamEncoder
                         [](const auto & a, const auto & b) { return a.second > b.second; });
                     promoted.resize(max_dict);
                 }
-                std::sort(promoted.begin(), promoted.end());
+                std::sort(promoted.begin(), promoted.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
                 const UInt32 hmask = cap - 1;
-                const UInt32 hshift = 64 - std::countr_zero(cap);
+                const UInt32 hshift = direct_slots ? 0 : 64 - std::countr_zero(cap);
                 for (size_t k = 0; k < promoted.size(); ++k)
                 {
                     Int64 v = promoted[k].first;
                     bin_counts[binIdOf(v)] -= promoted[k].second;
-                    UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
-                    while (hash_keys[h] != UInt64(v))
-                        h = (h + 1) & hmask;
+                    UInt32 h;
+                    if (direct_slots)
+                        h = UInt32(UInt64(v) - UInt64(rmin));
+                    else
+                    {
+                        h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
+                        while (hash_keys[h] != UInt64(v))
+                            h = (h + 1) & hmask;
+                    }
                     slot_tok[h] = UInt16(k);
                 }
             }
@@ -1823,7 +1974,7 @@ struct StreamEncoder
                 model.bin_ids.push_back(id);
             }
         }
-        UInt32 run_tok[MAX_RUN_EXP + 1] = {};
+        std::fill(run_tok, run_tok + MAX_RUN_EXP + 1, 0u);
         model.run_mask = 0;
         {
             UInt32 t = nd + UInt32(model.bin_ids.size());
@@ -1841,12 +1992,78 @@ struct StreamEncoder
             logicalError("encoder built an invalid model");
         const UInt32 alphabet = table.alphabet;
 
-        /// --- Pass B: the tokens.
+        /// --- The counts of the tokens are known without making the tokens.
         ntok = items;
+        token_counts.assign(alphabet, 0);
+        for (UInt32 k = 0; k < nd; ++k)
+            token_counts[k] = promoted[k].second;
+        for (size_t k = 0; k < model.bin_ids.size(); ++k)
+            token_counts[nd + k] = bin_counts[model.bin_ids[k]];
+        for (UInt32 e = 0; e <= MAX_RUN_EXP; ++e)
+            if (run_counts[e])
+                token_counts[run_tok[e]] = run_counts[e];
+        counted_bits = estimateFromCounts();
+    }
+
+    /// What `complete` is going to find, short of the gain of the contexts: the size of the payload with the
+    /// frequencies rounded to the table, and the size of the model.
+    double estimateFromCounts() const
+    {
+        const double * lg = log2Table();
+        const UInt32 alphabet = table.alphabet;
+        const UInt32 min_log = std::max<UInt32>(MIN_TABLE_LOG, bitLength(alphabet - 1));
+        const UInt32 lo_log = std::max(min_log, std::min<UInt32>(9, bitLength(ntok)));
+        const UInt32 tl = std::max(lo_log, std::min<UInt32>(MAX_TABLE_LOG, bitLength(ntok) + 1));
+        const UInt32 size = 1u << tl;
+        const double scale = double(size) / ntok;
+        UInt64 sum = 0;
+        UInt64 raw_bits = 0;
+        double bits = 0;
+        UInt32 lengths[65] = {};
+        for (UInt32 t = 0; t < alphabet; ++t)
+        {
+            UInt32 c = token_counts[t];
+            UInt32 f = std::max<UInt32>(1, UInt32(c * scale + 0.5));
+            sum += f;
+            bits += c * (double(tl) - lg[f]);
+            raw_bits += UInt64(c) * table.nbits[t];
+            ++lengths[bitLength(f)];
+        }
+        /// The frequencies are then scaled to the sum of exactly the size of the table.
+        bits += ntok * std::log2(double(sum) / size);
+        bits += double(raw_bits);
+
+        /// The model: the frequencies, the dictionary, the bins and the fixed fields.
+        UInt64 length_prefixed = 0;
+        for (UInt32 b = 0; b <= MAX_TABLE_LOG + 1; ++b)
+            length_prefixed += UInt64(lengths[b]) * (4 + (b > 1 ? b - 1 : 0));
+        UInt64 exp_golomb = 0;
+        bestExpGolombOrder(lengths, 12, exp_golomb);
+        bits += double(std::min(length_prefixed, exp_golomb));
+        if (!model.dict.empty())
+        {
+            UInt32 gaps[65] = {};
+            for (size_t i = 1; i < model.dict.size(); ++i)
+                ++gaps[bitLength(UInt64(model.dict[i]) - UInt64(model.dict[i - 1]) - 1)];
+            UInt64 gap_bits = 0;
+            bestExpGolombOrder(gaps, 60, gap_bits);
+            bits += double(gap_bits) + 2.0 * bitLength(magnitude(model.dict[0])) + 8;
+        }
+        bits += 4.0 * double(model.bin_ids.size()) + 64;
+        return bits;
+    }
+
+    /// The second stage: the tokens, the contexts, the frequencies and the header of the model.
+    void complete()
+    {
+        const double * xlx = xlog2xTable();
+        const Int64 * r = data;
+        const UInt32 alphabet = table.alphabet;
+
+        /// --- Pass B: the tokens.
         tok.resize(ntok);
         raw.resize(ntok);
         rawbits.resize(ntok);
-        token_counts.assign(alphabet, 0);
         const Int64 * lo = table.lo;
         const UInt8 * nbv = table.nbits;
         UInt32 pos = 0;
@@ -1869,15 +2086,15 @@ struct StreamEncoder
             }
             else
             {
-                t = counted ? slot_tok[slots[pos]] : NO_TOKEN;
+                /// Both lookups are done and one is selected: the kind of a token is hard to predict.
+                UInt32 dict_tok = dict_counted ? slot_tok[slots[pos]] : NO_TOKEN;
+                UInt32 bin_tok = id2tok[p];
+                t = dict_tok == NO_TOKEN ? bin_tok : dict_tok;
                 Int64 v = r[pos++];
-                if (t == NO_TOKEN)
-                    t = id2tok[p];
                 raw[k] = UInt64(v) - UInt64(lo[t]);
                 rawbits[k] = nbv[t];
             }
             tok[k] = UInt16(t);
-            ++token_counts[t];
         }
 
         /// --- Contexts: the magnitude class of the previous token.
@@ -1917,9 +2134,25 @@ struct StreamEncoder
                 }
                 mb_hist[magbits[t]] += token_counts[t];
             }
+            /// The trials: the tokens are split into 2 .. MAX_CONTEXTS groups of about equal weight by their
+            /// magnitude. All the trials are counted in one pass over the tokens.
+            struct Trial
+            {
+                UInt32 nctx = 0;
+                UInt8 thr[MAX_CONTEXTS - 1] = {};
+                UInt32 offset = 0;      /// of the counts in `trial`
+            };
+            Trial trials[MAX_CONTEXTS - 1];
+            UInt32 num_trials = 0;
+            /// The classes of a token in every trial, packed by 2 bits.
+            UInt8 cls[MAX_ALPHABET];
+            std::fill(cls, cls + alphabet, UInt8(0));
+            UInt32 trial_size = 0;
             for (UInt32 nctx = 2; nctx <= MAX_CONTEXTS; ++nctx)
             {
-                UInt8 thr[MAX_CONTEXTS - 1] = {};
+                Trial & tr = trials[num_trials];
+                tr = Trial();
+                tr.nctx = nctx;
                 UInt32 acc = 0;
                 UInt32 q = 1;
                 for (UInt32 b = 0; b < 65 && q < nctx; ++b)
@@ -1927,47 +2160,77 @@ struct StreamEncoder
                     acc += mb_hist[b];
                     while (q < nctx && UInt64(acc) * nctx >= UInt64(ntok) * q)
                     {
-                        thr[q - 1] = UInt8(b);
+                        tr.thr[q - 1] = UInt8(b);
                         ++q;
                     }
                 }
                 bool distinct = true;
                 for (UInt32 q2 = 1; q2 + 1 < nctx; ++q2)
-                    distinct &= thr[q2] > thr[q2 - 1];
+                    distinct &= tr.thr[q2] > tr.thr[q2 - 1];
                 if (!distinct)
                     continue;
-                UInt8 cls[MAX_ALPHABET];
                 for (UInt32 t = 0; t < alphabet; ++t)
                 {
                     UInt8 c = 0;
                     for (UInt32 q2 = 0; q2 + 1 < nctx; ++q2)
-                        c += magbits[t] > thr[q2];
-                    cls[t] = c;
+                        c += magbits[t] > tr.thr[q2];
+                    cls[t] |= UInt8(c << (2 * num_trials));
                 }
-                trial.assign(size_t(nctx) * alphabet, 0);
-                UInt32 totals[MAX_CONTEXTS] = {};
-                /// The context of a token is the class of the previous token of the same ANS lane, so that
-                /// the lanes stay independent in the decoder.
+                tr.offset = trial_size;
+                trial_size += nctx * alphabet;
+                ++num_trials;
+            }
+            static_assert(MAX_CONTEXTS == 3, "the classes of two trials are packed into a byte");
+            trial.assign(trial_size, 0);
+            /// The context of a token is the class of the previous token of the same ANS lane, so that
+            /// the lanes stay independent in the decoder.
+            if (num_trials == 2)
+            {
+                UInt32 * counts0 = trial.data() + trials[0].offset;
+                UInt32 * counts1 = trial.data() + trials[1].offset;
                 UInt32 prev[ANS_LANES] = {};
                 for (UInt32 i = 0; i < ntok; ++i)
                 {
                     UInt32 t = tok[i];
                     UInt32 lane = i & (ANS_LANES - 1);
-                    ++trial[size_t(prev[lane]) * alphabet + t];
-                    ++totals[prev[lane]];
+                    UInt32 pc = prev[lane];
+                    ++counts0[size_t(pc & 3) * alphabet + t];
+                    ++counts1[size_t(pc >> 2) * alphabet + t];
                     prev[lane] = cls[t];
                 }
+            }
+            else if (num_trials == 1)
+            {
+                UInt32 * counts0 = trial.data();
+                UInt32 prev[ANS_LANES] = {};
+                for (UInt32 i = 0; i < ntok; ++i)
+                {
+                    UInt32 t = tok[i];
+                    UInt32 lane = i & (ANS_LANES - 1);
+                    ++counts0[size_t(prev[lane]) * alphabet + t];
+                    prev[lane] = cls[t];
+                }
+            }
+            for (UInt32 k = 0; k < num_trials; ++k)
+            {
+                const Trial & tr = trials[k];
+                const UInt32 * counts = trial.data() + tr.offset;
                 double bits = 0;
-                for (UInt32 c = 0; c < nctx; ++c)
-                    bits += entropyOf(trial.data() + size_t(c) * alphabet, totals[c])
-                        + 8.0 * usedOf(trial.data() + size_t(c) * alphabet) + 2.0 * alphabet;
+                for (UInt32 c = 0; c < tr.nctx; ++c)
+                {
+                    UInt32 total = 0;
+                    for (UInt32 t = 0; t < alphabet; ++t)
+                        total += counts[size_t(c) * alphabet + t];
+                    bits += entropyOf(counts + size_t(c) * alphabet, total)
+                        + 8.0 * usedOf(counts + size_t(c) * alphabet) + 2.0 * alphabet;
+                }
                 /// Contexts slow the decoder down: require a real gain.
                 if (bits < best_ctx_bits * 0.995)
                 {
                     best_ctx_bits = bits;
-                    best_nctx = nctx;
-                    copyBytes(best_thr, thr, sizeof(thr));
-                    ctx_counts.assign(trial.begin(), trial.end());
+                    best_nctx = tr.nctx;
+                    copyBytes(best_thr, tr.thr, sizeof(tr.thr));
+                    ctx_counts.assign(counts, counts + size_t(tr.nctx) * alphabet);
                 }
             }
         }
@@ -2004,8 +2267,8 @@ struct StreamEncoder
                     fc[0] = UInt16(1u << tl);
                     continue;
                 }
-                normalizeCounts(cc, alphabet, tl, fc);
-                bits += normalizedCost(cc, fc, alphabet, tl);
+                normalizeCounts(cc, alphabet, tl, fc, heap_scratch);
+                bits += normalizedCost(cc, fc, alphabet, tl) + double(frequencyHeaderBits(fc, alphabet));
             }
             bits += 0.03 * (1u << tl) * model.nctx;
             if (bits < best_log_bits)
@@ -2017,10 +2280,10 @@ struct StreamEncoder
         }
         model.table_log = UInt8(best_log);
 
-        double raw_total = 0;
-        for (UInt32 i = 0; i < ntok; ++i)
-            raw_total += rawbits[i];
-        estimated_bits = best_log_bits + raw_total;
+        UInt64 raw_total = 0;
+        for (UInt32 t = 0; t < alphabet; ++t)
+            raw_total += UInt64(token_counts[t]) * table.nbits[t];
+        estimated_bits = best_log_bits + double(raw_total);
 
         /// The header of the model, written once: its exact size takes part in the choice between
         /// candidates, and the bits are then copied into the header of the chunk.
@@ -2745,7 +3008,8 @@ struct Encoder
     Converted conv_saved;
     std::vector<Int64> diff[2];
     static constexpr UInt32 MAX_CANDIDATES = 3;
-    static constexpr double CLOSE_CALL = 1.08;
+    static constexpr double PROXY_BAND = 1.35;        /// between the proxies of the candidates that are looked at
+    static constexpr double VERY_CLOSE_CALL = 1.003;  /// between the estimates from the counts of the tokens
     std::vector<Int64> resid[MAX_CANDIDATES];
     std::vector<Int64> gaps;
     std::vector<Int64> exc_values;
@@ -2763,7 +3027,6 @@ struct Encoder
     struct Plan
     {
         double proxy = 1e300;
-        double dict_proxy = 1e300;   /// order 0: the size if every distinct value becomes a dictionary symbol
         double class_proxy = 1e300;  /// order 0: the size without a dictionary
         UInt8 order = 0;
         Int64 center = 0;
@@ -2812,8 +3075,7 @@ struct Encoder
         return proxyCost(hist, n);
     }
 
-    /// The exact size in bits of the model header of a prepared stream.
-    /// The exact size in bits of the header of a finalized stream: the model and the sizes.
+    /// The exact size in bits of the header of a completed stream: the model and the sizes.
     static double modelBits(const StreamEncoder & s)
     {
         return double(s.model_bits) + 48;
@@ -2869,7 +3131,6 @@ struct Encoder
                 double range = double(UInt64(mx) - UInt64(mn));
                 double entry = std::log2(range / distinct + 1) + 8;
                 double dict = double(n) * std::log2(std::max(distinct, 1.0)) + distinct * entry;
-                zero.dict_proxy = dict;
                 zero.proxy = std::min(zero.proxy, dict);
             }
         }
@@ -2913,8 +3174,9 @@ struct Encoder
                 best.order = UInt8(order);
                 best.center = pc < p0 ? med : 0;
             }
-            /// Higher orders are tried only while they keep helping.
-            if (order >= 2 && !improved)
+            /// Higher orders are tried only while they keep helping, and not at all when the first one is far
+            /// behind no differencing.
+            if ((order >= 2 && !improved) || (order == 1 && p > zero.class_proxy * 1.25))
                 break;
         }
         plans.push_back(zero);
@@ -3314,12 +3576,27 @@ struct Encoder
                         double l = den / double(g) * den2;
                         if (l <= FloatTraits<F>::MAX_DENOMINATOR)
                         {
-                            std::swap(conv, conv_saved);
+                            F inexact_sample[SAMPLE];
+                            const UInt32 num_inexact = ns;
+                            std::copy(sample, sample + ns, inexact_sample);
                             ns = sampleValues(src, n, nullptr, 0, sample);
                             chooseReconstruction(sample, ns, l, mul, single, scale);
-                            convert(src, n, l, mul, single, scale, conv);
-                            if (conv.inexact.size() * 2 > conv_saved.inexact.size())
+                            /// The finer denominator is kept if it halves the number of inexact values: check
+                            /// on the sample that it has a chance before converting everything again.
+                            UInt32 fixed = 0;
+                            for (UInt32 i = 0; i < num_inexact; ++i)
+                            {
+                                Int64 q;
+                                if (integerCandidate(inexact_sample[i], l, q))
+                                    fixed += floatBits(reconstruct<F>(q, mul, single, scale)) == floatBits(inexact_sample[i]);
+                            }
+                            if (num_inexact < 32 || fixed * 3 >= num_inexact)
+                            {
                                 std::swap(conv, conv_saved);
+                                convert(src, n, l, mul, single, scale, conv);
+                                if (conv.inexact.size() * 2 > conv_saved.inexact.size())
+                                    std::swap(conv, conv_saved);
+                            }
                         }
                     }
                 }
@@ -3332,10 +3609,11 @@ struct Encoder
         const UInt32 nexc = have_div ? UInt32(conv.exc_pos.size()) : 0;
         const UInt32 nreg = n - nexc;
 
-        /// --- Candidates: (front-end, order), ranked by a cheap proxy; the best few are analyzed on the whole chunk.
+        /// --- Candidates: (front-end, order), ranked by a cheap proxy; the tokens of the best few are counted.
         std::vector<Candidate> candidates;
         std::vector<Plan> plans;
         double div_side_bits = 0;
+        double div_exception_bits = 0;
         const bool have_adj = have_div && !conv.inexact.empty();
         /// A few distinct values: they become dictionary symbols. Differencing destroys them, so it is not
         /// considered unless it helps even without a dictionary (runs, a smooth trend).
@@ -3360,12 +3638,14 @@ struct Encoder
             choosePredictor(conv.lat.data(), nreg, distinct, plans);
             addPlans(true, adj_proxy + exc_proxy);
             div_side_bits = exc_proxy;
+            div_exception_bits = exc_proxy;
         }
-        /// The bit patterns are worth trying unless every value is reproduced from an integer exactly.
+        /// The bit patterns are worth trying unless every value is reproduced from an integer exactly, or all but
+        /// a few exceptions which do not make a dictionary.
         ChunkParams pb;
         bool narrow = false;
         int unused_exp = 0;
-        if (have_div && !have_adj && !nexc)
+        if (have_div && !have_adj && (!nexc || (!dictionary_like && nexc * 64 <= n)))
         {
             UInt64 widest = 0;
             for (Int64 q : conv.lat)
@@ -3399,15 +3679,14 @@ struct Encoder
             ChunkParams params;
             bool div = false;
             StreamEncoder * stream = nullptr;
-            bool by_dictionary = false;   /// the estimate is the size of a dictionary of all the distinct values
         };
         Evaluated evals[MAX_CANDIDATES];
         UInt32 evaluated = 0;
         bool adj_prepared = false;
         for (const Candidate & c : candidates)
         {
-            /// The proxy is crude: analyze everything that is not hopeless against the best proxy.
-            if (evaluated >= 1 && c.cost > candidates[0].cost * 1.35 + 64)
+            /// The proxy is crude: look at everything that is not hopeless against the best proxy.
+            if (evaluated >= 1 && c.cost > candidates[0].cost * PROXY_BAND + 64)
                 break;
             if (evaluated >= MAX_CANDIDATES)
                 break;
@@ -3421,40 +3700,50 @@ struct Encoder
                 nres = computeResiduals(lat, c.plan, p, resid[evaluated]);
                 residuals = resid[evaluated].data();
             }
+            /// The analysis chooses the bins on a sample; the counts of the tokens then give the size within
+            /// about a percent, short of the gain of the contexts.
             StreamEncoder & s = streams[evaluated];
             s.analyze(residuals, nres, true, 1);
-            /// The analysis guesses the gain of the dictionary from a small sample; when the values are few, the
-            /// estimate from their number is more reliable.
-            double bits = std::min(s.estimated_bits, c.plan.dict_proxy) + 64.0 * p.order;
+            s.count();
+            double bits = s.counted_bits + 64.0 * p.order;
             if (c.div)
             {
                 if (have_adj && !adj_prepared)
                 {
+                    /// The adjustments are counted now, and completed only if they are going to be written.
                     adj_stream.analyze(conv.adj.data(), nreg, false, 0);
-                    adj_stream.finalize();
-                    div_side_bits += adj_stream.estimated_bits + modelBits(adj_stream);
+                    adj_stream.count();
+                    div_side_bits += adj_stream.counted_bits;
                     adj_prepared = true;
                 }
                 bits += div_side_bits;
             }
-            evals[evaluated++] = {bits, p, c.div, &s, c.plan.dict_proxy < s.estimated_bits};
+            evals[evaluated++] = {bits, p, c.div, &s};
         }
         std::sort(evals, evals + evaluated, [](const Evaluated & a, const Evaluated & b) { return a.bits < b.bits; });
-        /// The analysis looks at a sample and guesses the effect of the dictionary: when the two best are
-        /// close, do the real work for both.
+        bool adj_completed = false;
         auto exactBits = [&](Evaluated & e)
         {
-            e.stream->finalize();
-            return e.stream->estimated_bits + modelBits(*e.stream) + 64.0 * e.params.order + (e.div ? div_side_bits : 0);
+            e.stream->complete();
+            double bits = e.stream->estimated_bits + modelBits(*e.stream) + 64.0 * e.params.order;
+            if (e.div)
+            {
+                bits += div_exception_bits;
+                if (have_adj)
+                {
+                    if (!adj_completed)
+                        adj_stream.complete();
+                    adj_completed = true;
+                    bits += adj_stream.estimated_bits + modelBits(adj_stream);
+                }
+            }
+            return bits;
         };
+        /// All the work is done for the best candidate, and for the second one only when the two are very close.
         UInt32 best = 0;
-        double best_exact = exactBits(evals[0]);
-        /// Two dictionaries of the same values differ only in the size of their entries: the estimates suffice.
-        if (evaluated > 1 && evals[1].bits <= evals[0].bits * CLOSE_CALL && !(evals[0].by_dictionary && evals[1].by_dictionary))
-        {
-            if (exactBits(evals[1]) < best_exact)
-                best = 1;
-        }
+        double exact_best = exactBits(evals[0]);
+        if (evaluated > 1 && evals[1].bits <= evals[0].bits * VERY_CLOSE_CALL && exactBits(evals[1]) < exact_best)
+            best = 1;
         StreamEncoder & stream = *evals[best].stream;
         ChunkParams & p = evals[best].params;
         const bool best_div = evals[best].div;

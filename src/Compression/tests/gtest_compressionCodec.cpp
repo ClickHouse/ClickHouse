@@ -3204,6 +3204,9 @@ TEST_F(WallabyTest, RoundTripOfSizesAndTails)
     {
         for (size_t tail : {0, 1, 3, 7})
         {
+            /// An empty block is never written, and the generic part of a codec refuses to decompress it.
+            if (size == 0 && tail == 0)
+                continue;
             std::vector<Float64> values64(size);
             std::vector<Float32> values32(size);
             for (size_t i = 0; i < size; ++i)
