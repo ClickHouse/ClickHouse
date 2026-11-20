@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-parallel-replicas
+# Random settings limits: output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
 # no-fasttest: Parquet support is not built in fast-test images
 # no-parallel: the columns cache is system-wide, and the test drops it to reset its admission control
 # no-parallel-replicas: profile events are not available on the second replica
@@ -15,7 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 FILE_PATH="${USER_FILES_PATH}/${FILE}"
 
-# Four row groups (30000 rows each, the last one 10000), small pages, NULLs in `n` every 7 rows, an array column.
+# Row groups of 30000 to 60000 rows (the last one can be smaller), so that one of them has two of the top 5 rows, small
+# pages, NULLs in `n` every 7 rows, an array column.
 write_file()
 {
     $CLICKHOUSE_CLIENT -q "

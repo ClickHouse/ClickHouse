@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-parallel-replicas
+# Random settings limits: output_format_parquet_data_page_size=(1048576, None); output_format_parquet_compression_method=('zstd', 'zstd')
 # no-fasttest: Parquet support is not built in fast-test images
 # no-parallel: the columns cache is system-wide, and the test drops it to reset its admission control
 # no-parallel-replicas: profile events are not available on the second replica
