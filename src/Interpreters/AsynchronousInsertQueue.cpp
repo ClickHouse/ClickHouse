@@ -922,10 +922,18 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         else if (batching_is_not_happening)
         {
             flush_reason = "the previous insert with this key was not batched with any other";
-            flush_without_batching = !flush_stopped;
+            flush_without_batching = true;
         }
 
-        if (!flush_stopped && flush_without_batching)
+        /// `flushAll` clears `flush_stopped` without the shard mutex, so it is read once. Otherwise an insert flushed because
+        /// it is not batched could see the flag set here and cleared below, and wait for the pool in this thread.
+        if (flush_stopped)
+        {
+            flush_reason = nullptr;
+            flush_without_batching = false;
+        }
+
+        if (flush_without_batching)
         {
             /// The batch is handed over to the deadline thread of the shard instead of being scheduled here. Pool admission
             /// can wait for a running flush, and the caller can hold locks of the destination table, which that flush or
@@ -942,7 +950,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
                 it->second = shard.queue.insert(std::move(node));
             });
         }
-        else if (!flush_stopped && flush_reason)
+        else if (flush_reason)
         {
             LOG_TRACE(log, "Scheduling async insert processing job because {}", flush_reason);
             if (data->entries.size() > 1 && key_state != shard.key_states.end())
