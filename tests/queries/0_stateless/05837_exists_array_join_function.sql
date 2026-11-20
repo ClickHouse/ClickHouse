@@ -17,7 +17,8 @@ SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT l.number, arrayJoin([1,
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(l.number = 1, [1], CAST([], 'Array(UInt8)'))) FROM t);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(CAST([], 'Array(UInt8)')) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([1, 2]) FROM t WHERE t.k = l.number);
-SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(t.k = 1, CAST([], 'Array(UInt8)'), [1])) FROM t WHERE t.k = l.number GROUP BY t.k);
+-- A nonzero `max_rows_to_group_by` (set by tests/config/users.d/limits.yaml) keeps ignoring this `arrayJoin`.
+SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(t.k = 1, CAST([], 'Array(UInt8)'), [1])) FROM t WHERE t.k = l.number GROUP BY t.k) SETTINGS max_rows_to_group_by = 0;
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([sumState(toNullable(t.k))]) FROM t WHERE t.k = l.number);
