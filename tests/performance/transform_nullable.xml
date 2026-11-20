@@ -10,7 +10,7 @@
     <query>SELECT sum(CASE ns WHEN 'Sunday' THEN 1 WHEN 'Monday' THEN 2 WHEN 'Tuesday' THEN 3 WHEN 'Wednesday' THEN 4 WHEN 'Thursday' THEN 5 WHEN 'Friday' THEN 6 WHEN 'Saturday' THEN 7 END) FROM transform_nullable</query>
     <query>SELECT CASE ns WHEN 'Sunday' THEN 'weekend' WHEN 'Saturday' THEN 'weekend' WHEN 'Holiday' THEN 'off' ELSE 'weekday' END AS k, count() FROM transform_nullable GROUP BY k FORMAT Null</query>
     <query>SELECT sum(transform(ni, [0, 1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6, 7], 0)) FROM transform_nullable</query>
-    <query>SELECT sum(transform(if(is_null, NULL, s), ['a', 'b'], [1, 2], 0)) FROM transform_nullable_long</query>
+    <query>SELECT sum(transform(if(is_null != 0, NULL, s), ['a', 'b'], [1, 2], 0)) FROM transform_nullable_long</query>
     <query>SELECT sum(transform(s, ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], [1, 2, 3, 4, 5, 6, 7], 0)) FROM transform_nullable</query>
     <drop_query>DROP TABLE IF EXISTS transform_nullable</drop_query>
     <drop_query>DROP TABLE IF EXISTS transform_nullable_long</drop_query>
