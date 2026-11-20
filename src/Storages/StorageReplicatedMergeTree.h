@@ -384,7 +384,10 @@ public:
         std::span<String> replicas_not_same_region;
     };
 
-    GetReplicasResult getAllReplicasInPath(const String & zk_path);
+    /// Returns the replicas in `zk_path` in random order. With geo replication control and `prefer_same_region`,
+    /// the replicas of this replica's region go first and are also available as `replicas_same_region`.
+    /// With geo replication control but without `prefer_same_region`, `replicas_same_region` is empty and all replicas are in `replicas_not_same_region`.
+    GetReplicasResult getAllReplicasInPath(const String & zk_path, bool prefer_same_region = true);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -721,7 +724,21 @@ private:
     bool executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region);
 
     bool executeReplaceRange(LogEntry & entry);
-    void executeClonePartFromShard(const LogEntry & entry);
+    void executeClonePartFromShard(LogEntry & entry);
+
+    /// Whether fetches for this entry should still prefer (or be restricted to) sources in this replica's region:
+    /// geo replication control is configured and the entry has not exhausted its same-region wait.
+    bool shouldPreferSameRegionSource(const LogEntry & entry) const;
+
+    /// Whether `replica` in `zk_path` belongs to this replica's region (requires geo replication control).
+    bool isReplicaInSameRegion(const String & zk_path, const String & replica) const;
+
+    /// Account the time this entry is spending waiting for a usable source in this replica's region: either no
+    /// replica of the region has the part yet, or a fetch from a replica of the region failed. The wait is measured
+    /// from the first such event and limited by `geo_replication_control_leader_wait_timeout`. Returns true while the
+    /// wait is still in effect (the entry is postponed by `geo_replication_control_leader_wait`), false once it has
+    /// expired: from then on the source of the entry is chosen among all replicas regardless of their region.
+    bool deferEntryForSameRegionSource(LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -791,7 +808,7 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
-    String findReplicaHavingPart(const String & part_name, bool active = true);
+    String findReplicaHavingPart(const String & part_name, bool active = true, bool prefer_same_region = true);
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);

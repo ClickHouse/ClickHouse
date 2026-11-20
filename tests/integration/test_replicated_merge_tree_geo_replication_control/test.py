@@ -891,3 +891,74 @@ def test_clone_part_from_shard_skips_lagging_same_region_replica(start_cluster):
     finally:
         for node in [apac1, apac2, us3]:
             node.query("DROP TABLE IF EXISTS clone_shard SYNC")
+
+
+def test_fetch_partition_falls_back_when_same_region_misses_deduplication(start_cluster):
+    src_path = "/clickhouse/tables/fetch_partition_undeduplicated_src"
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE undeduplicated_src(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+
+        apac1.query(
+            "CREATE TABLE undeduplicated_dst(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/fetch_partition_undeduplicated_dst', 'apac1') ORDER BY tuple() PARTITION BY key"
+        )
+
+        # The same-region replica has the part with two identical rows, but neither executes nor fetches the merge
+        # that removes the duplicate. The merged part keeps the same data version as the unmerged one.
+        us3.query("INSERT INTO undeduplicated_src VALUES (1, 'a'), (1, 'a')")
+        apac2.query("SYSTEM SYNC REPLICA undeduplicated_src")
+        apac2.query("SYSTEM STOP MERGES undeduplicated_src")
+        apac2.query("SYSTEM STOP FETCHES undeduplicated_src")
+        us3.query("OPTIMIZE TABLE undeduplicated_src PARTITION 1 FINAL DEDUPLICATE")
+
+        assert (
+            us3.query("SELECT count() FROM undeduplicated_src") == "1\n"
+        ), "The out-of-region replica must have deduplicated the partition for this test to be meaningful"
+        assert (
+            apac2.query(
+                "SELECT groupArray(name) FROM system.parts WHERE table = 'undeduplicated_src' AND active"
+            )
+            == "['1_0_0_0']\n"
+        ), "The same-region replica must have only the unmerged part for this test to be meaningful"
+
+        # The unmerged part spans the same blocks with the same data version, but it still has the duplicate,
+        # so the out-of-region replica has to be used.
+        apac1.query(
+            f"ALTER TABLE undeduplicated_dst FETCH PARTITION 1 FROM '{src_path}'"
+        )
+        apac1.query("ALTER TABLE undeduplicated_dst ATTACH PARTITION 1")
+        assert apac1.query("SELECT count() FROM undeduplicated_dst") == "1\n"
+
+    finally:
+        for node in [apac2, us3]:
+            node.query("DROP TABLE IF EXISTS undeduplicated_src SYNC")
+        apac1.query("DROP TABLE IF EXISTS undeduplicated_dst SYNC")
+
+
+def test_same_region_source_failing_sends_does_not_block_fetch(start_cluster):
+    zk_path = "/clickhouse/tables/same_region_no_sends"
+    try:
+        for node, replica in [(apac1, "apac1"), (apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE no_sends(key UInt64, data String) ENGINE = ReplicatedMergeTree('{zk_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 3"
+            )
+
+        # The only replica of the region that has the part stays active, but cannot send it.
+        apac2.query("SYSTEM STOP FETCHES no_sends")
+        us3.query("INSERT INTO no_sends SELECT 1, '0'")
+        apac1.query("SYSTEM SYNC REPLICA no_sends")
+        apac1.query("SYSTEM STOP REPLICATED SENDS no_sends")
+        apac2.query("SYSTEM START FETCHES no_sends")
+
+        # The failed transfers from the same-region source count towards the same-region wait,
+        # so once it expires the part is fetched from the out-of-region replica.
+        apac2.query("SYSTEM SYNC REPLICA no_sends", timeout=120)
+        assert apac2.query("SELECT count() FROM no_sends") == "1\n"
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS no_sends SYNC")
