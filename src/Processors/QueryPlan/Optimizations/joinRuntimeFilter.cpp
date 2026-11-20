@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -27,6 +28,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -692,6 +694,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
+    join_step->setHasRuntimeFilters();
+
     return true;
 }
 
@@ -700,7 +704,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     const auto & frame = stack.back();
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_step)
+    auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
+    if (!read_step && !object_storage_read_step)
         return;
 
     /// Walk up from the reading step composing the filters through the expression steps,
@@ -709,7 +714,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     /// (which then fails the bare-column check) instead of colliding with a physical
     /// column's name. Unlike that pass, nothing is attached to the step's filter and no
     /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
-    std::vector<const ActionsDAG *> expression_dags;
+    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
@@ -719,7 +724,14 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+            {
+                if (read_step)
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                else if (object_storage_read_step && !descr.is_global_row_index)
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+            }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {

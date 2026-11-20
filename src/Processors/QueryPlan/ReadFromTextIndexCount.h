@@ -31,7 +31,7 @@ public:
         const String & count_column_name,
         size_t num_streams_);
 
-    String getName() const override { return "ReadFromTextIndexCount"; }
+    [[nodiscard]] String getName() const override { return "ReadFromTextIndexCount"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
 private:
