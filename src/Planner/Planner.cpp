@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -2991,8 +2992,10 @@ void Planner::buildPlanForUnionNode()
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;
 
+    /// The join does not pass on the totals of the arms, so set operations that can produce them skip the join rewrite.
     const bool execute_as_join = (union_mode == SelectUnionMode::INTERSECT_DISTINCT || union_mode == SelectUnionMode::EXCEPT_DISTINCT)
-        && settings[Setting::rewrite_intersect_except_distinct_to_join] && union_common_header.columns() != 0;
+        && settings[Setting::rewrite_intersect_except_distinct_to_join] && union_common_header.columns() != 0
+        && std::ranges::none_of(query_plans, [](const auto & plan) { return QueryPlanOptimizations::canProduceTotals(*plan->getRootNode()); });
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {

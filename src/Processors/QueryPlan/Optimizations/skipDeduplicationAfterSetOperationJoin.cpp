@@ -24,7 +24,11 @@ void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node)
         child = child->children.front();
 
     const auto * join_step = typeid_cast<const JoinStep *>(child->step.get());
-    if (join_step && join_step->getJoin()->getTableJoin().kind() == JoinKind::Right)
+    if (!join_step)
+        return;
+
+    const auto & table_join = join_step->getJoin()->getTableJoin();
+    if (table_join.setOperation() == JoinSetOperation::ExceptDistinct && table_join.kind() == JoinKind::Right)
         distinct->skipDeduplication();
 }
 

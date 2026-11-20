@@ -1579,14 +1579,12 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
 }
 
 
-static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag, const NameSet & skip_columns = {})
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
     ColumnsWithTypeAndName columns;
     columns.reserve(actions_dag.getOutputs().size());
     for (const auto & node : actions_dag.getOutputs())
     {
-        if (skip_columns.contains(node->result_name))
-            continue;
         ColumnPtr column = node->column ? ColumnPtr(node->column) : ColumnPtr(node->result_type->createColumn());
         columns.emplace_back(std::move(column), node->result_type, node->result_name);
     }
@@ -2104,24 +2102,15 @@ static QueryPlanNode buildPhysicalJoinImpl(
         planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
     }
 
-    const bool is_set_operation = join_operator.set_operation != JoinSetOperation::None;
-    /// A set operation returns the rows and the totals of its first arm, whose columns the join outputs.
-    bool prefer_left_totals = true;
-    bool output_from_left = true;
-    if (is_set_operation)
+    if (join_operator.set_operation == JoinSetOperation::IntersectDistinct)
     {
         /// The outputs are columns of the first arm, or only a constant when nothing of the result is used.
         const bool first_arm_is_left = std::ranges::none_of(
             actions_after_join, [&](const auto * output) { return JoinActionRef(output, expression_actions).fromRight(); });
-        prefer_left_totals = first_arm_is_left;
-        output_from_left = first_arm_is_left;
 
         /// The build side of `INTERSECT` is needed only for the keys if the rows come from the probe side.
-        if (!first_arm_is_left && join_operator.set_operation == JoinSetOperation::IntersectDistinct)
-        {
+        if (!first_arm_is_left)
             outputFromProbe(join_operator, expression_actions, actions_after_join);
-            output_from_left = true;
-        }
     }
 
     /// Selectivity estimates for the IEJoin key condition choice; only needed when the choice is
@@ -2497,11 +2486,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         }
     }
 
-    NameSet totals_only_build_columns;
-    std::vector<Names> child_input_names(children.size());
-    for (size_t child_index = 0; child_index < children.size(); ++child_index)
+    for (const auto * child : children)
     {
-        const auto * child = children[child_index];
         for (const auto & column : *child->step->getOutputHeader())
         {
             auto input_it = name_to_nodes.find(column.name);
@@ -2515,25 +2501,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             const auto * input = input_it->second.front();
             input_it->second.pop_front();
-            child_input_names[child_index].push_back(input->result_name);
-            const bool used_only_by_keys = consumed_inputs.contains(input);
-            /// A set-operation join passes the totals of its arms on unchanged, so it also keeps the columns that only its keys use.
-            if (!used_only_by_keys || is_set_operation)
+            if (!consumed_inputs.contains(input))
                 used_expressions.emplace_back(input, expression_actions);
-            if (used_only_by_keys && is_set_operation && child_index == 1)
-                totals_only_build_columns.insert(input->result_name);
         }
-    }
-
-    if (is_set_operation)
-    {
-        table_join->setSetOperationTotals({
-            .left_columns = child_input_names[0],
-            .right_columns = child_input_names[1],
-            .totals_only_right_columns = totals_only_build_columns,
-            .prefer_left_totals = prefer_left_totals,
-            .output_from_left = output_from_left,
-        });
     }
 
     {
@@ -2635,8 +2605,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
-    /// Skip build side columns that are kept only for the totals.
-    SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag, totals_only_build_columns);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
     const bool right_has_strings = std::any_of(right_sample_block->begin(), right_sample_block->end(), [](const auto & column)
     {

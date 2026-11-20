@@ -7916,7 +7916,7 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
     DECLARE(Bool, rewrite_intersect_except_distinct_to_join, true, R"(
-Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`.
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`. Operations whose arms can produce totals, such as with `WITH TOTALS`, still run without a join.
 )", 0, \
         {"26.11", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(

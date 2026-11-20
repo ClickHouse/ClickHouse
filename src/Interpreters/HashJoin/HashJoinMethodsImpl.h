@@ -290,6 +290,10 @@ BuildResult insertSlotRows(
             result.all_values_unique
                 &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, new_keys);
     }
+
+    /// A set map needs the block only for another algorithm, and only when the block added a key.
+    if constexpr (is_set)
+        result.is_inserted = new_keys != 0 && join.mustKeepRightBlocks();
     return result;
 }
 
@@ -331,11 +335,8 @@ NO_INLINE BuildResult insertFromBlockImplTypeCase(
         skip = key_getter.skipOrAllSelected(buildRowSkipData(null_map, join_mask, key_getter.skip_buffer, 0, key_getter.num_rows));
 
     BuildResult result;
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
-    /// the block has to be kept for another algorithm the caller drops it.
-    if constexpr (is_set)
-        result.is_inserted = join.mustKeepRightBlocks();
-    else
+    /// For ALL and ASOF join always insert values. The other maps keep the block only if a slot needs it.
+    if constexpr (!is_set)
         result.is_inserted = !mapped_one || is_asof_join;
     auto insert_slot = [&](size_t slot)
     {

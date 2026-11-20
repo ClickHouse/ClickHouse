@@ -169,10 +169,7 @@ public:
         IQueryPlanStep * join_step,
         bool keep_left_pipeline_layout,
         const std::optional<String> & seal_gate = std::nullopt,
-        Processors * collected_processors = nullptr,
-        /// Read the left or the right input to the end, because totals come after all rows.
-        bool keep_reading_left = false,
-        bool keep_reading_right = false);
+        Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
@@ -230,17 +227,6 @@ public:
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
 
     bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
-
-    /// Totals taken off a pipeline, with the header of that pipeline.
-    struct DetachedTotals
-    {
-        OutputPort * port = nullptr;
-        SharedHeader header;
-    };
-
-    DetachedTotals detachTotals();
-    void attachTotals(OutputPort * port, Processors processors);
-
     bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     const Block & getHeader() const { return pipe.getHeader(); }

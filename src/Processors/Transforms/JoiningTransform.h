@@ -6,7 +6,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
-#include <Processors/ISimpleTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SetSpillable.h>
 
@@ -100,14 +99,6 @@ public:
 
     InputPort & addDelayedBlocksInput();
 
-    /// A set operation passes the totals of its branches by the join. A branch with totals is read to the end even when
-    /// the result is known to be empty, so that the aggregation computing its totals is not cancelled.
-    void keepReadingInputs(bool probe, bool build)
-    {
-        keep_reading_probe = probe;
-        keep_reading_build = build;
-    }
-
     Status prepare() override;
     void work() override;
 
@@ -122,8 +113,6 @@ private:
     bool stop_reading = false;
     bool process_non_joined = true;
     bool stream_probe_empty = false;
-    bool keep_reading_probe = false;
-    bool keep_reading_build = false;
     bool is_drained = false;
     bool is_last_drained = false;
 
@@ -168,22 +157,6 @@ struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
     RuntimeFilterSealInfo(const RuntimeFilterSealInfo & other) = default;
 
     RuntimeFilterConstPtr filter;
-};
-
-/// Turns the totals of one branch of a set-operation join into the totals of the join: an output column takes the
-/// branch's column named in `output_to_input`, any other output column a default.
-class SetOperationTotalsTransform final : public ISimpleTransform
-{
-public:
-    SetOperationTotalsTransform(SharedHeader input_header_, SharedHeader output_header_, NameToNameMap output_to_input_);
-
-    String getName() const override { return "SetOperationTotalsTransform"; }
-
-protected:
-    void transform(Chunk & chunk) override;
-
-private:
-    NameToNameMap output_to_input;
 };
 
 /// Fills Join with block from right table.

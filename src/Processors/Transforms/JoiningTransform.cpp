@@ -89,7 +89,7 @@ InputPort & JoiningTransform::addDelayedBlocksInput()
 IProcessor::Status JoiningTransform::prepare()
 {
     /// Check if we can fully skip reading left side when right side is empty
-    if (build_finished_input && build_finished_input->isFinished() && !stream_probe_empty && !keep_reading_probe && join->alwaysReturnsEmptySet() && !on_totals)
+    if (build_finished_input && build_finished_input->isFinished() && !stream_probe_empty && join->alwaysReturnsEmptySet() && !on_totals)
         stop_reading = true;
 
     auto & output = outputs.front();
@@ -127,7 +127,7 @@ IProcessor::Status JoiningTransform::prepare()
         /// nothing for an empty left side, so then the right side, which may be unbounded, is not read. RIGHT ANTI
         /// outputs the right rows, so it always reads them.
         const bool probe_first = join->getTableJoin().setOperation() != JoinSetOperation::None && !isRight(join->getTableJoin().kind())
-            && !keep_reading_build && !on_totals;
+            && !on_totals;
         if (probe_first && !has_input)
         {
             auto & probe = inputs.front();
@@ -279,8 +279,7 @@ void JoiningTransform::transform(Chunk & chunk)
 
         if (join->alwaysReturnsEmptySet() && !on_totals)
         {
-            /// The totals of the left side come only after all of its rows.
-            stop_reading = !keep_reading_probe;
+            stop_reading = true;
             chunk.clear();
             return;
         }
@@ -738,35 +737,6 @@ Chunk NonJoinedBlocksTransform::generate()
     ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
     ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
     return Chunk(block.getColumns(), rows);
-}
-
-
-SetOperationTotalsTransform::SetOperationTotalsTransform(SharedHeader input_header_, SharedHeader output_header_, NameToNameMap output_to_input_)
-    : ISimpleTransform(std::move(input_header_), std::move(output_header_), false)
-    , output_to_input(std::move(output_to_input_))
-{
-}
-
-void SetOperationTotalsTransform::transform(Chunk & chunk)
-{
-    const size_t num_rows = chunk.getNumRows();
-    const auto input = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    Columns columns;
-    for (const auto & column : getOutputPort().getHeader())
-    {
-        auto it = output_to_input.find(column.name);
-        const auto * source = it == output_to_input.end() ? nullptr : input.findByName(it->second);
-        if (source)
-        {
-            columns.push_back(source->column->convertToFullColumnIfConst());
-            continue;
-        }
-
-        auto default_column = column.type->createColumn();
-        default_column->insertManyDefaults(num_rows);
-        columns.push_back(std::move(default_column));
-    }
-    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }
