@@ -10441,7 +10441,7 @@ are read as usual. The setting has no effect when the uncompressed cache or the 
 table has a default expression (`DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL`) with an identifier: such an expression could
 use the values of the rows that are not read. Expressions without identifiers, such as `now()`, are allowed.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting."}) \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.

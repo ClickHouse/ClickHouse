@@ -99,7 +99,7 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY id;
 ```
 )", 0, \
-        {"26.11", 0, 0, "New setting."}) \
+        {"26.12", 0, 0, "New setting."}) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
 correspond to one primary key value.
