@@ -13,6 +13,7 @@
 #include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int POSTGRESQL_CONNECTION_FAILURE;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace
@@ -704,6 +706,20 @@ void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedColl
         return;
 
     const auto & query_settings = context->getSettingsRef();
+
+    /// A name that is neither a setting of the engine nor a query setting is no setting at all, as `checkStorageSettingNames`
+    /// decides for a table. `InterpreterSetQuery::applySettingsFromQuery` has moved the query settings out of the clause, and
+    /// an unknown name in `changes` is rejected when they are applied, but `name = DEFAULT` and `param_x = ...` are not applied.
+    const auto check_name = [&](std::string_view name)
+    {
+        if (!PostgreSQLSettings::hasBuiltin(name) && !query_settings.has(name))
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for database engine PostgreSQL", name);
+    };
+    for (const auto & name : settings->default_settings)
+        check_name(name);
+    for (const auto & parameter : settings->query_parameters)
+        check_name(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+
     const auto constraints = context->getSettingsConstraintsAndCurrentProfiles();
     query_settings.checkShorthandChanges(settings->changes);
     /// The overload for constant changes, because the other one removes a change equal to the current setting, which the
