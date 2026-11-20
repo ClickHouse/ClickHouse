@@ -938,8 +938,11 @@ bool optimizePlanForExists(QueryPlan & query_plan)
     auto * node = query_plan.getRootNode();
     while (true)
     {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        if (auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
         {
+            /// `arrayJoin` can make the result empty.
+            if (!expression->getTransformTraits().preserves_number_of_rows)
+                break;
             node = node->children[0];
             continue;
         }
