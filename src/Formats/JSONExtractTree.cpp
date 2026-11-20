@@ -981,6 +981,16 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            /// 999:59:59, the largest `Time` value.
+            constexpr Int64 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
+            const bool out_of_range = element.isInt64()
+                ? element.getInt64() < -max_time_seconds || element.getInt64() > max_time_seconds
+                : element.getUInt64() > static_cast<UInt64>(max_time_seconds);
+            if (out_of_range)
+            {
+                error = fmt::format("value {} is out of bounds of type Time", jsonElementToStringForError<JSONParser>(element, format_settings));
+                return false;
+            }
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else

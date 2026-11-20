@@ -1389,6 +1389,19 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
     }
 }
 
+bool MergeTreeData::isInsertOrderSensitive() const
+{
+    /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
+    /// `Replacing` keeps the last inserted row among rows with equal versions too.
+    /// A table with a `UNIQUE KEY` resolves a conflict between two rows by the order in which their
+    /// blocks are committed (see `unique_key_conflict_action`), so it depends on the input order as well.
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Coalescing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::Replacing
+        || hasUniqueKey();
+}
+
 bool MergeTreeData::supportsFinal() const
 {
     return merging_params.mode == MergingParams::Collapsing
