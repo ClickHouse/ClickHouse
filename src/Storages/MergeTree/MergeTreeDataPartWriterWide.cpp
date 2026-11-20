@@ -223,6 +223,17 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         resolved_streams_by_full_name.emplace(full_stream_name, resolved_stream);
     };
 
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+
+    UInt64 column_max_compress_block_size = 0;
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
+            column_max_compress_block_size = value->safeGet<UInt64>();
+    if (!column_max_compress_block_size)
+        column_max_compress_block_size = settings.max_compress_block_size;
+    /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
+    column_max_compress_block_size = std::min<UInt64>(column_max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -262,18 +273,10 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
 
         auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
-        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
+        if (!marks_compression_codec)
+            marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
-        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-
-        UInt64 max_compress_block_size = 0;
-        if (column_desc)
-            if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
-                max_compress_block_size = value->safeGet<UInt64>();
-        if (!max_compress_block_size)
-            max_compress_block_size = settings.max_compress_block_size;
-        /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
-        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+        UInt64 max_compress_block_size = column_max_compress_block_size;
 
         /// A write buffer is allocated per stream below, and a single column can own thousands of
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is

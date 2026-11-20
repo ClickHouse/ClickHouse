@@ -173,6 +173,9 @@ private:
     /// Some long stream names are replaced with hashes. Maps the actual stream name, possibly a hash, to the full one.
     std::unordered_map<String, String> stream_name_to_full_name;
 
+    /// The codec of the marks of every stream, created by the first `addStreams` that creates a stream.
+    CompressionCodecPtr marks_compression_codec;
+
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
