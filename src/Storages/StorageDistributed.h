@@ -75,7 +75,12 @@ public:
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
         bool is_remote_function_ = false,
-        bool is_remote_database_proxy_ = false);
+        bool is_remote_database_proxy_ = false,
+        /// Whether the inner table function of `remote_table_function_ptr` comes from a definition read back
+        /// from the metadata. A stored `ENGINE = Distributed`/`ENGINE = remote` definition is replayed, a
+        /// `remote()`/`cluster()` call written in a query is not, and the two have to be told apart: the
+        /// function refuses a combination while a definition is written but must still load it.
+        bool inner_function_is_replayed_definition_ = false);
 
     ~StorageDistributed() override;
 
@@ -318,6 +323,8 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+    /// See the constructor parameter of the same name.
+    bool inner_function_is_replayed_definition;
 
     /// The storage is a table of a `Remote` database: a transient proxy over the remote table with
     /// no data of its own. Such a proxy enforces the caller's own rights on

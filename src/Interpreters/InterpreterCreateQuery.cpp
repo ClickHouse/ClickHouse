@@ -1371,6 +1371,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        table_function->setIsReplayedDefinition(isReplayedTableDefinition(mode, create, getContext()));
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before inferring the structure from it: the inference opens and
@@ -2992,6 +2993,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+
+        /// The function cannot see `mode`, so tell it whether this definition was read back from the
+        /// metadata before anything consults it: a combination it refuses while the definition is written
+        /// must still load. This is also the order `getTableProperties` uses.
+        table_function->setIsReplayedDefinition(isReplayedTableDefinition(mode, create, getContext()));
 
         /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
         /// from the function; a definition with an explicit column list skips that inference and is

@@ -88,6 +88,13 @@ URLTableDelegate makeURLTableDelegate(const String & url, const String & name, C
     if (!table_function)
         return {};
 
+    /// The function is rebuilt from a stored definition, so a combination it refuses while a definition is
+    /// written must still load. The table itself is resolved for this query, though, so the experimental gate
+    /// that guards HTTP index-page listing still applies: it is a session setting, not a property of the
+    /// stored definition.
+    table_function->setIsReplayedDefinition(true);
+    table_function->setSkipExperimentalGate(false);
+
     /// The `url` table function throws if a table cannot be created from the URL (for example, the
     /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
     /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:

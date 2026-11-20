@@ -277,12 +277,10 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     /// read land on different origins, so the archive identity, the caches and the distributed task
     /// would all have to carry the selected origin. Not supported: use a single URL. A definition read
     /// back from the metadata keeps loading, like everywhere else.
-    /// Only the authority and the path can carry a failover group of the archive: a `{a|b}` template in the
-    /// query is expanded locally into failover options of the same shard below, so it is not a reason to
-    /// refuse the archive read.
-    const size_t failover_search_end = url.find_first_of("?#");
-    if (reject_archive_failover && archive_pattern.has_value()
-        && url.substr(0, failover_search_end).contains('|'))
+    /// The group can sit in the authority, the path, or the query and the fragment: a `{a|b}` template there is
+    /// not a different shard but a failover option of the same one, so the probe and the data read can still
+    /// land on different origins. The whole archive half is therefore searched.
+    if (reject_archive_failover && archive_pattern.has_value() && url.contains('|'))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Archive reads do not support failover patterns ('|'); use a single URL, or set "

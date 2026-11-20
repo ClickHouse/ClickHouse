@@ -124,6 +124,9 @@ std::pair<String, StoragePtr> createTableFromAST(
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
+        /// This function only ever attaches a definition read back from metadata, so a combination the
+        /// function refuses while a definition is written must still load here.
+        table_function->setIsReplayedDefinition(true);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
 

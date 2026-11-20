@@ -1,0 +1,8 @@
+--- a wildcard archive definition loads without the experimental setting
+created	URL
+reloaded	URL
+plan	0	1
+--- a definition stored with `::` literal is read as archive syntax after the reload
+created	URL
+reloaded	URL
+plan	0	1

@@ -567,7 +567,8 @@ StorageDistributed::StorageDistributed(
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
-    bool is_remote_database_proxy_)
+    bool is_remote_database_proxy_,
+    bool inner_function_is_replayed_definition_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -583,6 +584,7 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
+    , inner_function_is_replayed_definition(inner_function_is_replayed_definition_)
     , is_remote_database_proxy(is_remote_database_proxy_)
 {
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
@@ -1222,6 +1224,10 @@ void StorageDistributed::read(
             header,
             storage_snapshot,
             processed_stage);
+    /// The inner function is a fresh instance either way, so it has to be told whether the definition it
+    /// comes from was read back from the metadata. `is_remote_function` cannot carry that: it is false for a
+    /// `cluster()` call, which is fresh, and true for a stored `ENGINE = remote(...)` definition.
+    select_stream_factory.is_replayed_definition = inner_function_is_replayed_definition;
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
@@ -2681,7 +2687,16 @@ void registerStorageDistributed(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
+            /* owned_cluster_ = */ ClusterPtr{},
+            /* remote_table_function_ptr_ = */ ASTPtr{},
+            /* is_remote_function_ = */ false,
+            /* is_remote_database_proxy_ = */ false,
+            /// This creator serves both `CREATE` and the load of a stored `ENGINE = Distributed` definition.
+            /// Its third argument is evaluated to a literal, so a table function target only exists on the
+            /// `remote()`/`cluster()` carriers, which pass the fact themselves. The value here is therefore
+            /// never consulted; it is `false` so that a future function target is not exempted by accident.
+            /* inner_function_is_replayed_definition_ = */ false);
     },
     SecretArgumentsSpec{},
     {
@@ -3074,7 +3089,10 @@ void registerStorageRemote(StorageFactory & factory)
                     *parsed.cluster,
                     parsed.remote_table_id,
                     args.getLocalContext(),
-                    parsed.remote_table_function_ptr);
+                    parsed.remote_table_function_ptr,
+                    /// The same predicate the carriers that read a definition use, so a `DatabaseReplicated`
+                    /// replica replaying an old DDL entry is exempt like a startup load is.
+                    /* is_replayed_definition = */ isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 if (columns.empty())
                 {
                     columns = std::move(inferred);
@@ -3131,7 +3149,13 @@ void registerStorageRemote(StorageFactory & factory)
             isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
-            /* is_remote_function_ = */ true);
+            /* is_remote_function_ = */ true,
+            /* is_remote_database_proxy_ = */ false,
+            /// This creator serves both `CREATE` and the load of a stored definition, so the fact comes from
+            /// the mode rather than being assumed: a fresh `ENGINE = Remote(...)` has to run the same checks
+            /// as the function written directly.
+            /* inner_function_is_replayed_definition_ = */
+                isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
     };
 
     StorageFactory::StorageFeatures features

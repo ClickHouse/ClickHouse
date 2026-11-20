@@ -106,6 +106,22 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Tells the function whether the storage it is about to build comes from a definition read back from the
+    /// metadata rather than from a fresh `CREATE`. A function that refuses a combination while the definition
+    /// is written must not refuse it again here, or a table stored by an earlier version would disappear from
+    /// the catalog on startup.
+    void setIsReplayedDefinition(bool value) const
+    {
+        is_replayed_table_definition = value;
+        skip_experimental_gate = value;
+    }
+
+    /// Whether the experimental gate that guards HTTP index-page listing is skipped for this instance. It is
+    /// skipped where a definition is read back from the metadata, because the gate is a session setting that
+    /// would otherwise be the server default and drop the table from the catalog. A carrier that rebuilds the
+    /// function for a fresh query - a URL database resolves its tables per query - keeps the gate.
+    void setSkipExperimentalGate(bool value) const { skip_experimental_gate = value; }
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
@@ -182,6 +198,11 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+    /// See `setIsReplayedDefinition`.
+    mutable bool is_replayed_table_definition = false;
+    /// See `setSkipExperimentalGate`.
+    mutable bool skip_experimental_gate = false;
+
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,

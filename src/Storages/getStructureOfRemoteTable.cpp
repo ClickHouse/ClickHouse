@@ -44,7 +44,8 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool is_replayed_definition)
 {
     String query;
     const Settings & settings = context->getSettingsRef();
@@ -54,6 +55,13 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            /// This path also serves the analysis of a fresh definition, which exists to run exactly the
+            /// checks a direct `CREATE` runs, so the flag has to come from the caller rather than be set
+            /// here: `CREATE TABLE ... ENGINE = Distributed(cluster, db, url(...))` would otherwise skip
+            /// them for the inner function while the same `url(...)` written directly still runs them. The
+            /// carrier is `remote('c', url(...))` or `cluster(...)`: an `ENGINE = Distributed` argument is
+            /// evaluated to a literal, so a table function target only exists on those two.
+            table_function_ptr->setIsReplayedDefinition(is_replayed_definition);
             return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
         }
 
@@ -159,7 +167,8 @@ ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool is_replayed_definition)
 {
     const auto & shards_info = cluster.getShardsInfo();
 
@@ -170,7 +179,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         if (shard_info.isLocal())
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr, is_replayed_definition);
 
             /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
             /// In that case, fall through to try remote shards.
@@ -185,7 +194,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         try
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr, is_replayed_definition);
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.

@@ -387,6 +387,7 @@ TEST(ArchiveUtils, SplitsTheFileStylePathAtTheSameSeparator)
     const auto [whole, no_member] = splitToArchivePathAndPathInArchive("dir/a.csv::m.csv");
     EXPECT_EQ(whole, "");
     EXPECT_EQ(no_member, "dir/a.csv::m.csv");
+
 }
 
 TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)

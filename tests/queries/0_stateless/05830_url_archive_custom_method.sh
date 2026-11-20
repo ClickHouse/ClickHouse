@@ -38,6 +38,15 @@ SELECT * FROM urlCluster('test_shard_localhost', 'http://{127.0.0.1:1|127.0.0.1:
 SELECT * FROM url('http://127.0.0.1:1/{missing|good}.zip::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:1/{missing|good}.zip::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
 
+-- A group in the query or the fragment is a failover option of the same shard, not a separate shard, so the
+-- metadata probe and the data read could still land on different origins. Rejected before any request, and a
+-- A DESCRIBE with an explicit structure is refused like a SELECT is.
+SELECT * FROM url('http://127.0.0.1:1/missing.zip?v={a|b}::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:1/missing.zip?v={a|b}::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM url('http://127.0.0.1:1/missing.zip?v=a|b::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM url('http://127.0.0.1:1/missing.zip#v={a|b}::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
+DESCRIBE TABLE url('http://127.0.0.1:1/missing.zip?v={a|b}::entry.csv', 'CSV', 'x UInt64'); -- { serverError BAD_ARGUMENTS }
+
 -- With archive syntax disabled, the same URL remains literal and explicit schema needs no HTTP request.
 SET allow_archive_path_syntax = 0;
 DESCRIBE TABLE url(${collection});

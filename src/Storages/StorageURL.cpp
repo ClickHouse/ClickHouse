@@ -3570,7 +3570,11 @@ void registerStorageURL(StorageFactory & factory)
                     is_replayed_definition);
             }
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The same predicate the archive rejection above uses: a full-definition `ATTACH` is a fresh
+            /// definition too, so it has to pass the gate the way a `CREATE` does.
+            /// The same predicate the function uses: a `|` failover group in the path is rejected with its
+            /// own message, so the gate must not report the experimental setting for it.
+            if (!is_replayed_definition && urlPathNeedsIndexPageListing(config.url))
                 checkExperimentalURLWildcardFromIndexPages(context);
 
             /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
@@ -3595,6 +3599,11 @@ void registerStorageURL(StorageFactory & factory)
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             configuration->is_replayed_definition = is_replayed_definition;
+            configuration->setRejectArchiveFailover(!is_replayed_definition);
+            /// The definition is interpreted again when it is loaded, so the decision whether a `::` is an
+            /// archive separator is taken from the context that loads it - the server default on a metadata
+            /// replay - rather than from the session that wrote it, which is not persisted.
+            configuration->setAllowArchivePathSyntax(context->getSettingsRef()[Setting::allow_archive_path_syntax]);
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

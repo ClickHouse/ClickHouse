@@ -191,6 +191,10 @@ void SelectStreamFactory::createForShard(
         if (table_func_ptr)
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            /// This path serves both a stored engine definition and a fresh `remote()`/`cluster()` call, so
+            /// the fact comes from the caller: a fresh call has to run the same checks as the function
+            /// written directly, including the experimental gate.
+            table_function_ptr->setIsReplayedDefinition(is_replayed_definition);
             main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else

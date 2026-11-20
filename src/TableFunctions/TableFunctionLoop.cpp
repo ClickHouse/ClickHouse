@@ -114,6 +114,9 @@ namespace DB
         if (inner_table_function_ast)
         {
             auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
+            /// The inner function is a fresh instance, so it has to be told that its definition came from the
+            /// metadata as well: a combination it refuses while the definition is written must still load.
+            inner_table_function->setIsReplayedDefinition(is_replayed_table_definition);
             /// Enforce the inner function's source access (as execute() does), not the raw structure.
             return inner_table_function->getActualTableStructureWithAccess(context, is_insert_query);
         }
@@ -173,6 +176,7 @@ namespace DB
         else
         {
             auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
+            inner_table_function->setIsReplayedDefinition(is_replayed_table_definition);
             storage = inner_table_function->execute(
                     inner_table_function_ast,
                     context,

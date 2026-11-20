@@ -1,0 +1,19 @@
+--- a stored definition keeps loading
+engine_failover_archive	URL
+engine_literal_member	URL
+function_custom_method	URL
+function_failover_archive	URL
+function_query_template	URL
+--- a replayed failover carrier keeps its literal meaning
+plan	1	0
+--- and one without a glob keeps the plain storage
+plan	1	0
+--- and one with a custom method keeps its literal meaning
+plan	1	0
+--- a query failover group keeps the literal meaning the definition was written with
+plan	1
+--- while a fresh cluster() call still runs the checks of its inner function
+Wildcard expansion for `url` from HTTP index pages is experimental
+--- and a fresh definition of the same source is still rejected
+Archive path syntax is not supported by the `URL` table engine
+Archive reads do not support failover patterns

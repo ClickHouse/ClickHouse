@@ -83,7 +83,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             /* is_fresh_definition = */ true,
             cluster,
             remote_table_function_ptr,
-            !is_cluster_function);
+            !is_cluster_function,
+            /* is_remote_database_proxy_ = */ false,
+            /* inner_function_is_replayed_definition_ = */ is_replayed_table_definition);
 
     res->startup();
     return res;
@@ -92,7 +94,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     chassert(cluster);
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+    /// The inner function is a fresh instance, so it has to be told where the definition came from.
+    return getStructureOfRemoteTable(
+        *cluster, remote_table_id, context, remote_table_function_ptr, is_replayed_table_definition);
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)

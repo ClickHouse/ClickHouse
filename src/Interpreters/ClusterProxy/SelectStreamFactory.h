@@ -93,6 +93,14 @@ public:
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
 
+    /// Whether the inner table function comes from a definition read back from the metadata rather than
+    /// from a fresh query. A stored `ENGINE = Remote('...', f(...))` sets it, and so does a `remote()` or
+    /// `cluster()` call that replays one, so a combination the function refuses while a definition is
+    /// written still loads; a fresh `remote()`/`cluster()` call leaves it false, so the same checks run
+    /// there as for the function written directly. `ENGINE = Distributed` cannot carry a function target:
+    /// its third argument is evaluated to a literal.
+    bool is_replayed_definition = false;
+
 private:
     /// The query of the previous shard, which is usually the query of the next one too.
     struct Query
