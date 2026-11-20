@@ -167,6 +167,8 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 </Note>
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. The block is made smaller still when the codec could compress it to more than 512 MiB, which only a chain of expanding codecs does. Data written in larger blocks by older versions cannot be read.
 )", 0) \
     DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
@@ -8303,7 +8305,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -8316,6 +8318,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, optimize_read_in_window_order, \
+        {"26.11", false, true, "Enable by default again: the sorting now scatters the merged stream by the `PARTITION BY` columns, so the window functions run in parallel. This also applies to the alias `optimize_read_in_window_order`."}, \
         {"26.1", true, false, "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
