@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/AccessChangesNotifier.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
@@ -51,7 +52,7 @@ private: // IAccessStorage implementations.
     std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, const ClientInfo & client_info, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix);
-    void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
+    void processRoleChanges(const std::vector<AccessChangesNotifier::Change> & changes);
 
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;

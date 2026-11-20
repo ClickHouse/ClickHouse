@@ -13,6 +13,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <sstream>
+#include <unordered_set>
 
 
 namespace DB
@@ -91,17 +92,34 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            for (const auto & change : changes)
-                this->processRoleChange(change.id, change.entity);
+            this->processRoleChanges(changes);
         }
     );
 }
 
 
-void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
+void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifier::Change> & changes)
 {
+    if (changes.empty())
+        return;
+
+    // The whole batch of changes is reconciled at once, so that a reload changing many roles resolves every configured
+    // or mapped name only once instead of once per changed role.
+    std::unordered_set<UUID> batch_role_ids;
+    bool any_role_exists = false;
+    for (const auto & change : changes)
+    {
+        batch_role_ids.insert(change.id);
+        if (typeid_cast<std::shared_ptr<const Role>>(change.entity))
+            any_role_exists = true;
+    }
+
+    auto is_in_batch = [&batch_role_ids] (const std::optional<UUID> & role_id)
+    {
+        return role_id && batch_role_ids.contains(*role_id);
+    };
+
     std::lock_guard lock(mutex);
-    const bool role_exists = (typeid_cast<std::shared_ptr<const Role>>(entity) != nullptr);
 
     // The mappings are keyed by the role names as they are configured or mapped from LDAP, and these names are resolved
     // to the IDs of roles with `access_control.find<Role>`. A name can be resolved to a role with another name, e.g.
@@ -124,14 +142,14 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
             old_role_id = it->second;
 
         // The removal of a role cannot change the resolution of a name which was not resolved to that role.
-        if (!role_exists && old_role_id != id)
+        if (!any_role_exists && !is_in_batch(old_role_id))
             continue;
 
-        // A name already resolved to the changed role is processed too: it could have been resolved during the login
+        // A name already resolved to a changed role is processed too: it could have been resolved during the login
         // of another user after the role had been added but before this notification was delivered, so some users
         // of this name may still lack the role.
         const auto new_role_id = access_control.find<Role>(role_name);
-        if (old_role_id != id && new_role_id != id)
+        if (!is_in_batch(old_role_id) && !is_in_batch(new_role_id))
             continue;
 
         if (new_role_id)
