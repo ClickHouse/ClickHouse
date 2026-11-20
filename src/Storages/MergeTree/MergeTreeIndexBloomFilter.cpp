@@ -9,7 +9,6 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -18,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -940,6 +938,11 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+static bool isPlainString(const DataTypePtr & type)
+{
+    return isString(type) && !type->getCustomName() && !type->getCustomSerialization();
+}
+
 /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static std::optional<size_t> findArrayJoinIndexPosition(
     const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
@@ -950,67 +953,6 @@ static std::optional<size_t> findArrayJoinIndexPosition(
         return std::nullopt;
     padded = true;
     return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
-}
-
-static bool isPlainString(const DataTypePtr & type)
-{
-    return typeid_cast<const DataTypeString *>(type.get()) && !type->getCustomName() && !type->getCustomSerialization();
-}
-
-static bool isPlainStringArray(const DataTypePtr & type)
-{
-    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
-    return array && !array->getCustomName() && !array->getCustomSerialization() && isPlainString(array->getNestedType());
-}
-
-static const ActionsDAG::Node * getCastArgument(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.size() != 2
-        || !typeid_cast<const detail::FunctionCast *>(node.function_base.get()))
-        return nullptr;
-
-    const auto name = node.function_base->getName();
-    return name == "CAST" || name == "_CAST" ? node.children.front()->getWithoutAlias() : nullptr;
-}
-
-/// Match an indexed String array through an identity CAST or a fresh round trip through Dynamic.
-static std::optional<size_t> findStringArrayJoinIndexPosition(
-    const RPNBuilderTreeNode & key, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
-{
-    if (!isPlainString(removeNullable(key.getDAGNode()->result_type)))
-        return std::nullopt;
-
-    auto argument = unwrapLosslessConversion(key, /*allow_drop_nullable=*/ false).getArrayJoinArgument();
-    if (!argument)
-        return std::nullopt;
-
-    padded = argument->isFunction() && argument->toFunctionNode().getFunctionName() == "emptyArrayToSingle";
-    if (padded)
-        argument = argument->toFunctionNode().getArgumentAt(0);
-
-    const auto * input = argument->getDAGNode()->getWithoutAlias();
-    if (!isPlainStringArray(input->result_type))
-        return std::nullopt;
-
-    if (const auto * cast_argument = getCastArgument(*input))
-    {
-        input = cast_argument;
-        if (const auto * dynamic_type = typeid_cast<const DataTypeDynamic *>(input->result_type.get()))
-        {
-            if (dynamic_type->getMaxDynamicTypes() != DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES
-                || dynamic_type->getCustomName() || dynamic_type->getCustomSerialization())
-                return std::nullopt;
-            input = getCastArgument(*input);
-        }
-    }
-
-    if (!input || input->type != ActionsDAG::ActionType::INPUT || !isPlainStringArray(input->result_type))
-        return std::nullopt;
-
-    auto position = findIndexPosition(header, index_nodes, RPNBuilderTreeNode(input, key.getContext()));
-    if (position && isPlainStringArray(header.getByPosition(*position).type))
-        return position;
-    return std::nullopt;
 }
 
 /// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
@@ -1203,32 +1145,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    const bool regular_in = function_name == "in" || function_name == "globalIn";
     const bool null_in = function_name == "nullIn" || function_name == "globalNullIn";
-    if ((!regular_in && !null_in) || !column)
+    if ((!null_in && function_name != "in" && function_name != "globalIn") || !column)
         return false;
 
-    auto array_join_argument = key_node.getArrayJoinArgument();
+    const auto array_join_key = null_in ? unwrapLosslessConversion(wrapped_key_node, /*allow_drop_nullable=*/ false) : key_node;
+    auto array_join_argument = array_join_key.getArrayJoinArgument();
     if (!array_join_argument)
         return false;
 
     bool padded = false;
-    auto array_position = regular_in
-        ? findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded)
-        : std::nullopt;
-    /// A set built with overflow mode 'break' can have more keys than its explicit column.
-    if (!array_position && prepared_set && !prepared_set->isTruncated()
-        && prepared_set->getDataTypes().size() == 1 && isPlainString(removeNullable(type)))
-    {
-        array_position = findStringArrayJoinIndexPosition(wrapped_key_node, header, index_nodes, padded);
-        if (!array_position)
-            return false;
-
-        /// Removing Nullable for hashing is safe when every explicit set element is a string.
-        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
-        if (nullable_column && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
-            return false;
-    }
+    auto array_position = findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded);
     if (!array_position)
         return false;
 
@@ -1240,6 +1167,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const auto & array_nested_type = array_type->getNestedType();
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
         return false;
+
+    if (null_in)
+    {
+        /// A computed index expression can depend on settings, e.g. CAST from Dynamic to Array(String).
+        if (index_nodes[position]->getWithoutAlias()->type != ActionsDAG::ActionType::INPUT)
+            return false;
+
+        /// The index stores string element hashes. Only use a complete set of strings with no NULLs.
+        if (!prepared_set || prepared_set->isTruncated() || prepared_set->getDataTypes().size() != 1
+            || !isPlainString(removeNullable(type)) || !isPlainString(array_nested_type))
+            return false;
+
+        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+        if (nullable_column && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+    }
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
     if (padded && containsPaddedElement(*converted_column, *array_nested_type))
@@ -1495,10 +1438,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
             bool padded = false;
-            auto array_position = findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded);
-            if (!array_position && value_type && isPlainString(removeNullable(value_type)))
-                array_position = findStringArrayJoinIndexPosition(wrapped_key_node, header, index_nodes, padded);
-            if (array_position)
+            if (auto array_position = findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded))
             {
                 size_t position = *array_position;
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
