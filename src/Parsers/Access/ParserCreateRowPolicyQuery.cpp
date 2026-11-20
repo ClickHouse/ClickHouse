@@ -506,6 +506,8 @@ A [Join](/reference/engines/table-engines/special/join) table is a prepared hash
 
 A column that a row policy reads cannot be dropped or renamed while the policy exists: `ALTER TABLE ... DROP COLUMN` and `ALTER TABLE ... RENAME COLUMN` fail with `ALTER_OF_COLUMN_IS_FORBIDDEN`. Change or drop the policy first. Other alterations, such as `MODIFY COLUMN` or `CLEAR COLUMN`, are not affected.
 
+The check uses the row policies of the server and table that receive the `ALTER`. The other replicas of a [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table apply the change without the check, so keep the same policies on every replica, for example with `ON CLUSTER` or a replicated access storage.
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl). This is also the convenient way to create the policy on the local tables of every server of the cluster.
