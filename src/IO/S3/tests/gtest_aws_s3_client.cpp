@@ -2064,6 +2064,81 @@ void runFibersAndReleaseWhenAllStarted(size_t fiber_count, Poco::Event & release
 
 }
 
+/// An invalidation that starts while a web identity refresh waits for STS is not cleared when that refresh completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup asks STS again.
+TEST(IOTestAwsS3Client, WebIdentityInvalidationDuringRefreshIsKept)
+{
+    /// The provider is created after the scheduler, so its `Silk::FiberMutex` is a fiber mutex.
+    initializeFiberSchedulerForTests();
+
+    Poco::Event sts_entered(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<size_t> sts_requests = 0;
+    FunctionHTTPServer sts([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        ++sts_requests;
+        sts_entered.set();
+        release.wait();
+        std::optional<StsRequestInfo> request_info;
+        MockStsRequestHandler(request_info, "web_identity_invalidation_access_key", "role_secret_key").handleRequest(request, response);
+    });
+
+    const std::string token_file = std::filesystem::temp_directory_path() / "clickhouse_web_identity_token_for_invalidation_gtest";
+    {
+        std::ofstream out(token_file);
+        out << "web-identity-token-for-invalidation-gtest";
+    }
+    SCOPE_EXIT({ std::filesystem::remove(token_file); });
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", sts.getUrl());
+
+    DB::RemoteHostFilter remote_host_filter;
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider provider(
+        client_configuration,
+        /* expiration_window_seconds_ = */ 0,
+        "arn:aws:iam::123456789012:role/clickhouse_web_identity_invalidation_role",
+        Aws::String(token_file.data(), token_file.size()),
+        "session",
+        "eu-west-1");
+    EXPECT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "web_identity_invalidation_access_key");
+
+    provider.SetNeedRefresh();
+    sts_entered.reset();
+    release.reset();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::vector<silk::FiberFuture> fibers(2);
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they are released and finish before it ends.
+        SCOPE_EXIT({
+            release.set();
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { provider.GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        ASSERT_TRUE(sts_entered.tryWait(60'000)) << "The refresh did not reach STS within 60 seconds";
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            provider.SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// The refresh is released once `SetNeedRefresh` is about to run. If that fiber is suspended for longer than
+        /// the STS answer takes, the invalidation comes after the refresh and the test passes without the wait in
+        /// `SetNeedRefresh`; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+    }
+
+    const size_t sts_requests_before = sts_requests;
+    provider.GetAWSCredentials();
+    EXPECT_EQ(sts_requests, sts_requests_before + 1);
+}
+
 /// S3 requests from fibers use fiber-aware transport also outside of `AMBER`: more fibers than the threads that run them
 /// wait for their answers at once, which the server holds until a request of every fiber has arrived. With fiber-unaware
 /// transport every waiting fiber holds its thread, so the requests of the other fibers are never sent.
