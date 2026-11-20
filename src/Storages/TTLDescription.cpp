@@ -1277,13 +1277,14 @@ static ExpressionAndSets analyzeExpressionAndSets(
     const ASTPtr & ast_template,
     const NamesAndTypesList & columns,
     const ContextPtr & context,
-    NamesAndTypesList * required_source_columns = nullptr)
+    NamesAndTypesList * required_source_columns = nullptr,
+    const String & result_name = {})
 {
     ExpressionAndSets result;
     /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
     /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
     auto ast = ast_template->clone();
-    auto ttl_string = ast->formatWithSecretsOneLine();
+    auto ttl_string = result_name.empty() ? ast->formatWithSecretsOneLine() : result_name;
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     if (required_source_columns)
         *required_source_columns = syntax_analyzer_result->required_source_columns;
@@ -1308,7 +1309,8 @@ static ExpressionAndSets buildExpressionAndSets(
     const NamesAndTypesList & columns,
     const ContextPtr & context,
     NamesAndTypesList * required_source_columns = nullptr,
-    bool widen_temporal_columns = true)
+    bool widen_temporal_columns = true,
+    const String & result_name = {})
 {
     /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
     /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
@@ -1321,7 +1323,7 @@ static ExpressionAndSets buildExpressionAndSets(
     /// the original column types. Such expressions explicitly operate in the narrow
     /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
     if (!widen_temporal_columns)
-        return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+        return analyzeExpressionAndSets(ast, columns, context, required_source_columns, result_name);
 
     auto widened_columns = widenTemporalColumns(columns);
     bool widened_any = !std::equal(
@@ -1332,7 +1334,7 @@ static ExpressionAndSets buildExpressionAndSets(
     {
         try
         {
-            auto result = analyzeExpressionAndSets(ast, widened_columns, context, required_source_columns);
+            auto result = analyzeExpressionAndSets(ast, widened_columns, context, required_source_columns, result_name);
 
             /// The widening is an internal detail of the analysis, so report the required source columns
             /// with their original (narrow) types. This keeps the reported list a subset of `columns` as
@@ -1366,7 +1368,7 @@ static ExpressionAndSets buildExpressionAndSets(
         }
     }
 
-    return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+    return analyzeExpressionAndSets(ast, columns, context, required_source_columns, result_name);
 }
 
 /// Collect the argument expressions of every aggregate function found in the AST.
@@ -1428,9 +1430,11 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
 
     auto ast = expression_ast->clone();
     /// Evaluate a subcolumn TTL via getSubcolumn from the whole (possibly just-updated) column,
-    /// not a stale pre-extracted subcolumn.
+    /// not a stale pre-extracted subcolumn. The result keeps the name of the original expression,
+    /// which is `result_column` and the key of the TTL infos stored in parts.
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, expression_source_columns);
-    return buildExpressionAndSets(ast, expression_source_columns, getTTLExpressionContext(context));
+    return buildExpressionAndSets(
+        ast, expression_source_columns, getTTLExpressionContext(context), nullptr, true, expression_ast->formatWithSecretsOneLine());
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1443,7 +1447,9 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, where_expression_source_columns);
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
-        return buildExpressionAndSets(ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false);
+        return buildExpressionAndSets(
+            ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false,
+            where_expression_ast->formatWithSecretsOneLine());
     }
 
     return {};
@@ -1485,9 +1491,12 @@ TTLDescription TTLDescription::getTTLFromAST(
     auto ttl_ast = result.expression_ast->clone();
     /// Rewrite subcolumns to getSubcolumn so a subcolumn TTL resolves to its top-level column: a
     /// mutation of the parent then affects the TTL (getColumnDependencies) and it recomputes from the
-    /// updated parent. Stored expression_ast is kept for SHOW CREATE.
+    /// updated parent. Stored expression_ast is kept for SHOW CREATE, and the result keeps the name of
+    /// the original expression, because result_column is the key of the TTL infos stored in parts.
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(ttl_ast, columns.getAllPhysical());
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
+    auto expression = buildExpressionAndSets(
+        ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns, true,
+        result.expression_ast->formatWithSecretsOneLine()).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1516,7 +1525,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, columns.getAllPhysical());
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false,
+                    where_expr_ast->formatWithSecretsOneLine()).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }

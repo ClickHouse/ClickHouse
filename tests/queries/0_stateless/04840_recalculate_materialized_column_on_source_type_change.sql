@@ -78,8 +78,9 @@ SELECT countIf(neg = (x < 0)) FROM t_mat_source_partition_key;
 
 DROP TABLE t_mat_source_partition_key;
 
--- Case 6: a conversion that preserves values is still allowed for a key MATERIALIZED column, and its
--- data stays correct without being rewritten.
+-- Case 6: any type change of a source of a key MATERIALIZED column is rejected, even one that keeps the
+-- values of the source, because the key column cannot be recalculated and may depend on the type
+-- (`toTypeName(x)`).
 DROP TABLE IF EXISTS t_mat_source_safe_key;
 
 CREATE TABLE t_mat_source_safe_key (x LowCardinality(String), m String MATERIALIZED x)
@@ -87,11 +88,24 @@ ENGINE = MergeTree ORDER BY m SETTINGS min_bytes_for_wide_part = 0, min_rows_for
 
 INSERT INTO t_mat_source_safe_key SELECT toString(number) FROM numbers(10);
 
-ALTER TABLE t_mat_source_safe_key MODIFY COLUMN x String SETTINGS mutations_sync = 2;
+ALTER TABLE t_mat_source_safe_key MODIFY COLUMN x String SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 SELECT countIf(m = x) FROM t_mat_source_safe_key;
 
 DROP TABLE t_mat_source_safe_key;
+
+DROP TABLE IF EXISTS t_mat_source_type_dependent_key;
+
+CREATE TABLE t_mat_source_type_dependent_key (x LowCardinality(String), m String MATERIALIZED toTypeName(x))
+ENGINE = MergeTree ORDER BY m SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_type_dependent_key (x) VALUES ('a');
+
+ALTER TABLE t_mat_source_type_dependent_key MODIFY COLUMN x String SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT m = toTypeName(x) FROM t_mat_source_type_dependent_key;
+
+DROP TABLE t_mat_source_type_dependent_key;
 
 -- Case 7: a projection over the recalculated MATERIALIZED column has to be rebuilt as well, otherwise its
 -- own copy of the column and its primary index keep describing the old values.

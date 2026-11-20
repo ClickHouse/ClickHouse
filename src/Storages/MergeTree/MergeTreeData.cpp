@@ -6751,9 +6751,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     /// A MATERIALIZED column that is part of a key is computed from other columns, so changing the type
-    /// of one of them changes its values. A mutation cannot apply that to an existing part: the sort
-    /// order and the partition id are fixed when the part is written, which is also why MATERIALIZE
-    /// COLUMN refuses key columns. Such an ALTER is allowed only when the conversion preserves values.
+    /// of one of them can change its values, even when the conversion keeps the values of the source
+    /// (e.g. `toTypeName(x)`). A mutation cannot apply that to an existing part: the sort order and the
+    /// partition id are fixed when the part is written, which is also why MATERIALIZE COLUMN refuses key
+    /// columns. So changing the type of such a source column is forbidden.
     /// The engine's sign/version columns fix merge semantics like a key and are likewise not recomputed
     /// in an existing part. They can be subcolumns (`ReplacingMergeTree(m.v)`), so resolve them to the
     /// column they are stored in to match a MATERIALIZED parent (`m`), as getKeyColumns does.
@@ -7061,11 +7062,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         continue;
 
                     auto it = old_types.find(command.column_name);
-                    if (it != old_types.end() && !isSafeForKeyConversion(it->second, command.data_type.get()))
+                    if (it != old_types.end() && !it->second->equals(*command.data_type))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "ALTER of column {} from type {} to type {} is not safe because it changes the "
-                                        "values of the MATERIALIZED column {}, which is part of a key expression and "
-                                        "cannot be recalculated", backQuoteIfNeed(command.column_name),
+                                        "ALTER of column {} from type {} to type {} is forbidden because it is used by "
+                                        "the MATERIALIZED column {}, which is part of a key expression and cannot be "
+                                        "recalculated", backQuoteIfNeed(command.column_name),
                                         it->second->getName(), command.data_type->getName(),
                                         backQuoteIfNeed(key_materialized));
                 }
