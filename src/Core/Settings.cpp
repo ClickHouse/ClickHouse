@@ -11612,12 +11612,12 @@ Experimental. Lets the Cascades optimizer run a join or a `GROUP BY` with no exc
 The expression can hold only columns, literals and the functions `cityHash64`, `modulo`, `intDiv`, `toYYYYMM`, `toStartOfMonth` and `toDate`, over integers, strings, `Date` and `DateTime` with a time zone in its type. A table with another expression keeps a plan with an exchange.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting."}) \
+        {"26.12", false, false, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_use_primary_key_range_layout, false, R"(
 Experimental. Lets the Cascades optimizer run a join or a `GROUP BY` with no exchange when the tables are sorted by the keys. The keys must be the first columns of the primary key of each table, as plain columns with equal types. The optimizer selects ranges of the key values from the primary index of the tables, one range for each node, and each node reads the rows of its range from each table. Each node must be able to read the selected parts.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting."}) \
+        {"26.12", false, false, "New experimental setting."}) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
