@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+class InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
+
 namespace DB
 {
 
@@ -36,6 +38,8 @@ class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDepe
 {
 private:
     friend class ViewErrorsRegistry;
+    /// White-box unit test: a node observed on several paths must keep its first metadata snapshot.
+    friend class ::InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
 
     /// We cannot use std::set, because operator< is inconsistent with operator==
     /// for StorageId and StorageIDPrivate.
@@ -53,11 +57,11 @@ private:
         void pushBack(StorageIDMaybeEmpty id);
         void popBack();
 
-        [[maybe_unused]] bool empty() const { return path.empty(); }
-        const StorageIDMaybeEmpty & back() const { return path.back(); }
-        const StorageIDMaybeEmpty & current() const { return back(); }
-        StorageIDMaybeEmpty parent(size_t inheritance) const;
-        String debugInfo() const;
+        [[nodiscard]] [[maybe_unused]] bool empty() const { return path.empty(); }
+        [[nodiscard]] const StorageIDMaybeEmpty & back() const { return path.back(); }
+        [[nodiscard]] const StorageIDMaybeEmpty & current() const { return back(); }
+        [[nodiscard]] StorageIDMaybeEmpty parent(size_t inheritance) const;
+        [[nodiscard]] String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<
