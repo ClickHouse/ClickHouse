@@ -62,9 +62,11 @@ function status()
     query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd'"
 }
 
+# Reattaching the dictionary resets its state to not loaded. Tables that depend on it would block a permanent detach.
 function unload()
 {
-    query "SYSTEM UNLOAD DICTIONARY d"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&check_table_dependencies=0" --data-binary "DETACH DICTIONARY ${1:-d}"
+    query "ATTACH DICTIONARY ${1:-d}"
 }
 
 # Runs a query as the user, with the given extra URL parameters.
@@ -105,7 +107,7 @@ status
 query "EXISTS TABLE ${cluster_db}.w_function"
 
 echo "--- unqualified name, resolved by ON CLUSTER in the default database of the server"
-query "SYSTEM UNLOAD DICTIONARY default.${unqualified}"
+unload "default.${unqualified}"
 as_user "CREATE TABLE ${cluster_db}.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('${unqualified}')"
 query "SELECT status FROM system.dictionaries WHERE database = 'default' AND name = '${unqualified}'"
 

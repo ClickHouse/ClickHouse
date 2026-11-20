@@ -40,9 +40,4 @@ void ExtractColumnsStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExtractColumnsTransform::transformHeader(*input_headers.front(), requested_columns));
 }
 
-QueryPlanStepPtr ExtractColumnsStep::clone() const
-{
-    return std::make_unique<ExtractColumnsStep>(*this);
-}
-
 }

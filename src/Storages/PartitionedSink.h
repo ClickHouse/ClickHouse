@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -45,7 +46,6 @@ protected:
 private:
     ContextPtr context;
     SharedHeader source_header;
-    IPartitionStrategy::PartitionExpressionActionsAndColumnName partition_key_actions;
 
     absl::flat_hash_map<std::string_view, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;

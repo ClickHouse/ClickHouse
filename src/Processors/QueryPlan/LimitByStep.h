@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -11,36 +10,21 @@ class LimitByStep : public ITransformingStep
 public:
     explicit LimitByStep(
             const SharedHeader & input_header_,
-            size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
+            size_t group_length_, size_t group_offset_, Names columns_);
 
-    [[nodiscard]] String getName() const override { return "LimitBy"; }
+    String getName() const override { return "LimitBy"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
-
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
-
-    [[nodiscard]] size_t getGroupLength() const { return group_length; }
-    [[nodiscard]] size_t getGroupOffset() const { return group_offset; }
-    [[nodiscard]] const Names & getColumns() const { return columns; }
-    [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
-
-    void applyOrder(const SortDescription & sort_description);
-
-    /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
-    /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
-    /// partition sets so no `LIMIT BY` group spans two streams.
-    void skipStreamMerging() { skip_stream_merging = true; }
-
+    void applyOrder(SortDescription sort_desc);
 private:
     void updateOutputHeader() override
     {
@@ -52,11 +36,7 @@ private:
 
     Names columns;
 
-    bool always_read_till_end = false;
-
-    SortDescription sorted_columns_descr;
-
-    bool skip_stream_merging = false;
+    bool in_order = false;
 };
 
 }

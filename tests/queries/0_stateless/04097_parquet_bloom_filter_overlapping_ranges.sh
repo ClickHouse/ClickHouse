@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # Regression test for a segfault/assertion failure in Parquet bloom filter
 # prefetch range coalescing. When two overlapping prefetch ranges (bloom filter

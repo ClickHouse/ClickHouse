@@ -131,6 +131,8 @@ def started_cluster():
             db = database(user)
             # Send to the shard synchronously by default, so that a push either delivers the rows
             # or fails right away, without a background directory queue in between.
+            # With `table_engines_require_grant = false`, `TABLE ENGINE` on a source engine is
+            # revoked unless the user also has `READ` and `WRITE` on its source.
             node1.query(
                 f"""
                 CREATE USER {user} IDENTIFIED WITH plaintext_password BY '{CREDENTIALS[user]["password"]}'
@@ -138,6 +140,7 @@ def started_cluster():
                 CREATE DATABASE {db};
                 GRANT ALL ON {db}.* TO {user};
                 GRANT TABLE ENGINE ON Distributed, TABLE ENGINE ON Kafka, TABLE ENGINE ON RabbitMQ TO {user};
+                GRANT READ, WRITE ON REMOTE, READ, WRITE ON KAFKA, READ, WRITE ON RABBITMQ TO {user};
                 """
             )
             query_as(
@@ -270,8 +273,10 @@ def test_rabbitmq(user):
     )
     create_definer_view(user, "rabbitmq")
 
-    # `CREATE TABLE` declares the exchange and the queue before it returns, so the messages
-    # published below are not dropped.
+    # The exchange and the queue are declared by the table in the background; messages
+    # published before that are dropped by RabbitMQ.
+    node1.wait_for_log_line(f"StorageRabbitMQ .{db}.rabbitmq.: RabbitMQ setup completed")
+    node1.wait_for_log_line(f"StorageRabbitMQ .{db}.rabbitmq.: Queue .* is declared")
 
     try:
         finished_before = shard_finished_inserts(user)
