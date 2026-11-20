@@ -2505,9 +2505,11 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     for (size_t i = 0; i < keys.size(); ++i)
     {
         String sort_column_name = sort_description.column_names[i];
-        if (!keys[i]->as<ASTIdentifier>() || !block.has(sort_column_name))
+        const bool is_identifier = keys[i]->as<ASTIdentifier>();
+        if (!is_identifier || !block.has(sort_column_name))
         {
             /// Each key is evaluated alone on its own inputs, so a column named like the key is never taken for it.
+            /// A computed key is not named like a source column, which a later identity key may denote.
             ASTPtr key_ast = keys[i];
             auto syntax_result = TreeRewriter(context).analyze(key_ast, source_block.getNamesAndTypesList());
             Block key_block;
@@ -2516,7 +2518,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
 
             auto key_column = key_block.getByName(sort_column_name);
-            while (block.has(key_column.name))
+            while (block.has(key_column.name) || (!is_identifier && source_block.has(key_column.name)))
                 key_column.name = "_" + key_column.name;
             sort_column_name = key_column.name;
             block.insert(std::move(key_column));

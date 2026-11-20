@@ -44,3 +44,8 @@ INSERT INTO s SELECT char(97 + number % 26) || toString(number), char(122 - numb
 SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_threads = 1, max_insert_threads = 1;
 SELECT count(), countIf(`icebergTruncate(1, x)` = char(219 - ascii(x))) FROM s;
 SELECT count(), countIf(sorted) FROM (SELECT groupArray(substring(x, 1, 1)) AS keys, keys = arraySort(keys) AS sorted FROM s GROUP BY _file) SETTINGS max_threads = 1, input_format_parquet_preserve_order = 1;
+
+-- A transform key named like a struct field was taken for a later identity key of that field.
+CREATE TABLE f (x Tuple(a String), `icebergTruncate(1, x` Tuple(`a)` String)) ENGINE = IcebergLocal((SELECT path || 'f/' FROM iceberg_path), 'Parquet') ORDER BY (icebergTruncate(1, x.a), `icebergTruncate(1, x.a)`);
+INSERT INTO f SELECT tuple(char(97 + number % 3) || toString(number)), tuple(toString(cityHash64(number))) FROM numbers(1000);
+SELECT count(), groupArray(k) = arraySort(groupArray(k)) FROM (SELECT (substring(tupleElement(x, 'a'), 1, 1), tupleElement(`icebergTruncate(1, x`, 'a)')) AS k FROM file(currentDatabase() || '/05838_iceberg_sort_key_named_like_column/f/data/*.parquet', Parquet)) SETTINGS max_threads = 1, input_format_parquet_preserve_order = 1;
