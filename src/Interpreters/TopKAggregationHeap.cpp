@@ -23,9 +23,9 @@ size_t TopKAggregationHeapBase::initBase(
     size_t heap_key_count,
     size_t total_group_by_keys,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs,
-    const std::vector<std::shared_ptr<Collator>> & cols,
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs,
+    const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols,
     UInt64 observation_rows)
 {
     is_prefix_mode = heap_key_count < total_group_by_keys;
@@ -88,7 +88,7 @@ void TopKAggregationHeapBase::init(
     size_t query_k,
     int direction,
     int nulls_direction,
-    const std::vector<std::shared_ptr<Collator>> & cols)
+    const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols)
 {
     directions = {direction};
     nulls_directions = {nulls_direction};
@@ -113,9 +113,9 @@ void TopKAggregationHeapBase::init(
 void TopKAggregationHeapBase::init(
     const ColumnRawPtrs & source_columns,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs,
-    const std::vector<std::shared_ptr<Collator>> & cols)
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs,
+    const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols)
 {
     const size_t n = source_columns.size();
     is_composite = true;

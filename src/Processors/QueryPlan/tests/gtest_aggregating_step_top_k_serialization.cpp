@@ -74,7 +74,8 @@ std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopK
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.top_k = std::move(top_k);
 
     /// Input sorted by `a`, aggregated in order over `GROUP BY a, b`.
@@ -105,7 +106,7 @@ std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopK
         /*explicit_sorting_required_for_aggregation_in_order=*/false);
 }
 
-Aggregator::Params::TopKParams makeTopK(size_t key_columns, std::vector<int> directions, std::vector<int> nulls_directions)
+Aggregator::Params::TopKParams makeTopK(size_t key_columns, VectorWithMemoryTracking<int> directions, VectorWithMemoryTracking<int> nulls_directions)
 {
     Aggregator::Params::TopKParams top_k;
     top_k.k = 7;
