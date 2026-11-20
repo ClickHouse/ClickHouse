@@ -1822,10 +1822,26 @@ IcebergMetadata::estimateRead(
         std::unique_ptr<ManifestFilesPruner> pruner;
     };
 
-    using ManifestPrunersByDataSchema = std::unordered_map<Int32, ManifestFilesPrunerCacheEntry>;
+    /// Identifies the manifest's partition specification and schema metadata.
+    struct ManifestPrunerCacheKey
+    {
+        String partition_specification_header;
+        Int32 manifest_schema_id;
+        String schema_header;
 
-    /// Keyed by partition-spec header, manifest schema ID, schema header, and data-file schema ID.
-    std::map<std::tuple<String, Int32, String>, ManifestPrunersByDataSchema> file_pruners_by_manifest_identity;
+        auto operator<=>(const ManifestPrunerCacheKey & other) const
+        {
+            return std::tie(partition_specification_header, manifest_schema_id, schema_header)
+                <=> std::tie(other.partition_specification_header, other.manifest_schema_id, other.schema_header);
+        }
+    };
+
+    /// The inner map is keyed by each data file's `resolved_schema_id`, which can differ from
+    /// `manifest_schema_id`. A merged manifest can contain multiple resolved schema IDs, and
+    /// each `ManifestFilesPruner` is constructed for one resolved schema.
+    using ManifestPrunersByResolvedDataFileSchemaId = std::unordered_map<Int32, ManifestFilesPrunerCacheEntry>;
+
+    std::map<ManifestPrunerCacheKey, ManifestPrunersByResolvedDataFileSchemaId> file_pruners_by_manifest_identity;
 
     /// Read ahead on the IO thread pool as in `totalRows`, parsed in order on this thread.
     const auto query_status = context->getProcessListElement();
@@ -1846,20 +1862,20 @@ IcebergMetadata::estimateRead(
             estimate.has_delete_files = true;
 
         const auto & manifest_data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
-        auto manifest_pruners = file_pruners_by_manifest_identity.end();
+        auto manifest_pruners_it = file_pruners_by_manifest_identity.end();
         if (pruning_filter && !manifest_data_files.empty())
-            manifest_pruners
+            manifest_pruners_it
                 = file_pruners_by_manifest_identity
-                      .try_emplace(std::make_tuple(
+                      .try_emplace(ManifestPrunerCacheKey{
                           files_handle.getPartitionSpecificationHeader(),
                           files_handle.getManifestSchemaId(),
-                          files_handle.getSchemaHeader()))
+                          files_handle.getSchemaHeader()})
                       .first;
         for (const auto & data_file : manifest_data_files)
         {
             if (pruning_filter)
             {
-                auto & pruner_cache_entry = manifest_pruners->second[data_file->resolved_schema_id];
+                auto & pruner_cache_entry = manifest_pruners_it->second[data_file->resolved_schema_id];
                 if (!pruner_cache_entry.pruner)
                 {
                     pruner_cache_entry.partition_key = files_handle.getSharedPartitionKeyDescription();
