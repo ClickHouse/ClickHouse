@@ -39,7 +39,7 @@ void require(bool condition, const std::string & what)
     /// Both registrations mask everything the single pre-split registration masked.
     std::vector<int> expected_mask = registered;
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    for (int sig : {SIGUSR1, SIGUSR2, DB::STACK_TRACE_SERVICE_SIGNAL})
+    for (int sig : {SIGUSR1, SIGUSR2, STACK_TRACE_SERVICE_SIGNAL})
         expected_mask.push_back(sig);
 #endif
 
