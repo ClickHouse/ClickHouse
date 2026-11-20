@@ -645,6 +645,9 @@ def test_caches_with_the_same_configuration(cluster, node_name):
             """
         )
 
+    for table in ["test", "test2"]:
+        node.query(f"SYSTEM WAIT BLOBS CLEANUP '{table}'")
+
     size = int(
         node.query(
             "SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'"
