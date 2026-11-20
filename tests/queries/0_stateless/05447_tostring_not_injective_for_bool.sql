@@ -1,5 +1,5 @@
 -- `toString` renders every non-zero byte of a `Bool` as `true`, so it is not injective for it.
--- A `Bool` holds other bytes after `INSERT SELECT` of a `UInt8`, a `SimpleAggregateFunction(f, Bool)` also after `VALUES`.
+-- A `Bool` or a `SimpleAggregateFunction(f, Bool)` holds other bytes after `INSERT SELECT` of a `UInt8`.
 
 DROP TABLE IF EXISTS t_saf;
 DROP TABLE IF EXISTS t_saf_max;
@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t_ctl;
 
 CREATE TABLE t_saf (k UInt8, b SimpleAggregateFunction(anyLast, Bool))
 ENGINE = AggregatingMergeTree ORDER BY (toString(b), k) SETTINGS index_granularity = 1;
-INSERT INTO t_saf VALUES (1, 2), (2, 1), (3, 0);
+INSERT INTO t_saf SELECT number + 1, [toUInt8(2), 1, 0][number + 1] FROM numbers(3);
 
 SELECT 'saf bytes', arraySort(groupArray(reinterpretAsUInt8(b))) FROM t_saf;
 SELECT 'saf not in', (SELECT count() FROM t_saf WHERE b NOT IN (1)), (SELECT countIf(b NOT IN (1)) FROM t_saf);
@@ -62,7 +62,7 @@ SELECT 'saf array group by', count() FROM (SELECT 1 FROM t_saf_array GROUP BY to
 
 CREATE TABLE t_array_saf (k UInt8, a Array(SimpleAggregateFunction(anyLast, Bool)))
 ENGINE = MergeTree ORDER BY (toString(a), k) SETTINGS index_granularity = 1;
-INSERT INTO t_array_saf VALUES (1, [2]), (2, [1]), (3, [0]);
+INSERT INTO t_array_saf SELECT number + 1, [[toUInt8(2)], [toUInt8(1)], [toUInt8(0)]][number + 1] FROM numbers(3);
 SELECT 'array saf bytes', arraySort(groupArray(arrayMap(x -> reinterpretAsUInt8(x), a))) FROM t_array_saf;
 SELECT 'array saf not in', count() FROM t_array_saf WHERE a NOT IN ([1]);
 
