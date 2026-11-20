@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом документе объясняется, как работает параллельный снимок/начальная загрузка в ClickPipe для MySQL, а также описываются параметры снимка, с помощью которых можно управлять этим процессом.
 
 <div id="overview-mysql-snapshot">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 После включения feature flag вы увидите приведённую ниже настройку в средстве выбора таблицы ClickPipe (как при создании, так и при редактировании ClickPipe):
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="Столбец ключа партиционирования" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Столбец ключа партиционирования](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</Frame>
+
+</div>
 
 ClickPipe для MySQL использует столбец в исходной таблице, чтобы логически разбивать исходные таблицы на партиции. Этот столбец называется **столбцом ключа партиционирования**. Он используется для разделения исходной таблицы на партиции, которые затем ClickPipe может обрабатывать параллельно.
 
@@ -41,7 +47,15 @@ ClickPipe для MySQL использует столбец в исходной �
 
 Рассмотрим следующие настройки:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="Параметры снимка" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Параметры снимка](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### Количество строк на партицию в снимке

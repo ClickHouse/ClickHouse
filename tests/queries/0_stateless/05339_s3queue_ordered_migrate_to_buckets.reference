@@ -9,3 +9,5 @@ block / children before	1
 block / buckets setting	0
 block / pointer after	1	block.csv
 block / bucket 0 after	0
+threads / buckets setting	0
+threads / bucket nodes	1

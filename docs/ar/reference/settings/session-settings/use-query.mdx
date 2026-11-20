@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,9 +39,26 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتيح لذاكرة التخزين المؤقت لشروط الاستعلام خدمة الشروط التي تتضمن الوقت الحالي (مثل `WHERE time >= now() - INTERVAL 10 DAY`) عبر اشتقاق شرط حتمي يكون فيه الثابت الزمني مُقرَّبًا إلى شبكة؛ وهو مفعّل افتراضيًا. القيمة previous_value=false، لذا فإن ضبط `compatibility` على إصدار سابق يُبقي هذه الشروط غير مخزّنة مؤقتًا كما كان الحال من قبل."}]}]} />
+
+يُمكّن هذا الإعداد [ذاكرة التخزين المؤقت لشروط الاستعلام](/ar/concepts/features/performance/caches/query-condition-cache) للشروط التي تتضمن الوقت الحالي، مثل `WHERE time >= now() - INTERVAL 10 DAY`، عند القراءة من جداول `MergeTree`. أما عمليات القراءة من الملفات والتخزين الكائني (`file` و`s3` وما شابهها) فلا تستخدم ذاكرة التخزين المؤقت لشروط الاستعلام إلا للشروط الحتمية، ولا تتأثر بهذا الإعداد.
+
+هذه الشروط غير حتمية (إذ تتغير بتغيّر الساعة)، ولذلك يتعذّر تخزينها مؤقتًا مباشرةً. وعوضًا عن ذلك، يُشتق منها شرط حتمي عبر تقريب ثابت الوقت الحالي المطويّ إلى شبكة زمنية؛ فمثلًا يتحوّل `WHERE time >= '2026-08-09 12:34:56'` إلى `WHERE time >= '2026-08-09 00:00:00'` (مع التقريب إلى الأسفل عند القراءة من ذاكرة التخزين المؤقت، وإلى الأعلى عند الكتابة فيها، مما يضمن صحة نتائجها). تتناسب خطوة الشبكة مع المسافة بين الثابت والوقت الحالي (راجع [`query_condition_cache_time_condition_grid_factor`](/ar/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor))، وتكون مقيَّدة بين ثانية واحدة ويوم واحد.
+
+إذا كان الثابت محاذيًا للشبكة أصلًا (مثل `WHERE time >= today() - 10` أو `WHERE time >= toStartOfDay(now())`)، تظل ذاكرة التخزين المؤقت فعّالة طوال خلية الشبكة بأكملها، أي حتى نهاية اليوم مثلًا. أما إن لم يكن محاذيًا، فلا يُعاد استخدام ذاكرة التخزين المؤقت إلا مع الحدود الدنيا للوقت، مثل `WHERE time >= now() - INTERVAL 10 DAY`، إذ تُستخدم إدخالات ذاكرة التخزين المؤقت المكتوبة خلال خلية شبكة ما في الخلية التي تليها. وفي المقابل، لا تُعيد الاستعلامات اللاحقة استخدام الحد الأعلى غير المحاذي مثل `WHERE time < now()`، سواء ورد منفردًا أو ضمن نافذة منزلقة مثل `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`، لأن شرطها لا يندرج ضمن شرط الاستعلامات السابقة.
+
+لا يكون لهذا الإعداد أي تأثير ما لم يكن `use_query_condition_cache` مفعّلًا أيضًا.
+
+القيم الممكنة:
+
+* 0 - معطّل
+* 1 - مفعّل
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +66,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 فعّل [ذاكرة التخزين المؤقت لشرط الاستعلام](/ar/concepts/features/performance/caches/query-condition-cache) للاستعلامات التي تستخدم تحسين `ORDER BY <column> LIMIT n` (TopK) (القائم على التصفية الديناميكية أو فهارس التخطي). عند تعطيله، لا تستخدم عمليات القراءة هذه ذاكرة التخزين المؤقت ولا تملؤها.
 
-قد تستبعد هذه الاستعلامات حبيبات أثناء التنفيذ بحسب العتبة الحالية، لذا تُقسَّم إدخالات ذاكرة التخزين المؤقت الخاصة بها وفقًا لمعلمات خطة TopK ومجموعة الأجزاء المقروءة. لا يكون لهذا الإعداد أي تأثير ما لم يكن `use_query_condition_cache` مفعّلًا أيضًا.
+قد تستبعد هذه الاستعلامات حبيبات أثناء التنفيذ بحسب العتبة الحالية، لذا تُقسَّم إدخالات ذاكرة التخزين المؤقت الخاصة بها وفقًا لمعلمات خطة TopK ومجموعة الأجزاء المقروءة (وبالنسبة إلى جدول `File`، وفقًا لمجموعة الملفات المقروءة وإصداراتها؛ وبالنسبة إلى جدول بحيرة البيانات، وفقًا للقطته). لا يكون لهذا الإعداد أي تأثير ما لم يكن `use_query_condition_cache` مفعّلًا أيضًا.
 
 القيم الممكنة:
 

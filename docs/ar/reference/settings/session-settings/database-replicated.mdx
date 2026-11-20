@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 0 - لا تسمح بتحديد معرّفات UUID للجداول بشكل صريح في قواعد البيانات Replicated. 1 - السماح. 2 - السماح، مع تجاهل معرّف UUID المحدد وإنشاء معرّف عشوائي بدلًا منه.
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,28 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يسمح باستعلامات DDL طويلة التشغيل (CREATE AS SELECT وPOPULATE) في محرك قاعدة البيانات Replicated. لاحظ أن ذلك قد يعطّل قائمة انتظار DDL لفترة طويلة.
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-يسمح بإنشاء جداول Replicated فقط في قاعدة بيانات تستخدم المحرك Replicated
+يسمح بإنشاء جدول في قاعدة بيانات تستخدم المحرك `Replicated` فقط إذا كان الجدول ينسخ بياناته الخاصة المخزَّنة على القرص نسخًا متماثلًا،
+أو كان لا يخزّن أي بيانات خاصة به على القرص.
 
-Cloud default value: `1`.
+لا يسري هذا القيد إلا على البيانات المخزَّنة على القرص التي يملكها الجدول، بما في ذلك البيانات الموجودة على الأقراص البعيدة. ولا يضمن
+ديمومة البيانات in-memory أو البيانات التي تديرها أنظمة خارجية.
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+على سبيل المثال، يُسمح بـ `ReplicatedMergeTree`، والمحركات in-memory مثل `Memory` و`Buffer`، والمحركات metadata-only
+مثل `Merge` و`Alias`، ومحركات التخزين الخارجي أو بحيرات البيانات مثل `S3` و`AzureBlobStorage`. أما المحركات non-replicated التي تخزّن بيانات الجدول على القرص، مثل `MergeTree` و`Log` و`File` و`Set`، فتُرفض،
+حتى عندما تستخدم سياسة التخزين القابلة للكتابة الخاصة بها أقراصًا بعيدة. في المقابل، يُسمح بجداول `Set` و`Join` التي تُنشأ باستخدام
+`SETTINGS persistent = 0`، لأنها تحتفظ ببياناتها في الذاكرة فقط.
+
+يُسمح بجداول `Distributed` و`Remote` و`RemoteSecure`، إذ إن قائمة انتظار `INSERT` المحلية الاختيارية التي تعمل في الخلفية
+ليست سوى ذاكرة مؤقتة عابرة للإرسال، وليست جزءًا من بيانات الجدول نفسه. ولا تُنسخ هذه القائمة نسخًا متماثلًا، ويمكن تجنّبها بضبط
+`distributed_foreground_insert = 1`.
+
+القيمة الافتراضية في السحابة: `1`.
+
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +58,19 @@ Cloud default value: `1`.
 
 0 - لا تسمح بتحديد مسار ZooKeeper واسم replica صراحةً لجداول *MergeTree في قواعد بيانات Replicated. 1 - اسمح بذلك. 2 - اسمح بذلك، لكن تجاهل المسار المحدد واستخدم المسار الافتراضي بدلًا منه. 3 - اسمح بذلك ولا تسجّل تحذيرًا.
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 نفِّذ DETACH TABLE بصيغة DETACH TABLE PERMANENTLY إذا كان محرك قاعدة البيانات من نوع Replicated
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يفرض الانتظار المتزامن لبعض الاستعلامات (راجع أيضًا database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously وmutations&#95;sync وalter&#95;sync). لا يُنصح بتمكين هذه الإعدادات.
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

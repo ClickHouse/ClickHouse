@@ -93,17 +93,23 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
     # Sanitizer builds link the copy of musl with the intercepted functions
-    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan is
-    # the one sanitizer without libc interceptors (no REAL() bindings), so it
-    # links the plain musl; contrib/compiler-rt-cmake does not produce
-    # musl_intercepted for it. Any future sanitizer mode intentionally falls
-    # into the musl_intercepted branch: if compiler-rt does not build the
-    # archive for it, the configure fails loudly instead of silently linking
-    # a libc whose functions the runtime expects to intercept.
+    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan
+    # (also linked by ENABLE_CFI_DIAGNOSTICS) links the plain musl instead: it
+    # intercepts only sigaction and signal, and the renamed copy cannot be made
+    # from the LTO bitcode musl is compiled to with ENABLE_CFI. Any future
+    # sanitizer mode intentionally falls into the musl_intercepted branch: if
+    # compiler-rt does not build the archive for it, the configure fails loudly
+    # instead of silently linking a libc whose functions the runtime expects to
+    # intercept.
     if (SANITIZE AND NOT SANITIZE STREQUAL "undefined")
         set (MUSL_LIBC_TARGET musl_intercepted)
     else ()
         set (MUSL_LIBC_TARGET musl)
+    endif ()
+    if (SANITIZE STREQUAL "undefined" OR ENABLE_CFI_DIAGNOSTICS)
+        # Bind the UBSan runtime's REAL(sigaction) and REAL(signal) to musl's own definitions. `bsd_signal`, not
+        # `signal`: the runtime defines a weak `signal` itself, which a reference to `signal` would bind to.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--defsym=__real_sigaction=__sigaction -Wl,--defsym=__real_signal=bsd_signal")
     endif ()
     # musl provides pthread in libc.
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})

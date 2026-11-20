@@ -632,7 +632,7 @@ namespace
     class ParserFunctionName : public IParserBase
     {
     protected:
-        const char * getName() const override { return "function name"; }
+        [[nodiscard]] const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
@@ -789,12 +789,12 @@ public:
 
     virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
 
-    bool isFinished() const
+    [[nodiscard]] bool isFinished() const
     {
         return finished;
     }
 
-    int previousPriority() const
+    [[nodiscard]] int previousPriority() const
     {
         if (operators.empty())
             return 0;
@@ -802,7 +802,7 @@ public:
         return operators.back().priority;
     }
 
-    OperatorType previousType() const
+    [[nodiscard]] OperatorType previousType() const
     {
         if (operators.empty())
             return OperatorType::None;
@@ -810,7 +810,7 @@ public:
         return operators.back().type;
     }
 
-    const Operator * previousOperator() const
+    [[nodiscard]] const Operator * previousOperator() const
     {
         if (operators.empty())
             return nullptr;
@@ -824,7 +824,7 @@ public:
     /// a lambda body can leave higher-priority binary operators on top of the
     /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
     /// inspecting only the stack top via `previousType` would miss the lambda.
-    bool hasPendingOperator(OperatorType type) const
+    [[nodiscard]] bool hasPendingOperator(OperatorType type) const
     {
         for (const auto & op : operators)
             if (op.type == type)
@@ -832,7 +832,7 @@ public:
         return false;
     }
 
-    int isCurrentElementEmpty() const
+    [[nodiscard]] int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -1780,13 +1780,13 @@ private:
 
     /// `argument` put back as text, when it is a literal and the target type reads the text more
     /// precisely - see `exactCastArgument`.
-    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
     {
         return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 
     /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
-    ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
     {
         auto exact_argument = exactArgument(argument, type_text, pos);
         if (is_try)
@@ -3267,12 +3267,14 @@ public:
             auto select_expected = expected;
             /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
             select_expected.failed_keyword_readings = nullptr;
+            select_expected.failed_subquery_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
                 pos = select_pos;
                 select_expected.failed_keyword_readings = expected.failed_keyword_readings;
+                select_expected.failed_subquery_readings = expected.failed_subquery_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;
@@ -3585,7 +3587,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     return false;
 }
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
@@ -3648,7 +3650,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},
