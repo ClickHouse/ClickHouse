@@ -6,6 +6,7 @@
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
@@ -83,7 +84,7 @@ INSTANTIATE_TEST_SUITE_P(All,
 struct CipherTestParam
 {
     const Algorithm algorithm;
-    const String key;
+    const SecretString key;
     const InitVector iv;
     const size_t offset;
     const String plaintext;
@@ -167,7 +168,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #0
             Algorithm::AES_128_CTR,
-            "1234567812345678",
+            SecretString{"1234567812345678"},
             InitVector{},
             0,
             "abcd1234efgh5678ijkl",
@@ -176,7 +177,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #1
             Algorithm::AES_128_CTR,
-            "1234567812345678",
+            SecretString{"1234567812345678"},
             InitVector{},
             25,
             "abcd1234efgh5678ijkl",
@@ -185,7 +186,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #2
             Algorithm::AES_128_CTR,
-            String{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16},
+            SecretString{String{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16}},
             InitVector{},
             0,
             "abcd1234efgh5678ijkl",
@@ -194,7 +195,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #3
             Algorithm::AES_128_CTR,
-            "1234567812345678",
+            SecretString{"1234567812345678"},
             InitVector::fromString(String{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16}),
             0,
             "abcd1234efgh5678ijkl",
@@ -203,7 +204,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #4
             Algorithm::AES_192_CTR,
-            "123456781234567812345678",
+            SecretString{"123456781234567812345678"},
             InitVector{},
             0,
             "abcd1234efgh5678ijkl",
@@ -212,7 +213,7 @@ INSTANTIATE_TEST_SUITE_P(All,
          {
              // #5
              Algorithm::AES_256_CTR,
-             "12345678123456781234567812345678",
+             SecretString{"12345678123456781234567812345678"},
              InitVector{},
              0,
              "abcd1234efgh5678ijkl",
@@ -227,7 +228,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     if (std::filesystem::exists(tmp_path))
         std::filesystem::remove(tmp_path);
 
-    String key = "1234567812345678";
+    SecretString key{"1234567812345678"};
     FileEncryption::Header header;
     header.algorithm = Algorithm::AES_128_CTR;
     header.key_fingerprint = calculateKeyFingerprint(key);
@@ -270,7 +271,7 @@ namespace
     struct EncryptedFileFixture
     {
         String path;
-        String key = "1234567812345678";
+        SecretString key{"1234567812345678"};
         FileEncryption::Header header;
         String data;
 
@@ -433,6 +434,73 @@ TEST(FileEncryptionReadBigAtTest, ProgressCallbackAndCancellation)
     ASSERT_TRUE(inner_ptr->cancelled);
     ASSERT_EQ(bytes_read, cancel_at);
     ASSERT_EQ(got.substr(0, bytes_read), file.data.substr(0, bytes_read));
+}
+
+namespace
+{
+
+/// Records whether `preFinalize` reached it and how many bytes were in the file by then.
+class PreFinalizeRecordingWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    explicit PreFinalizeRecordingWriteBuffer(const String & path_)
+        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(path_))
+        , path(path_)
+    {
+    }
+
+    void preFinalize() override
+    {
+        WriteBufferFromFileDecorator::preFinalize();
+        prefinalized = true;
+        bytes_at_prefinalize = std::filesystem::file_size(path);
+    }
+
+    const String path;
+    bool prefinalized = false;
+    size_t bytes_at_prefinalize = 0;
+};
+
+}
+
+TEST(FileEncryptionPreFinalizeTest, ForwardsToUnderlyingBuffer)
+{
+    for (size_t data_size : {0, 7, 25})
+    {
+        String tmp_path = std::filesystem::current_path() / "test_prefinalize_forwarding";
+        if (std::filesystem::exists(tmp_path))
+            std::filesystem::remove(tmp_path);
+
+        SecretString key{"1234567812345678"};
+        FileEncryption::Header header;
+        header.algorithm = Algorithm::AES_128_CTR;
+        header.key_fingerprint = calculateKeyFingerprint(key);
+        header.init_vector = InitVector::random();
+
+        auto recording = std::make_unique<PreFinalizeRecordingWriteBuffer>(tmp_path);
+        auto * recording_ptr = recording.get();
+        WriteBufferFromEncryptedFile wb(10, std::move(recording), key, header, /*old_file_size=*/0, /*use_adaptive_buffer_size_=*/ false, /*adaptive_buffer_initial_size=*/ 0);
+        auto data = getRandomASCIIString(data_size);
+        wb.write(data.data(), data.size());
+
+        /// Everything, including data still in the encryption buffer, must reach the underlying buffer
+        /// before it is prefinalized, so that its upload can start; an empty file still gets no header.
+        wb.preFinalize();
+        EXPECT_TRUE(recording_ptr->prefinalized) << "data_size = " << data_size;
+        EXPECT_EQ(recording_ptr->bytes_at_prefinalize, data_size ? FileEncryption::Header::kSize + data_size : 0) << "data_size = " << data_size;
+
+        wb.finalize();
+        ASSERT_EQ(std::filesystem::file_size(tmp_path), data_size ? FileEncryption::Header::kSize + data_size : 0);
+
+        if (data_size)
+        {
+            auto lrb = std::make_unique<ReadBufferFromFile>(tmp_path);
+            ReadBufferFromEncryptedFile rb(tmp_path, 10, std::move(lrb), key, header);
+            String res;
+            readStringUntilEOF(res, rb);
+            ASSERT_EQ(res, data);
+        }
+    }
 }
 
 #endif

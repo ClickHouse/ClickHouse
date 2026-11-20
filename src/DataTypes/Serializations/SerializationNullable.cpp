@@ -169,15 +169,24 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     if (use_default_null_map)
-        col.getNullMapData().resize_fill(col.getNestedColumn().size());
+    {
+        /// Read the nested column size via the const overload — the substream cache may hold a reference
+        /// to the nested column (so its `use_count() >= 2`), which would trip
+        /// `chassert(use_count() == 1)` in the non-const `getNestedColumn`
+        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
+        col.getNullMapData().resize_fill(std::as_const(col).getNestedColumn().size());
+    }
 
-    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
+    /// Size-only reads again: by now both the null map and the nested column may be referenced from
+    /// the substreams cache, so stay on the const accessors here as well.
+    const auto & const_col = std::as_const(col);
+    if (const_col.getNullMapColumn().size() != const_col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            col.getNullMapColumn().size(),
-            col.getNestedColumn().size());
+            const_col.getNullMapColumn().size(),
+            const_col.getNestedColumn().size());
 }
 
 
@@ -326,7 +335,12 @@ void SerializationNullable::serializeNullRaw(DB::WriteBuffer & ostr, const DB::F
 
 bool SerializationNullable::tryDeserializeNullRaw(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
 {
-    return checkString(settings.tsv.null_representation, istr);
+    if (!checkString(settings.tsv.null_representation, istr))
+        return false;
+    /// A raw field read with `readString` keeps the trailing CRLF terminator, so consume it to reach the field end.
+    if (settings.tsv.crlf_end_of_line_input && !istr.eof() && *istr.position() == '\r')
+        ++istr.position();
+    return true;
 }
 
 template<typename ReturnType, bool escaped>
@@ -458,10 +472,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(IColumn 
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeTextEscapedAndRawImpl<bool, true>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextEscapedAndRawImpl<bool, true>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 void SerializationNullable::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -486,10 +500,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(IColumn & ne
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeTextEscapedAndRawImpl<bool, false>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextEscapedAndRawImpl<bool, false>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 void SerializationNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -615,10 +629,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(DB::IColu
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeTextQuotedImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextQuotedImpl<bool>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 template <typename ReturnType>
@@ -679,10 +693,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(DB::IColum
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedWholeText(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedWholeText(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeWholeTextImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeWholeTextImpl<bool>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -863,10 +877,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(DB::IColumn 
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeTextCSVImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextCSVImpl<bool>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 void SerializationNullable::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -979,10 +993,10 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(DB::IColumn
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, const IDataType * nested_type)
 {
     bool is_null = false;
-    return deserializeTextJSONImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextJSONImpl<bool>(nested_column, istr, settings, nested_serialization, is_null, nested_type);
 }
 
 void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
