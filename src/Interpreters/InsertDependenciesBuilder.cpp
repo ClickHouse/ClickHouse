@@ -1124,27 +1124,111 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context);
 
-    /// A table with a session commit commits the insert at once. Parallel sinks do it through
-    /// the write session, which is not used with dependent views yet.
-    const bool session_commit_with_views_single_stream = isViewsInvolved() && init_storage->supportsWriteSessionCommit();
-
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !mv_dedup_single_stream
-        && !session_commit_with_views_single_stream)
+        && !mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
 
-    /// The same arguments as for `IStorage::write` in `createSinkImpl`.
-    if (!skip_destination_table && !isViewsInvolved())
-        write_session = init_storage->beginWrite(
-            select_queries.at(root_view), metadata_snapshots.at(init_table_id), insert_contexts.at(root_view), async_insert);
+    beginWriteSessions();
+}
+
+namespace
+{
+
+/// The session of the target of a view. An error of its commit is an error of the view,
+/// so it is ignored with `materialized_views_ignore_errors`, like an error of its sinks.
+class ViewWriteSession final : public IStorageWriteSession
+{
+public:
+    ViewWriteSession(StorageWriteSessionPtr session_, StorageIDMaybeEmpty view_id_, bool ignore_errors_)
+        : session(std::move(session_))
+        , view_id(std::move(view_id_))
+        , ignore_errors(ignore_errors_)
+    {
+    }
+
+    SinkToStoragePtr createSink() override { return session->createSink(); }
+
+    void commit() override
+    {
+        if (!ignore_errors)
+        {
+            session->commit();
+            return;
+        }
+
+        try
+        {
+            session->commit();
+        }
+        catch (...)
+        {
+            tryLogException(
+                addStorageToException(std::current_exception(), view_id),
+                getLogger("InsertDependenciesBuilder"),
+                "Cannot push to the storage. Error is ignored because the setting materialized_views_ignore_errors is enabled.",
+                LogsLevel::warning);
+        }
+    }
+
+private:
+    const StorageWriteSessionPtr session;
+    const StorageIDMaybeEmpty view_id;
+    const bool ignore_errors;
+};
+
+}
+
+void InsertDependenciesBuilder::beginWriteSession(const StorageIDMaybeEmpty & view_id)
+{
+    const auto & inner_table_id = inner_tables.at(view_id);
+
+    StorageWriteSessionPtr session;
+    try
+    {
+        session = storages.at(inner_table_id)->beginWrite(
+            select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_contexts.at(view_id), async_insert);
+    }
+    catch (Exception & e)
+    {
+        /// Like in `createSink`.
+        if (!view_id.empty())
+            e.addMessage("while writing to target table {} of materialized view {}",
+                inner_table_id.getNameForLogs(), view_id.getNameForLogs());
+        throw;
+    }
+
+    if (view_id != root_view)
+        session = std::make_shared<ViewWriteSession>(std::move(session), view_id, materialized_views_ignore_errors);
+
+    write_sessions[view_id] = std::move(session);
+    write_sessions_order.push_back(view_id);
+
+    for (const auto & child_view_id : dependent_views.at(view_id))
+        beginWriteSession(child_view_id);
+}
+
+void InsertDependenciesBuilder::beginWriteSessions()
+{
+    if (!skip_destination_table)
+    {
+        beginWriteSession(root_view);
+        return;
+    }
+
+    for (const auto & child_view_id : dependent_views.at(root_view))
+        beginWriteSession(child_view_id);
 }
 
 std::vector<StorageWriteSessionPtr> InsertDependenciesBuilder::getWriteSessionsToCommit() const
 {
-    if (write_session && init_storage->supportsWriteSessionCommit())
-        return {write_session};
-    return {};
+    std::vector<StorageWriteSessionPtr> sessions;
+    for (const auto & view_id : write_sessions_order)
+    {
+        if (storages.at(inner_tables.at(view_id))->supportsWriteSessionCommit())
+            sessions.push_back(write_sessions.at(view_id));
+    }
+    return sessions;
 }
 
 namespace
@@ -1914,11 +1998,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
-        /// The session is the one of the destination table, which is the only sink without views.
-        chassert(!write_session || inner_table_id == init_table_id);
-        auto sink = write_session
-            ? write_session->createSink()
-            : inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        auto sink = write_sessions.at(view_id)->createSink();
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));

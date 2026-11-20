@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, atomic-database
 # Incremental refreshable MV with `max_insert_threads > 1` into an Iceberg target that has a dependent materialized view:
-# the parallel sinks cannot hand their files to one commit, so the round is written by a single sink, in one snapshot.
+# the round is written by parallel sinks and committed in one snapshot.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -43,7 +43,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DEP} (k Int64) ENGINE = MergeTree ORDER BY k"
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${DEP_MV} TO ${DEP} AS SELECT k FROM ${TGT}"
 
-# Small blocks would spread the round over all the parallel sinks.
+# Small blocks spread the round over all the parallel sinks.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE MATERIALIZED VIEW ${MV}
         REFRESH EVERY 10 YEAR APPEND INCREMENTAL
