@@ -5,6 +5,7 @@
 
 #include <stack>
 
+#include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -32,11 +33,17 @@ namespace
     /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
     std::shared_ptr<CHJIT> expression_jit_instance;
 
-    /// How many times each expression was seen, so it is compiled only after `min_count_to_compile_expression`
-    /// uses. Cleared when full and by `resetExpressionJITInstance`, so distinct literals cannot grow it without bound.
-    std::mutex expression_compile_counter_mutex;
-    std::unordered_map<UInt128, UInt64, UInt128Hash> expression_compile_counter;
+    /// How many times each expression was seen, so it is compiled only after `min_count_to_compile_expression` uses.
+    /// SLRU: expressions seen once (e.g. with distinct literals) are evicted before the ones seen more often.
+    using ExpressionCompileCounter = CacheBase<UInt128, std::atomic<UInt64>, UInt128Hash>;
     constexpr size_t MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES = 10000;
+
+    ExpressionCompileCounter & getExpressionCompileCounter()
+    {
+        static ExpressionCompileCounter counter(
+            CurrentMetrics::end(), CurrentMetrics::end(), MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES, MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES);
+        return counter;
+    }
 }
 
 static std::shared_ptr<CHJIT> getJITInstancePtr()
@@ -53,10 +60,7 @@ void resetExpressionJITInstance()
         std::lock_guard lock(expression_jit_mutex);
         expression_jit_instance.reset();
     }
-    {
-        std::lock_guard lock(expression_compile_counter_mutex);
-        expression_compile_counter.clear();
-    }
+    getExpressionCompileCounter().clear();
 }
 
 static LoggerPtr getLogger()
@@ -318,13 +322,9 @@ static FunctionBasePtr compile(
     size_t min_count_to_compile_expression)
 {
     auto hash_key = dag.hash();
-    {
-        std::lock_guard lock(expression_compile_counter_mutex);
-        if (expression_compile_counter.size() >= MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES && !expression_compile_counter.contains(hash_key))
-            expression_compile_counter.clear();
-        if (expression_compile_counter[hash_key]++ < min_count_to_compile_expression)
-            return nullptr;
-    }
+    auto count = getExpressionCompileCounter().getOrSet(hash_key, [] { return std::make_shared<std::atomic<UInt64>>(0); }).first;
+    if ((*count)++ < min_count_to_compile_expression)
+        return nullptr;
 
     auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
