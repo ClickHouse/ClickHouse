@@ -1,10 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
-#include <limits>
-#include <optional>
 #include <utility>
 
 #include <Common/Exception.h>
@@ -20,42 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-/// R-7 (quantileExactInclusive) quantile of the values sorted by `AggregateFunctionTimeseriesSortedValues::less`, with the
-/// Prometheus edge cases of the level: NaN gives NaN, a level below 0 gives -Inf and a level above 1 gives +Inf. There is
-/// no result if there are no values. Only the positions it reads must hold their sorted values.
-template <typename ValueType>
-std::optional<Float64> calculateTimeseriesQuantileOfSorted(const VectorWithMemoryTracking<ValueType> & values, Float64 phi)
-{
-    if (values.empty())
-        return std::nullopt;
-
-    if (std::isnan(phi))
-        return std::numeric_limits<Float64>::quiet_NaN();
-    if (phi < 0.0)
-        return -std::numeric_limits<Float64>::infinity();
-    if (phi > 1.0)
-        return std::numeric_limits<Float64>::infinity();
-
-    const size_t n = values.size();
-    if (n == 1)
-        return static_cast<Float64>(values[0]);
-
-    /// rank = phi * (n - 1), interpolated between the neighbouring values.
-    const Float64 rank = phi * static_cast<Float64>(n - 1);
-    const size_t lower = static_cast<size_t>(std::floor(rank));
-    const size_t upper = static_cast<size_t>(std::ceil(rank));
-
-    /// An exact rank gives the sample itself. Prometheus has no such shortcut and computes `lower * 1 + upper * 0`,
-    /// which is NaN when either sample is infinite.
-    if (lower == upper)
-        return static_cast<Float64>(values[lower]);
-
-    /// The weighted form of Prometheus (`lower * (1 - weight) + upper * weight`) rather than `lower + weight * (upper - lower)`,
-    /// so that infinite samples give the infinity instead of `Inf - Inf = NaN`.
-    const Float64 weight = rank - static_cast<Float64>(lower);
-    return static_cast<Float64>(values[lower]) * (1.0 - weight) + static_cast<Float64>(values[upper]) * weight;
 }
 
 /// The values of one bucket, or of the whole window, sorted by `less`: the `Summary` of the aggregate functions reading
@@ -121,30 +82,6 @@ struct AggregateFunctionTimeseriesSortedValues
 
         values.resize(kept);
     }
-
-    /// R-7 quantile of the values, see `calculateTimeseriesQuantileOfSorted`.
-    [[nodiscard]] std::optional<Float64> quantile(Float64 phi) const
-    {
-        return calculateTimeseriesQuantileOfSorted(values, phi);
-    }
 };
-
-/// The quantile of unsorted values: only the values `calculateTimeseriesQuantileOfSorted` reads are put in their sorted
-/// positions, in O(n) instead of sorting. Reorders the values.
-template <typename ValueType>
-std::optional<Float64> calculateTimeseriesQuantile(VectorWithMemoryTracking<ValueType> & values, Float64 phi)
-{
-    if (!values.empty() && phi >= 0.0 && phi <= 1.0)
-    {
-        /// The same rank as in `calculateTimeseriesQuantileOfSorted`.
-        const Float64 rank = phi * static_cast<Float64>(values.size() - 1);
-        const auto lower = values.begin() + static_cast<size_t>(std::floor(rank));
-        const auto less = AggregateFunctionTimeseriesSortedValues<ValueType>::less;
-        ::nth_element(values.begin(), lower, values.end(), less);
-        if (std::ceil(rank) != std::floor(rank))
-            std::iter_swap(lower + 1, std::min_element(lower + 1, values.end(), less));
-    }
-    return calculateTimeseriesQuantileOfSorted(values, phi);
-}
 
 }
