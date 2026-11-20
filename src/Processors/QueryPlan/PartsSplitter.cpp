@@ -414,11 +414,11 @@ private:
     bool is_copy = false;
     bool has_all_values = true;
     /// Sorted, if there are not all values.
-    std::vector<CopiedRange> copied_ranges;
+    VectorWithMemoryTracking<CopiedRange> copied_ranges;
 };
 
 using PartIndexAccessPtr = std::shared_ptr<PartIndexAccess>;
-using PartIndexes = std::unordered_map<const IMergeTreeDataPart *, PartIndexAccessPtr>;
+using PartIndexes = UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, PartIndexAccessPtr>;
 
 /// Adaptor to access PK values for the marks of the ranges of all parts.
 class IndexAccess
@@ -437,7 +437,7 @@ public:
         /// The indexes that their parts keep are counted separately and checked in the same way, because a part can unload its index.
         /// If it does so after the last check, the index is not accounted until the ranges are calculated.
         static constexpr size_t min_bytes_between_checks = 16 << 20;
-        std::vector<HeldIndex> not_copied;
+        VectorWithMemoryTracking<HeldIndex> not_copied;
         std::array<size_t, 2> not_copied_bytes{};
         std::array<size_t, 2> checked_bytes{};
         auto copy_evicted = [&]
@@ -523,7 +523,7 @@ private:
 
     /// Removes those indexes that neither the part nor the cache keeps, and returns them.
     /// The settings of a table do not tell that, because they can change while the indexes are loaded.
-    std::vector<HeldIndex> removeEvicted(std::vector<HeldIndex> & held) const
+    VectorWithMemoryTracking<HeldIndex> removeEvicted(VectorWithMemoryTracking<HeldIndex> & held) const
     {
         /// The parts are asked first, because an index can be moved from the part to the cache.
         const auto not_kept = std::ranges::partition(held, [&](const HeldIndex & index)
@@ -533,8 +533,8 @@ private:
         if (not_kept.empty())
             return {};
 
-        std::vector<UInt128> keys;
-        std::vector<const PrimaryIndex *> values;
+        VectorWithMemoryTracking<UInt128> keys;
+        VectorWithMemoryTracking<const PrimaryIndex *> values;
         keys.reserve(not_kept.size());
         values.reserve(not_kept.size());
         for (const auto & index : not_kept)
@@ -543,9 +543,9 @@ private:
             values.push_back(indices[index.part_index]->getIndex().get());
         }
         const auto cache = parts.front().data_part->storage.getContext()->getPrimaryIndexCache();
-        const auto is_cached = cache ? cache->containsMany(keys, values) : std::vector<bool>(keys.size());
+        const auto is_cached = cache ? cache->containsMany(keys, values) : VectorWithMemoryTracking<bool>(keys.size());
 
-        std::vector<HeldIndex> evicted;
+        VectorWithMemoryTracking<HeldIndex> evicted;
         auto kept_end = not_kept.begin();
         for (size_t i = 0; i < is_cached.size(); ++i)
         {
