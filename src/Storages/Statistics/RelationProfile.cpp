@@ -35,7 +35,7 @@ std::optional<ColumnValueRange> ColumnStats::valueRange(ValueRangeGuarantee guar
     {
         case ValueRangeGuarantee::Exact: break;
         case ValueRangeGuarantee::Superset: kept_by = RowSubset | FilterOnOtherColumns; break;
-        /// Under the assumption that the column is independent of the columns the predicates read, NULLs included.
+        /// With the assumption described at `ValueRangeGuarantee::Representative`.
         case ValueRangeGuarantee::Representative: kept_by = FilterOnOtherColumns; break;
     }
     if (!range_provenance.hasOnly(kept_by))

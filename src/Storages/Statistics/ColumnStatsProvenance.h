@@ -34,9 +34,8 @@ namespace DB
 /// The distinct-count guarantees also require the origin `MeasuredStatistics` or `SyntheticOverride`, the value-range
 /// guarantees the origin `MeasuredStatistics`.
 ///
-/// A flag records only what happened. `FilterOnOtherColumns` says that a predicate dropped rows without reading the
-/// column; that the column then keeps a representative range is an assumption of the `Representative` guarantee: that
-/// the column is statistically independent of the columns the predicate reads.
+/// A flag records only what happened. An assumption belongs to the guarantee that relies on it, such as the one
+/// `ValueRangeGuarantee::Representative` makes about `FilterOnOtherColumns`.
 
 /// Source of a column fact before the plan transforms it.
 enum class ColumnStatsOrigin : UInt8
@@ -71,10 +70,9 @@ enum ColumnStatsTransformation : UInt16
     PartialStatisticsCoverage = 1 << 3,
     /// A step whose effect on the column is not modeled, such as `FINAL` or a join.
     Unmodeled = 1 << 4,
-    /// Rows were dropped by a predicate that does not read the column; the values are unchanged. Recorded instead of
-    /// `RowSubset` only where the columns a predicate reads are known (the estimate of a MergeTree read). A predicate
-    /// counts as reading a column if it reads the stored column; correlation between distinct stored columns is not
-    /// seen, e.g. a `MATERIALIZED` column computed from another one counts as a column of its own.
+    /// Rows were dropped by predicates that do not read the column; its values are unchanged. Recorded instead of
+    /// `RowSubset` only where the columns the predicates read are known, in the estimate of a MergeTree read. Only reading
+    /// the stored column counts: a `MATERIALIZED` column computed from another one is a column of its own.
     FilterOnOtherColumns = 1 << 5,
 };
 
@@ -109,13 +107,11 @@ enum class ValueRangeGuarantee : UInt8
     Exact,
     /// Contains the range of the produced rows. The NULL fraction of a subset is unknown, so it comes without one.
     Superset,
-    /// The values of the produced rows are plausibly spread over the range, as uniform-distribution consumers need,
-    /// and the NULL fraction is plausibly theirs. An exact range is representative. A range of a column that rows were
-    /// dropped from by a predicate that reads the column is not: interpolating uniformly over the unfiltered range can
-    /// misestimate a predicate that cuts that range. A range of a column that rows were dropped from only by predicates
-    /// that do not read it (`FilterOnOtherColumns`) is representative under the assumption that the column is
-    /// statistically independent of the columns those predicates read, which this guarantee makes. Consumers name the
-    /// guarantee they need, so the two may diverge further (e.g. for a uniform sample).
+    /// The values of the produced rows are plausibly spread over the range, and the NULL fraction is plausibly theirs,
+    /// as uniform-distribution consumers need. An exact range is representative, and so is the range of a column whose
+    /// rows were dropped only by predicates that do not read it (`FilterOnOtherColumns`): this guarantee assumes that the
+    /// column is statistically independent of the columns those predicates read. A predicate that reads the column can
+    /// cut its range, and interpolating uniformly over the measured range would then misestimate predicates on it.
     Representative,
 };
 }
