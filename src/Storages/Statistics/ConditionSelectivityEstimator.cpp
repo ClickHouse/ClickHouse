@@ -689,9 +689,23 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(
+    ContextPtr context_, const StorageMetadataPtr & metadata, const NameSet & required_columns)
     : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
 {
+    if (!metadata)
+        return;
+
+    for (const auto & column_name : required_columns)
+    {
+        const auto * column = metadata->getColumns().tryGet(column_name);
+        if (!column || !column->statistics.assume_all_distinct)
+            continue;
+
+        assume_all_distinct_columns.insert(column_name);
+        if (shouldAssumeAllDistinctWithoutStatistics(*column))
+            columns_without_statistics.emplace(column_name, ColumnWithoutStatistics{column->type});
+    }
 }
 
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
@@ -731,14 +745,39 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// estimator still works with the compatible parts instead of crashing.
 }
 
+bool ConditionSelectivityEstimatorBuilder::addRowsWithoutStatistics(
+    UInt64 rows, const std::function<bool(const String &)> & part_stores_column)
+{
+    bool added = false;
+    for (auto & [column_name, column] : columns_without_statistics)
+    {
+        if (part_stores_column(column_name))
+        {
+            column.rows += rows;
+            added = true;
+        }
+    }
+    return added;
+}
+
 void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
 {
     estimator->column_estimators.at(column_name).stats->setCardinality(cardinality);
 }
 
-ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator()
 {
-    return has_data ? estimator : nullptr;
+    for (const auto & [column_name, column] : columns_without_statistics)
+        if (column.rows && !estimator->column_estimators.contains(column_name))
+            estimator->column_estimators[column_name].stats = ColumnStatistics::createRowCountOnly(column.type, column.rows);
+
+    if (!has_data && estimator->column_estimators.empty())
+        return nullptr;
+
+    for (auto & [column_name, column_estimator] : estimator->column_estimators)
+        column_estimator.stats->setAssumeAllDistinct(assume_all_distinct_columns.contains(column_name));
+
+    return estimator;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
@@ -836,12 +875,8 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
 
     /// Second upper bound: at most `set_size` of the column's distinct values can match, and the
     /// estimator assumes every distinct value carries the same share of rows, so at most
-    /// `set_size / cardinality` of them do. Only when the cardinality is measured - without a uniq
-    /// sketch `estimateCardinality` returns a fixed fraction of the row count, and dividing by that
-    /// guess would make the condition look arbitrarily selective and promote it into PREWHERE on no
-    /// evidence.
-    const UInt64 cardinality = it->second.estimateCardinality();
-    if (cardinality && it->second.stats->hasCardinality())
+    /// `set_size / cardinality` of them do.
+    if (UInt64 cardinality = it->second.stats->tryEstimateCardinality().value_or(0); cardinality != 0)
         selectivity.true_sel
             = std::min(selectivity.true_sel, static_cast<Float64>(set_size) / static_cast<Float64>(cardinality));
 

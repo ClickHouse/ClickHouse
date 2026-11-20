@@ -468,11 +468,12 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
 
-    const IStatistics * uniq_stats = findUniqStats(stats);
-    if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
+    /// Also an assumed cardinality: it errs upward, so if it is below 2048, so is the real one.
+    const std::optional<UInt64> cardinality = tryEstimateCardinality();
+    if (stats_desc.data_type->isValueRepresentedByNumber() && cardinality && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (uniq_stats->estimateCardinality() < 2048)
+        if (*cardinality < 2048)
         {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
         }
@@ -483,14 +484,13 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (hasCardinality())
+    if (cardinality)
     {
-        UInt64 distinct_values = estimateCardinality();
-        if (distinct_values == 0 || rows == 0)
+        if (*cardinality == 0 || rows == 0)
             return 0;
-        /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
+        /// Both a counted and an assumed cardinality ignore NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(*cardinality);
     }
 
     return std::nullopt;
@@ -520,20 +520,75 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
+ColumnStatistics::CardinalitySource ColumnStatistics::getCardinalitySource() const
+{
+    if (external_cardinality || findUniqStats(stats) != nullptr)
+        return CardinalitySource::Counted;
+    if (assume_all_distinct && canAssumeAllDistinctByType(stats_desc.data_type))
+        return CardinalitySource::AssumedDistinct;
+    return CardinalitySource::Unknown;
+}
+
 bool ColumnStatistics::hasCardinality() const
 {
-    return external_cardinality || findUniqStats(stats) != nullptr;
+    return getCardinalitySource() == CardinalitySource::Counted;
+}
+
+std::optional<UInt64> ColumnStatistics::tryEstimateCardinality() const
+{
+    switch (getCardinalitySource())
+    {
+        case CardinalitySource::Counted: return external_cardinality ? *external_cardinality : findUniqStats(stats)->estimateCardinality();
+        case CardinalitySource::AssumedDistinct: {
+            const auto it = stats.find(StatisticsType::Basic);
+            const auto * basic = it == stats.end() ? nullptr : &assert_cast<const StatisticsBasic &>(*it->second);
+            const bool has_min_max = basic && basic->hasNumericMinMax();
+            return estimateAssumedDistinctCardinality(
+                stats_desc.data_type,
+                rows,
+                basic && basic->hasNullCount() ? std::optional(basic->getNullCount()) : std::nullopt,
+                basic && basic->hasDefaultCount() ? std::optional(basic->getDefaultCount()) : std::nullopt,
+                has_min_max ? &basic->getMin() : nullptr,
+                has_min_max ? &basic->getMax() : nullptr);
+        }
+        case CardinalitySource::Unknown: return std::nullopt;
+    }
+}
+
+std::optional<UInt64> estimateAssumedDistinctCardinality(
+    const DataTypePtr & data_type,
+    UInt64 rows,
+    std::optional<UInt64> null_count,
+    std::optional<UInt64> default_count,
+    const Field * min,
+    const Field * max)
+{
+    if (!canAssumeAllDistinctByType(data_type))
+        return std::nullopt;
+
+    /// Without `Basic` the NULLs are not counted, so they count as distinct values: still an upper bound.
+    const UInt64 null_rows = null_count.value_or(0);
+    UInt64 cardinality = null_rows <= rows ? rows - null_rows : 0;
+    if (cardinality == 0)
+        return 0;
+
+    /// For a Nullable column the default count of `Basic` is the number of NULLs, which are already excluded.
+    if (const UInt64 default_rows = null_count ? 0 : std::min(default_count.value_or(0), cardinality))
+        cardinality = cardinality - default_rows + 1;
+
+    /// NaN is skipped by min/max unless every value is NaN, and it compares unequal to itself, so don't draw conclusions
+    /// from it. A NULL bound means there is no non-NULL value.
+    if (min && max && !min->isNull() && !max->isNull() && !isNaNField(*min) && !isNaNField(*max) && *min == *max)
+        return 1;
+
+    return cardinality;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (external_cardinality)
-        return *external_cardinality;
-    if (const IStatistics * uniq_stats = findUniqStats(stats))
-    {
-        return uniq_stats->estimateCardinality();
-    }
-    /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
+    if (auto cardinality = tryEstimateCardinality())
+        return *cardinality;
+    /// Neither counted nor assumed: a placeholder fraction of the row count.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
@@ -758,6 +813,16 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
 
     auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
     column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createRowCountOnly(const DataTypePtr & data_type, UInt64 rows)
+{
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
     column_stats->rows = rows;
     return column_stats;
 }
@@ -1183,6 +1248,7 @@ void removeImplicitStatistics(ColumnsDescription & columns)
                     else
                         ++it;
                 }
+                column_desc.statistics.assume_all_distinct = false;
             });
     }
 }
@@ -1207,18 +1273,27 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
         stats_desc.types_to_desc = stats_ast_map;
         stats_desc = factory.cloneWithSupportedStatistics(stats_desc, column.type);
 
+        bool assume_all_distinct = false;
         if (assume_floats_distinct && canAssumeAllDistinctByType(column.type))
         {
-            stats_desc.types_to_desc.erase(StatisticsType::Uniq);
-            stats_desc.types_to_desc.erase(StatisticsType::UniqV2);
+            size_t left_out_uniq = stats_desc.types_to_desc.erase(StatisticsType::Uniq);
+            left_out_uniq += stats_desc.types_to_desc.erase(StatisticsType::UniqV2);
+
+            /// Only where a sketch was asked for, and not if an explicit one is built anyway.
+            const auto & declared = column.statistics.types_to_desc;
+            assume_all_distinct = left_out_uniq > 0 && !declared.contains(StatisticsType::Uniq) && !declared.contains(StatisticsType::UniqV2);
         }
 
-        if (!stats_desc.empty())
+        if (!stats_desc.empty() || assume_all_distinct != column.statistics.assume_all_distinct)
         {
             columns.modify(
                 column.name,
                 [&](ColumnDescription & column_desc)
-                { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
+                {
+                    if (!stats_desc.empty())
+                        column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true);
+                    column_desc.statistics.assume_all_distinct = assume_all_distinct;
+                });
         }
     }
 }
@@ -1240,6 +1315,11 @@ bool canAssumeAllDistinctByType(const DataTypePtr & type)
 
     /// Accept Float32, Float64 with or without Nullable and reject LowCardinality or BFloat16
     return WhichDataType(removeNullable(type)).isNativeFloat();
+}
+
+bool shouldAssumeAllDistinctWithoutStatistics(const ColumnDescription & column)
+{
+    return column.statistics.assume_all_distinct && column.statistics.empty();
 }
 
 }

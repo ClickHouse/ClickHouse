@@ -1335,7 +1335,8 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
     /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
     std::vector<ColumnsStatistics> parts_statistics(parts.size());
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context, metadata_snapshot, required_columns_set);
     loadStatisticsOfPartsInParallel(
         parts.size(),
         local_context->getSettingsRef()[Setting::max_threads],
@@ -1355,9 +1356,12 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         },
         [&](size_t part_index)
         {
-            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            const auto & part = parts[part_index].data_part;
+            estimator_builder.incrementRowCount(part->rows_count);
             for (const auto & [column_name, stat] : parts_statistics[part_index])
                 estimator_builder.addStatistics(column_name, stat);
+            estimator_builder.addRowsWithoutStatistics(
+                part->rows_count, [&](const String & column_name) { return part->getColumnPosition(column_name).has_value(); });
             parts_statistics[part_index] = {};
         });
 

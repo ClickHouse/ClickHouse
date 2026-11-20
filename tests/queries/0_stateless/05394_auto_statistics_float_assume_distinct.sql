@@ -1,5 +1,8 @@
 -- With `auto_statistics_assume_floats_distinct`, implicit `uniq` / `uniq_v2` statistics are not built for
--- Float32 / Float64 columns.
+-- Float32 / Float64 columns. Where a cardinality is needed and no sketch exists, the optimizer assumes that
+-- all non-NULL values are distinct, capped using `basic` (zeros count as one value, `min == max` is one value),
+-- or the number of rows if the column is left without any statistics.
+-- `system.parts_columns.estimates.cardinality` shows the assumed value.
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -11,6 +14,9 @@ DROP TABLE IF EXISTS t_floats_off;
 DROP TABLE IF EXISTS t_floats_explicit;
 DROP TABLE IF EXISTS t_floats_basic_only;
 DROP TABLE IF EXISTS t_floats_uniq_only;
+DROP TABLE IF EXISTS t_floats_prewhere;
+DROP TABLE IF EXISTS t_floats_prewhere_uniq_only;
+DROP TABLE IF EXISTS t_floats_prewhere_floats_only;
 
 -- `auto_statistics_types` and `materialize_statistics_on_*` are randomized by the test harness, so pin them.
 CREATE TABLE t_floats
@@ -94,7 +100,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_floats_off' AND active AND column IN ('f64', 'nf64')
 ORDER BY column;
 
--- Turn it off again: the implicit uniq is declared again, the part gets its sketch on the next merge.
+-- Turn it off again: the implicit uniq is declared again, so nothing is assumed until the part has its sketch.
 ALTER TABLE t_floats_off MODIFY SETTING auto_statistics_assume_floats_distinct = 0;
 
 SELECT 'setting off again';
@@ -112,7 +118,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_floats_off' AND active AND column IN ('f64', 'nf64')
 ORDER BY column;
 
--- An explicit uniq on a Float column is built once it is materialized.
+-- An explicit uniq that is not materialized yet: nothing is assumed.
 CREATE TABLE t_floats_explicit
 (
     x Float64
@@ -155,7 +161,7 @@ SELECT column, statistics, estimates.cardinality
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_floats_explicit' AND active AND column = 'x';
 
--- No uniq configured at all: none is left out.
+-- No uniq configured at all: none is left out, so nothing is assumed where no sketch was asked for.
 CREATE TABLE t_floats_basic_only
 (
     f64 Float64,
@@ -176,7 +182,8 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_floats_basic_only' AND active AND column IN ('f64', 'u64')
 ORDER BY column;
 
--- Only uniq configured: Float columns get no implicit statistics at all.
+-- Only uniq configured: Float columns get no implicit statistics at all. The assumption is based on
+-- the number of rows of the part then.
 CREATE TABLE t_floats_uniq_only
 (
     f64 Float64,
@@ -198,8 +205,114 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_floats_uniq_only' AND active AND column IN ('f64', 'u64')
 ORDER BY column;
 
+-- The optimizer uses the assumed cardinality, e.g. to order PREWHERE conditions.
+-- The `EXPLAIN` lines are trimmed: their indentation depends on the plan, e.g. with parallel replicas.
+SET explain_query_plan_default = 'legacy';
+SET use_statistics = 1;
+SET enable_analyzer = 1;
+SET optimize_move_to_prewhere = 1;
+SET allow_reorder_prewhere_conditions = 1;
+-- The read is small, so without this the statistics are not loaded and the conditions are not reordered.
+SET min_marks_per_part_to_load_statistics = 0;
+
+CREATE TABLE t_floats_prewhere
+(
+    f Float64,
+    i Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'basic, uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    materialize_statistics_on_merge = 1,
+    -- Compact parts: column sizes are not measured, so the order depends on the estimated selectivity only.
+    min_bytes_for_wide_part = 1000000000,
+    min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_floats_prewhere SELECT number + 0.5, number % 1000 FROM numbers(10000);
+
+-- The first query caches the statistics of the part. The assumption is applied on top of them for every query,
+-- so the setting change below takes effect although the cached statistics stay the same.
+-- `f = 100.5` is assumed to match one row, `i = 10` matches about ten: `f` is evaluated first.
+SELECT 'prewhere, assumed';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f = 100.5)
+WHERE explain LIKE '%Prewhere filter column%';
+
+-- The same for `IN`, whether the set is turned into points or, above the limit, estimated from its size and bounds:
+-- `f IN (...)` is assumed to match three rows, so `f` is evaluated first either way.
+SELECT 'prewhere, assumed, IN';
+SELECT trimLeft(replaceRegexpAll(replaceRegexpAll(explain, '__table1\.', ''), '__set_[0-9A-Za-z_]+', '__set'))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f IN (100.5, 200.5, 300.5)
+    SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 0)
+WHERE explain LIKE '%Prewhere filter column%';
+
+SELECT 'prewhere, assumed, IN estimated from the size of the set';
+SELECT trimLeft(replaceRegexpAll(replaceRegexpAll(explain, '__table1\.', ''), '__set_[0-9A-Za-z_]+', '__set'))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f IN (100.5, 200.5, 300.5)
+    SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 1)
+WHERE explain LIKE '%Prewhere filter column%';
+
+ALTER TABLE t_floats_prewhere MODIFY SETTING auto_statistics_assume_floats_distinct = 0;
+
+-- No sketch for `f` and nothing assumed: the default selectivity, so `i` is evaluated first.
+SELECT 'prewhere, not assumed';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f = 100.5)
+WHERE explain LIKE '%Prewhere filter column%';
+
+-- Only uniq configured: `f` has no statistics at all, the assumption is based on the number of rows of the part.
+CREATE TABLE t_floats_prewhere_uniq_only
+(
+    f Float64,
+    i Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    materialize_statistics_on_merge = 1,
+    min_bytes_for_wide_part = 1000000000,
+    min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_floats_prewhere_uniq_only SELECT number + 0.5, number % 1000 FROM numbers(10000);
+
+-- `f = 100.5` is assumed to match one row, `i = 10` matches about ten by its sketch: `f` is evaluated first.
+SELECT 'prewhere, uniq only';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere_uniq_only WHERE i = 10 AND f = 100.5)
+WHERE explain LIKE '%Prewhere filter column%';
+
+-- Only Float columns and only uniq configured: no column of the table has statistics at all.
+CREATE TABLE t_floats_prewhere_floats_only
+(
+    f Float64,
+    g Float64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    materialize_statistics_on_merge = 1,
+    min_bytes_for_wide_part = 1000000000,
+    min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_floats_prewhere_floats_only SELECT number + 0.5, number + 0.5 FROM numbers(10000);
+
+-- `f = 100.5` is assumed to match one row, `g < 5000` has the default range selectivity: `f` is evaluated first.
+SELECT 'prewhere, only Float columns';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere_floats_only WHERE g < 5000 AND f = 100.5)
+WHERE explain LIKE '%Prewhere filter column%';
+
 DROP TABLE t_floats;
 DROP TABLE t_floats_off;
 DROP TABLE t_floats_explicit;
 DROP TABLE t_floats_basic_only;
 DROP TABLE t_floats_uniq_only;
+DROP TABLE t_floats_prewhere;
+DROP TABLE t_floats_prewhere_uniq_only;
+DROP TABLE t_floats_prewhere_floats_only;

@@ -7,6 +7,8 @@
 #include <Core/PlainRanges.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -174,20 +176,31 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    explicit ConditionSelectivityEstimatorBuilder(
+        ContextPtr context_, const StorageMetadataPtr & metadata = nullptr, const NameSet & required_columns = {});
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     /// Adds the rows of a part or file, which its statistics count.
     void incrementRowCount(UInt64 rows);
     /// Removes deleted rows from the rows of the relation. The statistics still count them, so they are not subtracted
     /// from the rows the statistics have to cover.
     void subtractDeletedRows(UInt64 rows);
+    /// An assumed all-distinct column without any statistics needs only its number of rows: adds `rows` to each such
+    /// column for which `part_stores_column` is true. Returns whether it added to any column.
+    bool addRowsWithoutStatistics(UInt64 rows, const std::function<bool(const String &)> & part_stores_column);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
     void setCardinality(const String & column_name, UInt64 cardinality);
-    [[nodiscard]] ConditionSelectivityEstimatorPtr getEstimator() const;
+    [[nodiscard]] ConditionSelectivityEstimatorPtr getEstimator();
 
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    NameSet assume_all_distinct_columns;
+    struct ColumnWithoutStatistics
+    {
+        DataTypePtr type;
+        UInt64 rows = 0;
+    };
+    std::unordered_map<String, ColumnWithoutStatistics> columns_without_statistics;
 };
 
 }

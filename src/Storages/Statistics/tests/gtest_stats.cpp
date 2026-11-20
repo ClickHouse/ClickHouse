@@ -33,12 +33,14 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <limits>
 #include "config.h"
 
 using namespace DB;
@@ -1527,6 +1529,47 @@ ColumnsDescription createColumnsForImplicitStatistics()
     return columns;
 }
 
+/// Builds statistics of `types` over a column of `type_name` with `values`, converted to the column type
+/// (a NULL Field inserts NULL).
+ColumnStatisticsPtr buildStats(const std::vector<StatisticsType> & types, const String & type_name, const std::vector<Field> & values)
+{
+    auto data_type = DataTypeFactory::instance().get(type_name);
+    MutableColumnPtr column = data_type->createColumn();
+    for (const auto & value : values)
+        column->insert(convertFieldToType(value, *data_type));
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
+/// `count` distinct non-zero values `1, 2, ..., count`.
+std::vector<Field> distinctFloats(size_t count)
+{
+    std::vector<Field> values;
+    for (size_t i = 0; i < count; ++i)
+        values.emplace_back(static_cast<Float64>(i + 1));
+    return values;
+}
+
+/// The metadata of `createColumnsForImplicitStatistics` with the implicit statistics derived from the settings.
+StorageMetadataPtr createMetadataForImplicitStatistics(const String & auto_statistics_types, bool assume_floats_distinct)
+{
+    auto columns = createColumnsForImplicitStatistics();
+    addImplicitStatistics(columns, auto_statistics_types, assume_floats_distinct);
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(columns);
+    return metadata;
+}
+
+/// The number of distinct values the estimator reports to the planner, e.g. for join reordering.
+/// 0 if the estimator has no statistics of the column.
+UInt64 ndvOf(const ConditionSelectivityEstimatorPtr & estimator, const String & column_name)
+{
+    const auto profile = estimator->estimateRelationProfile(/*metadata=*/nullptr);
+    auto it = profile.column_stats.find(column_name);
+    return it == profile.column_stats.end() ? 0 : it->second.num_distinct_values;
+}
+
 }
 
 TEST(Statistics, CanAssumeAllDistinctByType)
@@ -1600,6 +1643,387 @@ TEST(Statistics, AddImplicitStatisticsAssumeFloatsDistinct)
         addImplicitStatistics(columns, "basic, tdigest, uniq", /*assume_floats_distinct=*/true);
         EXPECT_EQ(declaredStatistics(columns, "f64"), "TDigest(auto),basic(auto)");
         EXPECT_EQ(declaredStatistics(columns, "u64"), "TDigest(auto),Uniq(auto),basic(auto)");
+    }
+}
+
+TEST(Statistics, AssumeAllDistinctFlag)
+{
+    auto assumes = [](const ColumnsDescription & columns, const String & column_name)
+    { return columns.get(column_name).statistics.assume_all_distinct; };
+
+    auto columns = createColumnsForImplicitStatistics();
+    addImplicitStatistics(columns, "basic, uniq_v2", /*assume_floats_distinct=*/true);
+
+    EXPECT_TRUE(assumes(columns, "f32"));
+    EXPECT_TRUE(assumes(columns, "f64"));
+    EXPECT_TRUE(assumes(columns, "nf64"));
+    /// The parts have `basic` of them.
+    EXPECT_FALSE(shouldAssumeAllDistinctWithoutStatistics(columns.get("f64")));
+
+    /// The type doesn't qualify.
+    EXPECT_FALSE(assumes(columns, "bf16"));
+    EXPECT_FALSE(assumes(columns, "lcf64"));
+    EXPECT_FALSE(assumes(columns, "u64"));
+    EXPECT_FALSE(assumes(columns, "s"));
+    /// An explicit uniq is declared, e.g. not materialized yet.
+    EXPECT_FALSE(assumes(columns, "f64_explicit"));
+
+    /// Every `ALTER` removes the implicit statistics before it derives them again: the flag goes with them.
+    removeImplicitStatistics(columns);
+    EXPECT_FALSE(assumes(columns, "f64"));
+
+    /// With the setting off, the implicit uniq is declared: nothing is assumed.
+    auto columns_setting_off = createColumnsForImplicitStatistics();
+    addImplicitStatistics(columns_setting_off, "basic, uniq_v2", /*assume_floats_distinct=*/false);
+    EXPECT_FALSE(assumes(columns_setting_off, "f64"));
+
+    /// No uniq is configured, so none is left out: nothing is assumed where no sketch was asked for.
+    for (const String & types : {"basic", ""})
+    {
+        auto columns_without_uniq = createColumnsForImplicitStatistics();
+        addImplicitStatistics(columns_without_uniq, types, /*assume_floats_distinct=*/true);
+        EXPECT_FALSE(assumes(columns_without_uniq, "f64")) << types;
+    }
+
+    /// Only uniq is configured: the Float columns are left without any statistics, so the assumption is
+    /// based on the number of rows of the parts.
+    auto columns_uniq_only = createColumnsForImplicitStatistics();
+    addImplicitStatistics(columns_uniq_only, "uniq_v2", /*assume_floats_distinct=*/true);
+    for (const String & column_name : {"f32", "f64", "nf64"})
+    {
+        EXPECT_TRUE(shouldAssumeAllDistinctWithoutStatistics(columns_uniq_only.get(column_name))) << column_name;
+        /// Nothing is built for the flag.
+        EXPECT_TRUE(columns_uniq_only.get(column_name).statistics.empty()) << column_name;
+    }
+    for (const String & column_name : {"bf16", "lcf64", "u64", "s", "f64_explicit"})
+        EXPECT_FALSE(shouldAssumeAllDistinctWithoutStatistics(columns_uniq_only.get(column_name))) << column_name;
+
+    /// Deriving the implicit statistics again with the setting off clears the flag.
+    addImplicitStatistics(columns_uniq_only, "uniq_v2", /*assume_floats_distinct=*/false);
+    EXPECT_FALSE(assumes(columns_uniq_only, "f64"));
+    EXPECT_EQ(declaredStatistics(columns_uniq_only, "f64"), "uniq_v2(auto)");
+}
+
+TEST(Statistics, AssumedDistinctCardinality)
+{
+    using Source = ColumnStatistics::CardinalitySource;
+    const Float64 placeholder_ratio = 0.1; /// `ConditionSelectivityEstimator::default_cardinality_ratio`
+
+    /// 1000 distinct non-zero values.
+    {
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", distinctFloats(1000));
+
+        /// Without the flag, nothing is assumed: the placeholder.
+        EXPECT_EQ(stats->getCardinalitySource(), Source::Unknown);
+        EXPECT_FALSE(stats->tryEstimateCardinality().has_value());
+        EXPECT_EQ(stats->estimateCardinality(), static_cast<UInt64>(1000 * placeholder_ratio));
+        EXPECT_FALSE(stats->estimateEqual(Field(Float64(10))).has_value());
+
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
+        EXPECT_EQ(stats->tryEstimateCardinality(), 1000u);
+        EXPECT_EQ(stats->estimateCardinality(), 1000u);
+        /// An assumption is not a measurement.
+        EXPECT_FALSE(stats->hasCardinality());
+
+        /// The uniform equality estimate: every value has one row.
+        auto equal = stats->estimateEqual(Field(Float64(10)));
+        ASSERT_TRUE(equal.has_value());
+        EXPECT_NEAR(*equal, 1.0, 1e-9);
+        /// `basic` still answers for the default value.
+        EXPECT_EQ(stats->estimateEqual(Field(Float64(0))), 0.0);
+
+        EXPECT_FALSE(stats->getEstimate().estimated_cardinality.has_value());
+    }
+
+    /// Nullable with NULLs: the non-NULL rows.
+    {
+        std::vector<Field> values;
+        for (size_t i = 0; i < 1000; ++i)
+            values.push_back(i % 5 == 0 ? Field() : Field(static_cast<Float64>(i)));
+        auto stats = buildStats({StatisticsType::Basic}, "Nullable(Float64)", values);
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
+        EXPECT_EQ(stats->estimateCardinality(), 800u);
+
+        auto equal = stats->estimateEqual(Field(Float64(7)));
+        ASSERT_TRUE(equal.has_value());
+        EXPECT_NEAR(*equal, 1.0, 1e-9);
+    }
+
+    /// Nullable(Float32) with zeros: for a Nullable column the default is NULL, so zeros are not capped.
+    {
+        std::vector<Field> values;
+        for (size_t i = 0; i < 100; ++i)
+            values.push_back(i < 60 ? Field(Float64(0)) : Field(static_cast<Float64>(i)));
+        auto stats = buildStats({StatisticsType::Basic}, "Nullable(Float32)", values);
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 100u);
+    }
+
+    /// Zeros in a non-Nullable column count as one value.
+    {
+        std::vector<Field> values(600, Field(Float64(0)));
+        for (const auto & value : distinctFloats(400))
+            values.push_back(value);
+        auto stats = buildStats({StatisticsType::Basic}, "Float32", values);
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 401u);
+        EXPECT_EQ(stats->estimateEqual(Field(Float64(0))), 600.0);
+
+        auto only_zeros = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(50, Field(Float64(0))));
+        only_zeros->setAssumeAllDistinct(true);
+        EXPECT_EQ(only_zeros->estimateCardinality(), 1u);
+    }
+
+    /// `min == max`: one value.
+    {
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(100, Field(Float64(7.5))));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 1u);
+
+        std::vector<Field> values(100, Field(Float64(7.5)));
+        values.insert(values.end(), 100, Field());
+        auto nullable_stats = buildStats({StatisticsType::Basic}, "Nullable(Float64)", values);
+        nullable_stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(nullable_stats->estimateCardinality(), 1u);
+    }
+
+    /// NaN: `min == max` says nothing.
+    {
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(100, Field(std::numeric_limits<Float64>::quiet_NaN())));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 100u);
+    }
+
+    /// No rows.
+    {
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", {});
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 0u);
+    }
+
+    /// Without `basic` there is no cap and no NULL count: the total rows.
+    {
+        tryRegisterAggregateFunctions();
+        std::vector<Field> values(100, Field(Float64(1)));
+        values.insert(values.end(), 100, Field());
+        auto stats = buildStats({StatisticsType::TDigest}, "Nullable(Float64)", values);
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
+        EXPECT_EQ(stats->estimateCardinality(), 200u);
+    }
+
+    /// The deprecated `minmax` without `basic`: its minimum and maximum end up in the estimate, but only
+    /// those of `basic` cap the assumption.
+    {
+        auto stats = buildStats({StatisticsType::MinMax}, "Float64", std::vector<Field>(100, Field(Float64(7.5))));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 100u);
+        EXPECT_EQ(stats->getEstimate().estimated_min, Field(Float64(7.5)));
+    }
+}
+
+TEST(Statistics, AssumedDistinctCardinalityUnchangedCases)
+{
+    tryRegisterAggregateFunctions();
+    using Source = ColumnStatistics::CardinalitySource;
+
+    /// A sketch wins over the assumption.
+    {
+        std::vector<Field> values;
+        for (size_t i = 0; i < 1000; ++i)
+            values.emplace_back(static_cast<Float64>(i % 10 + 1));
+
+        for (auto uniq_type : {StatisticsType::Uniq, StatisticsType::UniqV2})
+        {
+            auto stats = buildStats({StatisticsType::Basic, uniq_type}, "Float64", values);
+            const UInt64 sketch_cardinality = stats->estimateCardinality();
+            EXPECT_NEAR(static_cast<Float64>(sketch_cardinality), 10.0, 1.0);
+
+            stats->setAssumeAllDistinct(true);
+            EXPECT_EQ(stats->getCardinalitySource(), Source::Counted);
+            EXPECT_TRUE(stats->hasCardinality());
+            EXPECT_EQ(stats->estimateCardinality(), sketch_cardinality);
+
+            EXPECT_EQ(stats->getEstimate().estimated_cardinality, sketch_cardinality);
+        }
+    }
+
+    /// A number set by `setCardinality` (from data lake metadata) wins over the assumption and over a sketch.
+    {
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", distinctFloats(100));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
+        EXPECT_FALSE(stats->hasCardinality());
+
+        stats->setCardinality(7);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::Counted);
+        EXPECT_TRUE(stats->hasCardinality());
+        EXPECT_EQ(stats->estimateCardinality(), 7u);
+        ASSERT_TRUE(stats->estimateEqual(Field(1.0)).has_value());
+        EXPECT_DOUBLE_EQ(*stats->estimateEqual(Field(1.0)), 100.0 / 7.0);
+
+        std::vector<Field> values;
+        for (size_t i = 0; i < 1000; ++i)
+            values.emplace_back(static_cast<Float64>(i % 10 + 1));
+        auto with_sketch = buildStats({StatisticsType::Basic, StatisticsType::Uniq}, "Float64", values);
+        with_sketch->setCardinality(7);
+        EXPECT_EQ(with_sketch->getCardinalitySource(), Source::Counted);
+        EXPECT_EQ(with_sketch->estimateCardinality(), 7u);
+    }
+
+    /// The type doesn't qualify: the placeholder, even with the flag set.
+    for (const String & type_name : {"LowCardinality(Float64)", "BFloat16", "UInt64"})
+    {
+        auto stats = buildStats({StatisticsType::Basic}, type_name, distinctFloats(100));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::Unknown) << type_name;
+        EXPECT_FALSE(stats->tryEstimateCardinality().has_value()) << type_name;
+        EXPECT_EQ(stats->estimateCardinality(), 10u) << type_name;
+        EXPECT_FALSE(stats->hasCardinality()) << type_name;
+    }
+}
+
+TEST(Statistics, EstimatorAllDistinctAssumption)
+{
+    tryRegisterFunctions();
+    using Source = ColumnStatistics::CardinalitySource;
+
+    const auto metadata = createMetadataForImplicitStatistics("basic, uniq_v2", /*assume_floats_distinct=*/true);
+
+    /// Every column gets `basic` only, as if no part had a sketch (e.g. `f64_explicit` is not materialized yet).
+    const NameSet column_names{"f64", "nf64", "f64_explicit", "missing"};
+    auto build_estimator = [&](const StorageMetadataPtr & table_metadata)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, table_metadata, column_names);
+        for (const auto & column_name : column_names)
+        {
+            const String type_name = column_name == "nf64" ? "Nullable(Float64)" : "Float64";
+            builder.addStatistics(column_name, buildStats({StatisticsType::Basic}, type_name, distinctFloats(1000)));
+        }
+        builder.incrementRowCount(1000);
+        return builder.getEstimator();
+    };
+
+    {
+        auto estimator = build_estimator(metadata);
+        /// The assumption applies to the Float columns without a declared uniq.
+        EXPECT_EQ(ndvOf(estimator, "f64"), 1000u);
+        EXPECT_EQ(ndvOf(estimator, "nf64"), 1000u);
+        /// A uniq is declared but not materialized: the placeholder.
+        EXPECT_EQ(ndvOf(estimator, "f64_explicit"), 100u);
+        /// Not in the metadata: nothing is assumed.
+        EXPECT_EQ(ndvOf(estimator, "missing"), 100u);
+
+        /// The equality estimate uses the assumed cardinality.
+        NamesAndTypesList names_and_types{{"f64", std::make_shared<DataTypeFloat64>()}, {"f64_explicit", std::make_shared<DataTypeFloat64>()}};
+        EXPECT_EQ(estimateRowsFor(estimator, "f64 = 10", names_and_types), 1u);
+        /// `default_cond_equal_factor` (0.01) of the rows without an estimate.
+        EXPECT_EQ(estimateRowsFor(estimator, "f64_explicit = 10", names_and_types), 10u);
+    }
+
+    /// The metadata was derived with the setting off (so it declares the implicit `uniq_v2`), or without uniq in
+    /// `auto_statistics_types`, or there is no metadata: nothing is assumed.
+    for (const auto & table_metadata :
+         {createMetadataForImplicitStatistics("basic, uniq_v2", /*assume_floats_distinct=*/false),
+          createMetadataForImplicitStatistics("basic", /*assume_floats_distinct=*/true),
+          StorageMetadataPtr{}})
+    {
+        auto estimator = build_estimator(table_metadata);
+        for (const String & column_name : {"f64", "nf64", "f64_explicit", "missing"})
+            EXPECT_EQ(ndvOf(estimator, column_name), 100u) << column_name;
+    }
+
+    /// The statistics passed in may come from the statistics cache: the flag is set only on the estimator's own copy.
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata, {"f64"});
+        auto stats = buildStats({StatisticsType::Basic}, "Float64", distinctFloats(10));
+        builder.addStatistics("f64", stats);
+        auto estimator = builder.getEstimator();
+        ASSERT_TRUE(estimator != nullptr);
+        EXPECT_EQ(ndvOf(estimator, "f64"), 10u);
+        EXPECT_EQ(stats->getCardinalitySource(), Source::Unknown);
+    }
+}
+
+TEST(Statistics, EstimatorAssumedDistinctWithoutStatistics)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// `auto_statistics_types = 'uniq_v2'`: the Float columns are left without any statistics.
+    const auto metadata = createMetadataForImplicitStatistics("uniq_v2", /*assume_floats_distinct=*/true);
+    const NameSet all_columns{"f32", "f64", "nf64", "bf16", "lcf64", "u64", "s", "f64_explicit", "missing"};
+
+    const auto stores_all = [](const String &) { return true; };
+
+    /// Only with the assumption, and only the Float columns without statistics that the part stores.
+    {
+        const auto stores_all_but_f32 = [](const String & column_name) { return column_name != "f32"; };
+
+        /// Without metadata, or with `basic` on the Float columns, there is no column without statistics to count.
+        for (const auto & table_metadata :
+             {StorageMetadataPtr{}, createMetadataForImplicitStatistics("basic, uniq_v2", /*assume_floats_distinct=*/true)})
+        {
+            ConditionSelectivityEstimatorBuilder builder(getContext().context, table_metadata, all_columns);
+            builder.incrementRowCount(1000);
+            EXPECT_FALSE(builder.addRowsWithoutStatistics(1000, stores_all_but_f32));
+            EXPECT_EQ(builder.getEstimator(), nullptr);
+        }
+
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata, all_columns);
+        builder.incrementRowCount(1000);
+        EXPECT_TRUE(builder.addRowsWithoutStatistics(1000, stores_all_but_f32));
+        auto estimator = builder.getEstimator();
+        ASSERT_TRUE(estimator != nullptr);
+        EXPECT_EQ(ndvOf(estimator, "f64"), 1000u);
+        EXPECT_EQ(ndvOf(estimator, "nf64"), 1000u);
+        for (const String & column_name : {"f32", "bf16", "lcf64", "u64", "s", "f64_explicit", "missing"})
+            EXPECT_EQ(ndvOf(estimator, column_name), 0u) << column_name;
+    }
+
+    /// No part has statistics of `f64` and `nf64`: the estimator gets statistics of the rows of the parts.
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata, {"f64", "nf64"});
+        for (UInt64 rows : {600, 400})
+        {
+            builder.incrementRowCount(rows);
+            builder.addRowsWithoutStatistics(rows, stores_all);
+        }
+        auto estimator = builder.getEstimator();
+        ASSERT_TRUE(estimator != nullptr);
+        EXPECT_EQ(estimator->getTotalRows(), 1000u);
+        EXPECT_EQ(ndvOf(estimator, "f64"), 1000u);
+        /// Without `basic` the NULLs are not counted, so they count as distinct values.
+        EXPECT_EQ(ndvOf(estimator, "nf64"), 1000u);
+
+        NamesAndTypesList names_and_types{{"f64", std::make_shared<DataTypeFloat64>()}};
+        /// One row per value, not `default_cond_equal_factor` (0.01) of the rows.
+        EXPECT_EQ(estimateRowsFor(estimator, "f64 = 10", names_and_types), 1u);
+        /// Nothing answers for a range: `default_cond_range_factor` (0.33).
+        EXPECT_EQ(estimateRowsFor(estimator, "f64 < 10", names_and_types), 330u);
+
+        /// The estimator is complete: asking again doesn't change it.
+        EXPECT_EQ(builder.getEstimator(), estimator);
+        EXPECT_EQ(ndvOf(estimator, "f64"), 1000u);
+    }
+
+    /// A part with statistics of the column (e.g. a sketch built before the uniq was left out) is used instead.
+    {
+        std::vector<Field> values;
+        for (size_t i = 0; i < 1000; ++i)
+            values.emplace_back(static_cast<Float64>(i % 10 + 1));
+
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata, {"f64"});
+        builder.incrementRowCount(1000);
+        builder.addStatistics("f64", buildStats({StatisticsType::UniqV2}, "Float64", values));
+        builder.addRowsWithoutStatistics(1000, stores_all);
+        builder.incrementRowCount(500);
+        builder.addRowsWithoutStatistics(500, stores_all);
+        auto estimator = builder.getEstimator();
+        ASSERT_TRUE(estimator != nullptr);
+        EXPECT_NEAR(static_cast<Float64>(ndvOf(estimator, "f64")), 10.0, 1.0);
     }
 }
 

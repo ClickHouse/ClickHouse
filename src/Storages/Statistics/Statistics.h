@@ -160,10 +160,12 @@ protected:
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 
+/// Every part keeps one per column with statistics (`IMergeTreeDataPart::setEstimates`): derive values instead of storing them.
 struct Estimate
 {
     std::set<StatisticsType> types;
     UInt64 rows_count = 0;
+    /// Cardinality measured by a uniq sketch. Unset when the column has no sketch.
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
@@ -194,6 +196,8 @@ public:
     /// NULL count.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
         const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
+    /// Statistics of just the number of rows, see `shouldAssumeAllDistinctWithoutStatistics`.
+    static std::shared_ptr<ColumnStatistics> createRowCountOnly(const DataTypePtr & data_type, UInt64 rows);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
@@ -212,11 +216,31 @@ public:
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     [[nodiscard]] bool hasMinMax() const;
     [[nodiscard]] bool hasSum() const;
-    /// True iff `estimateCardinality` is backed by a uniq sketch or set by `setCardinality`. When it is not, that method
-    /// returns a fixed fraction of the row count, which callers dividing by the cardinality must not mistake for a
-    /// measurement.
+    /// Where the cardinality returned by `estimateCardinality` comes from.
+    enum class CardinalitySource : uint8_t
+    {
+        /// Counted: a number set by `setCardinality` (from data lake metadata), otherwise a `uniq` / `uniq_v2` sketch.
+        Counted,
+        /// Not counted, but the owner enabled `setAssumeAllDistinct` and the column type qualifies
+        /// (`canAssumeAllDistinctByType`): all non-NULL values are assumed to be distinct, capped using `Basic`.
+        AssumedDistinct,
+        /// Neither: `estimateCardinality` returns a fixed fraction of the row count.
+        Unknown,
+    };
+    [[nodiscard]] CardinalitySource getCardinalitySource() const;
+
+    /// True iff `estimateCardinality` is counted (`CardinalitySource::Counted`): backed by a uniq sketch or set by
+    /// `setCardinality`. When it is not, that method returns either an assumed cardinality or a fixed fraction of the
+    /// row count, which callers dividing by the cardinality must not mistake for a measurement.
     [[nodiscard]] bool hasCardinality() const;
+    /// The counted cardinality, or the assumed cardinality (`CardinalitySource::AssumedDistinct`),
+    /// otherwise a fixed fraction of the row count.
     [[nodiscard]] UInt64 estimateCardinality() const;
+    /// Like `estimateCardinality`, but returns std::nullopt instead of the fixed fraction of the row count.
+    [[nodiscard]] std::optional<UInt64> tryEstimateCardinality() const;
+    /// Set by the estimator from `ColumnStatisticsDescription::assume_all_distinct`. Off by default, so statistics built
+    /// for writing, merging and mutating parts are unaffected.
+    void setAssumeAllDistinct(bool value) { assume_all_distinct = value; }
     /// Sets the number of distinct values `estimateCardinality` returns, known outside the statistics objects (from data
     /// lake metadata).
     void setCardinality(UInt64 value) { external_cardinality = value; }
@@ -247,6 +271,7 @@ private:
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    bool assume_all_distinct = false; /// see `setAssumeAllDistinct`
     /// A number of distinct values set by `setCardinality`.
     std::optional<UInt64> external_cardinality;
 };
@@ -311,6 +336,18 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct);
 bool canAssumeAllDistinctByType(const DataTypePtr & type);
+bool shouldAssumeAllDistinctWithoutStatistics(const ColumnDescription & column);
+
+/// The cardinality if all non-NULL values are distinct: the non-NULL `rows`, capped using the values of `Basic` (rows equal
+/// to the type default count as one value, `min == max` means one value); pass none from other statistics types.
+/// std::nullopt if `data_type` doesn't qualify. The caller makes sure there is no uniq sketch.
+std::optional<UInt64> estimateAssumedDistinctCardinality(
+    const DataTypePtr & data_type,
+    UInt64 rows,
+    std::optional<UInt64> null_count,
+    std::optional<UInt64> default_count,
+    const Field * min,
+    const Field * max);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
