@@ -153,7 +153,8 @@ static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
         };
         check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
         check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
-        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+        if (thriftEnumToInt(element.converted_type) != LEGACY_NULL_CONVERTED_TYPE)
+            check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
     }
 }
 
@@ -3859,16 +3860,18 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (subchunk.dictionary_values)
     {
-        if (column_info.last_step_can_throw)
-        {
-            /// Drop the values no read row references: the step must not evaluate them.
-            ColumnIndex indexes(std::move(subchunk.column));
-            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-            subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
-        }
-        else
-            subchunk.column = ColumnReplicated::create(subchunk.dictionary_values->assumeMutable(), std::move(subchunk.column));
+        /// `dictionary_values` is still shared with the column chunk (other row subgroups read it too),
+        /// so it must not be aliased as mutable, and copying it for every row subgroup would be
+        /// expensive. Use the immutable `ColumnReplicated::create` overload, which shares the values.
+        /// The resulting `ColumnReplicated` itself is exclusively owned, so the outer `assumeMutable`
+        /// is sound; any later mutation has to go through `IColumn::mutate`, which unshares the values.
+        ColumnPtr values = std::move(subchunk.dictionary_values);
         subchunk.dictionary_values = nullptr;
+        ColumnIndex indexes(std::move(subchunk.column));
+        /// Drop the values no read row references: the step must not evaluate them.
+        if (column_info.last_step_can_throw)
+            values = indexes.removeUnusedRowsInIndexedData(values);
+        subchunk.column = ColumnReplicated::create(values, std::move(indexes))->assumeMutable();
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
@@ -3887,7 +3890,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (column_info.levels_only_arrays)
     {
-        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        /// Nothing takes the values: free them now instead of when the row subgroup is delivered.
         subchunk.column.reset();
         subchunk.null_map.reset();
         subchunk.arrays_offsets.resize(column_info.levels_only_arrays);

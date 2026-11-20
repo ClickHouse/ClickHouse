@@ -501,6 +501,13 @@ std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3Bloc
         if (!row_group.need_to_process)
             continue;
 
+        /// A row group skipped by a threshold that also filters rows holds no row of the result: its whole
+        /// range of the sort column sorts strictly beyond the threshold, which only tightens. It may have been
+        /// skipped only when delivered, after its rows were read and counted in `rows_pass` (see
+        /// `ReadManager::read`), and then it never updates `top_k_best_value`, so it must not count as matched.
+        if (!top_k_statistics_only && row_group.skipped_by_top_k.load())
+            continue;
+
         bool produced_rows = false;
         for (const auto & subgroup : row_group.subgroups)
         {
