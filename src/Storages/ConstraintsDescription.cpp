@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -21,6 +22,7 @@
 #include <Core/Defines.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -317,6 +319,16 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             /// The graph chains its relations and treats a constant by its `Field`, so such an atom is left out.
             const auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() == 2 && mixesEnumAndString(arguments[0]->getResultType(), arguments[1]->getResultType()))
+                continue;
+
+            /// The graph orders constants by their `Field`s, which order the elements of arrays, maps and tuples by the `Field` type first.
+            auto is_composite = [](const QueryTreeNodePtr & node)
+            {
+                const auto type = removeLowCardinalityAndNullable(node->getResultType());
+                return isArray(type) || isTuple(type) || isMap(type);
+            };
+            if (arguments.size() == 2 && (arguments[0]->as<ConstantNode>() || arguments[1]->as<ConstantNode>())
+                && (is_composite(arguments[0]) || is_composite(arguments[1])))
                 continue;
 
             constraints_for_graph.push_back(atom.node_with_hash.node);
