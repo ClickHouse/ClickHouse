@@ -12,6 +12,7 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 
 #include <Storages/IStorage.h>
@@ -537,6 +538,14 @@ public:
 
         if (!node->getResultType()->equals(*new_node->getResultType()))
         {
+            /// `CHECK e = f` compares two different `Enum`s by the value, but `CAST` from one to the other reads the name.
+            auto contains_enum = [](const DataTypePtr & type)
+            {
+                return anyInTypeTree(*type, [](const IDataType & nested) { return isEnum(nested); });
+            };
+            if (contains_enum(node->getResultType()) && contains_enum(new_node->getResultType()))
+                return;
+
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
         }
