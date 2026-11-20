@@ -32,7 +32,14 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     Ranges hyperrectangle;
     Serializations serializations;
     DataTypes datatypes;
+    /// Whether the index column is a `Bool`, whose stored bytes need not be 0 or 1 (see `deserializeBinary`).
+    std::vector<UInt8> bool_columns;
     FormatSettings format_settings;
+    /// For the `Bool` columns: the bounds are read as the stored bytes.
+    FormatSettings bool_format_settings;
+
+private:
+    void initSerializations();
 };
 
 
