@@ -906,7 +906,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
             }
-            else if (next_sort_key == 0 && first_key_column_set && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && reverse_indicator == 1)
+            else if (next_sort_key == 0 && first_key_column_set && !sort_node->column && !fixed_columns.contains(sort_node)
+                && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && reverse_indicator == 1)
             {
                 /// The first key column is in a literal set, e.g. 'WHERE x IN (1, 2) ORDER BY y' for the key (x, y).
                 /// The rows with one value of the column are ordered by the rest of the key, as if the column was fixed.
@@ -981,6 +982,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (order_key_prefix_descr.empty())
         return {};
 
+    /// The first key column was skipped for its set, but no ORDER BY column after it is read in order.
+    if (split_values && read_direction == 0)
+        return {};
+
     /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
     /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
     /// But only if we actually matched some key columns (next_sort_key > 0).
@@ -1003,10 +1008,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
-
-    /// The first key column is not skipped if the ORDER BY prefix ends before it was used.
-    if (next_sort_key < 2)
-        split_values = nullptr;
 
     std::optional<ActionsDAG> virtual_row_conversion;
     if (can_optimize_virtual_row)

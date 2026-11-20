@@ -26,6 +26,17 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE 
 WHERE explain ILIKE '%Read in order by values%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE k IN ('1', '3', '5') ORDER BY ts DESC)
 WHERE explain ILIKE '%Read in order by values%';
+-- A fixed ORDER BY column before the first key column.
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, k, ts LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, cityHash64(ts) LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, ts LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, k, ts LIMIT 10 SETTINGS read_in_order_in_set_max_streams = 0)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order WHERE v = 7 AND k IN ('1', '3', '5') ORDER BY v, cityHash64(ts) LIMIT 10 SETTINGS read_in_order_in_set_max_streams = 0)
+WHERE explain ILIKE '%Read in order by values%' OR explain ILIKE '%ReadType%' OR explain ILIKE '%Prefix sort description%';
 
 SELECT 'results';
 SELECT

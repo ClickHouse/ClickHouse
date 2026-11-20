@@ -5,6 +5,15 @@ ReadType: InOrder
 Read in order by values of the first key column: 3
 0
 0
+Prefix sort description: __table1.v ASC, __table1.k ASC, __table1.ts ASC
+ReadType: InOrder
+ReadType: Default
+Prefix sort description: __table1.v ASC, __table1.ts ASC
+ReadType: InOrder
+Read in order by values of the first key column: 3
+Prefix sort description: __table1.v ASC, __table1.k ASC, __table1.ts ASC
+ReadType: InOrder
+ReadType: Default
 results
 1
 1
