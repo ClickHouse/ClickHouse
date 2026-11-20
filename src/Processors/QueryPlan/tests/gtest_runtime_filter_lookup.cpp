@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -315,19 +319,149 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     EXPECT_EQ(filter->getStats().rows_checked.load(), 3);
 }
 
+TEST(RuntimeFilterLookup, FindCountsTheRowsOfCompactColumns)
+{
+    const auto type = makeUInt64Type();
+    const auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(type);
+    auto make_low_cardinality_column = [&](std::initializer_list<UInt64> values)
+    {
+        auto column = low_cardinality_type->createColumn();
+        for (const auto value : values)
+            column->insert(value);
+        return ColumnPtr(std::move(column));
+    };
+
+    /// Each column has more rows than values that it stores.
+    auto check = [&](ColumnWithTypeAndName values, std::initializer_list<UInt8> expected_mask, Int64 expected_rows_passed)
+    {
+        RuntimeFilter filter(
+            /*filters_to_merge_=*/0,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::ExactContains(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/100));
+        filter.insert(makeUInt64Column({0, 7}));
+        filter.finishInsert();
+
+        SCOPED_TRACE(values.column->dumpStructure());
+        expectMask(filter.find(values), expected_mask);
+        EXPECT_EQ(filter.getStats().rows_checked.load(), static_cast<Int64>(expected_mask.size()));
+        EXPECT_EQ(filter.getStats().rows_passed.load(), expected_rows_passed);
+    };
+
+    check({ColumnConst::create(makeUInt64Column({7}), 4), type, "k"}, {1, 1, 1, 1}, 4);
+    check({ColumnConst::create(makeUInt64Column({9}), 3), type, "k"}, {0, 0, 0}, 0);
+
+    /// The dictionary is {0, 7, 9}: 0 is the default, which no row has.
+    check({make_low_cardinality_column({7, 9, 7, 7, 9}), low_cardinality_type, "k"}, {1, 0, 1, 1, 0}, 3);
+
+    /// The values are the default 0 and the values at the offsets 1 and 4.
+    check({ColumnSparse::create(makeUInt64Column({0, 7, 9}), makeUInt64Column({1, 4}), 6), type, "k"}, {1, 1, 1, 1, 0, 1}, 5);
+
+    check({ColumnReplicated::create(makeUInt64Column({7, 9}), makeUInt64Column({0, 0, 1, 0, 1})), type, "k"}, {1, 1, 0, 1, 0}, 3);
+
+    /// One compact form inside another.
+    check({ColumnConst::create(make_low_cardinality_column({9}), 2), low_cardinality_type, "k"}, {0, 0}, 0);
+    check(
+        {ColumnReplicated::create(make_low_cardinality_column({9, 7}), makeUInt64Column({1, 1, 0, 1})), low_cardinality_type, "k"},
+        {1, 1, 0, 1},
+        3);
+}
+
+TEST(RuntimeFilterLookup, ApplyFilterCountsTheRowsOfLowCardinalityKeys)
+{
+    tryRegisterFunctions();
+    auto lookup = createRuntimeFilterLookup();
+    auto query_context = Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setRuntimeFilterLookup(lookup);
+
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
+    auto thread_group = std::make_shared<ThreadGroup>(query_context, 0);
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
+
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto type = std::make_shared<DataTypeLowCardinality>(string_type);
+    auto make_key = [&](std::initializer_list<const char *> values)
+    {
+        auto column = type->createColumn();
+        for (const auto * value : values)
+            column->insert(String(value));
+        return ColumnPtr(std::move(column));
+    };
+
+    auto filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/100));
+    filter->insert(make_key({"hit", "other"}));
+    lookup->add("runtime_filter", "runtime_filter", std::move(filter));
+    const auto registered_filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(registered_filter);
+
+    /// The default implementation for `LowCardinality` would look up the dictionary {'', 'hit', 'miss'} instead.
+    auto check = [&](ColumnPtr key, std::initializer_list<UInt8> expected_mask)
+    {
+        const size_t rows = key->size();
+        ColumnsWithTypeAndName arguments{{string_type->createColumnConst(rows, "runtime_filter"), string_type, "filter_id"}, {key, type, "k"}};
+        auto apply_filter = FunctionFactory::instance().get("__applyFilter", query_context)->build(arguments);
+        /// The type that the default implementation for `LowCardinality` gives.
+        EXPECT_EQ(apply_filter->getResultType()->getName(), "LowCardinality(UInt8)");
+
+        const auto result = apply_filter->execute(arguments, apply_filter->getResultType(), rows, /*dry_run=*/false);
+        const auto full_result = result->convertToFullColumnIfConst();
+        EXPECT_TRUE(typeid_cast<const ColumnLowCardinality *>(full_result.get())) << full_result->dumpStructure();
+        expectMask(full_result->convertToFullColumnIfLowCardinality(), expected_mask);
+    };
+
+    check(make_key({"hit", "hit", "miss", "hit", "hit"}), {1, 1, 0, 1, 1});
+    EXPECT_EQ(registered_filter->getStats().rows_checked.load(), 5);
+    EXPECT_EQ(registered_filter->getStats().rows_passed.load(), 4);
+
+    check(ColumnConst::create(make_key({"hit"}), 3), {1, 1, 1});
+    EXPECT_EQ(registered_filter->getStats().rows_checked.load(), 8);
+    EXPECT_EQ(registered_filter->getStats().rows_passed.load(), 7);
+}
+
+TEST(RuntimeFilterLookup, FilterIsSwitchedOffByTheRowsThatItFiltersOutPerLookup)
+{
+    auto is_switched_off = [](UInt64 rows_checked, UInt64 rows_passed, UInt64 values_looked_up)
+    {
+        RuntimeFilterEvaluationState state(
+            RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/0.7, /*blocks_to_skip_before_reenabling=*/1});
+        state.updateStats(rows_checked, rows_passed, values_looked_up);
+        return state.shouldSkip(1);
+    };
+
+    /// A plain key takes a lookup per row: the filter is switched off if more than 70% of the rows pass.
+    EXPECT_TRUE(is_switched_off(100, 71, 100));
+    EXPECT_FALSE(is_switched_off(100, 70, 100));
+
+    /// 11 lookups for 1000 rows, e.g. of a dictionary: the filter is worth them if it filters out more than 0.3 rows
+    /// per lookup, which is 3.3 rows.
+    EXPECT_TRUE(is_switched_off(1000, 1000, 11));
+    EXPECT_TRUE(is_switched_off(1000, 997, 11));
+    EXPECT_FALSE(is_switched_off(1000, 996, 11));
+    EXPECT_FALSE(is_switched_off(1000, 0, 11));
+
+    /// One lookup for a constant key: all its rows pass, or none.
+    EXPECT_TRUE(is_switched_off(1000, 1000, 1));
+    EXPECT_FALSE(is_switched_off(1000, 0, 1));
+}
+
 TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)
 {
     RuntimeFilterEvaluationState state(
         RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/0.5,
                             /*blocks_to_skip_before_reenabling=*/1});
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
     EXPECT_TRUE(state.shouldSkip(60));
     EXPECT_FALSE(state.shouldSkip(60));
     EXPECT_EQ(state.getStats().blocks_skipped.load(), 1);
     EXPECT_EQ(state.getStats().rows_skipped.load(), 60);
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
     EXPECT_FALSE(state.shouldSkip(100));
 }
 
@@ -355,7 +489,7 @@ TEST(RuntimeFilterLookup, SkipBudgetConsumptionIsLinearizable)
     size_t non_linearizable_iterations = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (should_skip[0] == should_skip[1])
@@ -391,7 +525,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
             for (size_t iteration = 0; iteration < iterations; ++iteration)
             {
                 sync.arrive_and_wait();
-                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
                 sync.arrive_and_wait();
             }
         });
@@ -399,7 +533,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
     size_t lost_replenishments = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*values_looked_up=*/100);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (!state.shouldSkip(99))
