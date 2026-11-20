@@ -501,6 +501,13 @@ std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3Bloc
         if (!row_group.need_to_process)
             continue;
 
+        /// A row group skipped by a threshold that also filters rows holds no row of the result: its whole
+        /// range of the sort column sorts strictly beyond the threshold, which only tightens. It may have been
+        /// skipped only when delivered, after its rows were read and counted in `rows_pass` (see
+        /// `ReadManager::read`), and then it never updates `top_k_best_value`, so it must not count as matched.
+        if (!top_k_statistics_only && row_group.skipped_by_top_k.load())
+            continue;
+
         bool produced_rows = false;
         for (const auto & subgroup : row_group.subgroups)
         {
@@ -1192,6 +1199,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
+| `output_format_parquet_data_page_row_limit`                                    | Maximum number of rows in a data page; a page also ends at `output_format_parquet_data_page_size`. 0 means no limit.                                                                                                                | `20000`     |
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
