@@ -260,6 +260,13 @@ TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithoutLimit)
     EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
 }
 
+TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithMaxLimit)
+{
+    auto metadata = makeMetadataWithLog(5);
+    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ std::numeric_limits<UInt64>::max());
+    EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
+}
+
 TEST(IcebergMetadataGenerator, MetadataLogTablePropertyTakesPrecedence)
 {
     auto metadata = makeMetadataWithLog(5);

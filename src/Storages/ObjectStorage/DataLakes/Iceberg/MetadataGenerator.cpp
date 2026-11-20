@@ -146,11 +146,11 @@ void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String &
         return;
 
     /// The log also holds the entry of the metadata file being written, so it keeps one entry more than the number of previous versions.
-    const size_t max_entries = *previous_versions_max + 1;
-    if (metadata_log->size() <= max_entries)
+    const size_t previous_versions = metadata_log->size() - 1;
+    if (previous_versions <= *previous_versions_max)
         return;
 
-    const size_t excess = metadata_log->size() - max_entries;
+    const size_t excess = previous_versions - *previous_versions_max;
     if (excess == 1)
     {
         metadata_log->remove(0);

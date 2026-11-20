@@ -947,10 +947,14 @@ void alter(
         }
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        const Int64 commit_timestamp = std::max<Int64>(
+            metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        metadata->set(Iceberg::f_last_updated_ms, commit_timestamp);
         appendToMetadataLog(
             metadata,
             metadata_info.path.serialize(),
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+            commit_timestamp,
             context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
 
         std::string json_representation = stringifyJSON(metadata, 4);

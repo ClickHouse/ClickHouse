@@ -6,3 +6,4 @@ limit 1	9	[8,9]
 8
 alter	10	[9,10]
 expire_snapshots	11	[10,11]
+compatibility 26.10	12	[10,11,12]

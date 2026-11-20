@@ -56,6 +56,13 @@ SELECT 'alter', * FROM latest_metadata_log;
 ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1) SETTINGS allow_expire_snapshots = 1 FORMAT Null;
 SELECT 'expire_snapshots', * FROM latest_metadata_log;
 
+-- With an older `compatibility` the log is unbounded, as before the setting was introduced.
+SET iceberg_metadata_previous_versions_max = DEFAULT;
+SET compatibility = '26.10';
+INSERT INTO t (id) VALUES (8);
+SELECT 'compatibility 26.10', * FROM latest_metadata_log;
+SET compatibility = DEFAULT;
+
 DROP VIEW latest_metadata_log;
 SET iceberg_delete_data_on_drop = 1;
 DROP TABLE t SYNC;
