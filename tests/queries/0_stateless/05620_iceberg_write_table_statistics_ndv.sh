@@ -196,6 +196,14 @@ local_query "CREATE TABLE t_default ENGINE = IcebergLocal('${WORK_DIR}/t_default
     INSERT INTO t_default SELECT number + 1000, number % 3 FROM numbers(1000);"
 stats t_default "id c"
 
+echo "a column added before a commit that writes no rows gets the sketch of the rows inserted after it"
+local_query "CREATE TABLE t_add_delete (id Int64) ENGINE = IcebergLocal('${WORK_DIR}/t_add_delete/');
+    INSERT INTO t_add_delete SELECT number FROM numbers(1000);
+    ALTER TABLE t_add_delete ADD COLUMN c Nullable(Int32);
+    ALTER TABLE t_add_delete DELETE WHERE id < 10;
+    INSERT INTO t_add_delete SELECT number + 1000, number % 7 FROM numbers(1000);"
+stats t_add_delete "id c"
+
 echo "a promoted column gets no sketch: its parent sketch hashes the narrower type"
 local_query "CREATE TABLE t_promote (id Int64, n Int32) ENGINE = IcebergLocal('${WORK_DIR}/t_promote/');
     INSERT INTO t_promote SELECT number, number % 7 FROM numbers(1000);

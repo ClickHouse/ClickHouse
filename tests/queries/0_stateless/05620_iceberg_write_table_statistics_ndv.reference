@@ -28,6 +28,8 @@ a column added to a table with rows gets the sketch of the new rows
 id:2000/2000 c:7/7
 a column added with an initial-default gets the sketch of the new rows and the default
 id:2000/2000 c:4/4
+a column added before a commit that writes no rows gets the sketch of the rows inserted after it
+id:2000/1990 c:7/7
 a promoted column gets no sketch: its parent sketch hashes the narrower type
 id:2000/2000
 a parent blob that the statistics entry does not list is not unioned

@@ -110,7 +110,7 @@ struct SchemaChanges
 {
     /// Absent from it and without an `initial-default`: NULL in all its rows.
     std::unordered_set<Int32> null_fields;
-    /// Absent from it, with an `initial-default`: the serialized sketch of that default, the value of all its rows.
+    /// Absent from it and primitive: the serialized sketch of its `initial-default`, the value of all its rows, empty for NULL.
     std::map<Int32, String> default_sketches;
     /// With another type in it (a promotion such as `int` to `long`): its sketches hash other bytes.
     std::unordered_set<Int32> retyped_fields;
@@ -121,8 +121,8 @@ struct ParentSketches
     bool has_rows = false;
     /// Serialized, by field id.
     std::map<Int32, String> sketches;
-    /// Fields added after the parent without an `initial-default`: a sketch of the new rows is complete for them. A field
-    /// added with one has the sketch of its default in `sketches`.
+    /// Fields added after the parent without an `initial-default`: a sketch of the new rows is complete for them. A primitive
+    /// field added after the parent has the sketch of its default in `sketches`, empty without one.
     std::unordered_set<Int32> fields_null_in_parent;
 };
 
@@ -273,7 +273,7 @@ private:
             {
                 if (!field->has(Iceberg::f_initial_default) || field->get(Iceberg::f_initial_default).isEmpty())
                     changes.null_fields.insert(id);
-                else if (auto sketch = initialDefaultSketch(field))
+                if (auto sketch = initialDefaultSketch(field))
                     changes.default_sketches.emplace(id, std::move(*sketch));
             }
             else if (type->second != field->get(Iceberg::f_type).toString())
@@ -282,7 +282,7 @@ private:
         return changes;
     }
 
-    /// The sketch of the `initial-default` of the primitive field `field`, or nothing for another type.
+    /// The sketch of the `initial-default` of the primitive field `field`, empty without one, or nothing for another type.
     [[nodiscard]] static std::optional<String> initialDefaultSketch(const Poco::JSON::Object::Ptr & field)
     {
         const auto iceberg_type = field->get(Iceberg::f_type);
@@ -292,7 +292,8 @@ private:
         if (!PuffinColumnThetaSketch::isSupportedType(type))
             return {};
         PuffinColumnThetaSketch sketch(type);
-        sketch.update(*type->createColumnConst(1, *Iceberg::getIcebergInitialDefault(field, type)));
+        if (const auto value = Iceberg::getIcebergInitialDefault(field, type))
+            sketch.update(*type->createColumnConst(1, *value));
         return sketch.serialize().bytes;
     }
 
@@ -365,10 +366,10 @@ std::optional<String> writeIcebergTableStatisticsNdv(
             for (const auto & [field_id, bytes] : *new_sketches)
             {
                 auto parent_sketch = parent.sketches.find(field_id);
-                if (parent_sketch != parent.sketches.end())
-                    sketches.emplace(field_id, unionThetaSketches({parent_sketch->second, bytes}));
-                else if (!parent.has_rows || parent.fields_null_in_parent.contains(field_id))
+                if (!parent.has_rows || parent.fields_null_in_parent.contains(field_id))
                     sketches.emplace(field_id, unionThetaSketches({bytes}));
+                else if (parent_sketch != parent.sketches.end())
+                    sketches.emplace(field_id, unionThetaSketches({parent_sketch->second, bytes}));
             }
         }
         if (sketches.empty())
