@@ -166,7 +166,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.11.
+/// Last bumped for release 26.12.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
 /// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
