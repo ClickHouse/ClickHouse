@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+-- With tiny granules `ReadCompressedBytes` grows by per-granule reads the estimate does not model (e.g. the
+-- marks and the primary index the first query loads), which can exceed the 3x bound below.
+
 -- Input-byte autopr statistics for JOIN queries. A JoinStep never reads itself, but the JOIN-specific
 -- logic in `findReadingStep` decides WHICH reading step gets instrumented: the parallelized side
 -- (child 0, or child 1 for RIGHT), i.e. the table read across replicas. This test checks that the
