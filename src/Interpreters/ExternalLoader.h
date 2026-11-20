@@ -9,6 +9,7 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
+#include <Common/ActionBlocker.h>
 #include <Common/ExternalLoaderStatus.h>
 #include <Common/Logger.h>
 #include <Core/Types.h>
@@ -228,6 +229,8 @@ public:
 
     /// Reload only a specified path in a specified config repository.
     void reloadConfig(const String & repository_name, const String & path) const;
+
+    ActionLock getActionLock();
 
 protected:
     [[nodiscard]] virtual LoadableMutablePtr createObject(
