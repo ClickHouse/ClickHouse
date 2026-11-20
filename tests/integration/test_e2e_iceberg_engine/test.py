@@ -194,6 +194,31 @@ def partitioned_table(manager):
 
 
 @pytest.fixture(scope="module")
+def multi_manifest_partitioned_table(manager):
+    batches = []
+    for batch_index in range(4):
+        ids = list(range(batch_index * 4 + 1, batch_index * 4 + 5))
+        regions = ["US", "EU", "US", "EU"]
+        batches.append(
+            pa.table(
+                {
+                    "id": pa.array(ids, type=pa.int64()),
+                    "region": pa.array(regions, type=pa.string()),
+                    "value": pa.array([value * 10 for value in ids], type=pa.int64()),
+                }
+            )
+        )
+
+    table_name, _ = manager.create_table_multi_snapshot(
+        batches,
+        partition_column="region",
+        min_manifest_count=2,
+    )
+    yield table_name
+    manager.cleanup_table(table_name)
+
+
+@pytest.fixture(scope="module")
 def multi_snapshot_table(manager):
     batch1 = pa.table(
         {
@@ -784,6 +809,33 @@ def test_engine_join_two_engine_tables(node, manager, sales_table, partitioned_t
     ).strip()
     # sales has ids 1-20, partitioned has ids 1-12
     assert int(result) == 12
+
+
+def test_engine_join_with_multi_manifest_iceberg_table(
+    node, manager, sales_table, multi_manifest_partitioned_table
+):
+    sales_eng = _create_engine_table(node, manager, sales_table)
+    partitioned_eng = _create_engine_table(node, manager, multi_manifest_partitioned_table)
+
+    result = node.query(
+        f"SELECT count() "
+        f"FROM (SELECT id AS sales_id FROM {sales_eng}) AS s "
+        f"INNER JOIN ("
+        f"SELECT id AS partitioned_id FROM {partitioned_eng} "
+        f"WHERE region = 'US'"
+        f") AS p ON s.sales_id = p.partitioned_id "
+        f"INNER JOIN (SELECT id AS validation_id FROM {sales_eng}) AS v "
+        f"ON v.validation_id = s.sales_id FORMAT TSV",
+        settings={
+            "use_statistics": 1,
+            "use_datalake_metadata_statistics": 1,
+            "use_iceberg_partition_pruning": 1,
+            "use_hash_table_stats_for_join_reordering": 1,
+            "query_plan_optimize_join_order_limit": 10,
+        },
+    ).strip()
+
+    assert int(result) == 8
 
 
 def test_engine_join_with_local_table(node, manager, sales_table):
