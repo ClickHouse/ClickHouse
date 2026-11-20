@@ -3,11 +3,12 @@
 # no-fasttest: the remote executor needs the stateless worker configuration.
 # no-parallel: the failpoint holds the task starts of every distributed query on the server.
 #
-# A worker reclaims the tasks of a control connection that closes before the initiator forgot them. The failpoint holds the
+# A worker reclaims the tasks of a control connection that closes before the initiator forgot them, once no new connection
+# attached to them within `distributed_query.control_reattach_timeout_ms` (10 s in the test config). The failpoint holds the
 # worker's `StartTasks` after the frame is read, so neither the start nor the teardown's `CancelTasks` is answered: the killed
 # query ends within its bounded teardown, which then closes the connection. Once the failpoint is released, the worker starts
-# the batch, cancels its tasks for the closed connection and forgets them. The exchanges are streaming, so no task can finish
-# without the initiator reading the result.
+# the batch, and after the reattach timeout cancels its tasks and forgets them. The exchanges are streaming, so no task can
+# finish without the initiator reading the result.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

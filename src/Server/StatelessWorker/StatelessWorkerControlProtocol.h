@@ -24,11 +24,14 @@ namespace DB
 /// The control of the tasks of one distributed query on one stateless worker, on the worker's streaming-exchange port.
 ///
 /// A frame is a `StreamingExchangeProtocol::PacketHeader` (type and body size, host byte order), then the body; each
-/// type caps its body size. The initiator opens with `ControlHello`, which binds the connection to one query, and sends
-/// nothing else until the `ControlHelloReply`. Every later body starts with a `varUInt` request id, unique per
-/// connection; a reply carries the id of its request, and id 0 stands for the connection.
+/// type caps its body size. The initiator opens with `ControlHello`, which binds the connection to one query and one of
+/// its channels to the worker, and sends nothing else until the `ControlHelloReply`. Every later body starts with a
+/// `varUInt` request id, unique per channel; a reply carries the id of its request, and id 0 stands for the connection.
+/// A channel whose connection is lost is connected again with the same hello: the worker attaches the new connection to
+/// the tasks of the lost one, and the initiator sends the requests it got no reply to again, under the same ids.
 ///
-///   ControlHello       I->W  varUInt version, varUInt purpose, unique_query_id, auth_token, user, password, initiator
+///   ControlHello       I->W  varUInt version, varUInt purpose, unique_query_id, varUInt channel, auth_token, user, password,
+///                            initiator
 ///   ControlHelloReply  W->I  varUInt version, Int32 code (0: accepted), message, varUInt task and plan serialization versions
 ///   StartTasks         I->W  id, temp_path, `TaskCollectors::toString`, `TracingContext::serialize`, the `serializeTaskBatch` bytes
 ///   StartTasksReply    W->I  id, Int32 code (0: started), message
@@ -131,6 +134,8 @@ struct ControlHello
     UInt64 version = PROTOCOL_VERSION;
     Purpose purpose = Purpose::Query;
     String unique_query_id;
+    /// The initiator's channel to this worker within the query.
+    UInt64 channel = 0;
     String auth_token;
     String user;
     String password;

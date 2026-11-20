@@ -31,6 +31,7 @@
 namespace ProfileEvents
 {
     extern const Event DistributedPlanControlPings;
+    extern const Event DistributedPlanControlReconnects;
     extern const Event DistributedPlanControlSendBytes;
 }
 
@@ -344,6 +345,7 @@ WorkerControlConnectionParams makeParams(UInt16 port, const String & unique_quer
 {
     return WorkerControlConnectionParams{
         .unique_query_id = unique_query_id,
+        .channel = 0,
         .host = "127.0.0.1",
         .port = port,
         .auth_token = "",
@@ -358,6 +360,25 @@ WorkerControlConnectionParams makeParams(UInt16 port, const String & unique_quer
 WorkerControlLoop::Timeouts withoutPings()
 {
     return WorkerControlLoop::Timeouts{.ping_interval = 600s};
+}
+
+/// A lost connection breaks at once.
+WorkerControlLoop::Timeouts withoutReconnects(WorkerControlLoop::Timeouts timeouts = withoutPings())
+{
+    timeouts.reattach = 0ms;
+    return timeouts;
+}
+
+/// Returns a batch of one task of the stage `main`.
+StartTasks makeStartTasks(std::shared_ptr<const String> plan)
+{
+    StartTasks request;
+    request.temp_path = "tmp/q1";
+    DistributedQueryTaskBatch::Task task;
+    task.task.task_id = "main";
+    request.batch.initial_query_id = "q1";
+    request.batch.stages.push_back({"main", std::move(plan), {task}});
+    return request;
 }
 
 UInt64 globalCount(ProfileEvents::Event event)
@@ -460,7 +481,7 @@ TEST(WorkerControlLoop, SilentConnectionIsClosedByTheWorker)
 {
     auto control_server = makeControlServer(10, nullptr, /*idle_timeout=*/ 300ms);
     Worker worker(control_server);
-    WorkerControlLoop loop(withoutPings());
+    WorkerControlLoop loop(withoutReconnects());
     RecordingHandler handler;
     auto connection = loop.open(makeParams(worker.port(), "q1"), handler);
     handler.expect(Event::Kind::HelloAccepted);
@@ -479,7 +500,10 @@ TEST(WorkerControlLoop, WorkerShutdownBreaksTheConnection)
     RecordingHandler handler;
     RecordingHandler detached;
     auto connection = loop.open(makeParams(worker.port(), "q1"), handler);
-    auto detached_connection = loop.open(makeParams(worker.port(), "q1"), detached);
+    /// Another channel, since a second connection of a channel takes the first one's place.
+    auto detached_params = makeParams(worker.port(), "q1");
+    detached_params.channel = 1;
+    auto detached_connection = loop.open(std::move(detached_params), detached);
     handler.expect(Event::Kind::HelloAccepted);
     detached.expect(Event::Kind::HelloAccepted);
     detached_connection->detach();
@@ -518,7 +542,7 @@ TEST(WorkerControlLoop, ExchangePortWithoutControlServer)
 TEST(WorkerControlLoop, PeerThatClosesBreaksTheConnection)
 {
     FakeWorker fake_worker;
-    WorkerControlLoop loop(withoutPings());
+    WorkerControlLoop loop(withoutReconnects());
     {
         RecordingHandler handler;
         auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
@@ -560,7 +584,7 @@ TEST(WorkerControlLoop, RefusedConnect)
 TEST(WorkerControlLoop, UnansweredRequestBreaksAfterTheIdleTimeout)
 {
     FakeWorker fake_worker;
-    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 300ms, .ping_interval = 600s});
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 300ms, .reattach = 0ms, .ping_interval = 600s});
     RecordingHandler handler;
     auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
     auto peer = fake_worker.accept();
@@ -721,7 +745,7 @@ TEST(WorkerControlLoop, HungWorkerIsDetectedWithinTheIdleTimeout)
 {
     auto control_server = makeControlServer(10);
     Worker worker(control_server);
-    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 2s});
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.idle = 2s, .reattach = 0ms});
     RecordingHandler handler;
     auto connection = loop.open(makeParams(worker.port(), "q1"), handler);
     handler.expect(Event::Kind::HelloAccepted);
@@ -740,7 +764,7 @@ TEST(WorkerControlLoop, HungWorkerIsDetectedWithinTheIdleTimeout)
 TEST(WorkerControlLoop, FailureWhileBreakingAConnectionKeepsTheLoop)
 {
     FakeWorker fake_worker;
-    WorkerControlLoop loop(withoutPings());
+    WorkerControlLoop loop(withoutReconnects());
     FailPointInjection::enableFailPoint(FailPoints::worker_control_loop_break_connection_fails);
     SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::worker_control_loop_break_connection_fails));
 
@@ -841,6 +865,105 @@ TEST(WorkerControlLoop, TeardownDropsUnsentStartTasks)
     EXPECT_EQ(handler.expect(Event::Kind::StartTasksReply).request_id, first_id);
     peer->send(CancelTasksReply{.request_id = cancel_id});
     EXPECT_EQ(handler.expect(Event::Kind::CancelTasksReply).request_id, cancel_id);
+}
+
+TEST(WorkerControlLoop, LostConnectionIsReconnectedAndItsRequestsResent)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+
+    const UInt64 reconnects_before = globalCount(ProfileEvents::DistributedPlanControlReconnects);
+    const UInt64 start_id = connection->startTasks(makeStartTasks(std::make_shared<const String>("plan")));
+    const UInt64 statuses_id = connection->getStatuses(0, {"q1::main"});
+    EXPECT_EQ(peer->receive<StartTasks>().request_id, start_id);
+    EXPECT_EQ(peer->receive<GetStatuses>().request_id, statuses_id);
+    /// Lost with both requests unanswered.
+    peer->close();
+
+    auto next_peer = fake_worker.tryAccept(5s);
+    if (!next_peer)
+    {
+        const auto event = handler.next(0ms);
+        FAIL() << "No reconnection; the handler got " << (event ? kindName(event->kind) + ": " + event->message : "nothing");
+    }
+    next_peer->acceptHello();
+    /// Sent again in their order, under their ids.
+    EXPECT_EQ(next_peer->receive<StartTasks>().request_id, start_id);
+    EXPECT_EQ(next_peer->receive<GetStatuses>().request_id, statuses_id);
+    next_peer->send(StartTasksReply{.request_id = start_id, .code = 0, .message = ""});
+    next_peer->send(GetStatusesReply{.request_id = statuses_id, .entries = {}});
+    EXPECT_EQ(handler.expect(Event::Kind::StartTasksReply).request_id, start_id);
+    EXPECT_EQ(handler.expect(Event::Kind::GetStatusesReply).request_id, statuses_id);
+    EXPECT_EQ(globalCount(ProfileEvents::DistributedPlanControlReconnects) - reconnects_before, 1u);
+}
+
+TEST(WorkerControlLoop, ReconnectionGivesUpAfterTheReattachTimeout)
+{
+    std::optional<FakeWorker> fake_worker(std::in_place);
+    WorkerControlLoop loop(WorkerControlLoop::Timeouts{.reattach = 1s, .ping_interval = 600s});
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker->port(), "q1"), handler);
+    auto peer = fake_worker->accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+    connection->cancelTasks({"q1::a"});
+    peer->receive<CancelTasks>();
+
+    /// The worker goes away, and its port refuses the connections.
+    peer->close();
+    fake_worker.reset();
+    const Stopwatch watch;
+    const Event broken = handler.expect(Event::Kind::Broken);
+    EXPECT_GE(watch.elapsedMilliseconds(), 800u);
+    EXPECT_EQ(broken.code, ErrorCodes::NETWORK_ERROR);
+    EXPECT_TRUE(broken.message.contains("the worker closed the connection, and did not connect again within 1000 ms: cannot connect"))
+        << broken.message;
+}
+
+TEST(WorkerControlLoop, TeardownOfALostConnectionSendsNoStartTasks)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+    const UInt64 start_id = connection->startTasks(makeStartTasks(std::make_shared<const String>("plan")));
+    EXPECT_EQ(peer->receive<StartTasks>().request_id, start_id);
+    peer->close();
+
+    /// The teardown's requests, while the connection is connected again.
+    auto next_peer = fake_worker.accept();
+    connection->dropUnsentStartTasks();
+    const UInt64 cancel_id = connection->cancelTasks({"q1::main"});
+    EXPECT_EQ(handler.expect(Event::Kind::StartTasksDropped).request_id, start_id);
+    next_peer->acceptHello();
+    EXPECT_EQ(next_peer->receive<CancelTasks>().request_id, cancel_id);
+    next_peer->send(CancelTasksReply{.request_id = cancel_id});
+    EXPECT_EQ(handler.expect(Event::Kind::CancelTasksReply).request_id, cancel_id);
+}
+
+TEST(WorkerControlLoop, ClosingALostConnectionWithoutRequestsEndsIt)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+    peer->close();
+
+    /// The worker never answers the hello of the new connection.
+    auto next_peer = fake_worker.accept();
+    connection->close();
+    handler.expect(Event::Kind::Closed);
 }
 
 TEST(WorkerControlLoop, ShutdownBreaksTheConnections)

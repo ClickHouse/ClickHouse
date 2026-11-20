@@ -1,0 +1,6 @@
+initiator_drop: 100	100000
+worker_drop: 100	100000
+initiator_drop	reconnected	1
+initiator_drop	attached	1
+worker_drop	reconnected	1
+worker_drop	attached	1

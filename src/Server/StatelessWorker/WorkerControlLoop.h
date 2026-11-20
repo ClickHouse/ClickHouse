@@ -46,7 +46,8 @@ public:
     virtual void onForgetTasksReply(UInt64 request_id) = 0;
     /// The worker failed the request `error.request_id`, of type `request_type`; the connection stays open.
     virtual void onError(const StatelessWorkerControlProtocol::Error & error, StatelessWorkerControlProtocol::PacketType request_type) = 0;
-    /// The connection is lost with its unanswered requests; no callback follows.
+    /// The connection is lost with its unanswered requests, and was not connected again within the reattach timeout; no
+    /// callback follows.
     virtual void onBroken(std::exception_ptr exception) = 0;
     /// `close` finished: every request was answered. No callback follows.
     virtual void onClosed() = 0;
@@ -55,6 +56,8 @@ public:
 struct WorkerControlConnectionParams
 {
     String unique_query_id;
+    /// One per worker of the query, so that a reconnection names the tasks it attaches to.
+    UInt64 channel = 0;
     String host;
     /// The worker's streaming-exchange port.
     UInt16 port = 0;
@@ -72,7 +75,8 @@ class WorkerControlConnection;
 using WorkerControlConnectionPtr = std::unique_ptr<WorkerControlConnection>;
 
 /// Runs the initiator's control connections to stateless workers on one thread over non-blocking sockets, each read and
-/// written at once, so a reply is read while a large `StartTasks` is still being written.
+/// written at once, so a reply is read while a large `StartTasks` is still being written. A connection that the network
+/// loses after its hello is connected again, and the requests it had no reply to are sent again.
 class WorkerControlLoop : private boost::noncopyable
 {
 public:
@@ -83,6 +87,8 @@ public:
         /// A connection that waits for a reply or has bytes to send breaks after this long with no byte received and no
         /// waiting byte taken by its socket.
         std::chrono::milliseconds idle{30'000};
+        /// How long a connection lost to the network is connected again before it breaks; 0 breaks it at once.
+        std::chrono::milliseconds reattach{60'000};
         /// A `Ping` goes out after this long without sending, so the worker hears from an idle connection and answers.
         std::chrono::milliseconds ping_interval{1'000};
     };
@@ -114,6 +120,7 @@ private:
     friend class WorkerControlConnection;
 
     struct OutgoingFrame;
+    using OutgoingFramePtr = std::shared_ptr<const OutgoingFrame>;
     struct Command;
 
     template <typename Message>
@@ -125,7 +132,7 @@ private:
     /// Returns false at shutdown.
     bool processCommands();
     void handleEvents(const ConnectionPtr & connection, uint32_t events);
-    void startConnecting(const ConnectionPtr & connection, OutgoingFrame hello);
+    void startConnecting(const ConnectionPtr & connection);
     void completeConnect(Connection & connection, uint32_t events);
     void enqueue(Connection & connection, OutgoingFrame frame);
     void requestClose(Connection & connection);
@@ -137,9 +144,13 @@ private:
     /// Sends the queued frames until the socket is full or the turn's budget is spent, then sets the events it waits for.
     void flush(Connection & connection);
     void checkDeadlines();
+    void closeSocket(Connection & connection) noexcept;
     void endConnection(Connection & connection, bool broken) noexcept;
-    /// Ends the connection and calls `onBroken` unless it ended already.
-    void breakConnection(Connection & connection, std::exception_ptr exception) noexcept;
+    bool shouldReconnect(const Connection & connection, std::exception_ptr exception) const;
+    /// Closes the socket of a connection lost to the network and keeps its unanswered requests until it connects again.
+    void suspendConnection(Connection & connection, std::exception_ptr exception) noexcept;
+    /// Suspends the connection or ends it and calls `onBroken`, unless it ended already.
+    void breakConnection(const ConnectionPtr & connection, std::exception_ptr exception) noexcept;
     /// Breaks every connection and those still to be opened with `reason`.
     void breakAll(std::exception_ptr reason) noexcept;
 
@@ -154,7 +165,10 @@ private:
     /// The rest belongs to the loop thread.
     EventFD wakeup;
     Epoll epoll{EpollNesting::Leaf};
+    /// The connections with a socket, by its descriptor.
     std::unordered_map<int, ConnectionPtr> connections;
+    /// Every connection not ended, also those waiting to connect again.
+    std::unordered_map<const Connection *, ConnectionPtr> open_connections;
     /// Counts the turns, each of which gives every connection a budget of bytes to read and to write.
     std::atomic<UInt64> turn = 0;
 };

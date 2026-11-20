@@ -29,6 +29,7 @@
 namespace ProfileEvents
 {
     extern const Event DistributedPlanControlConnects;
+    extern const Event DistributedPlanControlReconnects;
     extern const Event DistributedPlanControlPings;
     extern const Event DistributedPlanControlSendBytes;
     extern const Event DistributedPlanControlReceiveBytes;
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
+    extern const int POCO_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
 }
@@ -57,6 +59,7 @@ namespace FailPoints
     extern const char worker_control_loop_break_connection_fails[];
     extern const char worker_control_loop_open_fails_after_post[];
     extern const char worker_control_loop_break_connections[];
+    extern const char worker_control_loop_drop_connections[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -70,6 +73,8 @@ constexpr auto TICK = std::chrono::milliseconds(100);
 /// Per connection, direction and turn, so that a large frame does not hold up the other connections.
 constexpr size_t MAX_BYTES_PER_TURN = 1024 * 1024;
 constexpr int MAX_EVENTS = 64;
+constexpr auto FIRST_RECONNECT_BACKOFF = std::chrono::milliseconds(100);
+constexpr auto MAX_RECONNECT_BACKOFF = std::chrono::milliseconds(1'000);
 
 #if defined(MSG_NOSIGNAL)
 constexpr int SEND_FLAGS = MSG_NOSIGNAL;
@@ -87,31 +92,41 @@ int socketErrorCode(int socket_errno)
     return socket_errno == ETIMEDOUT ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR;
 }
 
-/// Returns `exception` as the loss of the control connection to `description`.
-std::exception_ptr makeLostConnectionException(const String & description, std::exception_ptr exception)
+/// Returns the code and the message of `exception`, a Poco one being a network error.
+std::pair<int, String> describeException(std::exception_ptr exception)
 {
-    int code = 0;
-    String message;
     try
     {
         std::rethrow_exception(exception);
     }
     catch (const Exception & e)
     {
-        code = e.code();
-        message = e.message();
+        return {e.code(), e.message()};
     }
     catch (const Poco::Exception & e)
     {
-        code = ErrorCodes::NETWORK_ERROR;
-        message = e.displayText();
+        return {ErrorCodes::NETWORK_ERROR, e.displayText()};
     }
     catch (...)
     {
-        code = getCurrentExceptionCode();
-        message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+        return {getCurrentExceptionCode(), getCurrentExceptionMessage(/*with_stacktrace=*/ false)};
     }
-    return std::make_exception_ptr(Exception(code, "Lost the control connection to stateless worker {}: {}", description, message));
+}
+
+/// Returns `exception` as the loss of the control connection to `description`; `first_loss` is set when the connection
+/// could not be connected again after it.
+std::exception_ptr makeLostConnectionException(
+    const String & description, std::exception_ptr exception, std::exception_ptr first_loss, std::chrono::milliseconds reattach)
+{
+    const auto [code, message] = describeException(exception);
+    if (!first_loss)
+        return std::make_exception_ptr(Exception(code, "Lost the control connection to stateless worker {}: {}", description, message));
+    const auto [first_code, first_message] = describeException(first_loss);
+    if (first_loss == exception)
+        return std::make_exception_ptr(Exception(first_code, "Lost the control connection to stateless worker {}: {}, and did not connect "
+            "again within {} ms", description, first_message, reattach.count()));
+    return std::make_exception_ptr(Exception(first_code, "Lost the control connection to stateless worker {}: {}, and did not connect "
+        "again within {} ms: {}", description, first_message, reattach.count(), message));
 }
 
 }
@@ -163,6 +178,8 @@ public:
         Ready,
         /// `close` was called: waits for the replies.
         Closing,
+        /// Lost to the network: waits to connect again.
+        Reconnecting,
         Closed,
         Broken,
     };
@@ -170,12 +187,16 @@ public:
     struct PendingRequest
     {
         PacketType type;
+        /// The order the requests were queued in, which a reconnection sends them again in.
+        UInt64 sequence;
+        OutgoingFramePtr frame;
     };
 
-    Connection(WorkerControlConnectionParams params_, Poco::Net::SocketAddress address_, IWorkerControlHandler & handler_)
+    Connection(WorkerControlConnectionParams params_, Poco::Net::SocketAddress address_, OutgoingFrame hello_, IWorkerControlHandler & handler_)
         : params(std::move(params_))
         , address(std::move(address_))
         , description(fmt::format("{}:{}", params.host, params.port))
+        , hello(std::make_shared<const OutgoingFrame>(std::move(hello_)))
         , handler(&handler_)
     {
     }
@@ -201,6 +222,7 @@ public:
     const WorkerControlConnectionParams params;
     const Poco::Net::SocketAddress address;
     const String description;
+    const OutgoingFramePtr hello;
     std::atomic<UInt64> next_request_id{1};
     /// Set by `close` and `abort`, after which no request may come.
     std::atomic<bool> closing{false};
@@ -218,10 +240,19 @@ public:
     /// The last `flush` left bytes in `write_queue`.
     bool write_waited = false;
     bool close_requested = false;
+    /// The hello was accepted once, so a loss to the network is connected again.
+    bool was_accepted = false;
+    UInt64 next_sequence = 0;
+    /// From the loss of the connection until a new hello is accepted: why it was lost, then why the last attempt failed.
+    std::exception_ptr loss;
+    std::exception_ptr last_failure;
+    Clock::time_point reattach_deadline;
+    Clock::time_point reconnect_at;
+    std::chrono::milliseconds reconnect_backoff{0};
     std::map<UInt64, PendingRequest> requests;
     /// The requests that came before the hello was accepted.
     std::deque<OutgoingFrame> held;
-    std::deque<OutgoingFrame> write_queue;
+    std::deque<OutgoingFramePtr> write_queue;
     /// The position in the front frame of `write_queue`.
     size_t write_segment = 0;
     size_t write_offset = 0;
@@ -266,7 +297,7 @@ void skipWritten(Connection & connection)
 {
     while (!connection.write_queue.empty())
     {
-        const auto & frame = connection.write_queue.front();
+        const auto & frame = *connection.write_queue.front();
         if (connection.write_segment < frame.segmentCount())
         {
             if (connection.write_offset < frame.segment(connection.write_segment).size())
@@ -376,13 +407,14 @@ WorkerControlConnectionPtr WorkerControlLoop::open(WorkerControlConnectionParams
         .version = PROTOCOL_VERSION,
         .purpose = Purpose::Query,
         .unique_query_id = params.unique_query_id,
+        .channel = params.channel,
         .auth_token = params.auth_token,
         .user = params.user,
         .password = params.password,
         .initiator = params.initiator,
     };
-    auto connection = std::make_shared<Connection>(std::move(params), address, handler);
-    Command command{.connection = connection, .kind = Command::Kind::Open, .frame = makeFrame(hello)};
+    auto connection = std::make_shared<Connection>(std::move(params), address, makeFrame(hello), handler);
+    Command command{.connection = connection, .kind = Command::Kind::Open, .frame = {}};
     /// Before the post: once posted, the connection is detached and ended only by its handle, also when this throws.
     auto handle = std::make_unique<WorkerControlConnection>(*this, connection);
 
@@ -499,7 +531,8 @@ bool WorkerControlLoop::processCommands()
             switch (command.kind)
             {
                 case Command::Kind::Open:
-                    startConnecting(command.connection, std::move(command.frame));
+                    open_connections.emplace(command.connection.get(), command.connection);
+                    startConnecting(command.connection);
                     break;
                 case Command::Kind::Send:
                     enqueue(connection, std::move(command.frame));
@@ -523,7 +556,7 @@ bool WorkerControlLoop::processCommands()
         }
         catch (...)
         {
-            breakConnection(connection, std::current_exception());
+            breakConnection(command.connection, std::current_exception());
         }
     }
     return true;
@@ -547,18 +580,22 @@ void WorkerControlLoop::handleEvents(const ConnectionPtr & connection, uint32_t 
     }
     catch (...)
     {
-        breakConnection(*connection, std::current_exception());
+        breakConnection(connection, std::current_exception());
     }
 }
 
-void WorkerControlLoop::startConnecting(const ConnectionPtr & connection, OutgoingFrame hello)
+void WorkerControlLoop::startConnecting(const ConnectionPtr & connection)
 {
+    connection->state = State::Connecting;
+    connection->socket = Poco::Net::StreamSocket();
     connection->socket.connectNB(connection->address);
     connection->fd = connection->socket.impl()->sockfd();
     connection->open_metric.emplace(CurrentMetrics::DistributedPlanControlConnections);
     connection->socket.setNoDelay(true);
     connection->hello_deadline = Clock::now() + timeouts.hello;
-    connection->write_queue.push_back(std::move(hello));
+    if (connection->loss)
+        connection->hello_deadline = std::min(connection->hello_deadline, connection->reattach_deadline);
+    connection->write_queue.push_back(connection->hello);
     epoll.add(connection->fd, EPOLLIN | EPOLLOUT | EPOLLERR);
     connection->registered_events = EPOLLIN | EPOLLOUT | EPOLLERR;
     connections.emplace(connection->fd, connection);
@@ -586,8 +623,10 @@ void WorkerControlLoop::enqueue(Connection & connection, OutgoingFrame frame)
     /// The idle time of a connection that waited for nothing starts now.
     if (!expectsProgress(connection))
         connection.last_progress = Clock::now();
-    connection.requests.emplace(frame.request_id, Connection::PendingRequest{.type = frame.type});
-    connection.write_queue.push_back(std::move(frame));
+    auto shared = std::make_shared<const OutgoingFrame>(std::move(frame));
+    connection.requests.emplace(
+        shared->request_id, Connection::PendingRequest{.type = shared->type, .sequence = connection.next_sequence++, .frame = shared});
+    connection.write_queue.push_back(std::move(shared));
 }
 
 void WorkerControlLoop::requestClose(Connection & connection)
@@ -600,7 +639,11 @@ void WorkerControlLoop::requestClose(Connection & connection)
 
 void WorkerControlLoop::finishCloseIfDone(Connection & connection)
 {
-    if (connection.state != State::Closing || !connection.requests.empty() || !connection.write_queue.empty())
+    if (!connection.close_requested || !connection.requests.empty() || !connection.held.empty())
+        return;
+    /// A connection being connected again has nothing left to send.
+    const bool lost = connection.was_accepted && !connection.isAccepted() && connection.isOpen();
+    if (!lost && (connection.state != State::Closing || !connection.write_queue.empty()))
         return;
     LOG_TRACE(log, "Closed the control connection of {} to {}", connection.params.unique_query_id, connection.description);
     endConnection(connection, /*broken=*/ false);
@@ -753,14 +796,35 @@ void WorkerControlLoop::handleHelloReply(Connection & connection, const PacketHe
         return;
     }
 
-    LOG_TRACE(log, "Stateless worker {} accepted the control connection of {}", connection.description, connection.params.unique_query_id);
+    const bool reconnected = connection.was_accepted;
+    connection.was_accepted = true;
+    connection.loss = nullptr;
+    connection.last_failure = nullptr;
     connection.state = connection.close_requested ? State::Closing : State::Ready;
     connection.last_send = Clock::now();
     connection.last_progress = connection.last_send;
+    if (reconnected)
+    {
+        /// In their order, so that a `CancelTasks` follows the `StartTasks` of its tasks.
+        std::vector<const Connection::PendingRequest *> unanswered;
+        for (const auto & [request_id, request] : connection.requests)
+            unanswered.push_back(&request);
+        std::ranges::sort(unanswered, {}, &Connection::PendingRequest::sequence);
+        for (const auto * request : unanswered)
+            connection.write_queue.push_back(request->frame);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanControlReconnects);
+        LOG_INFO(log, "Connected the control connection of {} to {} again; sending its {} unanswered requests again",
+            connection.params.unique_query_id, connection.description, unanswered.size());
+    }
+    else
+    {
+        LOG_TRACE(log, "Stateless worker {} accepted the control connection of {}", connection.description, connection.params.unique_query_id);
+    }
     auto held = std::exchange(connection.held, {});
     for (auto & frame : held)
         enqueue(connection, std::move(frame));
-    connection.notify([&](IWorkerControlHandler & handler) { handler.onHelloAccepted(reply); });
+    if (!reconnected)
+        connection.notify([&](IWorkerControlHandler & handler) { handler.onHelloAccepted(reply); });
     finishCloseIfDone(connection);
 }
 
@@ -776,23 +840,37 @@ void WorkerControlLoop::dropUnsentStartTasks(Connection & connection)
         dropped.push_back(frame.request_id);
         return true;
     });
-    /// A frame partly written stays: the worker reads frames whole.
-    const bool front_started = connection.write_segment != 0 || connection.write_offset != 0;
-    std::deque<OutgoingFrame> kept;
-    for (size_t i = 0; i < connection.write_queue.size(); ++i)
+    if (!connection.isAccepted())
     {
-        auto & frame = connection.write_queue[i];
-        if (frame.type == PacketType::StartTasks && !(i == 0 && front_started))
+        /// Lost: its requests go out again on the next connection, so none of them is sent there yet.
+        std::erase_if(connection.requests, [&](const auto & request)
         {
-            connection.requests.erase(frame.request_id);
-            dropped.push_back(frame.request_id);
-        }
-        else
-        {
-            kept.push_back(std::move(frame));
-        }
+            if (request.second.type != PacketType::StartTasks)
+                return false;
+            dropped.push_back(request.first);
+            return true;
+        });
     }
-    connection.write_queue = std::move(kept);
+    else
+    {
+        /// A frame partly written stays: the worker reads frames whole.
+        const bool front_started = connection.write_segment != 0 || connection.write_offset != 0;
+        std::deque<OutgoingFramePtr> kept;
+        for (size_t i = 0; i < connection.write_queue.size(); ++i)
+        {
+            auto & frame = connection.write_queue[i];
+            if (frame->type == PacketType::StartTasks && !(i == 0 && front_started))
+            {
+                connection.requests.erase(frame->request_id);
+                dropped.push_back(frame->request_id);
+            }
+            else
+            {
+                kept.push_back(std::move(frame));
+            }
+        }
+        connection.write_queue = std::move(kept);
+    }
 
     if (!dropped.empty())
         LOG_TRACE(log, "Dropped {} unsent `StartTasks` of {} to {}", dropped.size(), connection.params.unique_query_id, connection.description);
@@ -803,6 +881,8 @@ void WorkerControlLoop::dropUnsentStartTasks(Connection & connection)
 
 void WorkerControlLoop::flush(Connection & connection)
 {
+    if (connection.state == State::Reconnecting)
+        return;
     refreshBudgets(connection, turn);
     if (connection.state != State::Connecting)
     {
@@ -810,7 +890,7 @@ void WorkerControlLoop::flush(Connection & connection)
         while (connection.write_budget > 0 && !connection.write_queue.empty())
         {
             const std::string_view segment
-                = connection.write_queue.front().segment(connection.write_segment).substr(connection.write_offset);
+                = connection.write_queue.front()->segment(connection.write_segment).substr(connection.write_offset);
             const ssize_t sent = ::send(connection.fd, segment.data(), std::min(segment.size(), connection.write_budget), SEND_FLAGS);
             if (sent < 0)
             {
@@ -849,10 +929,20 @@ void WorkerControlLoop::checkDeadlines()
     const auto now = Clock::now();
     bool break_all = false;
     fiu_do_on(FailPoints::worker_control_loop_break_connections, { break_all = true; });
+    bool drop_all = false;
+    if (!connections.empty())
+        fiu_do_on(FailPoints::worker_control_loop_drop_connections, { drop_all = true; });
+    /// Shuts the sockets down as a lost network would, so both ends see the connection end.
+    if (drop_all)
+        for (const auto & [fd, connection] : connections)
+            if (connection->isAccepted())
+                ::shutdown(fd, SHUT_RDWR);
     const auto is_due = [&](const Connection & connection)
     {
         if (break_all)
             return true;
+        if (connection.state == State::Reconnecting)
+            return now >= connection.reconnect_at;
         if (!connection.isAccepted())
             return now >= connection.hello_deadline;
         if (connection.write_queue.empty() && now - connection.last_send >= timeouts.ping_interval)
@@ -861,7 +951,7 @@ void WorkerControlLoop::checkDeadlines()
     };
 
     std::vector<ConnectionPtr> due;
-    for (const auto & [fd, connection] : connections)
+    for (const auto & [key, connection] : open_connections)
         if (is_due(*connection))
             due.push_back(connection);
 
@@ -872,6 +962,15 @@ void WorkerControlLoop::checkDeadlines()
         {
             if (break_all)
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected loss of the connection");
+            if (connection->state == State::Reconnecting)
+            {
+                if (now >= connection->reattach_deadline)
+                    std::rethrow_exception(connection->last_failure);
+                LOG_DEBUG(log, "Connecting the control connection of {} to {} again", connection->params.unique_query_id, connection->description);
+                startConnecting(connection);
+                flush(*connection);
+                continue;
+            }
             if (connection->state == State::Connecting && now >= connection->hello_deadline)
                 throw Exception(ErrorCodes::SOCKET_TIMEOUT, "cannot connect within {} ms", timeouts.hello.count());
             if (connection->state == State::HelloSent && now >= connection->hello_deadline)
@@ -888,12 +987,12 @@ void WorkerControlLoop::checkDeadlines()
         }
         catch (...)
         {
-            breakConnection(*connection, std::current_exception());
+            breakConnection(connection, std::current_exception());
         }
     }
 }
 
-void WorkerControlLoop::endConnection(Connection & connection, bool broken) noexcept
+void WorkerControlLoop::closeSocket(Connection & connection) noexcept
 {
     if (connection.registered_events != 0)
     {
@@ -913,6 +1012,12 @@ void WorkerControlLoop::endConnection(Connection & connection, bool broken) noex
     connection.socket.close();
     connection.fd = -1;
     connection.open_metric.reset();
+}
+
+void WorkerControlLoop::endConnection(Connection & connection, bool broken) noexcept
+{
+    closeSocket(connection);
+    open_connections.erase(&connection);
     connection.state = broken ? State::Broken : State::Closed;
     connection.requests.clear();
     connection.held.clear();
@@ -920,36 +1025,88 @@ void WorkerControlLoop::endConnection(Connection & connection, bool broken) noex
     connection.read_body = {};
 }
 
-void WorkerControlLoop::breakConnection(Connection & connection, std::exception_ptr exception) noexcept
+bool WorkerControlLoop::shouldReconnect(const Connection & connection, std::exception_ptr exception) const
+{
+    if (!connection.was_accepted || timeouts.reattach.count() == 0)
+        return false;
+    if (connection.loss && Clock::now() >= connection.reattach_deadline)
+        return false;
+    /// A closing connection that waits only for pongs is done.
+    const bool waits_for_replies = !connection.held.empty()
+        || std::ranges::any_of(connection.requests, [](const auto & request) { return request.second.type != PacketType::Ping; });
+    if (connection.close_requested && !waits_for_replies)
+        return false;
+    /// Not a protocol error, a refusal or a shutdown, which a new connection would meet again.
+    const int code = getExceptionErrorCode(exception);
+    return code == ErrorCodes::NETWORK_ERROR || code == ErrorCodes::SOCKET_TIMEOUT || code == ErrorCodes::POCO_EXCEPTION;
+}
+
+void WorkerControlLoop::suspendConnection(Connection & connection, std::exception_ptr exception) noexcept
+{
+    closeSocket(connection);
+    connection.state = State::Reconnecting;
+    std::erase_if(connection.requests, [](const auto & request) { return request.second.type == PacketType::Ping; });
+    connection.write_queue.clear();
+    connection.write_segment = 0;
+    connection.write_offset = 0;
+    connection.write_waited = false;
+    connection.header_bytes_read = 0;
+    connection.reading_body = false;
+    connection.read_body = {};
+    connection.body_bytes_read = 0;
+
+    const auto now = Clock::now();
+    if (!connection.loss)
+    {
+        connection.loss = exception;
+        connection.reattach_deadline = now + timeouts.reattach;
+        connection.reconnect_backoff = FIRST_RECONNECT_BACKOFF;
+    }
+    else
+    {
+        connection.reconnect_backoff = std::min(2 * connection.reconnect_backoff, MAX_RECONNECT_BACKOFF);
+    }
+    connection.last_failure = exception;
+    connection.reconnect_at = std::min(now + connection.reconnect_backoff, connection.reattach_deadline);
+}
+
+void WorkerControlLoop::breakConnection(const ConnectionPtr & connection, std::exception_ptr exception) noexcept
 {
     /// `exception` is often the query's memory limit, which must not keep the connection from ending.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    const bool was_open = connection.isOpen();
-    if (was_open)
-        endConnection(connection, /*broken=*/ true);
+    const bool was_open = connection->isOpen();
+    const std::exception_ptr first_loss = connection->loss;
+    const bool reconnect = was_open && shouldReconnect(*connection, exception);
+    if (reconnect)
+        suspendConnection(*connection, exception);
+    else if (was_open)
+        endConnection(*connection, /*broken=*/ true);
 
     std::exception_ptr lost = exception;
     try
     {
         fiu_do_on(FailPoints::worker_control_loop_break_connection_fails,
             { throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while breaking a control connection"); });
-        lost = makeLostConnectionException(connection.description, exception);
-        if (was_open)
-            LOG_DEBUG(log, "{} (query {})", getExceptionMessage(lost, /*with_stacktrace=*/ false), connection.params.unique_query_id);
-        else
+        lost = makeLostConnectionException(connection->description, exception, reconnect ? nullptr : first_loss, timeouts.reattach);
+        const String message = getExceptionMessage(lost, /*with_stacktrace=*/ false);
+        if (!was_open)
             /// A callback that ends the connection threw.
-            LOG_WARNING(log, "{}", getExceptionMessage(lost, /*with_stacktrace=*/ false));
+            LOG_WARNING(log, "{}", message);
+        else if (reconnect)
+            LOG_INFO(log, "{} (query {}); connecting again", message, connection->params.unique_query_id);
+        else
+            LOG_DEBUG(log, "{} (query {})", message, connection->params.unique_query_id);
     }
     catch (...)
     {
         tryLogCurrentException(log, "Cannot describe a lost control connection");
     }
 
-    if (!was_open)
+    if (!was_open || reconnect)
         return;
     try
     {
-        connection.notify([&](IWorkerControlHandler & handler) { handler.onBroken(lost); });
+        connection->notify([&](IWorkerControlHandler & handler) { handler.onBroken(lost); });
     }
     catch (...)
     {
@@ -970,14 +1127,13 @@ void WorkerControlLoop::breakAll(std::exception_ptr reason) noexcept
         if (command.kind != Command::Kind::Open)
             continue;
         ThreadGroupSwitcher switcher(command.connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
-        breakConnection(*command.connection, reason);
+        breakConnection(command.connection, reason);
     }
-    while (!connections.empty())
+    const auto open = std::exchange(open_connections, {});
+    for (const auto & [key, connection] : open)
     {
-        const ConnectionPtr connection = connections.begin()->second;
-        connections.erase(connections.begin());
         ThreadGroupSwitcher switcher(connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
-        breakConnection(*connection, reason);
+        breakConnection(connection, reason);
     }
 }
 

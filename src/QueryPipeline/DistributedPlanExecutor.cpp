@@ -1837,6 +1837,7 @@ protected:
             const auto credentials = context->getInterserverCredentials();
             return WorkerControlConnectionParams{
                 .unique_query_id = unique_query_id,
+                .channel = worker,
                 .host = address.host,
                 .port = address.streaming_exchange_port,
                 .auth_token = task_to_host_map->getAuthToken(),
@@ -1987,7 +1988,8 @@ protected:
                     request.span->addAttribute("clickhouse.exception", message);
                     request.span->finish(OpenTelemetry::SpanStatus::ERROR, message);
                 }
-                /// The teardown leaves the tasks of a lost connection to the worker, which cancels them when the connection closes.
+                /// The teardown leaves the tasks of a lost connection to the worker, which cancels them when it stops waiting for
+                /// the connection to come back.
                 if (cancel_started)
                     LOG_DEBUG(logger, "{}; the worker reclaims its tasks", message);
                 else

@@ -12,6 +12,9 @@
     </stateless_worker_client>
 
     <distributed_query>
+        <!-- Tasks of a lost control connection wait this long for the initiator to reconnect (default 60 s), so that tests of
+             a connection that does not come back end sooner. -->
+        <control_reattach_timeout_ms>10000</control_reattach_timeout_ms>
         <streaming_exchange_port>9223</streaming_exchange_port>
         <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
         <streaming_exchange_listen_host>::</streaming_exchange_listen_host>

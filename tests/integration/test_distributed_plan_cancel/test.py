@@ -163,7 +163,8 @@ def get_value(node, query):
 
 
 def test_worker_killed_fails_query(started_cluster):
-    """A worker killed mid-query fails the query at once: the initiator loses its control connection to it."""
+    """A worker killed mid-query fails the query: its exchange streams break, and the initiator cannot connect its control
+    connection to it again within `control_reattach_timeout_ms` (5 s here), whichever the query sees first."""
     table = "test_worker_killed"
     query_id = "test_worker_killed"
     create_table(table)
@@ -178,13 +179,17 @@ def test_worker_killed_fails_query(started_cluster):
     finally:
         node2.start_clickhouse()
 
-    assert "Lost the control connection to stateless worker node2" in error, error
+    assert (
+        "Lost the control connection to stateless worker node2" in error
+        or "EXCHANGE_PEER_DISCONNECTED" in error
+    ), error
     assert failed_after < 30, failed_after
     drop_table(table)
 
 
 def test_initiator_killed_worker_reclaims_tasks(started_cluster):
-    """A worker whose initiator is killed mid-query cancels and forgets the query's tasks and frees its slot."""
+    """A worker whose initiator is killed mid-query cancels and forgets the query's tasks and frees its slot, once no new
+    control connection came within `control_reattach_timeout_ms` (5 s here)."""
     table = "test_initiator_killed"
     query_id = "test_initiator_killed"
     create_table(table)

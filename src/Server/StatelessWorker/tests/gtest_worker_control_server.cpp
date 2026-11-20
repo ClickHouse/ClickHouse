@@ -13,6 +13,8 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 
 #include <Poco/Net/SocketAddress.h>
@@ -22,6 +24,11 @@
 #include <chrono>
 #include <memory>
 #include <thread>
+
+namespace ProfileEvents
+{
+    extern const Event StatelessWorkerControlReclaimedTasks;
+}
 
 namespace DB::FailPoints
 {
@@ -278,9 +285,11 @@ TEST(WorkerControlServer, MaxQueriesRefusesAnotherQuery)
     Initiator first(worker.port());
     EXPECT_EQ(first.hello(makeHello("q1")).code, 0);
 
-    /// A second connection of the same query shares its slot.
+    /// The connection of another channel of the same query shares its slot.
     Initiator same_query(worker.port());
-    EXPECT_EQ(same_query.hello(makeHello("q1")).code, 0);
+    ControlHello same_query_hello = makeHello("q1");
+    same_query_hello.channel = 1;
+    EXPECT_EQ(same_query.hello(same_query_hello).code, 0);
 
     Initiator other_query(worker.port());
     const auto reply = other_query.hello(makeHello("q2"));
@@ -431,7 +440,7 @@ TEST(WorkerControlServer, TaskThatOutlivesTheReclaimIsForgottenWhenItEnds)
 {
     FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
     SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup));
-    const StatelessWorkerControlServer::Limits limits{.max_queries = 1, .max_sessions = 4, .reclaim_timeout = 300ms};
+    const StatelessWorkerControlServer::Limits limits{.max_queries = 1, .max_sessions = 4, .reattach_timeout = 300ms, .reclaim_timeout = 300ms};
     auto control_server = std::make_shared<StatelessWorkerControlServer>(limits, [] { return InterserverCredentialsPtr{}; });
     Worker worker(control_server);
 
@@ -443,7 +452,7 @@ TEST(WorkerControlServer, TaskThatOutlivesTheReclaimIsForgottenWhenItEnds)
         /// The task is held before it can see the cancellation of the reclaim.
         FailPointInjection::waitForPause(FailPoints::stateless_worker_pause_task_before_setup);
     }
-    /// The reclaim of the closed connection gives up on the task.
+    /// No new connection attaches, and the reclaim of the closed connection gives up on the task.
     ASSERT_TRUE(control_server->waitForSessions(std::chrono::steady_clock::now() + 10s));
 
     FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
@@ -491,6 +500,60 @@ TEST(WorkerControlServer, SlowCancellationDoesNotHoldHellos)
     EXPECT_TRUE(answered) << "The hello of another query waited for the cancellation of a task";
     EXPECT_EQ(other_query.receive<ControlHelloReply>().code, 0);
     EXPECT_EQ(initiator.receive<CancelTasksReply>().request_id, 2u);
+}
+
+TEST(WorkerControlServer, ReconnectionAttachesToTheTasksOfTheLostConnection)
+{
+    auto control_server = makeControlServer(10);
+    Worker worker(control_server);
+    /// The task stays running until the end of the test.
+    FailPointInjection::enableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    SCOPE_EXIT(FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup));
+    const UInt64 reclaimed_before = ProfileEvents::global_counters[ProfileEvents::StatelessWorkerControlReclaimedTasks];
+
+    {
+        Initiator lost(worker.port());
+        ASSERT_EQ(lost.hello(makeHello("q1")).code, 0);
+        lost.send(makeStartTasks(1, "t"));
+        ASSERT_EQ(lost.receive<StartTasksReply>().code, 0);
+        FailPointInjection::waitForPause(FailPoints::stateless_worker_pause_task_before_setup);
+    }
+
+    Initiator initiator(worker.port());
+    ASSERT_EQ(initiator.hello(makeHello("q1")).code, 0);
+    /// Answered when the task ends, which wakes the new connection.
+    initiator.send(GetStatuses{.request_id = 2, .wait_milliseconds = 5'000, .task_ids = {"q1::t"}});
+    FailPointInjection::disableFailPoint(FailPoints::stateless_worker_pause_task_before_setup);
+    const Stopwatch watch;
+    const auto reply = initiator.receive<GetStatusesReply>();
+    EXPECT_LT(watch.elapsedMilliseconds(), 4'000u);
+    ASSERT_EQ(reply.entries.size(), 1u);
+    const auto & status = reply.entries[0].status;
+    EXPECT_FALSE(status.error_message.contains("cancelled")) << status.status << ": " << status.error_message;
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::StatelessWorkerControlReclaimedTasks], reclaimed_before);
+}
+
+TEST(WorkerControlServer, HelloForAServedChannelTakesItsSessionOver)
+{
+    auto control_server = makeControlServer(10);
+    Worker worker(control_server);
+    Initiator first(worker.port());
+    ASSERT_EQ(first.hello(makeHello("q1")).code, 0);
+
+    /// The initiator lost the first connection, which the worker still serves.
+    Initiator second(worker.port());
+    ASSERT_EQ(second.hello(makeHello("q1")).code, 0);
+    EXPECT_TRUE(first.hasInputWithin(3s) && first.closedByWorker()) << "The worker still serves the replaced connection";
+    second.send(Ping{.request_id = 1});
+    EXPECT_EQ(second.receive<Pong>().request_id, 1u);
+
+    /// Another channel of the query has a session of its own.
+    Initiator other_channel(worker.port());
+    ControlHello hello = makeHello("q1");
+    hello.channel = 1;
+    ASSERT_EQ(other_channel.hello(hello).code, 0);
+    second.send(Ping{.request_id = 2});
+    EXPECT_EQ(second.receive<Pong>().request_id, 2u);
 }
 
 TEST(WorkerControlServer, ExchangeServerWithoutControlServerAnswersError)

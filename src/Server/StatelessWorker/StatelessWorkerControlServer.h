@@ -10,9 +10,11 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
+#include <utility>
 
 namespace DB
 {
@@ -25,8 +27,9 @@ struct ControlHello;
 }
 
 /// Serves the control connections of a stateless worker (`StatelessWorkerControlProtocol`), which the streaming-exchange
-/// server hands over. Each accepted connection is a session of one query with its own thread, the only reader and writer
-/// of the connection; a session that closes cancels and forgets the tasks it started that the initiator did not forget.
+/// server hands over. A session serves the connections of one channel of a query on its own thread, the only reader and
+/// writer of them. A session whose connection is lost keeps its tasks for `reattach_timeout`, for a new connection of the
+/// channel to attach to; at its end it cancels and forgets the tasks it started that the initiator did not forget.
 class StatelessWorkerControlServer final : public IExchangeControlConnectionHandler
 {
 public:
@@ -39,7 +42,9 @@ public:
         /// A connection closes after this long without a byte from the initiator, which pings every second; each socket read
         /// and write has it as its timeout.
         std::chrono::milliseconds idle_timeout{30'000};
-        /// How long a closing session waits for the tasks it cancels.
+        /// How long a session whose connection was lost waits for a new one; 0 ends it at once.
+        std::chrono::milliseconds reattach_timeout{60'000};
+        /// How long an ending session waits for the tasks it cancels.
         std::chrono::milliseconds reclaim_timeout{60'000};
     };
 
@@ -64,7 +69,8 @@ private:
 
     StatelessWorkerControlProtocol::ControlHello receiveHello(Poco::Net::StreamSocket & socket, const StreamingExchangeProtocol::PacketHeader & header) const;
     void authenticate(const StatelessWorkerControlProtocol::ControlHello & hello, const ExchangeConnectionAuthenticator & authenticate_token) const;
-    /// Admits the hello's query and runs a session for the connection; throws, having taken nothing, when it cannot.
+    /// Hands the connection to the session of the hello's query and channel, or admits the query and runs a new session for
+    /// it; throws, having taken nothing, when it cannot.
     void startSession(const Poco::Net::StreamSocket & socket, const StatelessWorkerControlProtocol::ControlHello & hello);
     void removeSession(const SessionPtr & session);
 
@@ -76,6 +82,8 @@ private:
     std::mutex sessions_mutex;
     std::condition_variable sessions_changed;
     std::unordered_set<SessionPtr> sessions TSA_GUARDED_BY(sessions_mutex);
+    /// The sessions of queries that a new connection can attach to, by query and channel.
+    std::map<std::pair<String, UInt64>, SessionPtr> query_sessions TSA_GUARDED_BY(sessions_mutex);
     /// Written under `sessions_mutex`, read by the sessions without it.
     std::atomic<bool> shutdown_called{false};
 

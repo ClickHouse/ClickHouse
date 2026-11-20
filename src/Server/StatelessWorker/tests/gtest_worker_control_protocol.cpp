@@ -224,14 +224,15 @@ TEST(WorkerControlProtocol, PacketTypesAreApartFromExchangeOnes)
 TEST(WorkerControlProtocol, HelloRoundTrip)
 {
     const ControlHello hello{
-        .purpose = Purpose::Probe, .unique_query_id = "q1", .auth_token = "token", .user = "interserver", .password = "secret",
-        .initiator = "host-a:9000"};
+        .purpose = Purpose::Probe, .unique_query_id = "q1", .channel = 3, .auth_token = "token", .user = "interserver",
+        .password = "secret", .initiator = "host-a:9000"};
     const String frame = frameOf(hello);
     for (const auto & restored : readBack<ControlHello>(frame, Sender::Initiator))
     {
         EXPECT_EQ(restored.version, PROTOCOL_VERSION);
         EXPECT_EQ(restored.purpose, Purpose::Probe);
         EXPECT_EQ(restored.unique_query_id, "q1");
+        EXPECT_EQ(restored.channel, 3u);
         EXPECT_EQ(restored.auth_token, "token");
         EXPECT_EQ(restored.user, "interserver");
         EXPECT_EQ(restored.password, "secret");

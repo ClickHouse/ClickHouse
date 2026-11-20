@@ -1586,6 +1586,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanTaskCancelRequests, "Number of `cancel_tasks` requests a query sent to stateless workers, each cancelling its tasks on one worker.", ValueType::Number) \
     M(DistributedPlanTaskForgetRequests, "Number of `forget_tasks` requests a query sent to stateless workers, each releasing its ended tasks on one worker.", ValueType::Number) \
     M(DistributedPlanControlConnects, "Number of control connections a query opened to stateless workers, one per worker and distributed plan.", ValueType::Number) \
+    M(DistributedPlanControlReconnects, "Number of times a control connection to a stateless worker that the network lost was connected again, its unanswered requests sent again.", ValueType::Number) \
     M(DistributedPlanControlPings, "Number of `Ping` frames sent on the control connections to stateless workers, after a second without sending.", ValueType::Number) \
     M(DistributedPlanControlSendBytes, "Number of bytes sent on the control connections to stateless workers.", ValueType::Bytes) \
     M(DistributedPlanControlReceiveBytes, "Number of bytes received on the control connections to stateless workers.", ValueType::Bytes) \
@@ -2006,7 +2007,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \
-    M(StatelessWorkerControlReclaimedTasks, "Number of tasks a stateless worker cancelled and forgot because the control connection that started them closed before the initiator forgot them.", ValueType::Number) \
+    M(StatelessWorkerControlReclaimedTasks, "Number of tasks a stateless worker cancelled and forgot because the control connection that started them ended, and no new connection of its channel came within the reattach timeout, before the initiator forgot them.", ValueType::Number) \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \

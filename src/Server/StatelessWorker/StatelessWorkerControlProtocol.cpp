@@ -240,6 +240,7 @@ void ControlHello::write(WriteBuffer & out) const
     writeVarUInt(version, out);
     writeVarUInt(static_cast<UInt64>(purpose), out);
     writeStringBinary(unique_query_id, out);
+    writeVarUInt(channel, out);
     writeStringBinary(auth_token, out);
     writeStringBinary(user, out);
     writeStringBinary(password, out);
@@ -255,6 +256,7 @@ void ControlHello::read(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown purpose {} of a stateless worker control connection", purpose_value);
     purpose = static_cast<Purpose>(purpose_value);
     readStringBinary(unique_query_id, in);
+    readVarUInt(channel, in);
     readStringBinary(auth_token, in);
     readStringBinary(user, in);
     readStringBinary(password, in);

@@ -21,6 +21,7 @@
 #include <fmt/ranges.h>
 
 #include <poll.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -46,10 +47,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_POLL;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int FAULT_INJECTED;
     extern const int INCORRECT_DATA;
+    extern const int NETWORK_ERROR;
+    extern const int POCO_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -60,6 +67,7 @@ namespace FailPoints
     extern const char stateless_worker_pause_before_start_task[];
     extern const char stateless_worker_answer_ping_with_error[];
     extern const char stateless_worker_pause_control_session[];
+    extern const char stateless_worker_drop_control_connection[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -75,6 +83,14 @@ constexpr size_t SESSION_OUTPUT_BUFFER_BYTES = 64 * 1024;
 String currentErrorMessage()
 {
     return getCurrentExceptionMessage(/*with_stacktrace=*/ false, /*check_embedded_stacktrace=*/ false, /*with_extra_info=*/ false, /*with_version=*/ false);
+}
+
+/// The connection broke or went silent, as opposed to a protocol error or a shutdown, so its initiator can come back.
+bool isConnectionLoss(int code)
+{
+    return code == ErrorCodes::NETWORK_ERROR || code == ErrorCodes::SOCKET_TIMEOUT || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
+        || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF || code == ErrorCodes::POCO_EXCEPTION;
 }
 
 ControlHelloReply makeHelloReply(Int32 code, String message)
@@ -144,12 +160,22 @@ public:
     Session(StatelessWorkerControlServer & server_, const Poco::Net::StreamSocket & socket_, const ControlHello & hello);
     ~Session();
 
-    /// Serves the connection until it closes, then reclaims the session's tasks and ends its admission.
+    /// Serves the connection and those that attach after it, then reclaims the session's tasks and ends its admission.
     void run() noexcept;
     void wake() const { wakeup->notify(); }
+    /// Hands the connection of a new hello of the channel to the session, which serves it next; the connection it serves
+    /// is shut down, as its initiator connected again. The caller holds the server's `sessions_mutex`.
+    void attach(const Poco::Net::StreamSocket & socket_, String initiator_);
+
+    const String unique_query_id;
+    const UInt64 channel;
 
 private:
+    /// Serves `socket` until it ends, then closes it; returns true when the connection was lost rather than refused.
+    bool serveConnection() noexcept;
     void serve();
+    /// Takes the connection `attach` handed over, waiting `reattach_timeout` for it when `wait`; false once the session ends.
+    bool takeNextConnection(bool wait);
     /// Waits for input or a wakeup; false when the socket has nothing to read.
     bool waitForInput(Clock::time_point deadline);
     void handleFrame(const PacketHeader & header);
@@ -165,26 +191,35 @@ private:
     void send(const Message & message)
     {
         can_send = false;
-        writeFrame(message, out);
-        out.next();
+        writeFrame(message, *out);
+        out->next();
         can_send = true;
     }
 
     StatelessWorkerControlServer & server;
     StatelessTaskExecutor & executor;
-    Poco::Net::StreamSocket socket;
-    const String peer;
-    const String unique_query_id;
     const Purpose purpose;
-    const String initiator;
     const String task_id_prefix;
     const std::shared_ptr<SessionWakeup> wakeup = std::make_shared<SessionWakeup>();
-    ReadBufferFromPocoSocket in;
-    WriteBufferFromPocoSocket out;
+    const LoggerPtr log;
+
+    /// The connection being served.
+    Poco::Net::StreamSocket socket;
+    String initiator;
+    String peer;
+    std::optional<ReadBufferFromPocoSocket> in;
+    std::optional<WriteBufferFromPocoSocket> out;
     /// False once a send failed, as the connection may then end inside a frame.
     bool can_send = true;
+    size_t connections_served = 0;
     /// The tasks this session started and the initiator has not forgotten.
     std::unordered_set<String> started_tasks;
+    /// Taken after the server's `sessions_mutex`.
+    std::mutex attach_mutex;
+    /// `socket` is not closed yet, so `attach` can shut it down.
+    bool connection_open TSA_GUARDED_BY(attach_mutex) = true;
+    /// The connection of a new hello, with its initiator.
+    std::optional<std::pair<Poco::Net::StreamSocket, String>> next_connection TSA_GUARDED_BY(attach_mutex);
 
     struct ParkedStatuses
     {
@@ -195,51 +230,49 @@ private:
     };
     /// A `GetStatuses` held until one of its tasks changes or its wait ends.
     std::optional<ParkedStatuses> parked;
-    const LoggerPtr log;
 };
 
 StatelessWorkerControlServer::Session::Session(StatelessWorkerControlServer & server_, const Poco::Net::StreamSocket & socket_, const ControlHello & hello)
-    : server(server_)
+    : unique_query_id(hello.unique_query_id)
+    , channel(hello.channel)
+    , server(server_)
     , executor(*server_.executor)
-    , socket(socket_)
-    , peer(StreamingExchangeProtocol::describePeer(socket))
-    , unique_query_id(hello.unique_query_id)
     , purpose(hello.purpose)
-    , initiator(hello.initiator)
     , task_id_prefix(makeUniqueTaskId(unique_query_id, ""))
-    /// `StartTasks` bodies carry plans of tens of MiB, which a 64 KiB buffer reads 1.7 times slower.
-    , in(socket, DBMS_DEFAULT_BUFFER_SIZE)
-    , out(socket, SESSION_OUTPUT_BUFFER_BYTES)
     , log(server_.log)
+    , socket(socket_)
+    , initiator(hello.initiator)
 {
 }
 
 StatelessWorkerControlServer::Session::~Session()
 {
-    out.cancel();
+    if (out)
+        out->cancel();
 }
 
 void StatelessWorkerControlServer::Session::run() noexcept
 {
     setThreadName(ThreadName::STATELESS_WORKER_CONTROL_SESSION);
-    bool linger = false;
-    try
+    while (true)
     {
-        serve();
-    }
-    catch (...)
-    {
-        const String message = currentErrorMessage();
-        LOG_INFO(log, "Closing the control connection of {} from {} ({}): {}", unique_query_id, initiator, peer, message);
-        linger = trySendFatalError(getCurrentExceptionCode(), message);
+        const bool lost = serveConnection();
+        bool attached = false;
+        try
+        {
+            /// Tasks to keep and an initiator that can come back.
+            attached = takeNextConnection(/*wait=*/ lost && !started_tasks.empty());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to wait for a new control connection of {}", unique_query_id));
+        }
+        if (!attached)
+            break;
     }
 
     try
     {
-        if (linger)
-            lingeringClose(socket);
-        else
-            socket.close();
         reclaimTasks();
     }
     catch (...)
@@ -260,8 +293,104 @@ void StatelessWorkerControlServer::Session::run() noexcept
     }
 }
 
+bool StatelessWorkerControlServer::Session::serveConnection() noexcept
+{
+    bool lost = true;
+    bool linger = false;
+    try
+    {
+        serve();
+    }
+    catch (...)
+    {
+        const int code = getCurrentExceptionCode();
+        lost = isConnectionLoss(code);
+        const String message = currentErrorMessage();
+        LOG_INFO(log, "Closing the control connection of {} from {} ({}): {}", unique_query_id, initiator, peer, message);
+        linger = trySendFatalError(code, message);
+    }
+
+    {
+        std::lock_guard lock(attach_mutex);
+        connection_open = false;
+    }
+    try
+    {
+        if (out)
+            out->cancel();
+        out.reset();
+        in.reset();
+        if (linger)
+            lingeringClose(socket);
+        else
+            socket.close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to close the control connection of {}", unique_query_id));
+    }
+    parked.reset();
+    return lost;
+}
+
+bool StatelessWorkerControlServer::Session::takeNextConnection(bool wait)
+{
+    const auto deadline = Clock::now() + server.limits.reattach_timeout;
+    bool waiting = false;
+    while (true)
+    {
+        {
+            std::lock_guard lock(server.sessions_mutex);
+            std::lock_guard attach_lock(attach_mutex);
+            if (next_connection && !server.shutdown_called)
+            {
+                std::tie(socket, initiator) = std::move(*next_connection);
+                next_connection.reset();
+                connection_open = true;
+                return true;
+            }
+            if (!wait || server.shutdown_called || Clock::now() >= deadline)
+            {
+                if (next_connection)
+                    next_connection->first.close();
+                next_connection.reset();
+                /// So that a later hello starts a new session.
+                if (auto it = server.query_sessions.find({unique_query_id, channel}); it != server.query_sessions.end() && it->second.get() == this)
+                    server.query_sessions.erase(it);
+                return false;
+            }
+        }
+        if (!waiting)
+        {
+            LOG_INFO(log, "Keeping the {} tasks of {} for {} ms for the initiator {} to reconnect", started_tasks.size(), unique_query_id,
+                server.limits.reattach_timeout.count(), initiator);
+            waiting = true;
+        }
+        pollfd wakeup_fd{.fd = wakeup->fd(), .events = POLLIN, .revents = 0};
+        if (pollUntil(&wakeup_fd, 1, deadline))
+            wakeup->drain();
+    }
+}
+
+void StatelessWorkerControlServer::Session::attach(const Poco::Net::StreamSocket & socket_, String initiator_)
+{
+    std::lock_guard lock(attach_mutex);
+    if (next_connection)
+        next_connection->first.close();
+    next_connection.emplace(socket_, std::move(initiator_));
+    if (connection_open)
+        ::shutdown(socket.sockfd(), SHUT_RDWR);
+    wake();
+}
+
 void StatelessWorkerControlServer::Session::serve()
 {
+    ++connections_served;
+    peer = StreamingExchangeProtocol::describePeer(socket);
+    /// `StartTasks` bodies carry plans of tens of MiB, which a 64 KiB buffer reads 1.7 times slower.
+    in.emplace(socket, DBMS_DEFAULT_BUFFER_SIZE);
+    out.emplace(socket, SESSION_OUTPUT_BUFFER_BYTES);
+    can_send = true;
     const Poco::Timespan io_timeout(std::chrono::duration_cast<std::chrono::microseconds>(server.limits.idle_timeout).count());
     socket.setReceiveTimeout(io_timeout);
     socket.setSendTimeout(io_timeout);
@@ -269,7 +398,10 @@ void StatelessWorkerControlServer::Session::serve()
     socket.setNoDelay(true);
 
     send(makeHelloReply(0, ""));
-    LOG_DEBUG(log, "Opened the control connection of {} from {} ({})", unique_query_id, initiator, peer);
+    if (connections_served == 1)
+        LOG_DEBUG(log, "Opened the control connection of {} from {} ({})", unique_query_id, initiator, peer);
+    else
+        LOG_INFO(log, "Attached the control connection of {} from {} ({}) to its {} tasks", unique_query_id, initiator, peer, started_tasks.size());
 
     auto idle_deadline = Clock::now() + server.limits.idle_timeout;
     while (true)
@@ -278,7 +410,7 @@ void StatelessWorkerControlServer::Session::serve()
         if (server.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "The stateless worker is shutting down");
 
-        bool readable = in.hasPendingData();
+        bool readable = in->hasPendingData();
         if (!readable)
             readable = waitForInput(parked ? std::min(parked->deadline, idle_deadline) : idle_deadline);
 
@@ -292,12 +424,12 @@ void StatelessWorkerControlServer::Session::serve()
             continue;
         }
 
-        if (in.eof())
+        if (in->eof())
         {
             LOG_DEBUG(log, "The initiator {} ({}) closed the control connection of {}", initiator, peer, unique_query_id);
             return;
         }
-        const PacketHeader header = readHeader(in, Sender::Initiator);
+        const PacketHeader header = readHeader(*in, Sender::Initiator);
         handleFrame(header);
         /// After the frame: its body reads have a timeout each, so a body that comes slowly but steadily is not idle.
         idle_deadline = Clock::now() + server.limits.idle_timeout;
@@ -333,7 +465,7 @@ void StatelessWorkerControlServer::Session::handleFrame(const PacketHeader & hea
         case PacketType::CancelTasks:
         {
             CancelTasks request;
-            readBody(header, in, request);
+            readBody(header, *in, request);
             checkTaskIds(request.task_ids);
             executor.cancelTasks(request.task_ids);
             send(CancelTasksReply{.request_id = request.request_id});
@@ -342,7 +474,7 @@ void StatelessWorkerControlServer::Session::handleFrame(const PacketHeader & hea
         case PacketType::ForgetTasks:
         {
             ForgetTasks request;
-            readBody(header, in, request);
+            readBody(header, *in, request);
             checkTaskIds(request.task_ids);
             executor.forgetTasks(request.task_ids);
             for (const auto & task_id : request.task_ids)
@@ -353,7 +485,7 @@ void StatelessWorkerControlServer::Session::handleFrame(const PacketHeader & hea
         case PacketType::Ping:
         {
             Ping request;
-            readBody(header, in, request);
+            readBody(header, *in, request);
             fiu_do_on(FailPoints::stateless_worker_answer_ping_with_error,
             {
                 send(Error{.request_id = request.request_id, .code = ErrorCodes::FAULT_INJECTED, .message = "Injected failure to answer a ping"});
@@ -371,7 +503,7 @@ void StatelessWorkerControlServer::Session::handleFrame(const PacketHeader & hea
 void StatelessWorkerControlServer::Session::startTasks(const PacketHeader & header)
 {
     StartTasks request;
-    readBody(header, in, request);
+    readBody(header, *in, request);
 
     Strings unique_task_ids;
     for (const auto & stage : request.batch.stages)
@@ -416,8 +548,15 @@ void StatelessWorkerControlServer::Session::startTasks(const PacketHeader & head
 void StatelessWorkerControlServer::Session::getStatuses(const PacketHeader & header)
 {
     GetStatuses request;
-    readBody(header, in, request);
+    readBody(header, *in, request);
     checkTaskIds(request.task_ids);
+    bool drop = false;
+    fiu_do_on(FailPoints::stateless_worker_drop_control_connection, { drop = true; });
+    if (drop)
+    {
+        ::shutdown(socket.sockfd(), SHUT_RDWR);
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Injected loss of the control connection");
+    }
 
     if (parked)
         answerParkedStatuses();
@@ -455,7 +594,7 @@ void StatelessWorkerControlServer::Session::checkTaskIds(const Strings & task_id
 
 bool StatelessWorkerControlServer::Session::trySendFatalError(int code, const String & message) noexcept
 {
-    if (!can_send)
+    if (!can_send || !out)
         return false;
     try
     {
@@ -630,6 +769,7 @@ void StatelessWorkerControlServer::startSession(const Poco::Net::StreamSocket & 
                 "The stateless worker runs `stateless_worker_server.max_queries` = {} queries already", limits.max_queries);
     }
 
+    bool attached = false;
     try
     {
         auto session = std::make_shared<Session>(*this, socket, hello);
@@ -637,12 +777,25 @@ void StatelessWorkerControlServer::startSession(const Poco::Net::StreamSocket & 
             std::lock_guard lock(sessions_mutex);
             if (shutdown_called)
                 throw Exception(ErrorCodes::ABORTED, "The stateless worker is shutting down");
-            if (sessions.size() >= limits.max_sessions)
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                    "The stateless worker serves `stateless_worker_server.max_control_sessions` = {} control connections already", limits.max_sessions);
-            sessions.insert(session);
+            if (is_query)
+            {
+                if (auto it = query_sessions.find({hello.unique_query_id, hello.channel}); it != query_sessions.end())
+                {
+                    it->second->attach(socket, hello.initiator);
+                    attached = true;
+                }
+            }
+            if (!attached)
+            {
+                if (sessions.size() >= limits.max_sessions)
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                        "The stateless worker serves `stateless_worker_server.max_control_sessions` = {} control connections already", limits.max_sessions);
+                sessions.insert(session);
+                if (is_query)
+                    query_sessions.emplace(std::make_pair(hello.unique_query_id, hello.channel), session);
+            }
         }
-        if (!session_pool.trySchedule([this, session] { session->run(); removeSession(session); }))
+        if (!attached && !session_pool.trySchedule([this, session] { session->run(); removeSession(session); }))
         {
             removeSession(session);
             throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Cannot start a thread for the control connection of {}", hello.unique_query_id);
@@ -654,6 +807,9 @@ void StatelessWorkerControlServer::startSession(const Poco::Net::StreamSocket & 
             executor->releaseQuery(hello.unique_query_id);
         throw;
     }
+    /// The session it attached to holds its own admission.
+    if (attached)
+        executor->releaseQuery(hello.unique_query_id);
 }
 
 void StatelessWorkerControlServer::removeSession(const SessionPtr & session)
@@ -661,6 +817,8 @@ void StatelessWorkerControlServer::removeSession(const SessionPtr & session)
     {
         std::lock_guard lock(sessions_mutex);
         sessions.erase(session);
+        if (auto it = query_sessions.find({session->unique_query_id, session->channel}); it != query_sessions.end() && it->second == session)
+            query_sessions.erase(it);
     }
     sessions_changed.notify_all();
 }

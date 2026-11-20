@@ -2298,8 +2298,10 @@ try
             "`distributed_query.control_idle_timeout_ms` must be at least 2000, twice the interval of the control connections' pings, got {}",
             control_idle_timeout_ms);
     const std::chrono::milliseconds control_idle_timeout(control_idle_timeout_ms);
+    const std::chrono::milliseconds control_reattach_timeout(
+        config().getUInt64("distributed_query.control_reattach_timeout_ms", 2 * control_idle_timeout_ms));
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    WorkerControlLoop::configure(WorkerControlLoop::Timeouts{.idle = control_idle_timeout});
+    WorkerControlLoop::configure(WorkerControlLoop::Timeouts{.idle = control_idle_timeout, .reattach = control_reattach_timeout});
 #endif
 
     std::shared_ptr<StatelessWorkerControlServer> stateless_worker_control_server{nullptr};
@@ -2318,7 +2320,8 @@ try
             StatelessWorkerControlServer::Limits{
                 .max_queries = stateless_worker_max_queries,
                 .max_sessions = stateless_worker_max_control_sessions,
-                .idle_timeout = control_idle_timeout},
+                .idle_timeout = control_idle_timeout,
+                .reattach_timeout = control_reattach_timeout},
             [] { return Context::getGlobalContextInstance()->getInterserverCredentials(); });
     }
 
