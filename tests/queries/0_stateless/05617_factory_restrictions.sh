@@ -9,7 +9,7 @@ config="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.xml"
 function run()
 {
     local err
-    if err=$(${CLICKHOUSE_LOCAL} --config-file "$config" --query "$1" 2>&1 >/dev/null); then
+    if err=$(${CLICKHOUSE_LOCAL} --config-file "$config" --query "$1" 2>&1 >/dev/null </dev/null); then
         echo "ok: $1"
     else
         echo "$(echo "$err" | grep -o -E '\([A-Z_]+\)' | head -n1): $1"
@@ -103,6 +103,14 @@ CONFIG
 run "SELECT * FROM numbers(1)"
 run "SELECT * FROM system.one"
 
+echo "-- default codec"
+cat > "$config" <<CONFIG
+<clickhouse><factory_restrictions><compression_codecs><deny><ZSTD/></deny></compression_codecs></factory_restrictions></clickhouse>
+CONFIG
+run "SELECT 1"
+run "CREATE TABLE t (x UInt8) ENGINE = Log; INSERT INTO t SELECT 1"
+run "CREATE TABLE t (x UInt8 CODEC(Default)) ENGINE = MergeTree ORDER BY x"
+
 echo "-- statistics of an existing table"
 path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_path"
 rm -rf "$path"
@@ -116,14 +124,14 @@ CONFIG
 function run_with_path()
 {
     local err
-    if err=$(${CLICKHOUSE_LOCAL} --path "$path" --config-file "$config" --query "$1" 2>&1 >/dev/null); then
+    if err=$(${CLICKHOUSE_LOCAL} --path "$path" --config-file "$config" --query "$1" 2>&1 >/dev/null </dev/null); then
         echo "ok: $1"
     else
         echo "$(echo "$err" | grep -o -E '\([A-Z_]+\)' | head -n1): $1"
     fi
 }
 run_with_path "SELECT count() FROM t"
-run_with_path "INSERT INTO t VALUES (1)"
+run_with_path "INSERT INTO t SELECT 1"
 run_with_path "OPTIMIZE TABLE t FINAL"
 rm -rf "$path"
 

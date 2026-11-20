@@ -48,7 +48,11 @@ Format `CSV` is disabled by the server configuration (`factory_restrictions.form
 -- empty allow list
 (SUPPORT_IS_DISABLED): SELECT * FROM numbers(1)
 ok: SELECT * FROM system.one
+-- default codec
+ok: SELECT 1
+(SUPPORT_IS_DISABLED): CREATE TABLE t (x UInt8) ENGINE = Log; INSERT INTO t SELECT 1
+(SUPPORT_IS_DISABLED): CREATE TABLE t (x UInt8 CODEC(Default)) ENGINE = MergeTree ORDER BY x
 -- statistics of an existing table
 (SUPPORT_IS_DISABLED): SELECT count() FROM t
-(SUPPORT_IS_DISABLED): INSERT INTO t VALUES (1)
+(SUPPORT_IS_DISABLED): INSERT INTO t SELECT 1
 (SUPPORT_IS_DISABLED): OPTIMIZE TABLE t FINAL
