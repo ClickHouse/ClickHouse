@@ -10651,7 +10651,7 @@ A commit to an Iceberg table records the number of distinct values of each colum
 snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics_ndv). Not supported for tables in a
 REST or Unity catalog.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting."}) \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
