@@ -1,5 +1,7 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -25,6 +27,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/scope_guard_safe.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -378,16 +381,37 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
     }
 }
 
+static TopKThresholdCollectorPtr createThresholdCollector(
+    const TopKThresholdTrackerPtr & threshold_tracker, const Block & header, const SortDescription & sort_description, UInt64 limit)
+{
+    if (!threshold_tracker || !limit || limit > TopKThresholdCollector::max_limit)
+        return nullptr;
+
+    const auto & sort_column_description = sort_description.front();
+    const auto * sort_column = header.findByName(sort_column_description.column_name);
+    if (!sort_column || !TopKThresholdCollector::isSupportedType(*sort_column->type))
+        return nullptr;
+
+    /// Buffered chunks keep the source block's LowCardinality dictionaries, and a tighter threshold makes the sort buffer more of them.
+    for (const auto & column : header)
+        if (anyInTypeTree(*column.type, [](const IDataType & type) { return type.lowCardinality() || isDynamic(type) || isObject(type); }))
+            return nullptr;
+
+    return std::make_shared<TopKThresholdCollector>(threshold_tracker, sort_column_description, limit);
+}
+
 void SortingStep::finishSorting(
     QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
+    auto threshold_collector = createThresholdCollector(threshold_tracker, pipeline.getHeader(), result_sort_desc, limit_);
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker, threshold_collector);
         });
 
     bool increase_sort_description_compile_attempts = true;
@@ -409,7 +433,8 @@ void SortingStep::finishSorting(
         });
 }
 
-void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
+void SortingStep::mergingSorted(
+    QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const UInt64 read_ahead_limit)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
@@ -426,9 +451,22 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
         if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
         {
-            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            const size_t num_streams = pipeline.getNumStreams();
+            std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker;
+            bool has_collation = std::ranges::any_of(result_sort_desc, [](const auto & column) { return column.collator != nullptr; });
+            if (read_ahead_limit && !always_read_till_end && !has_collation && num_streams <= ReadInOrderReadAheadTracker::max_inputs)
+                read_ahead_tracker = std::make_shared<ReadInOrderReadAheadTracker>(
+                    num_streams, pipeline.getHeader(), result_sort_desc, read_ahead_limit, limit_ != 0);
+
+            size_t next_input_index = 0;
+            pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+                if (!read_ahead_tracker || stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+
+                chassert(next_input_index < num_streams);
+                return std::make_shared<BufferChunksTransform>(
+                    header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_, read_ahead_tracker, next_input_index++);
             });
         }
 
@@ -521,13 +559,15 @@ void SortingStep::fullSortStreams(
 
     if (!skip_partial_sort || limit_)
     {
+        auto threshold_collector = createThresholdCollector(threshold_tracker, pipeline.getHeader(), result_sort_desc, limit_);
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
                 if (stream_type != sorted_stream_type)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker, threshold_collector);
             });
 
         StreamLocalLimits limits;
@@ -570,8 +610,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
+    /// A fixed-shard-count scatter must keep one sorted stream per shard: the join above pairs the shards
+    /// of its two sides positionally, and the thread count is a per-side budget, not a shared contract.
     /// If there are several streams, then we merge them into one
-    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
+    const bool merge_needed = scatter_partitions == 0 && pipeline.getNumStreams() > 1
+        && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
     if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
@@ -619,7 +662,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         addPerStreamLimitByIfNeeded(pipeline, result_description);
 
-        mergingSorted(pipeline, result_description, limit);
+        mergingSorted(pipeline, result_description, limit, limit);
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
@@ -637,9 +680,22 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (!need_finish_sorting)
             addPerStreamLimitByIfNeeded(pipeline, result_description);
 
-        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
+        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit), limit);
 
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
+        /// A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`)
+        /// has just merged the streams read in order into a single stream sorted by the prefix. Scatter it by the
+        /// hash of the `PARTITION BY` columns, so that every window partition lands in one stream and the suffix
+        /// sorting and the window functions run in parallel. Each output of a single scatter is a subsequence of
+        /// its sorted input, so it stays sorted by the prefix without a merge after the scatter. Scattering the
+        /// streams before the merge instead would need an order-preserving merge per shard, and such merges pull
+        /// from their inputs selectively, which deadlocks against a scatter that must push to all its outputs.
+        if (hasPartitions() && limit == 0)
+        {
+            scatterByPartitionIfNeeded(pipeline);
+            scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
+        }
 
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
@@ -787,8 +843,9 @@ void SortingStep::serialize(Serialization & ctx) const
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
-    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
-    /// bit is set), so a plain full sort always writes a plain 0.
+    /// The bits 2 and 4 are meaningful only for `FinishSorting` (the reader applies them only when the finish
+    /// bit is set). The bit 8 marks a window sorting (`isWindowSorting`): the worker that optimizes the deserialized
+    /// fragment again must apply the same restrictions of reading in order. A reader that does not know it ignores it.
     UInt8 flags = 0;
     if (type == Type::FinishSorting)
     {
@@ -798,6 +855,8 @@ void SortingStep::serialize(Serialization & ctx) const
         if (apply_virtual_row_conversions)
             flags |= 4;
     }
+    if (is_window_sorting)
+        flags |= 8;
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
@@ -839,6 +898,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     bool finish_sorting = flags & 1;
     bool use_buffering = flags & 2;
     bool apply_virtual_row_conversions = flags & 4;
+    bool is_window_sorting = flags & 8;
 
     SortDescription prefix_description;
     if (finish_sorting)
@@ -860,6 +920,9 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     if (finish_sorting)
         step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
 
+    if (is_window_sorting)
+        step->setWindowSorting();
+
     return step;
 }
 
@@ -868,13 +931,21 @@ QueryPlanStepPtr SortingStep::clone() const
     /// Reconstructing another type as Full would silently drop its ordered-input contract.
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+    /// The merge-join scattered sort carries extra state (`scatter_partitions`, the skip
+    /// flag) this reconstruction would drop.
+    if (!partition_by_description.empty() && (is_sorting_for_merge_join || scatter_partitions > 0 || skip_scatter_by_partition))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of a partitioned sorting with scatter state is not implemented for SortingStep");
 
-    auto cloned = std::make_unique<SortingStep>(
-        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    std::unique_ptr<SortingStep> cloned;
+    if (partition_by_description.empty())
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    else
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
+    cloned->is_window_sorting = is_window_sorting;
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
     cloned->threshold_tracker = threshold_tracker;
@@ -884,7 +955,7 @@ QueryPlanStepPtr SortingStep::clone() const
     return cloned;
 }
 
-std::vector<size_t> SortingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> SortingStep::getStepGroups() const
 {
     return { static_cast<size_t>(SortingStage::Scatter),
         static_cast<size_t>(SortingStage::Sort),
@@ -921,6 +992,7 @@ void SortingStep::describePipeline(FormatSettings & settings) const
     else if (type == Type::FinishSorting)
     {
         IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(scatter_stage, settings);
         IQueryPlanStep::describePipeline(merge_streams, settings);
     }
     else if (type == Type::PartitionedFinishSorting)

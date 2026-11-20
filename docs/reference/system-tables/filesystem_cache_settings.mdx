@@ -35,7 +35,7 @@ Contains information about all filesystem cache settings
 - `invalidated_entries_cleanup_interval_ms` ([UInt64](/reference/data-types/int-uint)) — Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries
 - `invalidated_entries_cleanup_threshold` ([UInt64](/reference/data-types/int-uint)) — Number of accumulated invalidated priority queue entries which triggers their background removal
 - `invalidated_entries_cleanup_remove_batch` ([UInt64](/reference/data-types/int-uint)) — Maximum number of invalidated priority queue entries removed under a single write lock per background iteration
-- `enable_filesystem_query_cache_limit` ([UInt8](/reference/data-types/int-uint)) — Enable limiting maximum size of cache which can be written within a query
+- `enable_filesystem_query_cache_limit` ([UInt8](/reference/data-types/int-uint)) — Deprecated setting, ignored. The per-query cache write limit was removed
 - `cache_hits_threshold` ([UInt64](/reference/data-types/int-uint)) — Deprecated setting
 - `enable_bypass_cache_with_threshold` ([UInt8](/reference/data-types/int-uint)) — Undocumented. Not recommended for use
 - `bypass_cache_threshold` ([UInt64](/reference/data-types/int-uint)) — Undocumented. Not recommended for use

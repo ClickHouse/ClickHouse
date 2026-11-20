@@ -11,9 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-
 您可以使用 [AWS PrivateLink](https://aws.amazon.com/privatelink/) 在 ClickPipes 与托管在 AWS 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用终结点服务，确保流量不会暴露于公网。
 
 <Note>
@@ -212,32 +209,21 @@ AWS PrivateLink 托管的私有 DNS 并不总是可行：
 
 ## 自定义私有 DNS {#custom-private-dns}
 
-<PrivatePreviewBadge />
-
-<Info>
-  自定义私有 DNS 目前处于**私有预览**阶段。请联系 [ClickHouse 支持团队](https://clickhouse.com/support/program)，为您的服务启用此功能。
-</Info>
-
 AWS PrivateLink 可为具有已验证域名的 [VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
 提供托管私有 DNS。某些服务要求每个消费者在各自的 VPC 中管理 DNS 解析。例如，Confluent Cloud 要求消费者将 broker 主机名解析为 PrivateLink 端点。
 
-对于此类情况，ClickPipes 支持将自定义私有 DNS name 附加到反向专用
+对于此类情况，ClickPipes 支持将自定义私有 DNS 名称附加到反向专用
 终结点。ClickPipes 会将这些名称解析为该端点的私有地址，使您可通过私有连接使用数据
 源自身的主机名访问数据源。
 
 自定义私有 DNS 是对托管私有 DNS 的补充，而非替代。如果您的
-PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
+PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
 
 [VPC endpoint service](#vpc-endpoint-service)
-和 [VPC 资源](#vpc-resource)端点类型支持自定义私有 DNS name。MSK multi-VPC 原生提供托管私有 DNS，
+和 [VPC 资源](#vpc-resource)端点类型支持自定义私有 DNS 名称。MSK 多 VPC 原生提供托管私有 DNS，
 且不支持自定义名称。
 
-<Note>
-  ClickHouse Cloud 控制台目前每个反向专用终结点仅支持一个自定义私有 DNS name。
-  如果需要在同一端点上管理多个自定义私有 DNS name，请使用 OpenAPI 或 Terraform。
-</Note>
-
-自定义私有 DNS name 需遵循以下规则：
+自定义私有 DNS 名称需遵循以下规则：
 
 * 支持精确名称 (`kafka.internal.example.com`) 和通配符名称 (`*.example.com`) 。通配符可匹配单个 DNS 标签。例如，
   `*.abcde12345.us-east-1.aws.confluent.cloud` 可匹配
@@ -247,10 +233,10 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 * 使用保留后缀的名称 (例如 `local`、`localhost`、`internal`、`corp`、
   `private`) 将被拒绝。
 
-要配置自定义私有 DNS name：
+要配置自定义私有 DNS 名称：
 
-* 在 ClickHouse Cloud 控制台中，[创建反向专用终结点](#creating-clickpipe)时填写 `Custom private DNS name` 字段。为您的
-  服务启用该功能后，此字段才会显示。
+* 在 ClickHouse Cloud 控制台中，[创建反向专用终结点](#creating-clickpipe)时填写 `Custom private DNS name` 字段。点击 `Add DNS name` 可将
+  多个名称附加到同一端点。
 * 使用 [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger) 时，创建反向专用终结点时请设置
   `customPrivateDnsMappings`，或通过 `PATCH` 请求更新现有
   端点。更新会替换完整的映射列表；空列表
@@ -263,19 +249,51 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 打开 ClickHouse Cloud 服务的 SQL 控制台。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“设置 ClickPipe”。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. 选择 Kafka 或 Postgres 作为数据源。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="选择数据源" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择数据源](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</Frame>
+
+</div>
 
 4. 选择 `Reverse private endpoint` 选项。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</Frame>
+
+</div>
 
 5. 选择现有的任一反向专用终结点，或创建新的终结点。
 
@@ -286,16 +304,32 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
   对于同一区域访问，建议创建 VPC 资源。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</Frame>
+
+</div>
 
 6. 为所选端点类型提供必需参数。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</Frame>
+
+</div>
 
 * 对于 VPC 资源，请提供配置共享 ARN 和配置 ID。
-  * 对于 MSK multi-VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
-  * 对于 VPC endpoint service，请提供服务名称。
-  * 也可以选择提供[自定义私有 DNS](#custom-private-dns) 名称。
+* 对于 MSK 多 VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
+* 对于 VPC endpoint service，请提供服务名称。
+* 也可以选择提供[自定义私有 DNS](#custom-private-dns) 名称。
 
 7. 点击 `Create`，然后等待反向专用终结点就绪。
 
@@ -303,7 +337,15 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
    终结点就绪后，页面将自动刷新。
    对于 VPC endpoint service，您可能需要在 AWS 控制台中接受连接请求。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</Frame>
+
+</div>
 
 8. 终结点就绪后，您可以使用 DNS name 连接到数据源。
 
@@ -323,11 +365,27 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 在侧边栏中找到并点击 `Settings` 按钮。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 设置" size="lg" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </Frame>
+
+   </div>
 
 2. 在 `ClickPipe reverse private endpoints` 部分中，点击 `Reverse private endpoints`。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 设置" size="md" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </Frame>
+
+   </div>
 
    弹出面板中会显示反向专用终结点的详细信息。
 

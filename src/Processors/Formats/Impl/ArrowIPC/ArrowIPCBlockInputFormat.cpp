@@ -10,10 +10,8 @@
 #include <Common/WKB.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
@@ -493,17 +491,18 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         in->readStrict(magic, sizeof(magic));
         if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
-        file_data.assign(magic, sizeof(magic));
-        WriteBufferFromString out(file_data, AppendModeTag{});
-        copyData(*in, out, is_stopped);
-        out.finalize();
-        /// `copyData` returns early when the read was cancelled, leaving `file_data` partial. Do not parse
+        auto data = std::make_unique<ArrowIPC::InMemoryFile>();
+        data->write(magic, sizeof(magic));
+        copyData(*in, *data, is_stopped);
+        data->finalize();
+        /// `copyData` returns early when the read was cancelled, leaving `data` partial. Do not parse
         /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly
         /// (matching the library path, which returned without parsing after a cancelled `asArrowFile`).
         if (is_stopped)
             return;
-        file_size = file_data.size();
-        memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
+        file_size = data->count();
+        memory_buffer = data->getSeekableReadBuffer();
+        file_data = std::move(data);
         seekable = memory_buffer.get();
     }
     message_reader.emplace(*seekable);
@@ -569,6 +568,8 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     /// dereferencing null below.
     if (!dict_batch.data())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
+    /// Checked here rather than in `readNextMessage`, so a dictionary that is skipped is never validated.
+    ArrowIPC::MessageReader::checkRecordBatchAlignment(*dict_batch.data());
     auto field_it = dictionary_value_fields.find(id);
     if (field_it == dictionary_value_fields.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
@@ -580,12 +581,12 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
-    /// the decoding it would get for inline values in a record batch. The registered type must describe the
-    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
-    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
-    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
-    /// (values, type) pair.
+    /// Decode the values once for each use of this dictionary (the position of a field encoding it, with the
+    /// requested type the field resolves there), so every field gets the decoding it would get for inline
+    /// values in a record batch. The registered type must describe the registered column: the raw-byte
+    /// rewrite the record-batch columns go through reinterprets fixed_size_binary values under an IPv6 /
+    /// big-integer hint and re-declares values the decoder already converted or read raw, so
+    /// `decodeDictionary` later builds its `LowCardinality` from a consistent (values, type) pair.
     for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
     {
         auto decoded = batch_decoder.decodeDictionaryValues(
@@ -599,7 +600,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
         /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
-        dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
+        dictionaries.set(id, use, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
     }
 }
 
@@ -1034,8 +1035,33 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 
         /// GeoParquet: parse the WKB/WKT binary column into the geo type (declared in the schema-level
         /// "geo" metadata, or implied by a `Geometry` header type hint).
-        auto geo_it = geo_columns.find(header_column.name);
-        if (geo_it != geo_columns.end())
+        /// The metadata is keyed by the name in the file, which differs from the requested one with
+        /// case-insensitive matching.
+        auto geo_it = geo_columns.find(src_field ? column.name : header_column.name);
+        /// A native (GeoArrow) encoding is nested lists of `struct<x, y>` with the same layout as
+        /// the geo type, so it is converted to the geo type by a cast (and then to the requested
+        /// type, e.g. `Geometry`, below).
+        if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
+        {
+            const DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
+            reinterpretRawByteColumns(column, geo_type, src_field);
+            try
+            {
+                column = prepareArrowColumnForCast(column, geo_type, format_settings, i, block_missing_values_ptr);
+                if (format_settings.null_as_default)
+                    insertNullAsDefaultIfNeeded(column, {geo_type->createColumn(), geo_type, header_column.name}, i, block_missing_values_ptr);
+                column.column = castColumn(column, geo_type);
+                column.type = geo_type;
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format(
+                    "while converting GeoParquet column {} from type {} to type {}",
+                    backQuote(header_column.name), column.type->getName(), geo_type->getName()));
+                throw;
+            }
+        }
+        else if (geo_it != geo_columns.end())
         {
             column.column = decodeGeoColumn(column.column, geo_it->second, format_settings.precise_float_parsing);
             column.type = getGeoDataType(geo_it->second.type);
@@ -1269,7 +1295,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     record_batch_current = 0;
     seekable = nullptr;
     memory_buffer.reset();
-    file_data.clear();
+    file_data.reset();
     block_missing_values.clear();
     approx_bytes_read_for_chunk = 0;
 }
@@ -1286,7 +1312,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), false, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
@@ -1297,7 +1323,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), true, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ArrowStream");
 
     factory.setDocumentation("Arrow", Documentation{

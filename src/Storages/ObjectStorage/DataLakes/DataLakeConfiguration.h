@@ -2,13 +2,13 @@
 
 #include "config.h"
 
+#include <Disks/DiskFromAST.h>
 #include <IO/WriteBuffer.h>
 #include <IO/VarInt.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
@@ -58,16 +59,16 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern const DataLakeStorageSettingsString object_storage_endpoint;
     extern const DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsSecretString storage_aws_secret_access_key;
     extern const DataLakeStorageSettingsString storage_region;
     extern const DataLakeStorageSettingsString storage_aws_role_arn;
     extern const DataLakeStorageSettingsString storage_aws_role_session_name;
     extern const DataLakeStorageSettingsString storage_catalog_url;
     extern const DataLakeStorageSettingsString storage_warehouse;
-    extern const DataLakeStorageSettingsString storage_catalog_credential;
+    extern const DataLakeStorageSettingsSecretString storage_catalog_credential;
 
     extern const DataLakeStorageSettingsString storage_auth_scope;
-    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsSecretString storage_auth_header;
     extern const DataLakeStorageSettingsString storage_oauth_server_uri;
     extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
@@ -99,8 +100,8 @@ public:
     /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
     bool supportsCreateFromExistingTableInCatalog() const override
     {
-#if USE_PARQUET
-        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadataDeltaKernel>;
 #else
         return false;
 #endif
@@ -254,11 +255,13 @@ public:
     }
 
     Pipe alterPartition(
+        ObjectStoragePtr object_storage,
         const PartitionCommands & commands,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog,
         StorageID storage_id) override
     {
+        lazyInitializeIfNeeded(object_storage, context);
         return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
@@ -282,7 +285,9 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+        if (ready_object_storage
+            && (ready_object_storage->getType() == ObjectStorageType::S3
+                || ready_object_storage->getType() == ObjectStorageType::Azure))
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
@@ -380,21 +385,6 @@ public:
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
-#if USE_PARQUET
-    /// This is an awful temporary crutch,
-    /// which will be removed once DeltaKernel is used by default for DeltaLake.
-    /// By release 25.3.
-    /// (Because it does not make sense to support it in a nice way
-    /// because the code will be removed ASAP anyway)
-    DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
-    {
-        const auto delta_lake_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadata>(getMetadata());
-        if (delta_lake_metadata)
-            return delta_lake_metadata->getPartitionColumns();
-        return {};
-    }
-#endif
-
     void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
         getMetadata()->modifyFormatSettings(settings_, local_context);
@@ -407,6 +397,10 @@ public:
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
+    }
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
     }
 
     void drop(ContextPtr local_context) override
@@ -493,9 +487,14 @@ public:
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
+        auto disk = context->getDisk(disk_name);
+        /// The setting allows a disk by name, which may be a custom disk built for another session or against an older
+        /// `remote_url_allow_hosts`. A replayed definition uses the disk of its own stored definition, so it is exempt.
+        if (!this->is_replayed_definition)
+            DiskFromAST::ensureDiskIsAllowed(disk, context, /* check_remote_hosts */ true);
+
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         this->source_disk_name = disk_name;
-        auto disk = context->getDisk(disk_name);
         /// The table works through a private copy of the disk's object storage: the decorators
         /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
         /// stay in effect for the table, while per-table setting updates (see `update`) cannot
@@ -518,9 +517,9 @@ public:
     }
 
     std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override
     {
-        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, column_names, context);
     }
 
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
@@ -557,7 +556,11 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            const auto & table_path = this->getPathForRead().path;
+            /// A relative path is resolved the same way the local object storage resolves the keys of data files:
+            /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
+            String table_path = this->getPathForRead().path;
+            if (std::filesystem::path(table_path).is_relative())
+                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
             if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
@@ -628,16 +631,16 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 using StorageLocalPaimonConfiguration = DataLakeConfiguration<StorageLocalConfiguration, PaimonMetadata>;
 #endif
 
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
-using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
+using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadataDeltaKernel>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadataDeltaKernel>;
 #endif
 
-using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadataDeltaKernel>;
 
 #endif
 
