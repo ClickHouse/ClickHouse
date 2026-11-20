@@ -395,7 +395,7 @@ class IExtendedPool : public IHTTPConnectionPoolForEndpoint
 public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
-    virtual HTTPConnectionGroupType getGroupType() const = 0;
+    [[nodiscard]] virtual HTTPConnectionGroupType getGroupType() const = 0;
     /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
     /// closing a TLS connection may do socket I/O. Returns the number of connections left.
     virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;
@@ -599,7 +599,7 @@ private:
             notifySocketInode();
         }
 
-        String getTarget() const
+        [[nodiscard]] String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
                 return fmt::format("{}:{} over proxy {}",
@@ -907,7 +907,7 @@ public:
         group->releaseStoredConnections(stored_connections.size());
     }
 
-    String getTarget() const
+    [[nodiscard]] String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
             return fmt::format("{} over proxy {}",
@@ -966,12 +966,12 @@ public:
         return prepareNewConnection(timeouts, connect_time);
     }
 
-    const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
+    [[nodiscard]] const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
     {
         return group->getMetrics();
     }
 
-    HTTPConnectionGroupType getGroupType() const override
+    [[nodiscard]] HTTPConnectionGroupType getGroupType() const override
     {
         return group->getType();
     }
@@ -1030,7 +1030,7 @@ private:
     ConnectionPtr createConnection()
     {
 #if USE_SILK
-        if (transport == HTTPConnectionTransport::Cooperative)
+        if (transport == HTTPConnectionTransport::FiberAware)
         {
             Poco::Net::StreamSocket socket;
             if (https)
@@ -1120,10 +1120,10 @@ private:
 #if USE_SILK
         /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
         /// with ordinary Poco sockets, so the connection would block despite its transport.
-        if (transport == HTTPConnectionTransport::Cooperative && https && poco_proxy_config.tunnel)
+        if (transport == HTTPConnectionTransport::FiberAware && https && poco_proxy_config.tunnel)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for cooperative HTTPS connections",
+                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for fiber-aware HTTPS connections",
                 host, proxy_configuration.host);
 #endif
         auto connection = createConnection();
@@ -1549,7 +1549,7 @@ public:
         amber_group->setSocketBufferSizes(std::move(amber));
     }
 
-    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
+    [[nodiscard]] HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         /// The groups are created once in the constructor and never replaced.
@@ -1566,7 +1566,7 @@ public:
         }
     }
 
-    bool isSoftLimitReached(HTTPConnectionGroupType type) const
+    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         switch (type)
