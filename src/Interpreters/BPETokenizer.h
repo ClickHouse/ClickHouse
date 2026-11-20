@@ -31,8 +31,8 @@ class WriteBuffer;
   * written out by hand because they need lookahead, which RE2 does not support.
   *
   * A vocabulary can also come from a Hugging Face `tokenizer.json` with a byte-level BPE model whose
-  * pre-tokenizer is one of these three. There a pair of tokens is merged by the position of the pair
-  * in the list of merges rather than by the rank of the token it makes.
+  * pre-tokenizer is one of the shapes below. There a pair of tokens is merged by the position of the
+  * pair in the list of merges rather than by the rank of the token it makes.
   */
 enum class BPEPretokenizer : uint8_t
 {
@@ -42,6 +42,15 @@ enum class BPEPretokenizer : uint8_t
     Cl100k,
     /// `o200k_base`.
     O200k,
+    /// `cl100k` with every digit a piece of its own: Qwen 2 and 3.
+    Qwen2,
+    /// `o200k` with every digit a piece of its own and without the `'s`-style suffixes: Mistral Nemo.
+    Tekken,
+    /// Every digit split off first, then `r50k`: StarCoder 2, SmolLM 2.
+    StarCoder2,
+    /// Numbers of up to three digits and runs of CJK ideographs and kana split off first, then a
+    /// pattern of its own: DeepSeek V3 and R1.
+    DeepSeekV3,
 };
 
 BPEPretokenizer parseBPEPretokenizer(std::string_view name);
@@ -88,6 +97,13 @@ private:
 
     BPEPretokenizer pretokenizer = BPEPretokenizer::Cl100k;
 
+    /// Of a `tokenizer.json` with an NFC normalizer: text is brought to NFC before it is pre-tokenized.
+    bool normalize_nfc = false;
+
+    /// Of a `tokenizer.json`: the bytes that are not tokens, such as 0xC0, which valid UTF-8 never has.
+    std::array<bool, 256> unknown_bytes{};
+    bool has_unknown_bytes = false;
+
     /// A piece that is a token is taken whole, without merging. That holds for every `.tiktoken`
     /// vocabulary, and for a `tokenizer.json` that says so with `ignore_merges`.
     bool take_whole_tokens = true;
@@ -96,9 +112,16 @@ private:
     /// `.tiktoken` vocabulary, where the rank of a pair is the rank of the token it makes.
     HashMap<UInt64, UInt32> merge_ranks;
 
-    /// Of a `tokenizer.json`: the added tokens that are not special with their ids, by their first byte,
-    /// the longest first. They are found in the text before it is pre-tokenized.
-    std::array<std::vector<std::pair<String, UInt32>>, 256> added_tokens;
+    /// Of a `tokenizer.json`: the added tokens that are not special, by their first byte, the longest
+    /// first. They are found in the text before it is pre-tokenized.
+    struct AddedToken
+    {
+        String content;
+        UInt32 id;
+        /// The whitespace after the token is taken with it.
+        bool rstrip;
+    };
+    std::array<std::vector<AddedToken>, 256> added_tokens;
     bool has_added_tokens = false;
 
     /// The token bytes, referenced by both maps below.

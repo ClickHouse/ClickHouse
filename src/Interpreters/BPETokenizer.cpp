@@ -2,6 +2,7 @@
 
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteBuffer.h>
 
@@ -10,11 +11,14 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <iterator>
 #include <queue>
 
 #include "config.h"
 
 #if USE_ICU
+#    include <unicode/bytestream.h>
+#    include <unicode/normalizer2.h>
 #    include <unicode/uchar.h>
 
 /// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that re-uses the original
@@ -88,6 +92,8 @@ namespace CharacterClass
     constexpr UInt32 whitespace = 4;    /// `\s`, the Unicode `White_Space` property: NBSP is in it, a zero width space is not
     constexpr UInt32 uppercaseish = 8;  /// `[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]` of the `o200k` shape
     constexpr UInt32 lowercaseish = 16; /// `[\p{Ll}\p{Lm}\p{Lo}\p{M}]` of the `o200k` shape
+    constexpr UInt32 mark = 32;         /// `\p{M}`
+    constexpr UInt32 punctuation = 64;  /// `[\p{P}\p{S}]`
 }
 
 UInt32 classesFromICU(UInt32 code_point)
@@ -105,6 +111,10 @@ UInt32 classesFromICU(UInt32 code_point)
         classes |= CharacterClass::uppercaseish;
     if (mask & (U_GC_LL_MASK | U_GC_LM_MASK | U_GC_LO_MASK | U_GC_M_MASK))
         classes |= CharacterClass::lowercaseish;
+    if (mask & U_GC_M_MASK)
+        classes |= CharacterClass::mark;
+    if (mask & (U_GC_P_MASK | U_GC_S_MASK))
+        classes |= CharacterClass::punctuation;
     return classes;
 }
 
@@ -148,6 +158,16 @@ bool isWordPrefix(UInt32 code_point)
 }
 
 bool isNewline(UInt32 code_point) { return code_point == '\r' || code_point == '\n'; }
+
+/// `[\p{L}\p{M}]` and `[\p{P}\p{S}]` of the DeepSeek V3 shape.
+bool isLetterOrMark(UInt32 code_point) { return classesOf(code_point) & (CharacterClass::letter | CharacterClass::mark); }
+bool isPunctuationOrSymbol(UInt32 code_point) { return classesOf(code_point) & CharacterClass::punctuation; }
+
+/// `[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]`, the CJK ideographs and kana DeepSeek V3 splits off.
+bool isDeepSeekCJK(UInt32 code_point)
+{
+    return (code_point >= 0x4E00 && code_point <= 0x9FA5) || (code_point >= 0x3040 && code_point <= 0x30FF);
+}
 
 template <typename Predicate>
 size_t scanWhile(std::string_view text, size_t pos, Predicate && predicate)
@@ -225,8 +245,13 @@ WhitespaceRun scanWhitespace(std::string_view text, size_t pos)
 }
 
 /// `'(?:[sdmt]|ll|ve|re)| ?\p{L}++| ?\p{N}++| ?[^\s\p{L}\p{N}]++|\s++$|\s+(?!\S)|\s`
-size_t nextPieceR50k(std::string_view text, size_t pos)
+/// With `split_digits` every digit is split off first, and the pattern is applied to the text between.
+size_t nextPieceR50k(std::string_view text, size_t pos, bool split_digits)
 {
+    size_t first_length = 0;
+    if (split_digits && isNumber(codePointAt(text, pos, first_length)))
+        return first_length;
+
     if (size_t length = contractionLength(text, pos, /*case_insensitive=*/false))
         return length;
 
@@ -240,14 +265,15 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
         const UInt32 code_point = codePointAt(text, start, length);
         if (isLetter(code_point))
             return scanWhile(text, start, isLetter) - pos;
-        if (isNumber(code_point))
+        if (isNumber(code_point) && !split_digits)
             return scanWhile(text, start, isNumber) - pos;
         if (isPunctuationish(code_point))
             return scanWhile(text, start, isPunctuationish) - pos;
     }
 
     const WhitespaceRun run = scanWhitespace(text, pos);
-    if (run.end == text.size())
+    size_t next_length = 0;
+    if (run.end == text.size() || (split_digits && isNumber(codePointAt(text, run.end, next_length))))
         return run.end - pos; /// `\s++$`
     if (run.last_start > pos)
         return run.last_start - pos; /// `\s+(?!\S)`
@@ -257,11 +283,11 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
     return length; /// `\s`
 }
 
-/// `\p{N}{1,3}` at `pos`, which holds a number.
-size_t numberLength(std::string_view text, size_t pos)
+/// `\p{N}{1,max_digits}` at `pos`, which holds a number.
+size_t numberLength(std::string_view text, size_t pos, size_t max_digits)
 {
     size_t end = pos;
-    for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
+    for (size_t digit = 0; digit < max_digits && end < text.size(); ++digit)
     {
         size_t length = 0;
         if (!isNumber(codePointAt(text, end, length)))
@@ -282,8 +308,9 @@ size_t punctuationLength(std::string_view text, size_t pos, UInt32 first, Predic
     return scanWhile(text, scanWhile(text, start, isPunctuationish), trailing) - pos;
 }
 
-/// `'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s`
-size_t nextPieceCl100k(std::string_view text, size_t pos)
+/// `'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s`,
+/// with `\p{N}{1,max_digits}+` for the numbers.
+size_t nextPieceCl100k(std::string_view text, size_t pos, size_t max_digits)
 {
     if (size_t length = contractionLength(text, pos, /*case_insensitive=*/true))
         return length;
@@ -305,7 +332,7 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}+`
     if (isNumber(first))
-        return numberLength(text, pos);
+        return numberLength(text, pos, max_digits);
 
     /// ` ?[^\s\p{L}\p{N}]++[\r\n]*+`
     if (size_t length = punctuationLength(text, pos, first, isNewline))
@@ -326,8 +353,11 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
 ///   `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|…)?`
 /// Neither quantifier is possessive, so both the optional first character and the upper case run
 /// are given back when what follows them does not match; the first match found that way wins.
-size_t matchO200kWord(std::string_view text, size_t pos)
+/// Without `contractions` the `(?i:'s|…)?` suffix is left out.
+size_t matchO200kWord(std::string_view text, size_t pos, bool contractions)
 {
+    const auto suffix_length = [&](size_t end) { return contractions ? contractionLength(text, end, /*case_insensitive=*/true) : 0; };
+
     size_t prefix_length = 0;
     {
         size_t length = 0;
@@ -355,7 +385,7 @@ size_t matchO200kWord(std::string_view text, size_t pos)
                     if (candidate < text.size() && isLowercaseish(codePointAt(text, candidate, length)))
                     {
                         const size_t end = scanWhile(text, candidate, isLowercaseish);
-                        return end + contractionLength(text, end, /*case_insensitive=*/true) - pos;
+                        return end + suffix_length(end) - pos;
                     }
 
                     if (candidate == start)
@@ -371,7 +401,7 @@ size_t matchO200kWord(std::string_view text, size_t pos)
                 /// The lower case run is optional here, and so is the suffix, so the longest upper
                 /// case run always leads to a match.
                 const size_t end = scanWhile(text, upper_end, isLowercaseish);
-                return end + contractionLength(text, end, /*case_insensitive=*/true) - pos;
+                return end + suffix_length(end) - pos;
             }
         }
     }
@@ -379,10 +409,10 @@ size_t matchO200kWord(std::string_view text, size_t pos)
     return 0;
 }
 
-/// The seven alternatives listed in `tiktoken`, joined by `|`.
-size_t nextPieceO200k(std::string_view text, size_t pos)
+/// The seven alternatives listed in `tiktoken`, joined by `|`, with `\p{N}{1,max_digits}` for the numbers.
+size_t nextPieceO200k(std::string_view text, size_t pos, bool contractions, size_t max_digits)
 {
-    if (size_t length = matchO200kWord(text, pos))
+    if (size_t length = matchO200kWord(text, pos, contractions))
         return length;
 
     size_t first_length = 0;
@@ -390,7 +420,7 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
 
     /// `\p{N}{1,3}`
     if (isNumber(first))
-        return numberLength(text, pos);
+        return numberLength(text, pos, max_digits);
 
     /// ` ?[^\s\p{L}\p{N}]+[\r\n/]*`
     const auto is_newline_or_slash = [](UInt32 code_point) { return isNewline(code_point) || code_point == '/'; };
@@ -407,6 +437,86 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
     return run.end - pos; /// `\s+`
 }
 
+/// A match at `pos` of the pattern DeepSeek V3 applies after splitting off numbers and CJK runs, or zero:
+///   `[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*`
+///   `|\s*[\r\n]+|\s+(?!\S)|\s+`
+/// It is applied to each part between them and to each CJK run on its own, and `in_part` tells which
+/// characters belong to the part at `pos`.
+template <typename InPart>
+size_t matchDeepSeekV3(std::string_view text, size_t pos, InPart && in_part)
+{
+    const auto starts_with = [&](size_t at, auto && predicate)
+    {
+        size_t length = 0;
+        if (at >= text.size())
+            return false;
+        const UInt32 code_point = codePointAt(text, at, length);
+        return in_part(code_point) && predicate(code_point);
+    };
+    const auto scan = [&](size_t from, auto && predicate)
+    {
+        return scanWhile(text, from, [&](UInt32 code_point) { return in_part(code_point) && predicate(code_point); });
+    };
+    const auto is_ascii_letter = [](UInt32 code_point) { return code_point < 0x80 && isAlphaASCII(static_cast<char>(code_point)); };
+
+    size_t first_length = 0;
+    const UInt32 first = codePointAt(text, pos, first_length);
+
+    if (first < 0x80 && isPunctuationASCII(static_cast<char>(first)) && starts_with(pos + first_length, is_ascii_letter))
+        return scan(pos + first_length, is_ascii_letter) - pos;
+
+    /// `[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+`. A mark fits both parts, and ends the match at the same place either way.
+    const bool is_prefix = !isNewline(first) && !(classesOf(first) & (CharacterClass::letter | CharacterClass::punctuation));
+    if (is_prefix && starts_with(pos + first_length, isLetterOrMark))
+        return scan(pos + first_length, isLetterOrMark) - pos;
+    if (isLetterOrMark(first))
+        return scan(pos, isLetterOrMark) - pos;
+
+    /// ` ?[\p{P}\p{S}]+[\r\n]*`
+    const size_t start = first == ' ' ? pos + 1 : pos;
+    if (starts_with(start, isPunctuationOrSymbol))
+        return scan(scan(start, isPunctuationOrSymbol), isNewline) - pos;
+
+    if (!isWhitespace(first))
+        return 0;
+    /// Whitespace is never a number or CJK, so a run of it ends inside the part or at its end.
+    const WhitespaceRun run = scanWhitespace(text, pos);
+    if (run.newline_end != 0)
+        return run.newline_end - pos; /// `\s*[\r\n]+`
+    if (!starts_with(run.end, [](UInt32) { return true; }))
+        return run.end - pos; /// `\s+(?!\S)` at the end of the part takes the whole run
+    if (run.last_start > pos)
+        return run.last_start - pos; /// `\s+(?!\S)` leaves the last character to the next piece
+    return run.end - pos; /// `\s+`
+}
+
+/// The three `Split` steps of DeepSeek V3: `\p{N}{1,3}`, then `[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+`,
+/// then the pattern of `matchDeepSeekV3`. Each keeps the text it does not match as pieces as well.
+size_t nextPieceDeepSeekV3(std::string_view text, size_t pos)
+{
+    size_t length = 0;
+    const UInt32 first = codePointAt(text, pos, length);
+
+    /// The last pattern does not match within a number, so a number stays one piece.
+    if (isNumber(first))
+        return numberLength(text, pos, 3);
+
+    const bool cjk = isDeepSeekCJK(first);
+    const auto in_part = [cjk](UInt32 code_point) { return cjk ? isDeepSeekCJK(code_point) : !isDeepSeekCJK(code_point) && !isNumber(code_point); };
+    if (size_t match = matchDeepSeekV3(text, pos, in_part))
+        return match;
+
+    /// The text up to the next match, or to the end of the part, is a piece.
+    size_t end = pos + length;
+    while (end < text.size())
+    {
+        if (!in_part(codePointAt(text, end, length)) || matchDeepSeekV3(text, end, in_part))
+            break;
+        end += length;
+    }
+    return end - pos;
+}
+
 }
 
 size_t nextBPEPiece(BPEPretokenizer pretokenizer, std::string_view text, size_t pos)
@@ -415,10 +525,38 @@ size_t nextBPEPiece(BPEPretokenizer pretokenizer, std::string_view text, size_t 
 
     switch (pretokenizer)
     {
-        case BPEPretokenizer::R50k: return nextPieceR50k(text, pos);
-        case BPEPretokenizer::Cl100k: return nextPieceCl100k(text, pos);
-        case BPEPretokenizer::O200k: return nextPieceO200k(text, pos);
+        case BPEPretokenizer::R50k: return nextPieceR50k(text, pos, /*split_digits=*/false);
+        case BPEPretokenizer::Cl100k: return nextPieceCl100k(text, pos, /*max_digits=*/3);
+        case BPEPretokenizer::O200k: return nextPieceO200k(text, pos, /*contractions=*/true, /*max_digits=*/3);
+        case BPEPretokenizer::Qwen2: return nextPieceCl100k(text, pos, /*max_digits=*/1);
+        case BPEPretokenizer::Tekken: return nextPieceO200k(text, pos, /*contractions=*/false, /*max_digits=*/1);
+        case BPEPretokenizer::StarCoder2: return nextPieceR50k(text, pos, /*split_digits=*/true);
+        case BPEPretokenizer::DeepSeekV3: return nextPieceDeepSeekV3(text, pos);
     }
+}
+
+namespace
+{
+
+size_t whitespaceEnd(std::string_view text, size_t pos)
+{
+    return scanWhile(text, pos, isWhitespace);
+}
+
+/// Invalid UTF-8 is kept as it is.
+String normalizeToNFC(std::string_view text)
+{
+    UErrorCode status = U_ZERO_ERROR;
+    const icu::Normalizer2 * nfc = icu::Normalizer2::getNFCInstance(status);
+    String result;
+    icu::StringByteSink<String> sink(&result, static_cast<int32_t>(text.size()));
+    if (U_SUCCESS(status))
+        nfc->normalizeUTF8(0, icu::StringPiece(text.data(), static_cast<int32_t>(text.size())), sink, nullptr, status);
+    if (U_FAILURE(status))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot bring a text to NFC: {}", u_errorName(status));
+    return result;
+}
+
 }
 
 #else
@@ -426,6 +564,21 @@ size_t nextBPEPiece(BPEPretokenizer pretokenizer, std::string_view text, size_t 
 size_t nextBPEPiece(BPEPretokenizer, std::string_view, size_t)
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BPE tokenization requires ClickHouse to be built with ICU");
+}
+
+namespace
+{
+
+size_t whitespaceEnd(std::string_view, size_t)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BPE tokenization requires ClickHouse to be built with ICU");
+}
+
+String normalizeToNFC(std::string_view)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BPE tokenization requires ClickHouse to be built with ICU");
+}
+
 }
 
 #endif
@@ -694,15 +847,17 @@ void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & resul
     for (size_t pos = 0; pos < text.size();)
     {
         const auto & candidates = added_tokens[static_cast<UInt8>(text[pos])];
-        const auto it = std::ranges::find_if(candidates, [&](const auto & token) { return text.substr(pos).starts_with(token.first); });
+        const auto it = std::ranges::find_if(candidates, [&](const auto & token) { return text.substr(pos).starts_with(token.content); });
         if (it == candidates.end())
         {
             ++pos;
             continue;
         }
         encodeText(text.substr(gap_start, pos - gap_start), result);
-        result.push_back(it->second);
-        pos += it->first.size();
+        result.push_back(it->id);
+        pos += it->content.size();
+        if (it->rstrip)
+            pos = whitespaceEnd(text, pos);
         gap_start = pos;
     }
     encodeText(text.substr(gap_start), result);
@@ -710,19 +865,37 @@ void BPEVocabulary::encode(std::string_view text, PaddedPODArray<UInt32> & resul
 
 void BPEVocabulary::encodeText(std::string_view text, PaddedPODArray<UInt32> & result) const
 {
+    /// Text in ASCII is in NFC already.
+    String normalized;
+    if (normalize_nfc && !isAllASCII(reinterpret_cast<const UInt8 *>(text.data()), text.size()))
+    {
+        normalized = normalizeToNFC(text);
+        text = normalized;
+    }
+
     size_t pos = 0;
     while (pos < text.size())
     {
         const size_t length = nextBPEPiece(pretokenizer, text, pos);
         const std::string_view piece = text.substr(pos, length);
+        pos += length;
+
+        /// As in `tokenizers`, a byte that is not a token is left out, and the bytes around it merge.
+        const auto is_unknown = [&](char c) { return unknown_bytes[static_cast<UInt8>(c)]; };
+        if (has_unknown_bytes && std::ranges::any_of(piece, is_unknown))
+        {
+            String known;
+            std::ranges::remove_copy_if(piece, std::back_inserter(known), is_unknown);
+            if (!known.empty())
+                encodePiece(known, result);
+            continue;
+        }
 
         /// Most pieces of ordinary text are a token in their own right.
         if (const UInt32 rank = take_whole_tokens ? rankOf(piece) : no_rank; rank != no_rank)
             result.push_back(rank);
         else
             encodePiece(piece, result);
-
-        pos += length;
     }
 }
 

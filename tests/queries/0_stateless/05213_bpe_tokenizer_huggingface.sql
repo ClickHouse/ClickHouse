@@ -16,6 +16,10 @@ SELECT '-- an added token is found in the text and is one id, but a special toke
 SELECT tokenizeBPE('<tool>banana', 'example_huggingface_vocabulary') AS ids, detokenizeBPE(ids, 'example_huggingface_vocabulary');
 SELECT tokenizeBPE('<|end|>', 'example_huggingface_vocabulary');
 
+SELECT '-- text is brought to NFC first, and invalid UTF-8 is kept';
+SELECT tokenizeBPE('café', 'example_huggingface_vocabulary'), tokenizeBPE(concat('cafe', unhex('CC81')), 'example_huggingface_vocabulary');
+SELECT hex(detokenizeBPE(tokenizeBPE(unhex('61CC81FF'), 'example_huggingface_vocabulary'), 'example_huggingface_vocabulary'));
+
 SELECT '-- an empty text has no tokens';
 SELECT tokenizeBPE('', 'example_huggingface_vocabulary');
 

@@ -7,6 +7,9 @@
 -- an added token is found in the text and is one id, but a special token is text
 [272,259]	<tool>banana
 [60,124,101,110,100,124,62]
+-- text is brought to NFC first, and invalid UTF-8 is kept
+[269,102,195,169]	[269,102,195,169]
+C3A1FF
 -- an empty text has no tokens
 []
 -- over a column

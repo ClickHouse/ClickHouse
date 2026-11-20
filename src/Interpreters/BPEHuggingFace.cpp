@@ -7,9 +7,12 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <fmt/ranges.h>
+
 #include <algorithm>
 #include <array>
 #include <optional>
+#include <ranges>
 
 
 namespace DB
@@ -25,16 +28,37 @@ namespace
 
 using JSONObject = Poco::JSON::Object::Ptr;
 
-/// The pre-tokenizer patterns of `tokenizer.json` files that split text the way one of the hand-written
-/// pre-tokenizers does. The `r50k` one is also what a `ByteLevel` step with `use_regex` applies.
-constexpr std::pair<std::string_view, BPEPretokenizer> known_patterns[] = {
-    {R"('s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+)", BPEPretokenizer::R50k},
-    {R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+)",
+constexpr std::string_view r50k_pattern = R"('s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+)";
+
+/// The pre-tokenizers of `tokenizer.json` files that split text the way one of the hand-written ones
+/// does, as the patterns their steps split by, in order. A `ByteLevel` step with `use_regex` splits by
+/// the `r50k` pattern, and a `Digits` step with `individual_digits` by `\p{N}`.
+struct KnownPretokenizer
+{
+    std::array<std::string_view, 3> patterns;
+    BPEPretokenizer shape = BPEPretokenizer::R50k;
+};
+
+constexpr KnownPretokenizer known_pretokenizers[] = {
+    {{r50k_pattern}, BPEPretokenizer::R50k},
+    {{R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+)"},
         BPEPretokenizer::Cl100k},
-    {R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|)"
-     R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|)"
-     R"(\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+)",
+    {{R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|)"
+      R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|)"
+      R"(\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+)"},
         BPEPretokenizer::O200k},
+    {{R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+)"},
+        BPEPretokenizer::Qwen2},
+    {{R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|)"
+      R"([^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|)"
+      R"(\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+)"},
+        BPEPretokenizer::Tekken},
+    {{R"(\p{N})", r50k_pattern}, BPEPretokenizer::StarCoder2},
+    {{R"(\p{N}{1,3})",
+      "[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+",
+      R"([!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^)" "\r\n" R"(\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[)" "\r\n"
+      R"(]*|\s*[)" "\r\n" R"(]+|\s+(?!\S)|\s+)"},
+        BPEPretokenizer::DeepSeekV3},
 };
 
 [[noreturn]] void unsupported(const String & what)
@@ -52,8 +76,8 @@ bool flag(const JSONObject & object, const String & name, bool default_value)
     return object->has(name) && !object->isNull(name) ? object->getValue<bool>(name) : default_value;
 }
 
-/// The pre-tokenizer: a `ByteLevel` step that applies the GPT-2 pattern, or a `Split` by one of the
-/// known patterns followed by a `ByteLevel` step that does not split.
+/// The pre-tokenizer: `Split` and `Digits` steps followed by a `ByteLevel` step, which together are one
+/// of the known pre-tokenizers.
 BPEPretokenizer readPretokenizer(const JSONObject & root)
 {
     std::vector<JSONObject> steps;
@@ -69,28 +93,36 @@ BPEPretokenizer readPretokenizer(const JSONObject & root)
 
     if (steps.empty() || typeOf(steps.back()) != "ByteLevel" || flag(steps.back(), "add_prefix_space", false))
         unsupported("only byte-level BPE models are supported");
-    const bool byte_level_splits = flag(steps.back(), "use_regex", true);
 
-    if (steps.size() == 1 && byte_level_splits)
-        return BPEPretokenizer::R50k;
-
-    if (steps.size() == 2 && !byte_level_splits && typeOf(steps[0]) == "Split")
+    std::vector<String> patterns;
+    bool drops_unmatched = false;
+    for (size_t i = 0; i + 1 < steps.size(); ++i)
     {
-        const JSONObject & split = steps[0];
-        const JSONObject pattern = split->getObject("pattern");
-        const String behavior = split->has("behavior") ? split->getValue<String>("behavior") : String{};
-        /// The known patterns match every character, so the text between the matches is always empty.
-        const bool keeps_matches = (behavior == "Isolated" && !flag(split, "invert", false)) || (behavior == "Removed" && flag(split, "invert", false));
-        if (pattern && pattern->has("Regex") && keeps_matches)
+        const JSONObject & step = steps[i];
+        const String type = typeOf(step);
+        const JSONObject pattern = type == "Split" ? step->getObject("pattern") : nullptr;
+        const String behavior = step->has("behavior") ? step->getValue<String>("behavior") : String{};
+        const bool invert = flag(step, "invert", false);
+        if (type == "Digits" && flag(step, "individual_digits", false))
+            patterns.emplace_back(R"(\p{N})");
+        else if (pattern && pattern->has("Regex") && ((behavior == "Isolated" && !invert) || (behavior == "Removed" && invert)))
         {
-            const String regex = pattern->getValue<String>("Regex");
-            for (const auto & [known, shape] : known_patterns)
-                if (regex == known)
-                    return shape;
-            unsupported(fmt::format("its pre-tokenizer pattern '{}' is not one of the supported ones", regex));
+            patterns.push_back(pattern->getValue<String>("Regex"));
+            drops_unmatched |= invert;
         }
+        else
+            unsupported(fmt::format("its pre-tokenizer has a `{}` step that is not supported", type));
     }
-    unsupported("its pre-tokenizer is not one of the supported ones");
+    if (flag(steps.back(), "use_regex", true))
+        patterns.emplace_back(r50k_pattern);
+
+    /// Dropping the text a pattern does not match changes nothing when the pattern matches every
+    /// character, as each of the known patterns that is alone does.
+    for (const auto & [known, shape] : known_pretokenizers)
+        if (std::ranges::equal(patterns, known | std::views::filter([](std::string_view known_pattern) { return !known_pattern.empty(); }))
+            && (!drops_unmatched || patterns.size() == 1))
+            return shape;
+    unsupported(fmt::format("its pre-tokenizer splits by '{}', which is not one of the supported pre-tokenizers", fmt::join(patterns, "', then by '")));
 }
 
 /// `ByteLevel` writes every byte of the text as a printable character, so that the tokens of a
@@ -154,12 +186,15 @@ try
             unsupported(fmt::format("its model has a `{}`", key));
     vocabulary->take_whole_tokens = flag(model, "ignore_merges", false);
 
-    /// An empty `Sequence` of normalizers is no normalizer.
+    /// An empty `Sequence` of normalizers is no normalizer. Added tokens are found before the text is
+    /// normalized, which is what `tokenizers` does with those that are not `normalized`.
     if (const JSONObject normalizer = root->getObject("normalizer"))
     {
         const auto list = normalizer->getArray("normalizers");
-        if (typeOf(normalizer) != "Sequence" || (list && list->size() != 0))
-            unsupported("text normalization is not supported");
+        if (typeOf(normalizer) == "NFC")
+            vocabulary->normalize_nfc = true;
+        else if (typeOf(normalizer) != "Sequence" || (list && list->size() != 0))
+            unsupported(fmt::format("its normalizer `{}` is not supported, only NFC is", typeOf(normalizer)));
     }
 
     vocabulary->pretokenizer = readPretokenizer(root);
@@ -200,10 +235,18 @@ try
         inserted_id->getMapped() = static_cast<UInt32>(id);
     }
 
-    /// Merging starts from the individual bytes of a piece, so every byte has to be a token of its own.
+    /// Merging starts from the individual bytes of a piece. Without an `unk_token` to stand for them,
+    /// the bytes that are not tokens are left out.
+    const bool has_unknown_token = model->has("unk_token") && !model->isNull("unk_token");
     for (size_t byte = 0; byte < 256; ++byte)
-        if (const char c = static_cast<char>(byte); vocabulary->rankOf({&c, 1}) == no_rank)
+    {
+        if (const char c = static_cast<char>(byte); vocabulary->rankOf({&c, 1}) != no_rank)
+            continue;
+        if (has_unknown_token)
             unsupported(fmt::format("it has no token for the single byte {}", byte));
+        vocabulary->unknown_bytes[byte] = true;
+        vocabulary->has_unknown_bytes = true;
+    }
 
     /// Every added token can be decoded, and those that are not special are found in the text.
     /// An added token that is in `vocab` as well keeps the bytes it has there.
@@ -215,15 +258,15 @@ try
         set_token(id, content);
         if (flag(token, "special", false))
             continue;
-        for (const auto * key : {"single_word", "lstrip", "rstrip"})
+        for (const auto * key : {"single_word", "lstrip"})
             if (flag(token, key, false))
                 unsupported(fmt::format("its added token '{}' has `{}` set", content, key));
-        vocabulary->added_tokens[static_cast<UInt8>(content.front())].emplace_back(content, static_cast<UInt32>(id));
+        vocabulary->added_tokens[static_cast<UInt8>(content.front())].push_back({content, static_cast<UInt32>(id), flag(token, "rstrip", false)});
         vocabulary->has_added_tokens = true;
     }
     /// The longest added token that matches is the one taken.
     for (auto & tokens : vocabulary->added_tokens)
-        std::ranges::sort(tokens, std::greater{}, [](const auto & token) { return token.first.size(); });
+        std::ranges::sort(tokens, std::greater{}, [](const auto & token) { return token.content.size(); });
 
     /// The merges, in the order of their rank: either `"a b"` or `["a", "b"]`.
     const auto merges = model->getArray("merges");

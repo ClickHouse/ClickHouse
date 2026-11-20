@@ -13,7 +13,8 @@ using namespace DB;
 
 /// The expected values are produced by `tiktoken`: the pieces by the regular expressions of its `r50k_base`,
 /// `cl100k_base` and `o200k_base` encodings, and the ids by an encoding with the vocabulary below and the
-/// `cl100k_base` regular expression.
+/// `cl100k_base` regular expression. The pieces of the other shapes are produced by `tokenizers` with the
+/// `tokenizer.json` of Qwen 2.5, Mistral Nemo, StarCoder 2 and DeepSeek V3.
 
 namespace
 {
@@ -88,6 +89,14 @@ const std::vector<PieceCase> piece_cases = {
     {BPEPretokenizer::O200k, "can't won't shouldn't", {5, 6, 10}},
     {BPEPretokenizer::O200k, "a  b   c\n  d", {1, 1, 2, 2, 2, 1, 1, 2}},
     {BPEPretokenizer::O200k, "ʰA! 'ſt z'ſ Ǆemo", {2, 1, 1, 2, 3, 5, 6}},
+    {BPEPretokenizer::Qwen2, "Numbers 1234567 and 3.14159, 0x1F", {7, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+    {BPEPretokenizer::Tekken, "Hello, world! It's a test.", {5, 1, 6, 1, 3, 2, 2, 5, 1}},
+    {BPEPretokenizer::Tekken, "Numbers 1234567 and 3.14159, 0x1F", {7, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+    {BPEPretokenizer::Tekken, "camelCaseWords and HTTPServer XMLHttpRequest", {5, 4, 5, 4, 11, 8, 7}},
+    {BPEPretokenizer::StarCoder2, "Numbers 1234567 and 3.14159, 0x1F", {7, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+    {BPEPretokenizer::StarCoder2, "a  b   c\n  d 7", {1, 1, 2, 2, 2, 2, 2, 1, 1}},
+    {BPEPretokenizer::DeepSeekV3, "Numbers 1234567 and 3.14159, 0x1F", {7, 1, 3, 3, 1, 4, 1, 1, 1, 3, 2, 1, 1, 1, 1, 1, 1}},
+    {BPEPretokenizer::DeepSeekV3, "中文字符和日本語のテキスト・カタカナ123abc.Net", {39, 3, 12, 3, 3, 4}},
 };
 
 const std::vector<String> merges = {
