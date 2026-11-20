@@ -826,7 +826,6 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
     return fmt::format("the process that checks whether the filesystem can be isolated terminated with the status {}", status);
 }
 
-#if defined(__GLIBC__)
 /// The services named in `/etc/nsswitch.conf`, such as `files`, `dns`, `systemd`, `sss`.
 std::vector<std::string> getNameServices()
 {
@@ -1131,7 +1130,6 @@ std::vector<std::string> getNameServiceSocketDirectories()
     }
     return directories;
 }
-#endif
 
 /// The files mapped into the process: its executable and, if it is not linked statically, the dynamic loader and
 /// the libraries.
@@ -1351,9 +1349,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     /// The libraries of the programs that are started later, with the links that name them, as for the mapped files.
-    /// Only with glibc: a build with musl is linked statically, as the programs it starts are.
+    /// Also when the server itself is linked statically: the programs it starts, such as a bridge or the interpreter
+    /// of an executable user-defined function, can be linked dynamically against the C library of the system.
     std::vector<std::string> executable_dependencies;
-#if defined(__GLIBC__)
     for (const auto & path : std::vector<FilesystemIsolationPath>(all_paths))
         if (path.executable)
             for (auto & dependency : getExecutableDependencies(path.path, mapped_files))
@@ -1361,17 +1359,21 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 all_paths.push_back({dependency, FilesystemIsolationPath::Access::ReadOnly, fmt::format("needed by {}", path.path)});
                 executable_dependencies.push_back(std::move(dependency));
             }
-#endif
-    if (const auto interpreter = getInterpreter())
-    {
+    const auto interpreter = getInterpreter();
+    if (interpreter)
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
-#if defined(__GLIBC__)
+    /// For the dynamic loader and the C library of the server or of a program it starts: a glibc-linked bridge
+    /// loads the modules of the Name Service Switch itself, whatever the C library of the server is. They are looked
+    /// up also next to the libraries of the started programs, where their C library is.
+    if (interpreter || !executable_dependencies.empty())
+    {
         all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
-        for (auto & module : getNameServiceModules(mapped_files))
+        std::vector<std::string> loaded_files = mapped_files;
+        loaded_files.insert(loaded_files.end(), executable_dependencies.begin(), executable_dependencies.end());
+        for (auto & module : getNameServiceModules(loaded_files))
             all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
         for (auto & directory : getNameServiceSocketDirectories())
             all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
-#endif
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
     for (auto & alias : getLibraryAliases(mapped_files))
