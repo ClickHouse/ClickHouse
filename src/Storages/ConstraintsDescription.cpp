@@ -339,6 +339,10 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (arguments.size() == 2 && comparesPaddedStrings(arguments[0], arguments[1]))
                 continue;
 
+            /// `CHECK v = 1` does not give a `Dynamic` `v` the type of 1.
+            if (arguments.size() == 2 && hasDynamicArgument(arguments[0], arguments[1]))
+                continue;
+
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);

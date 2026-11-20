@@ -265,6 +265,15 @@ bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr
     return (has_fixed_string(left_type) || has_fixed_string(right_type)) && !left_type->equals(*right_type);
 }
 
+bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_dynamic = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDynamic(type) || isVariant(type); });
+    };
+    return has_dynamic(left) || has_dynamic(right);
+}
+
 template <ComparisonGraphNodeType Node>
 ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context)
 {
@@ -411,11 +420,11 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array. The graph has no
     /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
     /// A string constant compared with another type is a value of that type, which the bounds do not know.
-    /// A `FixedString` compared with another string type is padded with zero bytes.
+    /// A `FixedString` compared with another string type is padded with zero bytes. A `Dynamic` compares by its active type.
     if constexpr (!with_ast)
     {
         if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
-            || comparesPaddedStrings(left, right))
+            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 
