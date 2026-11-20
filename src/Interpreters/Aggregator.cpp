@@ -1435,24 +1435,28 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
     }
 
     /// The cell of a row: the offsets of its keys from the smallest ones, the last key varying fastest.
-    PaddedPODArray<UInt32> row_cells(rows);
+    PaddedPODArray<UInt32> row_cells_array(rows);
     UInt32 stride = 1;
     for (size_t j = keys_size; j-- > 0;)
     {
         const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
         dispatchDirectIndexKey(direct_index_keys[j].size, direct_index_keys[j].is_signed, [&]<typename T>()
         {
-            addDirectIndexKey(reinterpret_cast<const T *>(data) + row_begin, rows, mins[j], stride, row_cells.data(), j + 1 == keys_size);
+            addDirectIndexKey(reinterpret_cast<const T *>(data) + row_begin, rows, mins[j], stride, row_cells_array.data(), j + 1 == keys_size);
         });
         stride *= static_cast<UInt32>(ranges[j]);
     }
 
     /// The rows of each cell, the first of them, and the cells that the block uses, in the order of their first rows.
-    PaddedPODArray<UInt32> counts;
-    counts.resize_fill(cells, 0);
-    PaddedPODArray<UInt32> first_rows(cells);
+    PaddedPODArray<UInt32> counts_array;
+    counts_array.resize_fill(cells, 0);
+    PaddedPODArray<UInt32> first_rows_array(cells);
     const size_t max_used_cells = rows / min_rows_per_key;
-    PaddedPODArray<UInt32> used_cells(max_used_cells);
+    PaddedPODArray<UInt32> used_cells_array(max_used_cells);
+    const UInt32 * __restrict row_cells = row_cells_array.data();
+    UInt32 * __restrict counts = counts_array.data();
+    UInt32 * __restrict first_rows = first_rows_array.data();
+    UInt32 * __restrict used_cells = used_cells_array.data();
     size_t num_used_cells = 0;
     for (size_t i = 0; i < rows; ++i)
     {
@@ -1501,7 +1505,8 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
     use_compiled_functions = compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions);
 #endif
 
-    PaddedPODArray<AggregateDataPtr> cell_places(cells);
+    PaddedPODArray<AggregateDataPtr> cell_places_array(cells);
+    AggregateDataPtr * __restrict cell_places = cell_places_array.data();
     for (size_t k = 0; k < num_used_cells; ++k)
     {
         const UInt32 cell = used_cells[k];
@@ -1519,16 +1524,17 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
     }
 
     /// As in `executeImplBatch`, the places are indexed by the row of the block.
-    PaddedPODArray<AggregateDataPtr> row_places(row_end);
+    PaddedPODArray<AggregateDataPtr> row_places_array(row_end);
+    AggregateDataPtr * __restrict places = row_places_array.data();
     for (size_t i = 0; i < rows; ++i)
-        row_places[row_begin + i] = cell_places[row_cells[i]];
+        places[row_begin + i] = cell_places[row_cells[i]];
 
     executeAggregateInstructions(
         aggregates_pool,
         row_begin,
         row_end,
         aggregate_instructions,
-        row_places.data(),
+        places,
         /*key_start=*/row_begin,
         /*has_only_one_value_since_last_reset=*/num_used_cells == 1,
         /*all_keys_are_const=*/false,
