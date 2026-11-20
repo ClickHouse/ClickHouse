@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/Regexps.h>
 
@@ -194,14 +195,27 @@ struct MultiMatchAllIndicesImpl
         VectorWithMemoryTracking<std::string_view> needles;
         MultiRegexps::GlobalCacheCounters cache_counters;
 
+        std::optional<SlowWithHyperscanChecker> checker;
+        if (reject_expensive_hyperscan_regexps)
+            checker.emplace();
+
+        /// Each row looks up, and on a miss compiles, its own vectorscan database inside this one call.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 
+            size_t needles_bytes = 0;
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
                 needles.emplace_back(needles_data_string.getDataAt(j));
+                needles_bytes += needles.back().size();
             }
+
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
+            budget.chargeUnits(1 + needles.size() + (needles_bytes + cur_haystack_length) / CancellationBudget::bytes_per_unit);
 
             if (needles.empty())
             {
@@ -213,16 +227,16 @@ struct MultiMatchAllIndicesImpl
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
-            if (reject_expensive_hyperscan_regexps)
+            if (checker)
             {
-                SlowWithHyperscanChecker checker;
                 for (auto needle : needles)
-                    if (checker.isSlow(needle))
+                    if (checker->isSlow(needle))
                         throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
             }
 
             MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance, cache_counters);
-            MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
+            /// Compiling a database costs far more than looking one up, so a row that compiles checks directly.
+            MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get(check_cancellation);
             hs_scratch_t * scratch = nullptr;
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
@@ -240,8 +254,6 @@ struct MultiMatchAllIndicesImpl
                 static_cast<PaddedPODArray<ResultType>*>(context)->push_back(id);
                 return 0;
             };
-
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
