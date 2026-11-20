@@ -1159,13 +1159,15 @@ bool ReadManager::deferTasks(ReadStage stage_idx)
         }
         catch (...)
         {
+            std::exception_ptr current = std::current_exception();
             {
                 std::lock_guard delivery_lock(delivery_mutex);
                 if (!exception)
-                    exception = std::current_exception();
+                    exception = current;
             }
             delivery_cv.notify_all();
-            throw;
+            /// `read` copies the stored exception while the callers annotate the rethrown one, so rethrow a private copy.
+            std::rethrow_exception(copyMutableException(current));
         }
     }
     return true;
