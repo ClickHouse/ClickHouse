@@ -1079,16 +1079,12 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        raw_path.path);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
     }
 
     if (raw_path.hasGlobsIgnorePlaceholders())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getRawPath().path);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
     }
 
     if (!configuration->supportsWrites())
@@ -1164,8 +1160,8 @@ void StorageObjectStorage::truncate(
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
+                        "Table '{}' reads from an archive and cannot be truncated",
+                        getStorageID().getNameForLogs());
     }
 
     if (configuration->isDataLakeConfiguration())
@@ -1178,16 +1174,16 @@ void StorageObjectStorage::truncate(
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
+            "Can't truncate table '{}' in readonly mode because of globs in path",
+            getStorageID().getNameForLogs());
     }
 
     if (path.hasPartitionWildcard())
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Truncate is not supported for partitioned tables, the path is '{}'",
-            path.path);
+            "Truncate is not supported for partitioned table '{}'",
+            getStorageID().getNameForLogs());
     }
 
     /// The credentials of the client follow the session that truncates, as for `write`.

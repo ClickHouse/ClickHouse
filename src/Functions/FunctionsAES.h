@@ -251,6 +251,8 @@ private:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty key is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override
     {
@@ -773,6 +775,7 @@ private:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty key is not valid.
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override
