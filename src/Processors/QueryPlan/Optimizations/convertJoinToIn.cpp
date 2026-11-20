@@ -293,10 +293,15 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.transform_null_in = false;
     set_settings.size_limits = settings.network_transfer_limits;
 
+    /// The set plan is put back into the source plan by `addPlansForSets`, so it must not copy its resources.
+    auto set_plan = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes));
+    set_plan->setMaxThreads(settings.source_plan->getMaxThreads());
+    set_plan->setConcurrencyControl(settings.source_plan->getConcurrencyControl());
+
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan)),
+        std::move(set_plan),
         std::move(set_settings));
 
     {
