@@ -123,8 +123,6 @@ public:
 
     PriorityDumpPtr dump() override;
 
-    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
-
     bool modifySizeLimits(
         size_t max_size_,
         size_t max_elements_,
@@ -187,6 +185,8 @@ private:
     using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
+
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
 
     /// Non-null when this queue's structural locking is redirected to another guard
     /// (set by SLRU for its sub-queues). See `getPriorityGuard`.

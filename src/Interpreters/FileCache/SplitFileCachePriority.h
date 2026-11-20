@@ -96,7 +96,6 @@ public:
         QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
-    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
 
     void shuffle() override;
 
@@ -152,6 +151,8 @@ protected:
     size_t getHoldElements() override;
 
 private:
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
+
     SegmentType getPriorityType(const SegmentType & segment_type) const;
 
     IFileCachePriority & getPriority(SegmentType type) { return *priorities_holder[static_cast<uint8_t>(type)]; }

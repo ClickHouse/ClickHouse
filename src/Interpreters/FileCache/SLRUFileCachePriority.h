@@ -99,8 +99,6 @@ public:
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
-    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
-
     bool tryIncreasePriority(
         Iterator & iterator_,
         bool is_space_reservation_complete,
@@ -160,6 +158,8 @@ protected:
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
+
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
 
     std::string description;
     double size_ratio;

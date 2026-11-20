@@ -275,18 +275,6 @@ public:
         IterationOrder query_order,
         const std::atomic<bool> * cancellation_flag = nullptr);
 
-    /// Each concrete implementation of IFileCachePriority should know better how to implement this
-    /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues
-    /// (SLRU's probationary one, Split's data one): the limits apply to all of them and the ranks continue.
-    /// For `RANDOM`, `result.infos` is a reservoir which all sub-queues share.
-    /// If `queue_entry_type` is not `None`, it is reported for every segment instead of the type of the segment's own queue entry.
-    virtual void iterate(
-        UInt64 query_max_elements,
-        UInt64 query_max_total_size,
-        IterationOrder query_order,
-        QueueEntryType queue_entry_type,
-        FileSegmentSummaryInfos & result) = 0;
-
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -541,6 +529,20 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+
+private:
+    /// Each concrete implementation of IFileCachePriority should know better how to implement this
+    /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues
+    /// (SLRU's probationary one, Split's data one): the limits apply to all of them and the ranks continue.
+    /// For `RANDOM`, `result.infos` is a reservoir which all sub-queues share.
+    /// If `queue_entry_type` is not `None`, it is reported for every segment instead of the type of the segment's own queue entry.
+    virtual void iterate(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        QueueEntryType queue_entry_type,
+        FileSegmentSummaryInfos & result)
+        = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
