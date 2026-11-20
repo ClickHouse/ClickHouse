@@ -9,6 +9,7 @@
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -17,9 +18,15 @@
 #include <array>
 #include <barrier>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
+
+namespace ProfileEvents
+{
+extern const Event RuntimeFilterDenseBitsetsBuilt;
+}
 
 namespace DB
 {
@@ -195,6 +202,70 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
     EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
 }
 
+template <typename T>
+void checkDenseBitsetFindsExactlyTheKeys()
+{
+    const auto type = std::make_shared<DataTypeNumber<T>>();
+    auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    };
+    auto make_keys = [](std::initializer_list<T> keys)
+    {
+        auto column = ColumnVector<T>::create();
+        for (const T key : keys)
+            column->insertValue(key);
+        return column;
+    };
+    const Int64 min = std::numeric_limits<T>::min();
+    const Int64 max = std::numeric_limits<T>::max();
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+
+    /// The sources overflow their exact sets, and the first one receives one more block as a bitset. The destination
+    /// overflows its exact set when the first source is merged into it, and merges the second source into its bitset.
+    auto first_source = make_filter(0);
+    first_source->insert(make_keys({static_cast<T>(min), static_cast<T>(max), 1}));
+    first_source->insert(make_keys({3}));
+    first_source->finishInsert();
+    auto second_source = make_filter(0);
+    second_source->insert(make_keys({static_cast<T>(min + 1), 5, 9}));
+    second_source->finishInsert();
+    auto destination = make_filter(2);
+    destination->insert(make_keys({7}));
+    destination->merge(*first_source);
+    destination->merge(*second_source);
+    destination->finishInsert();
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 3);
+
+    const auto description = destination->describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::DenseBitset);
+    ASSERT_TRUE(description.keys.has_value());
+    /// For an unsigned type, `min + 1` is the key 1.
+    EXPECT_EQ(*description.keys, std::is_signed_v<T> ? 8 : 7);
+    ASSERT_TRUE(description.bytes.has_value());
+    EXPECT_EQ(*description.bytes, (1ULL << (8 * sizeof(T))) / 8);
+
+    auto probe = ColumnVector<T>::create();
+    for (Int64 key = min; key <= max; ++key)
+        probe->insertValue(static_cast<T>(key));
+    const auto mask = destination->find(ColumnWithTypeAndName(std::move(probe), type, "k"));
+    ASSERT_EQ(mask->size(), static_cast<size_t>(max - min + 1));
+    for (Int64 key = min; key <= max; ++key)
+        EXPECT_EQ(mask->getBool(static_cast<size_t>(key - min)), key == min || key == min + 1 || key == max || key == 1 || key == 3 || key == 5 || key == 7 || key == 9) << key;
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
+{
+    tryRegisterFunctions();
+    checkDenseBitsetFindsExactlyTheKeys<UInt8>();
+    checkDenseBitsetFindsExactlyTheKeys<Int8>();
+    checkDenseBitsetFindsExactlyTheKeys<UInt16>();
+    checkDenseBitsetFindsExactlyTheKeys<Int16>();
+}
+
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
 {
     const auto type = makeUInt64Type();
@@ -232,6 +303,8 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     EXPECT_FALSE(pending_filter->isReady());
     expectMask(apply_filter->execute(arguments, apply_filter->getResultType(), 3, false), {1, 1, 1});
     EXPECT_EQ(pending_filter->getStats().blocks_processed.load(), 0);
+    EXPECT_EQ(pending_filter->getStats().rows_before_ready.load(), 3);
+    EXPECT_EQ(pending_filter->describe().kind, RuntimeFilterKind::Incomplete);
 
     auto second_filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/0,
@@ -650,6 +723,86 @@ TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
     expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5, 7, 42}, type)), {0, 1, 0, 1, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 5);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 2);
+}
+
+TEST(RuntimeFilterLookup, DescribeKeepsThePredictedBloomSaturationAcrossMerges)
+{
+    const auto type = makeUInt64Type();
+    auto make_filter = [&](size_t filters_to_merge)
+    {
+        return RuntimeFilter(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(
+                type,
+                makeGeometry(1_KiB, 1, 3, 0.05),
+                /*distinct_keys_hint_=*/2'000'000,
+                /*distinct_keys_hint_matches_filter_key_=*/true));
+    };
+
+    /// Only the source overflows its exact set; the destination learns of the dropped key set by the merge.
+    auto destination = make_filter(/*filters_to_merge=*/1);
+    destination.insert(makeUInt64Column({1}));
+    auto source = make_filter(/*filters_to_merge=*/0);
+    source.insert(makeUInt64Column({3, 5}));
+    source.finishInsert();
+    EXPECT_EQ(source.describe().disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedSaturated);
+
+    destination.merge(source);
+    destination.finishInsert();
+
+    const auto description = destination.describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::Disabled);
+    EXPECT_EQ(description.disabled_reason, RuntimeFilterDisabledReason::BloomFilterPredictedSaturated);
+    EXPECT_FALSE(description.bytes);
+    EXPECT_FALSE(description.set_bits_ratio);
+}
+
+TEST(RuntimeFilterLookup, ReplacementKeepsStatsAndNamesTheReplacedFilter)
+{
+    const auto type = makeUInt64Type();
+    auto lookup = createRuntimeFilterLookup();
+
+    auto built_filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/100));
+    built_filter->insert(makeUInt64Column({3, 7}));
+    lookup->add("runtime_filter", "runtime_filter", std::move(built_filter));
+
+    auto existing = lookup->find("runtime_filter");
+    ASSERT_TRUE(existing);
+    expectMask(existing->find(makeUInt64ColumnWithType({1, 3}, type)), {0, 1});
+
+    auto replacement = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        existing->getConfig(),
+        RuntimeFilter::SharedFixedHashTable(
+            type,
+            [](const ColumnWithTypeAndName & values)
+            {
+                auto result = ColumnUInt8::create();
+                auto & result_data = result->getData();
+                result_data.resize(values.column->size());
+                for (size_t row = 0; row < values.column->size(); ++row)
+                    result_data[row] = values.column->getUInt(row) == 3 || values.column->getUInt(row) == 7;
+                return result;
+            }));
+    lookup->replace("runtime_filter", std::move(replacement));
+
+    auto filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(filter);
+    expectMask(filter->find(makeUInt64ColumnWithType({5, 7, 9}, type)), {0, 1, 0});
+
+    const auto description = filter->describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::SharedFixedHashMap);
+    ASSERT_TRUE(description.replaced_kind);
+    EXPECT_EQ(*description.replaced_kind, RuntimeFilterKind::ExactSet);
+
+    EXPECT_EQ(&filter->getStats(), &existing->getStats());
+    EXPECT_EQ(filter->getStats().blocks_processed.load(), 2);
+    EXPECT_EQ(filter->getStats().rows_checked.load(), 5);
+    EXPECT_EQ(filter->getStats().rows_passed.load(), 2);
 }
 
 }
