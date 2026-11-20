@@ -111,8 +111,8 @@ bool ProjectionDescription::canProvideParentColumn(const String & column_name) c
     if (column_name == "_part_offset")
         return with_parent_part_offset;
 
-    /// A projection part keeps its rows in another order, so it would give its own positions for these.
-    if (column_name == "_part_granule_offset" || column_name == BlockNumberColumn::name || column_name == BlockOffsetColumn::name)
+    /// A projection part keeps its rows in another order, so it would give its own granule numbers.
+    if (column_name == "_part_granule_offset")
         return false;
 
     return metadata->virtuals.has(column_name);
