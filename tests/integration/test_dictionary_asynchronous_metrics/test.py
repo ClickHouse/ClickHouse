@@ -1,5 +1,5 @@
+import concurrent.futures
 import pytest
-import threading
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -107,27 +107,28 @@ def test_aggregate_metrics(start_cluster):
     node.query("DROP TABLE t_agg;")
 
 
-def get_status_metrics():
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS;")
-    rows = node.query(
-        "SELECT name, value FROM system.asynchronous_metrics "
-        "WHERE name IN ('DictionaryLoadedCount', 'DictionaryFailedCount', 'DictionaryLoadingCount') "
-        "FORMAT TabSeparated"
-    ).strip().splitlines()
+STATUS_METRICS_QUERY = (
+    "SELECT name, value FROM system.asynchronous_metrics "
+    "WHERE name IN ('DictionaryLoadedCount', 'DictionaryFailedCount', 'DictionaryLoadingCount') "
+    "FORMAT TabSeparated"
+)
+
+
+def parse_status_metrics(rows):
     return {n: int(float(v)) for n, v in (r.split("\t") for r in rows)}
 
 
+def get_status_metrics():
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS;")
+    return parse_status_metrics(node.query(STATUS_METRICS_QUERY).strip().splitlines())
+
+
+def dictionary_status_query(name):
+    return f"SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '{name}'"
+
+
 def get_dictionary_status(name):
-    return node.query(
-        f"SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '{name}'"
-    ).strip()
-
-
-def wait_for_dictionary_status(name, status, timeout=30):
-    deadline = time.monotonic() + timeout
-    while get_dictionary_status(name) != status:
-        assert time.monotonic() < deadline, f"dictionary {name} did not reach status {status}"
-        time.sleep(0.05)
+    return node.query(dictionary_status_query(name)).strip()
 
 
 def test_status_counts(start_cluster):
@@ -150,28 +151,46 @@ def test_status_counts(start_cluster):
     node.query("DROP DICTIONARY d_fail;")
 
     # A dictionary whose initial load is in progress is counted in `DictionaryLoadingCount`.
-    node.query(
-        "CREATE DICTIONARY d_slow (k UInt64, v String) PRIMARY KEY k "
-        "SOURCE(CLICKHOUSE(QUERY 'SELECT number AS k, toString(number) AS v FROM numbers(1) WHERE sleep(3) = 0')) "
-        "LAYOUT(HASHED()) LIFETIME(0);"
-    )
+    def create_slow_dictionary():
+        node.query("DROP DICTIONARY IF EXISTS d_slow;")
+        node.query(
+            "CREATE DICTIONARY d_slow (k UInt64, v String) PRIMARY KEY k "
+            "SOURCE(CLICKHOUSE(QUERY 'SELECT number AS k, toString(number) AS v FROM numbers(1) WHERE sleep(3) = 0')) "
+            "LAYOUT(HASHED()) LIFETIME(0);"
+        )
 
-    def check_during_load(in_progress_status, expected_delta):
-        reload = threading.Thread(target=lambda: node.query("SYSTEM RELOAD DICTIONARY d_slow;"))
-        reload.start()
-        try:
-            wait_for_dictionary_status("d_slow", in_progress_status)
-            metrics = get_status_metrics()
-            # The load must still be in progress after the metrics were computed.
-            assert get_dictionary_status("d_slow") == in_progress_status
-            for name, delta in expected_delta.items():
-                assert metrics[name] == baseline[name] + delta, name
-        finally:
-            reload.join()
+    def metrics_during_load(in_progress_status):
+        """The status metrics computed while `d_slow` is in `in_progress_status`, or None if its load ended first; a failed reload raises its own exception."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            reload = executor.submit(node.query, "SYSTEM RELOAD DICTIONARY d_slow;")
+            while get_dictionary_status("d_slow") != in_progress_status:
+                if reload.done():
+                    reload.result()
+                    return None
+                time.sleep(0.05)
+            # One client call, so that the status is read right after the metrics are computed.
+            *rows, status = node.query(
+                f"SYSTEM RELOAD ASYNCHRONOUS METRICS; {STATUS_METRICS_QUERY}; {dictionary_status_query('d_slow')};"
+            ).strip().splitlines()
+            reload.result()
+        return parse_status_metrics(rows) if status == in_progress_status else None
+
+    def check_during_load(in_progress_status, expected_delta, prepare=lambda: None):
+        # A slow client can miss the 3 s load; such a measurement is taken again.
+        for _ in range(5):
+            prepare()
+            metrics = metrics_during_load(in_progress_status)
+            if metrics is not None:
+                break
+        else:
+            pytest.fail(f"the metrics were never computed while d_slow was {in_progress_status}")
+        for name, delta in expected_delta.items():
+            assert metrics[name] == baseline[name] + delta, name
 
     check_during_load(
         "LOADING",
         {"DictionaryLoadingCount": 1, "DictionaryLoadedCount": 0, "DictionaryFailedCount": 0},
+        prepare=create_slow_dictionary,
     )
     assert get_dictionary_status("d_slow") == "LOADED"
 
