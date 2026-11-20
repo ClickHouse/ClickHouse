@@ -207,6 +207,7 @@ FALLBACK_SHARED_MIN_FRACTION = 0.8
 FALLBACK_SHARED_DAYS = 7
 # A PR fails when a query of a test it adds or changes has at least this many runs on the
 # tested server and corr(run number, time) and time(last run) / time(first run) above these.
+# If the PR changes only files under tests/, the reference server's runs must also have one of the two above these.
 RUN_TREND_MIN_RUNS = 5
 RUN_TREND_MIN_CORR = 0.8
 RUN_TREND_MIN_GROWTH = 1.2
@@ -2462,6 +2463,19 @@ def _parse_query_run(fields):
     return (int(fields[1]), int(fields[3]), int(run.group(1)), float(fields[4])) if run else None
 
 
+def _reference_rises(reference):
+    """Whether `(run, time)` pairs of the reference server have corr(run, time) or time(last run) / time(first run)
+    above the run-trend bounds. True without enough runs to judge (the reference server did not run the query)."""
+    if len(reference) < RUN_TREND_MIN_RUNS:
+        return True
+    runs, times = zip(*sorted(reference))
+    if len(set(runs)) == 1 or len(set(times)) == 1:
+        return False
+    return statistics.correlation(runs, times) > RUN_TREND_MIN_CORR or (
+        times[0] > 0 and times[-1] / times[0] > RUN_TREND_MIN_GROWTH
+    )
+
+
 def find_run_trends(query_runs_path, test_names):
     """The queries of `test_names` that get slower run over run on the tested server (`version` 1).
 
@@ -2497,6 +2511,7 @@ def find_run_trends(query_runs_path, test_names):
                     "growth": growth,
                     "tested": times,
                     "reference": [t for _, t in sorted(reference)],
+                    "reference_rises": _reference_rises(reference),
                 }
             )
     return trends
@@ -2520,6 +2535,9 @@ def run_trend_gate(info, test_files, workdir):
             if name in test_files
         }
         trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names) if names else []
+        # A PR that changes only tests runs the same server code on both servers: a rise on the tested server alone is its own drift.
+        if all(f.removeprefix("./").startswith("tests/") for f in changed_files):
+            trends = [t for t in trends if t["reference_rises"]]
     except Exception as e:
         traceback.print_exc()
         return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
