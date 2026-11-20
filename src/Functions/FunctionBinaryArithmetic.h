@@ -3866,9 +3866,10 @@ template <typename LeftColumnType, typename A, typename B>
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 
     /// The String operand of a date and interval operation is parsed for every row, and its default value is not a valid date.
+    /// Neither can a tuple operation be executed on default arguments, it is delegated to an `ITupleFunction`.
     [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        return canBeExecutedOnDefaultArguments()
+        return canBeExecutedOnDefaultArguments() && !prepared_tuple_function && !prepared_tuple_and_number_function
             && !(prepared_interval_function
                  && std::ranges::any_of(arguments, [](const auto & argument) { return isString(removeLowCardinalityAndNullable(argument.type)); }));
     }

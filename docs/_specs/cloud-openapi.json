@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1445979",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1451325",
       "email": "support@clickhouse.com"
     }
   },
@@ -17581,7 +17581,7 @@
       },
       "post": {
         "summary": "Create the PostgreSQL private endpoint",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.",
         "operationId": "postgresPrivateEndpointPost",
         "parameters": [
           {
@@ -29486,7 +29486,8 @@
             "description": "Number of parallel workers to use per table in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -29498,6 +29499,7 @@
             "description": "Number of tables to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "enableFailoverSlots": {
@@ -29971,7 +29973,8 @@
             "description": "Number of parallel workers to use per table in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -29983,6 +29986,7 @@
             "description": "Number of tables to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "deleteOnMerge": {
@@ -30505,7 +30509,9 @@
           },
           "initialLoadParallelism": {
             "description": "Number of parallel workers during initial load.",
-            "type": "number"
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows to snapshot per partition.",
@@ -30513,7 +30519,9 @@
           },
           "snapshotNumberOfParallelTables": {
             "description": "Number of parallel tables to snapshot.",
-            "type": "number"
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
           }
         },
         "required": [
@@ -30776,7 +30784,8 @@
             "description": "Number of parallel workers to use per collection in the initial snapshot phase.",
             "type": "integer",
             "minimum": 1,
-            "example": 1
+            "maximum": 64,
+            "example": 4
           },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
@@ -30788,6 +30797,7 @@
             "description": "Number of collections to snapshot in parallel during the initial load phase.",
             "type": "integer",
             "minimum": 1,
+            "maximum": 64,
             "example": 1
           },
           "deleteOnMerge": {
@@ -37268,6 +37278,76 @@
           "variableName"
         ]
       },
+      "ClickStackSqlQueryFilterInput": {
+        "properties": {
+          "type": {
+            "description": "Discriminator. Must be \"SQL_QUERY\".",
+            "type": "string",
+            "enum": [
+              "SQL_QUERY"
+            ],
+            "example": "SQL_QUERY"
+          },
+          "name": {
+            "description": "Display name for the dashboard filter",
+            "type": "string",
+            "example": "Environment"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection the query runs on.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "Query whose first column populates the dropdown. May use the time macros and other filters' variables, but not `$__sourceTable` or `$__filters`, since the filter has no source.",
+            "type": "string",
+            "example": "SELECT DISTINCT env FROM default.envs ORDER BY env"
+          },
+          "isBroadcastEnabled": {
+            "description": "Must be false or omitted. Allowed values: false.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Must be true if provided, and is true when omitted. Tiles reference the selection as `$variableName`. Allowed values: true.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token that tiles reference this filter's selected value by, as `$variableName`. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed. Must be unique across a dashboard's variable-enabled filters.",
+            "type": "string",
+            "example": "env"
+          },
+          "minSelections": {
+            "description": "Set to 1 to make the filter required.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Set to 1 to make the filter single-select.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "connectionId",
+          "sqlTemplate"
+        ]
+      },
       "ClickStackFilterInput": {
         "oneOf": [
           {
@@ -37281,6 +37361,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackSourceFilterInput"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilterInput"
           }
         ]
       },
@@ -37360,6 +37443,25 @@
           }
         ]
       },
+      "ClickStackSqlQueryFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
       "ClickStackFilter": {
         "oneOf": [
           {
@@ -37373,6 +37475,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackSourceFilter"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSqlQueryFilter"
           }
         ]
       },
@@ -38584,6 +38689,14 @@
             ],
             "example": "Timestamp, Body, ServiceName"
           },
+          "rowKeyExpression": {
+            "description": "Comma-separated expressions that together identify one row, e.g. the partition key, primary key, _block_number and _block_offset. When set, row details are looked up by these columns only. Leave blank to detect keys from table metadata.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toDate(Timestamp), ServiceName, Timestamp, _block_number, _block_offset"
+          },
           "useTextIndexForImplicitColumn": {
             "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
             "type": [
@@ -38864,6 +38977,14 @@
               "null"
             ],
             "example": "Timestamp, Body, ServiceName"
+          },
+          "rowKeyExpression": {
+            "description": "Comma-separated expressions that together identify one row, e.g. the partition key, primary key, _block_number and _block_offset. When set, row details are looked up by these columns only. Leave blank to detect keys from table metadata.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toDate(Timestamp), SpanName, Timestamp, _block_number, _block_offset"
           },
           "useTextIndexForImplicitColumn": {
             "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
@@ -39153,6 +39274,16 @@
             "description": "Floor for the auto-inferred chart granularity, and the scrape interval that `$__rate_interval` is computed from. Set it to the Prometheus scrape interval so a short time range does not produce buckets smaller than that interval. Only constrains \"Auto\" granularity; an explicit granularity picked on a tile is never overridden. Omit for no minimum. Uses the SQL interval format (a positive integer followed by second, minute, hour, or day), not the short form of the materialized view granularity fields.",
             "type": "string",
             "example": "1 minute"
+          },
+          "promqlBackend": {
+            "description": "How PromQL is evaluated on a ClickHouse connection. \"clickhouse-http\" uses ClickHouse's Prometheus HTTP API, which needs ClickHouse 26.6+ with the prometheus_api_v1 handler configured; queries fail with an error when the server does not serve it. \"table-function\" uses the prometheusQuery table functions. \"auto\" (the default when omitted) checks the server and prefers the HTTP API. Ignored when the connection is a Prometheus-compatible endpoint.",
+            "type": "string",
+            "enum": [
+              "auto",
+              "clickhouse-http",
+              "table-function"
+            ],
+            "example": "auto"
           }
         },
         "required": [
@@ -43428,11 +43559,6 @@
       },
       "PostgresPrivateEndpoint": {
         "properties": {
-          "id": {
-            "description": "ID of the private endpoint service.",
-            "type": "string",
-            "example": "ps0123456789abcdefghjkmnpq"
-          },
           "state": {
             "description": "State of the private endpoint service: one of 'creating', 'available', 'deleting'. More states may be added. It is `creating` for about 5 to 10 minutes after creation, then `available`.",
             "type": "string",
@@ -43474,7 +43600,7 @@
           },
           "supportedRegions": {
             "type": "array",
-            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. Requires cross-region private endpoints to be enabled for the organization.",
+            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
             "items": {
               "type": "string"
             },
@@ -43491,7 +43617,6 @@
           }
         },
         "required": [
-          "id",
           "state",
           "ipAddressType",
           "ports",
@@ -43503,7 +43628,7 @@
         "properties": {
           "supportedRegions": {
             "type": "array",
-            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. Requires cross-region private endpoints to be enabled for the organization.",
+            "description": "AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
             "items": {
               "type": "string"
             },
@@ -43532,7 +43657,7 @@
           },
           "supportedRegions": {
             "type": "array",
-            "description": "Full replacement of the supported regions. AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. Requires cross-region private endpoints to be enabled for the organization.",
+            "description": "Full replacement of the supported regions. AWS region IDs, other than the service region, from which VPC endpoints can connect, such as `us-west-2`. The service region is always supported and must not be listed. Requires cross-region private endpoints to be enabled for the organization.",
             "items": {
               "type": "string"
             },
