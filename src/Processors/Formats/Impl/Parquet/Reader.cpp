@@ -91,6 +91,7 @@ namespace ProfileEvents
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
+    extern const Event ParquetMetadataCacheOffsetIndexHits;
 }
 
 namespace DB::Parquet
@@ -382,11 +383,19 @@ void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_du
 void Reader::setFileFooter(
     std::shared_ptr<const FileFooter> footer,
     VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_,
-    SharedFileColumnChunksPtr shared_column_chunks_)
+    SharedFileColumnChunksPtr shared_column_chunks_,
+    KeptOffsetIndexesPtr kept_offset_indexes_)
 {
     file_footer = std::move(footer);
     cached_column_chunks = std::move(cached_column_chunks_);
     shared_column_chunks = std::move(shared_column_chunks_);
+    kept_offset_indexes = std::move(kept_offset_indexes_);
+}
+
+VectorWithMemoryTracking<KeptOffsetIndexes::Entry> Reader::takeReadOffsetIndexes()
+{
+    std::lock_guard lock(read_offset_indexes_mutex);
+    return std::exchange(read_offset_indexes, {});
 }
 
 size_t Reader::numColumnChunks(size_t row_group_idx) const
@@ -1980,14 +1989,23 @@ void Reader::initializePrefetches()
             if (use_offset_index && (!column.served_from_cache || !primitive_columns[column_idx].column_index_conditions.empty()) &&
                 column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length)
             {
-                column.offset_index_prefetch = prefetcher.registerRange(
-                    size_t(column.meta->offset_index_offset),
-                    size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true, /*is_page_index=*/ true);
+                /// An offset index read before is kept with the cached footer, already validated.
+                auto kept_offset_index = kept_offset_indexes
+                    ? kept_offset_indexes->get(row_group.row_group_idx, primitive_columns[column_idx].column_idx) : nullptr;
+                if (kept_offset_index)
+                {
+                    column.offset_index = *kept_offset_index;
+                    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheOffsetIndexHits);
+                }
+                else
+                    column.offset_index_prefetch = prefetcher.registerRange(
+                        size_t(column.meta->offset_index_offset),
+                        size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true, /*is_page_index=*/ true);
             }
 
             /// Column index.
             column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
-                && column.offset_index_prefetch
+                && (column.offset_index_prefetch || !column.offset_index.page_locations.empty())
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
@@ -3402,7 +3420,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
-void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
+void Reader::decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
 {
     auto data = prefetcher.getRangeData(column.offset_index_prefetch);
     deserializeThriftStruct(column.offset_index, data.data(), data.size());
@@ -3446,6 +3464,21 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     {
         column.offset_index.page_locations.clear();
         column.use_column_index = false;
+        return;
+    }
+
+    if (max_read_offset_indexes_bytes)
+    {
+        size_t bytes = KeptOffsetIndexes::entryBytes(column.offset_index);
+        std::lock_guard lock(read_offset_indexes_mutex);
+        if (read_offset_indexes_bytes + bytes <= max_read_offset_indexes_bytes)
+        {
+            read_offset_indexes_bytes += bytes;
+            read_offset_indexes.push_back(
+                {.row_group_idx = row_group.row_group_idx,
+                 .column_idx = column_info.column_idx,
+                 .offset_index = std::make_shared<const parq::OffsetIndex>(column.offset_index)});
+        }
     }
 }
 
