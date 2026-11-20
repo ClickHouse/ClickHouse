@@ -1,0 +1,11 @@
+<test>
+    <create_query>CREATE TABLE logs_in_set (workspace LowCardinality(String), timestamp DateTime64(9) CODEC(ZSTD(1))) ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (workspace, timestamp)</create_query>
+    <fill_query>INSERT INTO logs_in_set SELECT toString(intHash64(number) % 4), addNanoseconds(toDateTime64('2026-11-19 00:00:00', 9), (number * 7) % 1000000007) FROM numbers_mt(100000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE logs_in_set FINAL</fill_query>
+
+    <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') ORDER BY timestamp DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '3') ORDER BY timestamp LIMIT 1000 FORMAT Null</query>
+    <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') ORDER BY timestamp DESC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS logs_in_set</drop_query>
+</test>

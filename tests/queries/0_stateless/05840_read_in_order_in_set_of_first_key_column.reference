@@ -1,0 +1,14 @@
+plan
+ReadType: InReverseOrder
+Read in order by values of the first key column: 3
+ReadType: InOrder
+Read in order by values of the first key column: 3
+0
+0
+results
+1
+1
+1
+1
+1
+1
