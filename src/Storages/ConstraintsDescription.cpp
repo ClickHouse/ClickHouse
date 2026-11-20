@@ -331,6 +331,10 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
                 && (is_composite(arguments[0]) || is_composite(arguments[1])))
                 continue;
 
+            /// `CHECK n = '9'` makes `n` the number 9, but the graph orders the bound '9' as a string.
+            if (arguments.size() == 2 && comparesStringConstantWithOtherType(arguments[0], arguments[1]))
+                continue;
+
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);

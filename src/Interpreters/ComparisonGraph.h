@@ -203,6 +203,10 @@ private:
     std::vector<ssize_t> node_const_upper_bound;
 };
 
+/// Returns true if one argument is a string constant and the other is not a string, like `n < '10'` for a number `n`.
+/// The comparison reads the string as a value of the other type, but the graph orders two strings by their bytes.
+bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
+
 extern template struct GraphComponent<ASTPtr>;
 extern template struct GraphComponent<QueryTreeNodePtr>;
 extern template class ComparisonGraph<ASTPtr>;

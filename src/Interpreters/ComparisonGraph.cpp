@@ -9,6 +9,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Utils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -242,6 +243,16 @@ ComparisonGraphCompareResult inverseCompareResult(ComparisonGraphCompareResult r
 
 }
 
+bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto is_string = [](const QueryTreeNodePtr & node)
+    {
+        return isStringOrFixedString(removeLowCardinalityAndNullable(node->getResultType()));
+    };
+    auto is_string_constant = [&](const QueryTreeNodePtr & node) { return node->as<ConstantNode>() && is_string(node); };
+    return (is_string_constant(left) && !is_string(right)) || (is_string_constant(right) && !is_string(left));
+}
+
 template <ComparisonGraphNodeType Node>
 ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context)
 {
@@ -387,9 +398,10 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 {
     /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array. The graph has no
     /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
+    /// A string constant compared with another type is a value of that type, which the bounds do not know.
     if constexpr (!with_ast)
     {
-        if (mixesEnumAndString(left->getResultType(), right->getResultType()))
+        if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 

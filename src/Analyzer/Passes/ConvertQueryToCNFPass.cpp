@@ -345,6 +345,11 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     if (comparesEnumWithString(helper_arguments[0], helper_arguments[1]))
                         continue;
 
+                    /// `CHECK dt >= 1600000000` must not turn `dt < '2021-01-01 00:00:00'` into `1600000000 < '2021-01-01 00:00:00'`.
+                    if (comparesStringConstantWithOtherType(helper_arguments[0], helper_arguments[1])
+                        && !primary_key_node->getResultType()->equals(*arguments[index]->getResultType()))
+                        continue;
+
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
                     result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
