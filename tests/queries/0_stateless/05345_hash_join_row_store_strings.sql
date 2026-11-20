@@ -6,12 +6,16 @@ DROP TABLE IF EXISTS right;
 DROP TABLE IF EXISTS right_mixed;
 DROP TABLE IF EXISTS right_long;
 DROP TABLE IF EXISTS right_sparse;
+DROP TABLE IF EXISTS left_batches;
+DROP TABLE IF EXISTS right_batches;
 
 CREATE TABLE left (k Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right (k Int64, s1 String, s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_mixed (k Int64, s1 String, s2 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_long (k Int64, s1 String, s2 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_sparse (k Int64, s1 Nullable(String), s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
+CREATE TABLE left_batches (k Int64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE right_batches (k Int64, s1 String, s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 
 SET materialize_statistics_on_insert = 1;
 
@@ -22,6 +26,14 @@ INSERT INTO right VALUES (7, 'dup', NULL);
 INSERT INTO right_mixed SELECT number + 7, if(number % 2 = 0, repeat('a', 20), toString(number)), toString(number) FROM numbers(5);
 INSERT INTO right_long SELECT number + 7, repeat('z', 30), repeat('w', 30) FROM numbers(5);
 INSERT INTO right_sparse SELECT number + 7, if(number % 10 = 0, 'abcd', NULL), if(number % 10 = 0, 'efgh', NULL) FROM numbers(10);
+-- One part read in `k` order: the row of key 0, keys with short values, then keys with long values.
+INSERT INTO left_batches SELECT 0;
+INSERT INTO left_batches SELECT 1 + number % 999 FROM numbers(10000);
+INSERT INTO left_batches SELECT 1000 + number % 100 FROM numbers(15000);
+OPTIMIZE TABLE left_batches FINAL;
+-- Key 0 has 10000 rows. Keys 1000 to 1099 have 64-byte values, few enough to keep the average below 15 bytes.
+INSERT INTO right_batches SELECT if(number < 10000, 0, number - 9999) AS k, if(k < 1000, toString(number), rightPad(toString(number), 64, 'a')) AS s, if(number % 4 = 0, NULL, s)
+FROM numbers(11099);
 
 SET join_algorithm = 'hash';
 
@@ -88,6 +100,13 @@ SELECT 'grace_hash_spilled', (SELECT sum(cityHash64(tuple(*))) FROM left l INNER
     = (SELECT sum(cityHash64(tuple(*))) FROM left l INNER JOIN right r ON l.k = r.k SETTINGS join_algorithm = 'grace_hash', legacy_join_size_limits_trigger_spilling = 1, max_rows_in_join = 3, grace_hash_join_initial_buckets = 1, enable_hash_join_row_store = 0)
 SETTINGS log_comment = 'rs_grace_hash_spilled';
 
+-- One probe block is gathered in several batches: the rows of key 0 span a batch boundary, and the long values at the
+-- end run out of the reserved chars after earlier batches were copied.
+SET max_block_size = 65409, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0, joined_block_split_single_row = 0;
+SELECT 'batches', (SELECT sum(cityHash64(tuple(*))) FROM left_batches l INNER JOIN right_batches r ON l.k = r.k SETTINGS enable_hash_join_row_store = 1)
+    = (SELECT sum(cityHash64(tuple(*))) FROM left_batches l INNER JOIN right_batches r ON l.k = r.k SETTINGS enable_hash_join_row_store = 0)
+SETTINGS log_comment = 'rs_batches';
+
 SYSTEM FLUSH LOGS text_log, query_log;
 
 -- Which queries built a row store.
@@ -102,6 +121,8 @@ SELECT 'grace_hash_spilled spilled', ProfileEvents['ExternalJoinWritePart'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'rs_grace_hash_spilled' AND type = 'QueryFinish';
 
+DROP TABLE right_batches;
+DROP TABLE left_batches;
 DROP TABLE right_sparse;
 DROP TABLE right_long;
 DROP TABLE right_mixed;
