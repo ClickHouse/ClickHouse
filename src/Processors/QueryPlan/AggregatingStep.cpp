@@ -87,6 +87,7 @@ namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 min_bytes_before_external_group_by;
+    extern const SettingsUInt64 aggregation_direct_index_max_cells;
 }
 
 namespace ErrorCodes
@@ -1746,6 +1747,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
+    params.aggregation_direct_index_max_cells = ctx.context->getSettingsRef()[Setting::aggregation_direct_index_max_cells];
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

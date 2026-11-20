@@ -5379,6 +5379,10 @@ Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adapt
 With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
         {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
+    DECLARE(UInt64, aggregation_direct_index_max_cells, 65536, R"(
+For `GROUP BY` of two or more integer keys (including `Date`, `DateTime`, `Enum` and `Bool`) of 3 to 16 bytes together, with aggregate functions, a block whose keys span at most this many combinations (the product of the ranges of the key values within the block) and repeat often enough is aggregated through an array indexed by each row's combination, so that the hash table is looked up once per distinct key of the block instead of once per row. The results are the same. 0 disables it.
+)", 0, \
+        {"26.12", 0, 65536, "New setting to aggregate blocks of narrow-range integer `GROUP BY` keys through a directly indexed array. `compatibility` with versions before 26.12 disables it."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \

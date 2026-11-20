@@ -174,6 +174,9 @@ public:
 
         bool use_aggregation_memory_tracker = true;
 
+        /// Set by the planner after construction; 0, the default for merges and internal aggregations, disables it.
+        UInt64 aggregation_direct_index_max_cells = 0;
+
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
         /// `ORDER BY` with `LIMIT n` by a count: the output of the aggregate
@@ -883,6 +886,16 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
+    /// The width and signedness of each key when the blocks may be aggregated by `executeDirectIndexBlock`; empty otherwise.
+    struct DirectIndexKey
+    {
+        size_t size = 0;
+        bool is_signed = false;
+    };
+    std::vector<DirectIndexKey> direct_index_keys;
+    /// `Params::aggregation_direct_index_max_cells`, clamped so that the cells fit in `UInt32`.
+    UInt64 direct_index_max_cells = 0;
+
     /// How a group's rank by the aggregate of `Params::bucket_top_k` is read: the inline count of an aggregation by a
     /// lone `count`, the state of a `count` among other aggregates, which is the count itself, or the result of
     /// `uniqExact`, `uniqExactIf` or `count` of a `Nullable` argument, which `finalizeBucketTopKRank` reads
@@ -961,9 +974,24 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         LastElementCacheStats & consecutive_keys_cache_stats,
+        AggregatedDataVariants::DirectIndexBackoff & direct_index_backoff,
         bool no_more_keys,
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
+
+    /// Aggregates the rows through an array indexed by each row's combination of key values within the ranges the keys span
+    /// in these rows, looking each distinct key up in the table once. Returns false, leaving the table untouched, when the rows
+    /// are few, span more than `max_cells` combinations or repeat too rarely.
+    template <typename Method>
+    bool executeDirectIndexBlock(
+        Method & method,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        const ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        AggregatedDataVariants::DirectIndexBackoff & backoff,
+        UInt64 max_cells) const;
 
     template <typename Method, typename State>
     void executeImpl(
