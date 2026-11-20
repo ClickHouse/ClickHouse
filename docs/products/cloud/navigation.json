@@ -49,6 +49,7 @@
               "pages": [
                 "products/cloud/features/infrastructure/on-demand-compute",
                 "products/cloud/features/large-single-replica-services",
+                "products/cloud/features/compute-generations",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/replica-aware-routing",
                 "products/cloud/features/infrastructure/shared-catalog",
@@ -178,13 +179,7 @@
                     "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
                   ]
                 },
-                {
-                  "group": "Organization network connectivity",
-                  "hidden": true,
-                  "pages": [
-                    "products/cloud/guides/security/connectivity/org-network-connectivity"
-                  ]
-                }
+                "products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             },
             {
@@ -275,6 +270,7 @@
                 "products/cloud/features/ai-ml/mcp/remote-mcp"
               ]
             },
+            "products/cloud/features/ai-ml/linked-billing-claude-platform",
             "products/cloud/features/ai-ml/model-developer-terms"
           ]
         },
