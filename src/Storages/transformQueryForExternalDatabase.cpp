@@ -6,12 +6,15 @@
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Utils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/IAST.h>
@@ -1248,6 +1251,43 @@ bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const 
     return false;
 }
 
+/// The columns of the external table that its `WHERE` / `PREWHERE` reads under another type than the table has, as a
+/// `Merge` or `Buffer` table reads them: the external database would filter the stored values, not the converted ones.
+NameSet getColumnsReadUnderOtherType(const SelectQueryInfo & query_info, const NamesAndTypesList & available_columns)
+{
+    NameSet names;
+    const auto * query_node = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return names;
+
+    std::vector<const IQueryTreeNode *> nodes;
+    if (query_node->hasWhere())
+        nodes.push_back(query_node->getWhere().get());
+    if (query_node->hasPrewhere())
+        nodes.push_back(query_node->getPrewhere().get());
+
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+
+        if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == query_info.table_expression)
+        {
+            if (auto stored_column = available_columns.tryGetByName(column_node->getColumnName()))
+            {
+                if (!readKeepsStoredValues(stored_column->type, column_node->getColumnType()))
+                    names.insert(stored_column->name);
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes.push_back(child.get());
+    }
+
+    return names;
+}
+
 }
 
 String transformQueryForExternalDatabase(
@@ -1283,6 +1323,9 @@ String transformQueryForExternalDatabase(
 
         auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
 
+        NameSet columns_to_filter_locally = local_only_columns;
+        columns_to_filter_locally.merge(getColumnsReadUnderOtherType(query_info, available_columns));
+
         return transformQueryForExternalDatabaseImpl(
             clone_query,
             column_names,
@@ -1295,7 +1338,7 @@ String transformQueryForExternalDatabase(
             context,
             limit,
             unsupported_functions,
-            local_only_columns,
+            columns_to_filter_locally,
             require_dialect_neutral_literals,
             allow_limit_push_down);
     }
