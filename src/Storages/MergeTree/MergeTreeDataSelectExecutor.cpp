@@ -2865,7 +2865,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         auto filter_granules = [&]
         {
             auto batch = condition->getPossibleGranules(granules);
-            filtered_granules.insert(filtered_granules.end(), batch.begin(), batch.end());
+            filtered_granules.append_range(batch);
             granules.reset();
         };
 
