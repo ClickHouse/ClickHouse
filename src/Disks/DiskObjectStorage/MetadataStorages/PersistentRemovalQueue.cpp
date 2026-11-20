@@ -7,6 +7,7 @@
 #include <Core/Defines.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -19,6 +20,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char persistent_removal_queue_fail_append[];
 }
 
 PersistentRemovalQueue::PersistentRemovalQueue(DiskPtr disk_, const std::string & directory_, size_t compaction_threshold_)
@@ -150,12 +157,35 @@ int64_t PersistentRemovalQueue::markAsRemoved(const StoredObjects & blobs)
 
 void PersistentRemovalQueue::appendToLog(EntryType entry_type, const StoredObjects & blobs)
 {
+    if (log_needs_repair)
+    {
+        compactLog();
+        log_needs_repair = false;
+    }
+
+    try
+    {
+        appendToLogImpl(entry_type, blobs);
+    }
+    catch (...)
+    {
+        log_needs_repair = true;
+        throw;
+    }
+}
+
+void PersistentRemovalQueue::appendToLogImpl(EntryType entry_type, const StoredObjects & blobs)
+{
     bool file_exists = disk->existsFile(log_path);
     auto buf = disk->writeFile(log_path, /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, /* settings */ {});
 
+    fiu_do_on(FailPoints::persistent_removal_queue_fail_append,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "persistent_removal_queue_fail_append");
+    });
+
     /// Write version header if this is a new file.
-    /// An empty or corrupt file cannot exist here because `load` on startup
-    /// detects such cases and `compactLog` rewrites the file with a valid header.
+    /// An empty or corrupt file cannot exist here: `load` and a failed append make `compactLog` rewrite it with a valid header.
     if (!file_exists)
     {
         UInt32 version = CURRENT_VERSION;

@@ -44,6 +44,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(transaction_mutation_csn_store_fail_after_write) \
     ONCE(local_directory_sync_fail) \
+    ONCE(persistent_removal_queue_fail_append) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
