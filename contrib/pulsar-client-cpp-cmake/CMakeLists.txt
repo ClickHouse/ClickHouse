@@ -20,10 +20,11 @@ set(PULSAR_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 set(PROTO_DIR "${LIBRARY_DIR}/proto")
 
-# Use the native protoc when cross-compiling or using musl - the freshly built
-# protoc targets the target platform and cannot run on the host
+# Use the native protoc when cross-compiling - the freshly built protoc targets
+# the target platform and cannot run on the host. The native sub-build is only
+# produced when host != target; a statically linked musl protoc runs on the host
 # (the same rule as in protobuf_generate.cmake).
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 else()
     set(NATIVE_protoc $<TARGET_FILE:protoc>)
