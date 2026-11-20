@@ -32,7 +32,8 @@ void addMergingFinal(
 /// One lane of a distributed task's read: the marks it reads, and what the task does with their rows.
 struct DistributedReadBucket
 {
-    /// The values are written to the task parameter as one byte.
+    /// It is not written to the task parameter. There a lane only says if it has borders, and the read
+    /// that owns the lane knows what it does with borders (`getKindOfLaneWithBorders`).
     enum class Kind : UInt8
     {
         /// A plain or non-intersecting read; `borders` and `index` are unused.
@@ -52,11 +53,21 @@ struct DistributedReadBucket
 
     [[nodiscard]] bool hasBorders() const { return kind != Kind::Plain; }
 
-    /// The format of one lane in the task parameter of a distributed read: the marks, the kind, and for a
-    /// lane with borders the borders (as values of the first columns of `primary_key`) and the index.
+    /// The format of one lane in the task parameter of a distributed read: the marks, a flag that the lane
+    /// has borders, and for a lane with borders the borders (as values of the first columns of
+    /// `primary_key`) and the index.
+    /// The task parameter is a part of what the read step sends to another server, as the bytes of the step
+    /// are, but it has no version of its own. A change of this format thus needs a new version or a new name
+    /// of the read step: a server that does not know it refuses the step before it reads the task parameter.
     void serialize(WriteBuffer & out, const KeyDescription & primary_key) const;
-    void deserialize(ReadBuffer & in, const KeyDescription & primary_key);
+    /// `kind_with_borders` is the kind that a lane with borders gets. With `Plain` the read has no use for
+    /// borders, and a lane with borders is refused.
+    void deserialize(ReadBuffer & in, const KeyDescription & primary_key, Kind kind_with_borders);
 };
+
+/// The kind of a lane with borders in a read: `Merge` in a `FINAL` read, `Trim` in a read divided by
+/// ranges of key values, `Plain` in another read (it has no use for borders).
+DistributedReadBucket::Kind getKindOfLaneWithBorders(bool is_final, bool divided_by_key_ranges);
 
 /// For a bucket of a read divided by ranges of key values (`Kind::Trim`): keeps in `pipe` only the rows of
 /// the range of the bucket. The marks of such a bucket also hold the granules that cross a border of the

@@ -195,7 +195,7 @@ Pipe buildFullFinalMergePipe(
 void DistributedReadBucket::serialize(WriteBuffer & out, const KeyDescription & primary_key) const
 {
     marks.serialize(out, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-    writeBinary(static_cast<UInt8>(kind), out);
+    writeBinary(hasBorders(), out);
     if (!hasBorders())
         return;
 
@@ -209,16 +209,23 @@ void DistributedReadBucket::serialize(WriteBuffer & out, const KeyDescription & 
     writeVarUInt(index, out);
 }
 
-void DistributedReadBucket::deserialize(ReadBuffer & in, const KeyDescription & primary_key)
+void DistributedReadBucket::deserialize(ReadBuffer & in, const KeyDescription & primary_key, Kind kind_with_borders)
 {
     marks.deserialize(in, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-    UInt8 kind_value = 0;
-    readBinary(kind_value, in);
-    if (kind_value > static_cast<UInt8>(Kind::Trim))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Distributed read: unknown kind {} of a read bucket", static_cast<UInt32>(kind_value));
-    kind = static_cast<Kind>(kind_value);
-    if (!hasBorders())
+    UInt8 has_borders = 0;
+    readBinary(has_borders, in);
+    if (has_borders > 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: unknown value {} of the flag of borders of a read bucket", static_cast<UInt32>(has_borders));
+    kind = has_borders ? kind_with_borders : Kind::Plain;
+    if (!has_borders)
         return;
+
+    /// For example, a read divided by ranges of key values that came under the step name of a usual read.
+    /// Without this the task would return all the rows of its marks, also those of another task.
+    if (kind_with_borders == Kind::Plain)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: a read bucket has borders, but the read has no `FINAL` and is not divided by ranges of key values");
 
     FormatSettings format_settings;
     size_t border_size = 0;
@@ -233,6 +240,15 @@ void DistributedReadBucket::deserialize(ReadBuffer & in, const KeyDescription & 
         for (size_t i = 0; i < border_size; ++i)
             primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], in, format_settings);
     readVarUInt(index, in);
+}
+
+DistributedReadBucket::Kind getKindOfLaneWithBorders(bool is_final, bool divided_by_key_ranges)
+{
+    if (is_final && divided_by_key_ranges)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Distributed read: a read with `FINAL` cannot be divided by ranges of key values");
+    if (divided_by_key_ranges)
+        return DistributedReadBucket::Kind::Trim;
+    return is_final ? DistributedReadBucket::Kind::Merge : DistributedReadBucket::Kind::Plain;
 }
 
 void addKeyRangeTrimToPipe(

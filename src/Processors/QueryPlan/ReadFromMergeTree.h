@@ -275,7 +275,12 @@ public:
         size_t replica_number);
 
     static constexpr auto name = "ReadFromMergeTree";
+    /// The name in a serialized plan of a read that is divided by ranges of key values.
+    static constexpr auto name_by_key_ranges = "ReadFromMergeTreeByKeyRanges";
     String getName() const override { return name; }
+    /// A read divided by ranges of key values needs code on the worker that keeps only the rows of the range
+    /// of each task. A server without that code does not know the second name and refuses the plan.
+    [[nodiscard]] String getSerializationName() const override;
 
     QueryPlanStepPtr clone() const override;
 
@@ -754,6 +759,11 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    /// Whether each task of this distributed read keeps only the rows of one range of key values. The
+    /// initiator sets it in `setupDistributedReadBucketsByKeyRanges`. A worker sets it for a step that it
+    /// restores from the name `name_by_key_ranges`.
+    bool isDividedByKeyRanges() const { return divided_by_key_ranges; }
+    void setDividedByKeyRanges() { divided_by_key_ranges = true; }
     /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
     /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and
     /// its replicated build side) without their bucket blobs colliding in the shared parameter map.
@@ -781,6 +791,8 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    /// Restores a step that was written under the name `name_by_key_ranges`.
+    static std::unique_ptr<IQueryPlanStep> deserializeByKeyRanges(Deserialization & ctx);
 
 private:
     /// The name this read is coordinated under, which every replica must announce identically.
@@ -1032,6 +1044,8 @@ private:
     /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
     VectorWithMemoryTracking<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
+    /// Each task keeps only the rows of one range of key values: it trims a lane with borders to them.
+    bool divided_by_key_ranges = false;
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     VectorWithMemoryTracking<DistributedReadBucket> distributed_read_task_buckets;

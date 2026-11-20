@@ -5258,6 +5258,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_buckets = distributed_read_buckets;
     cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
     cloned_step->distributed_read_param_name = distributed_read_param_name;
+    cloned_step->divided_by_key_ranges = divided_by_key_ranges;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
     if (deferred_row_level_filter)
@@ -5698,8 +5699,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, the kind of
-    /// the bucket, and (for a merge layer or a key range) the borders + index. Marks are matched to local parts by
+    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, a flag that
+    /// the lane has borders, and (for a merge layer or a key range) the borders + index. Marks are matched to local parts by
     /// name, and a part this replica no longer has is a retryable error (it diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
@@ -5708,6 +5709,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
         ReadBufferFromString buf(blob);
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        const auto kind_with_borders = getKindOfLaneWithBorders(isQueryWithFinal(), divided_by_key_ranges);
         size_t num_lanes = 0;
         readVarUInt(num_lanes, buf);
         distributed_read_task_buckets.clear();
@@ -5715,7 +5717,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         for (size_t lane = 0; lane < num_lanes; ++lane)
         {
             DistributedReadBucket bucket;
-            bucket.deserialize(buf, primary_key);
+            bucket.deserialize(buf, primary_key, kind_with_borders);
             distributed_read_task_buckets.push_back(std::move(bucket));
         }
 
@@ -7530,6 +7532,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         setDistributedRead(buckets.size());
         distributed_read_param_name = nextDistributedReadParamName();
         distributed_read_buckets = std::move(buckets);
+        divided_by_key_ranges = false;
         return distributed_read_buckets.size();
     }
 
@@ -7666,6 +7669,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         buckets.size(), lanes_per_task, tasks, target_buckets);
     distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = false;
     setDistributedRead(tasks);
     distributed_read_param_name = nextDistributedReadParamName();
     return tasks;
@@ -7741,6 +7745,7 @@ size_t ReadFromMergeTree::setupDistributedReadBucketsByPartitionValue(size_t com
     setDistributedRead(buckets.size());
     distributed_read_param_name = nextDistributedReadParamName();
     distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = false;
     return distributed_read_buckets.size();
 }
 
@@ -7782,6 +7787,7 @@ size_t ReadFromMergeTree::setupDistributedReadBucketsByKeyRanges(
     setDistributedRead(buckets.size());
     distributed_read_param_name = nextDistributedReadParamName();
     distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = true;
     return distributed_read_buckets.size();
 }
 
@@ -8176,14 +8182,29 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     return step;
 }
 
+String ReadFromMergeTree::getSerializationName() const
+{
+    return divided_by_key_ranges ? name_by_key_ranges : name;
+}
+
+std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserializeByKeyRanges(Deserialization & ctx)
+{
+    auto step = deserialize(ctx);
+    /// The step is not a `ReadFromMergeTree` when the table has no parts on this server.
+    if (auto * read = typeid_cast<ReadFromMergeTree *>(step.get()))
+        read->setDividedByKeyRanges();
+    return step;
+}
+
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `allow_query_condition_cache` flag bit (bit 64 of the flags byte).
-    registry.registerStep(
-        "ReadFromMergeTree",
-        ReadFromMergeTree::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}});
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}};
+    registry.registerStep(ReadFromMergeTree::name, ReadFromMergeTree::deserialize, versions);
+    /// A read divided by ranges of key values has the same bytes under its own name (`getSerializationName`).
+    registry.registerStep(ReadFromMergeTree::name_by_key_ranges, ReadFromMergeTree::deserializeByKeyRanges, versions);
 }
 
 }
