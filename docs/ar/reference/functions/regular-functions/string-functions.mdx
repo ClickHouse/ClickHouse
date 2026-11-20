@@ -195,18 +195,20 @@ SELECT ascii('234')
 
 ## base32Decode {#base32Decode}
 
-استُحدثت في: v25.6.0
+أُضيف في: v25.6.0
 
 تفك ترميز سلسلة [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) ‏(RFC 4648).
 إذا لم تكن السلسلة مرمّزة بترميز Base32 صالح، فسيتم رفع استثناء.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 base32Decode(encoded)
 ```
 
-**المعاملات**
+**الأسماء البديلة**: `from_base32`
+
+**الوسيطات**
 
 * `encoded` — عمود أو ثابت من نوع String. [`String`](/ar/reference/data-types/string)
 
@@ -232,7 +234,7 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 أُضيف في: v25.6.0
 
-يُشفِّر سلسلة نصية باستخدام [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
+يُشفِّر سلسلة نصية باستخدام [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
 
 **الصيغة**
 
@@ -240,13 +242,15 @@ SELECT base32Decode('IVXGG33EMVSA====');
 base32Encode(plaintext)
 ```
 
+**الأسماء البديلة**: `to_base32`
+
 **الوسائط**
 
 * `plaintext` — النص الصريح المطلوب ترميزه. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُرجِع سلسلة نصية تحتوي على القيمة المُرمَّزة للوسيطة. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
+تُرجِع سلسلة نصية تحتوي على القيمة المُرمَّزة للوسيطة. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 
 **أمثلة**
 
@@ -416,7 +420,7 @@ SELECT base64Encode('clickhouse')
 
 يفك ترميز سلسلة من تمثيل [Base64](https://en.wikipedia.org/wiki/Base64) باستخدام أبجدية آمنة لعناوين URL، وفقًا للمعيار RFC 4648.
 كما تُقبل أيضًا الأبجدية القياسية (`+` و `/`) عند فك الترميز.
-اعتبارًا من الإصدار 26.7، تُتجاهل في الإدخال محارف المسافة، والجدولة (`\t`)، وتغذية السطر (`\n`)، والعودة إلى أول السطر (`\r`)، وتغذية الصفحة (`\f`) (أما الإصدارات الأقدم فكانت ترفض الإدخال الذي يحتوي عليها). ويُرفض محرف الجدولة العمودية (`\v`) وأي محارف أخرى خارج أبجدية Base64.
+اعتبارًا من الإصدار 26.7، تُتجاهل في الإدخال محارف المسافة، والجدولة (`\t`)، ومحرف line feed (`\n`)، ومحرف الإرجاع (`\r`)، ومحرف form feed (`\f`) (أما الإصدارات الأقدم فكانت ترفض الإدخال الذي يحتوي عليها). ويُرفض محرف الجدولة العمودية (`\v`) وأي محارف أخرى خارج أبجدية Base64.
 يؤدي إلى إطلاق استثناء في حال حدوث خطأ.
 
 **الصيغة**
@@ -424,6 +428,8 @@ SELECT base64Encode('clickhouse')
 ```sql
 base64URLDecode(encoded)
 ```
+
+**الأسماء البديلة**: `from_base64url`
 
 **الوسائط**
 
@@ -451,7 +457,7 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 أُضيف في: v18.16.0
 
-يُرمِّز سلسلة نصية باستخدام تمثيل [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) ‏(RFC 4648) وبالأبجدية الآمنة لعناوين URL.
+يُشفِّر سلسلة نصية باستخدام تمثيل [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) ‏(RFC 4648) وبالأبجدية الآمنة لعناوين URL.
 
 **الصيغة**
 
@@ -459,13 +465,15 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 base64URLEncode(plaintext)
 ```
 
+**الأسماء البديلة**: `to_base64url`
+
 **الوسائط**
 
 * `plaintext` — عمود أو ثابت يحتوي على نص صريح لترميزه. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُرجع سلسلة تحتوي على القيمة المُرمَّزة للوسيط. [`String`](/ar/reference/data-types/string)
+تُرجع سلسلة تحتوي على القيمة المُرمَّزة للوسيط. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -1098,7 +1106,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**الأسماء البديلة**: `levenshteinDistanceUTF8`
+**الأسماء البديلة**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **المعاملات**
 
@@ -1171,6 +1179,8 @@ SELECT
 endsWith(s, suffix)
 ```
 
+**الأسماء البديلة**: `ends_with`
+
 **المعاملات**
 
 * `s` — السلسلة النصية المراد التحقق منها. [`String`](/ar/reference/data-types/string)
@@ -1182,7 +1192,7 @@ endsWith(s, suffix)
 
 **أمثلة**
 
-**مثال للاستخدام**
+**مثال على الاستخدام**
 
 ```sql title=Query
 SELECT endsWith('ClickHouse', 'House');
@@ -2874,7 +2884,7 @@ SELECT sparseGramsUTF8('алиса', 3)
 
 ## startsWith {#startsWith}
 
-قُدِّمت في: v1.1.0
+قُدِّمت في: v1.1.0
 
 يتحقق مما إذا كانت السلسلة النصية تبدأ بالسلسلة النصية المحددة.
 
@@ -2883,6 +2893,8 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```sql
 startsWith(s, prefix)
 ```
+
+**الأسماء البديلة**: `starts_with`
 
 **الوسائط**
 
