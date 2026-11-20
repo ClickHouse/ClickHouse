@@ -1,0 +1,10 @@
+--- the file name of a distributed Web task is the visible one
+part1.tsv	6
+part2.tsv.gz	7
+--- and the compression is inferred from it
+7
+--- the same read without a cluster reports the same names
+part1.tsv	6
+part2.tsv.gz	7
+--- a literal URL keeps the response headers
+1	6

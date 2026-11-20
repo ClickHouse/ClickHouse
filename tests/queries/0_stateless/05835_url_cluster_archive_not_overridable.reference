@@ -1,0 +1,10 @@
+--- a literal URL keeps the contract: the nodes infer the structure themselves
+3
+--- an archive source rejects it instead of sending the inferred structure
+A `NOT OVERRIDABLE` `structure` of a named collection is not supported for a wildcard or archive source
+--- an archive source rejects a NOT OVERRIDABLE format as well
+A `NOT OVERRIDABLE` `format` of a named collection is not supported for a wildcard or archive source
+--- and so does a wildcard source
+A `NOT OVERRIDABLE` `format` of a named collection is not supported for a wildcard or archive source
+--- while the non-cluster read of the same source infers it locally
+3
