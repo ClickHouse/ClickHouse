@@ -205,7 +205,10 @@ void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size
     if (enable_vertical_final)
     {
         if (!chunk->replace_final_selection)
+        {
             chunk->replace_final_selection = ColumnUInt64::create();
+            chunk->replace_final_selection_start = num_selected_rows;
+        }
         selection = &assert_cast<ColumnUInt64 &>(*chunk->replace_final_selection).getData();
     }
 
@@ -221,6 +224,7 @@ void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size
             selection->resize(old_size + (end - begin));
             for (size_t row = begin; row < end; ++row)
                 (*selection)[old_size + row - begin] = row;
+            num_selected_rows += end - begin;
         }
         else
             merged_data->insertRows(current->all_columns, begin, end - begin, num_rows);
@@ -241,7 +245,10 @@ void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size
         if (selection)
         {
             if (!skipped)
+            {
                 selection->push_back(row);
+                ++num_selected_rows;
+            }
         }
         else if (skipped)
         {
