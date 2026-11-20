@@ -753,6 +753,10 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
+    /// A full exact set means the switch from it threw and the caller went on inserting. It holds every key, so retry.
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_); exact_filter && exact_filter->isFull())
+        switchFromExactFilter(filter_);
+
     if (std::holds_alternative<KeySetDropped>(filter_))
         return;
 
@@ -924,10 +928,11 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    auto & approximate_filter
-        = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
+    /// Filled before it replaces the keys, so a refused allocation leaves the filter as it was.
+    ApproximateSetRuntimeFilter approximate_filter(grown_bloom_filter_bytes, bloom_filter_hash_functions);
     approximate_filter.insert(values);
-    return &approximate_filter;
+    static_assert(std::is_nothrow_move_constructible_v<ApproximateSetRuntimeFilter>);
+    return &filter_.emplace<ApproximateSetRuntimeFilter>(std::move(approximate_filter));
 }
 
 void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
