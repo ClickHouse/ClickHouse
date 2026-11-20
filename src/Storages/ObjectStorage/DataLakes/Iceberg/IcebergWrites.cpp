@@ -117,6 +117,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -1593,13 +1594,13 @@ void IcebergStorageSink::finalizeBuffers()
             /// The writers that lost the same race would otherwise look up the new base and commit at the same moment
             /// again, and only one of them would win again. The delay is taken before the lookup, so that the base
             /// the next attempt commits on is as recent as possible.
+            UInt64 delay_ms = 0;
             if (backoff_ms > 0)
             {
-                sleepForMilliseconds(std::uniform_int_distribution<UInt64>(0, backoff_ms)(thread_local_rng));
+                delay_ms = std::uniform_int_distribution<UInt64>(0, backoff_ms)(thread_local_rng);
                 backoff_ms = backoff_ms > max_backoff_ms / 2 ? max_backoff_ms : backoff_ms * 2;
             }
-            if (auto process_list_element = context->getProcessListElement())
-                process_list_element->checkTimeLimit();
+            waitBeforeCommitRetry(delay_ms);
 
             rebaseOnLatestMetadata();
         }
@@ -1614,6 +1615,27 @@ void IcebergStorageSink::finalizeBuffers()
     /// The last conflict kept the files for a retry that will not happen.
     removeDataFilesAndManifests();
     throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
+}
+
+void IcebergStorageSink::waitBeforeCommitRetry(UInt64 delay_ms)
+{
+    /// The delay is waited in slices, so that `KILL QUERY` and `max_execution_time` interrupt a long one.
+    static constexpr UInt64 max_slice_ms = 100;
+    auto process_list_element = context->getProcessListElement();
+    while (true)
+    {
+        if (isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Insert into Iceberg was cancelled while waiting to retry the commit");
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        if (delay_ms == 0)
+            return;
+
+        const UInt64 slice_ms = std::min(delay_ms, max_slice_ms);
+        sleepForMilliseconds(slice_ms);
+        delay_ms -= slice_ms;
+    }
 }
 
 void IcebergStorageSink::releaseBuffers()

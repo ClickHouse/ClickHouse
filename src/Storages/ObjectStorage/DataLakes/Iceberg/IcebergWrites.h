@@ -235,6 +235,8 @@ private:
     bool initializeMetadata();
     /// Makes the latest committed metadata the base of the next commit attempt.
     void rebaseOnLatestMetadata();
+    /// Waits `delay_ms` before the next commit attempt. Throws if the insert is cancelled or runs out of time meanwhile.
+    void waitBeforeCommitRetry(UInt64 delay_ms);
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
