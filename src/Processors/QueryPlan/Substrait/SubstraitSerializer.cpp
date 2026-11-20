@@ -807,6 +807,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
     const auto & join_settings = join.getSettings();
     if (truncatesResult({join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode}))
         return blocked("max_rows_in_join or max_bytes_in_join with join_overflow_mode = 'break' is not supported");
+    if (truncatesResult(join.getSortingSettings().size_limits))
+        return blocked("max_rows_to_sort or max_bytes_to_sort with sort_overflow_mode = 'break' is not supported");
 
     /// JoinRel direct output is all left fields then all right fields.
     SubstraitSchema combined = left.schema;
