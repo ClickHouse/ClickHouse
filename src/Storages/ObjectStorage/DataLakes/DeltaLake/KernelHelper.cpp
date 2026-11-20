@@ -69,7 +69,7 @@ namespace
 /// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
 /// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
 /// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
-void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, std::string_view value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -233,7 +233,7 @@ public:
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        auto set_option = [&](const std::string & name, const std::string & value)
+        auto set_option = [&](const std::string & name, std::string_view value)
         {
             setBuilderOption(builder, name, value);
         };
@@ -248,6 +248,9 @@ public:
         /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
+        /// TODO(mstetsyuk): the kernel copies the value into an owned Rust `String` that `object_store`
+        /// keeps for the engine's lifetime, so the secret is dumpable here. Needs a credential callback
+        /// in the delta-kernel-rs FFI (`AmazonS3Builder::with_credentials`) to keep only per-request copies.
         if (!secret_access_key.empty())
             set_option("aws_secret_access_key", secret_access_key);
 
@@ -263,7 +266,7 @@ public:
 
         set_option("aws_bucket", url.bucket);
 
-        if (url.uri_str.starts_with("http"))
+        if (std::string_view(url.uri_str).starts_with("http"))
         {
             set_option("allow_http", "true");
             set_option("aws_endpoint", url.endpoint);
@@ -284,7 +287,7 @@ public:
                 set_option("aws_sse_customer_key_base64", header.value);
                 has_sse_customer_key = true;
             }
-            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
+            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(std::string_view(header.value), "requester"))
             {
                 set_option("aws_request_payer", "true");
                 request_payer = true;
@@ -718,7 +721,7 @@ namespace DB
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSecretString secret_access_key;
     extern const S3AuthSettingsString region;
 }
 
