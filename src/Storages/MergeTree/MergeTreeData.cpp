@@ -6789,6 +6789,31 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     NamesAndTypesList columns_to_check_conversion;
 
+    /// Rejects a type change of a column that a key MATERIALIZED column is computed from (see key_materialized_columns).
+    auto check_key_materialized_sources = [&](const AlterCommand & command)
+    {
+        if (!command.data_type)
+            return;
+
+        auto it = old_types.find(command.column_name);
+        if (it == old_types.end() || it->second->equals(*command.data_type))
+            return;
+
+        for (const auto & key_materialized : key_materialized_columns)
+        {
+            /// The altered column can reach the key column through other MATERIALIZED columns.
+            if (materialized_dependencies.findColumnsToRecalculate(key_materialized, {command.column_name}).empty())
+                continue;
+
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} from type {} to type {} is forbidden because it is used by "
+                            "the MATERIALIZED column {}, which is part of a key expression and cannot be "
+                            "recalculated", backQuoteIfNeed(command.column_name),
+                            it->second->getName(), command.data_type->getName(),
+                            backQuoteIfNeed(key_materialized));
+        }
+    };
+
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
@@ -6818,9 +6843,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (auto new_type = getNewTypeOfSpecialColumn("version", *version_column, command))
                     checkVersionColumnTypesConversion(version_column->type.get(), new_type.get(), version_column->name);
 
-                /// No other checks required for the version column itself, unlike for a column that contains it.
+                /// No other checks required for the version column itself, unlike for a column that contains it,
+                /// except that a key MATERIALIZED column computed from it cannot be recalculated.
                 if (!version_column->isSubcolumn())
+                {
+                    check_key_materialized_sources(command);
                     continue;
+                }
             }
         }
 
@@ -7054,22 +7083,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                for (const auto & key_materialized : key_materialized_columns)
-                {
-                    /// The altered column can reach the key column through other MATERIALIZED columns.
-                    if (!command.data_type
-                        || materialized_dependencies.findColumnsToRecalculate(key_materialized, {command.column_name}).empty())
-                        continue;
-
-                    auto it = old_types.find(command.column_name);
-                    if (it != old_types.end() && !it->second->equals(*command.data_type))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "ALTER of column {} from type {} to type {} is forbidden because it is used by "
-                                        "the MATERIALIZED column {}, which is part of a key expression and cannot be "
-                                        "recalculated", backQuoteIfNeed(command.column_name),
-                                        it->second->getName(), command.data_type->getName(),
-                                        backQuoteIfNeed(key_materialized));
-                }
+                check_key_materialized_sources(command);
 
                 if (old_metadata.getColumns().has(command.column_name))
                 {
