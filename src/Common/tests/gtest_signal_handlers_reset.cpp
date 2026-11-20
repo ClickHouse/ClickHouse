@@ -10,6 +10,9 @@
 
 #if defined(OS_HAS_SIGNAL_HANDLERS)
 
+#include <Poco/SignalHandler.h>
+#include <Poco/Util/Application.h>
+
 namespace
 {
 
@@ -27,44 +30,70 @@ void require(bool condition, const std::string & what)
     }
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 [[noreturn]] void checkResetRestoresPreviousActions()
 {
     /// Everything `setupCommonDeadlySignalHandlers` registers.
     const std::vector<int> registered{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP};
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     /// Stands for a handler installed before ours, like a sanitizer runtime's.
     struct sigaction sentinel{};
     sentinel.sa_sigaction = sentinelHandler;
     sentinel.sa_flags = SA_SIGINFO;
     require(sigemptyset(&sentinel.sa_mask) == 0, "sigemptyset");
-    require(sigaction(SIGTRAP, &sentinel, nullptr) == 0, "installing the sentinel");
+    for (int sig : registered)
+        require(sigaction(sig, &sentinel, nullptr) == 0, "installing the sentinel for signal " + std::to_string(sig));
 
-    std::vector<struct sigaction> before(registered.size());
-    for (size_t i = 0; i < registered.size(); ++i)
-        require(sigaction(registered[i], nullptr, &before[i]) == 0, "reading the action of signal " + std::to_string(registered[i]));
-
+    /// Registered twice, so only the first registration replaced the sentinel.
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
 
-    struct sigaction installed{};
-    require(sigaction(SIGTRAP, nullptr, &installed) == 0, "reading the installed SIGTRAP action");
-    require(installed.sa_sigaction != sentinelHandler, "the sentinel was replaced");
+    for (int sig : registered)
+    {
+        struct sigaction installed{};
+        require(sigaction(sig, nullptr, &installed) == 0, "reading the installed action of signal " + std::to_string(sig));
+        require(installed.sa_sigaction != sentinelHandler, "the sentinel was replaced, signal " + std::to_string(sig));
+    }
 
     HandledSignals::instance().reset(/* close_pipe= */ false);
 
-    for (size_t i = 0; i < registered.size(); ++i)
+    for (int sig : registered)
     {
-        const std::string suffix = ", signal " + std::to_string(registered[i]);
+        const std::string suffix = ", signal " + std::to_string(sig);
         struct sigaction after{};
-        require(sigaction(registered[i], nullptr, &after) == 0, "reading the restored action" + suffix);
-        require(after.sa_sigaction == before[i].sa_sigaction, "the previous handler is back" + suffix);
-        require((after.sa_flags & SA_SIGINFO) == (before[i].sa_flags & SA_SIGINFO), "SA_SIGINFO is back" + suffix);
+        require(sigaction(sig, nullptr, &after) == 0, "reading the restored action" + suffix);
+        require(after.sa_sigaction == sentinelHandler, "the previous handler is back" + suffix);
+        require((after.sa_flags & SA_SIGINFO) != 0, "SA_SIGINFO is back" + suffix);
     }
-#pragma clang diagnostic pop
 
     std::_Exit(0);
 }
+
+struct PocoSignalHandler : Poco::SignalHandler
+{
+    static auto address() { return &handleSignal; }
+};
+
+[[noreturn]] void checkApplicationKeepsFaultActions()
+{
+    /// At most one may exist; leaked, the child ends with `_Exit`.
+    if (Poco::Util::Application::instanceRawPtr() == nullptr)
+        new Poco::Util::Application;
+
+    for (int sig : {SIGSEGV, SIGBUS, SIGILL, SIGSYS})
+    {
+        const std::string suffix = ", signal " + std::to_string(sig);
+        struct sigaction current{};
+        require(sigaction(sig, nullptr, &current) == 0, "reading the action" + suffix);
+        require(current.sa_handler != PocoSignalHandler::address(), "the Poco handler is not installed" + suffix);
+    }
+
+    std::_Exit(0);
+}
+
+#pragma clang diagnostic pop
 
 }
 
@@ -74,6 +103,12 @@ TEST(SignalHandlersDeathTest, ResetRestoresPreviousActions)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     EXPECT_EXIT(checkResetRestoresPreviousActions(), ::testing::ExitedWithCode(0), ".*");
+}
+
+TEST(SignalHandlersDeathTest, ApplicationKeepsFaultActions)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkApplicationKeepsFaultActions(), ::testing::ExitedWithCode(0), ".*");
 }
 
 #endif
