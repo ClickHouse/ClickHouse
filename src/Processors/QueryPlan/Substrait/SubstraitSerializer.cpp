@@ -107,7 +107,7 @@ struct AggregateEmission
 /// One argument list the aggregate accepts, and what to emit for a call with it.
 struct AggregateOverload
 {
-    std::vector<std::string_view> arg_types;
+    VectorWithMemoryTracking<std::string_view> arg_types;
     std::string_view urn;
 
     /// Over empty input ClickHouse returns a default (sum of nothing is 0) where most Substrait functions return NULL.
@@ -122,19 +122,19 @@ struct AggregateOverload
 struct MappedAggregate
 {
     substrait::AggregateFunction::AggregationInvocation invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL;
-    std::vector<AggregateOverload> overloads;
+    VectorWithMemoryTracking<AggregateOverload> overloads;
 };
 
 /// The aggregates we can translate, keyed by ClickHouse name. New aggregates go here. Only call via aggregateTable.
-std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
+UnorderedMapWithMemoryTracking<std::string_view, MappedAggregate> buildAggregateTable()
 {
     const FunctionOptions overflow_silent = {{"overflow", "SILENT"}};
-    std::unordered_map<std::string_view, MappedAggregate> table;
+    UnorderedMapWithMemoryTracking<std::string_view, MappedAggregate> table;
 
     /// count of nothing is zero on both sides, so keyless count is the same function.
     /// count takes one argument of any type or none. With none its compound signature is "count:".
     const AggregateEmission count_emission{.name = "count", .return_type = "i64", .return_nullable = false};
-    const auto count_overload = [&](std::vector<std::string_view> arg_types)
+    const auto count_overload = [&](VectorWithMemoryTracking<std::string_view> arg_types)
     {
         return AggregateOverload{
             .arg_types = std::move(arg_types),
@@ -205,7 +205,7 @@ std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
     return table;
 }
 
-const std::unordered_map<std::string_view, MappedAggregate> & aggregateTable()
+const UnorderedMapWithMemoryTracking<std::string_view, MappedAggregate> & aggregateTable()
 {
     static const auto table = buildAggregateTable();
     return table;
@@ -220,7 +220,7 @@ substrait::Type makeAggregateOutputType(std::string_view output_short, bool null
 
 std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
     const AggregateDescription & description,
-    const std::vector<substrait::Type> & argument_types,
+    const VectorWithMemoryTracking<substrait::Type> & argument_types,
     bool has_grouping_keys,
     SubstraitPlanExtensions & extensions)
 {
@@ -235,7 +235,7 @@ std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
         return blocked(fmt::format("aggregate function {} is not mapped to Substrait", name));
     const MappedAggregate & mapping = it->second;
 
-    std::vector<String> arg_shorts;
+    VectorWithMemoryTracking<String> arg_shorts;
     for (const auto & type : argument_types)
         arg_shorts.push_back(substraitTypeShortName(type, extensions));
 
@@ -319,7 +319,7 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
         size_t next_child = 0;
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -344,7 +344,7 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
         auto & state = states[&node];
         stack.pop_back();
 
-        std::vector<NodeState *> children;
+        VectorWithMemoryTracking<NodeState *> children;
         children.reserve(node.children.size());
         bool children_eligible = true;
         bool any_child_sorted = false;
@@ -374,11 +374,11 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
     return states.at(&root).verdict;
 }
 
-std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
+VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
 SubstraitPlanSerializer::blockingSteps(const QueryPlan::Node & root) const
 {
-    std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>> result;
-    std::vector<const QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>> result;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -428,7 +428,7 @@ substrait::Plan SubstraitPlanSerializer::takePlan(const QueryPlan::Node & root)
 
 /// A converter builds its relation by moving parts out of its children's states.
 std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
-SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children)
+SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, VectorWithMemoryTracking<NodeState *> children)
 {
     const IQueryPlanStep * step = node.step.get();
 
@@ -613,8 +613,8 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
 
     for (const auto & description : params.aggregates)
     {
-        std::vector<size_t> argument_positions;
-        std::vector<substrait::Type> argument_types;
+        VectorWithMemoryTracking<size_t> argument_positions;
+        VectorWithMemoryTracking<substrait::Type> argument_types;
         for (const auto & argument : description.argument_names)
         {
             const auto position = child.schema.positionByName(argument);
@@ -744,7 +744,7 @@ SubstraitPlanSerializer::convertOffset(const OffsetStep & offset, NodeState & ch
 }
 
 std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
-SubstraitPlanSerializer::convertUnion(const std::vector<NodeState *> & children)
+SubstraitPlanSerializer::convertUnion(const VectorWithMemoryTracking<NodeState *> & children)
 {
     NodeState out;
 
@@ -872,7 +872,7 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
     const auto combine_conjuncts
         = [&](const VectorWithMemoryTracking<JoinActionRef> & conjuncts) -> std::expected<substrait::Expression, SubstraitBlockingReason>
     {
-        std::vector<SubstraitExpressionConverter::ConvertedExpression> converted_conjuncts;
+        VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> converted_conjuncts;
         for (const auto & conjunct : conjuncts)
         {
             auto converted = converter.convertCondition(*conjunct.getNode());

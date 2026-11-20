@@ -5,14 +5,14 @@
 #if USE_SUBSTRAIT
 
 #include <expected>
-#include <map>
 #include <optional>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 #include <base/types.h>
 #include <substrait/plan.pb.h>
 #include <substrait/type.pb.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 /// Objects shared by all layers of the Substrait serializer, and the Substrait vocabulary they are built on.
 /// * Uniform Resource Name (URN). A name that identifies one extension YAML, for example "extension:io.substrait:functions_arithmetic".
@@ -22,7 +22,7 @@ namespace DB
 {
 
 /// Options of one function call, as (option name, value) pairs. An option names a behavior choice, for example overflow handling.
-using FunctionOptions = std::vector<std::pair<std::string_view, std::string_view>>;
+using FunctionOptions = VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>>;
 
 template <typename FunctionMessage>
 void addFunctionOptions(const FunctionOptions & options, FunctionMessage & function)
@@ -78,9 +78,9 @@ public:
     void declareUsedIn(substrait::Plan & plan) const;
 
 private:
-    /// Keyed by (URN, name). std::map so the same query always produces identical plan.
-    std::map<std::pair<String, String>, UInt32> functions;
-    std::map<std::pair<String, String>, UInt32> types;
+    /// Keyed by (URN, name). Ordered so the same query always produces identical plan.
+    MapWithMemoryTracking<std::pair<String, String>, UInt32> functions;
+    MapWithMemoryTracking<std::pair<String, String>, UInt32> types;
 };
 
 struct SubstraitColumn
@@ -94,7 +94,7 @@ struct SubstraitColumn
 /// A type here is what the conversion emitted, which is not always derivable from the ClickHouse type.
 struct SubstraitSchema
 {
-    std::vector<SubstraitColumn> columns;
+    VectorWithMemoryTracking<SubstraitColumn> columns;
 
     /// On duplicate names, gives the first position.
     [[nodiscard]] std::optional<size_t> positionByName(const String & name) const
@@ -119,7 +119,7 @@ struct SubstraitSchema
     }
 
 private:
-    std::unordered_map<String, size_t> positions;
+    UnorderedMapWithMemoryTracking<String, size_t> positions;
 };
 
 }

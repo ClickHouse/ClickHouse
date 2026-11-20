@@ -67,7 +67,7 @@ bool isWideningCast(std::string_view from_short, std::string_view to_short)
 /// Raises a signed integer result type to the widest argument. The result is cast down later.
 String raiseToWidestArgument(
     String result_short,
-    const std::vector<SubstraitExpressionConverter::ConvertedExpression> & args,
+    const VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> & args,
     const SubstraitPlanExtensions & extensions)
 {
     if (substraitSignedIntRank(result_short) == 0)
@@ -83,8 +83,8 @@ String raiseToWidestArgument(
 
 /// ClickHouse compares mixed types natively, Substrait can't, so we cast to one common type and admit only value-preserving ones.
 /// We pick the widest type among the non-constant arguments. A constant is rewritten as a literal of that type if it fits.
-String
-pickCommonType(const std::vector<SubstraitExpressionConverter::ConvertedExpression> & args, const SubstraitPlanExtensions & extensions)
+String pickCommonType(
+    const VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> & args, const SubstraitPlanExtensions & extensions)
 {
     String common_short;
     for (const auto & arg : args)
@@ -111,7 +111,7 @@ enum class Coercion : uint8_t
 /// One overload of a Substrait function ("add:i64_i64" takes {"i64", "i64"} and returns "i64").
 struct FunctionOverload
 {
-    std::vector<std::string_view> arg_types;
+    VectorWithMemoryTracking<std::string_view> arg_types;
     std::string_view return_type;
     std::string_view urn; /// Extension that declares this function.
     FunctionOptions options = {};
@@ -126,7 +126,7 @@ struct MappedFunction
     bool never_null = false;
     bool negate_result = false; /// For negated ClickHouse functions with no negated Substrait form, as in notLike -> not(like(...)).
     bool safe_constant_divisor_only = false; /// We throw for the smallest integer modulo -1, which Substrait `modulus` cannot express.
-    std::vector<FunctionOverload> overloads;
+    VectorWithMemoryTracking<FunctionOverload> overloads;
 };
 
 /// How ClickHouse integer/float maps to Substrait.
@@ -134,10 +134,10 @@ FunctionOptions intArithOptions() { return {{"overflow", "SILENT"}}; }
 FunctionOptions fpArithOptions() { return {{"rounding", "TIE_TO_EVEN"}}; }
 
 /// The shared overload set of add, subtract and multiply. One overload per numeric type.
-std::vector<FunctionOverload> sameTypeArithmeticOverloads()
+VectorWithMemoryTracking<FunctionOverload> sameTypeArithmeticOverloads()
 {
     using namespace SubstraitExtensionURN;
-    std::vector<FunctionOverload> overloads;
+    VectorWithMemoryTracking<FunctionOverload> overloads;
     for (std::string_view t : {"i8", "i16", "i32", "i64"})
         overloads.push_back({{t, t}, t, arithmetic, intArithOptions()});
     for (std::string_view t : {"fp32", "fp64"})
@@ -148,15 +148,15 @@ std::vector<FunctionOverload> sameTypeArithmeticOverloads()
 }
 
 /// The ClickHouse functions we can translate, keyed by ClickHouse name. New functions go here. Only call via functionTable.
-std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
+UnorderedMapWithMemoryTracking<std::string_view, MappedFunction> buildFunctionTable()
 {
     using namespace SubstraitExtensionURN;
 
-    std::unordered_map<std::string_view, MappedFunction> table;
+    UnorderedMapWithMemoryTracking<std::string_view, MappedFunction> table;
 
     const auto add_function = [&](std::string_view ch_name,
                                   std::string_view substrait_name,
-                                  std::vector<FunctionOverload> overloads,
+                                  VectorWithMemoryTracking<FunctionOverload> overloads,
                                   Coercion coercion = Coercion::None,
                                   bool variadic = false) -> MappedFunction &
     {
@@ -177,13 +177,13 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
         Coercion::ToResultType);
 
     const FunctionOptions modulus_options = {{"division_type", "TRUNCATE"}, {"overflow", "SILENT"}, {"on_domain_error", "ERROR"}};
-    std::vector<FunctionOverload> modulus_overloads;
+    VectorWithMemoryTracking<FunctionOverload> modulus_overloads;
     for (std::string_view ty : {"i8", "i16", "i32", "i64"})
         modulus_overloads.push_back({{ty, ty}, ty, arithmetic, modulus_options});
 
     add_function("modulo", "modulus", std::move(modulus_overloads), Coercion::ToResultType).safe_constant_divisor_only = true;
 
-    std::vector<FunctionOverload> negate_overloads;
+    VectorWithMemoryTracking<FunctionOverload> negate_overloads;
     for (std::string_view ty : {"i8", "i16", "i32", "i64"})
         negate_overloads.push_back({{ty}, ty, arithmetic, intArithOptions()});
     for (std::string_view ty : {"fp32", "fp64"})
@@ -194,7 +194,7 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     add_function("abs", "abs", {{{"fp32"}, "fp32", arithmetic}, {{"fp64"}, "fp64", arithmetic}});
 
     /// Substrait declares comparisons as `any1, any1`, any type but the same one for both arguments. The coercion makes them the same.
-    const std::vector<FunctionOverload> compare_overload = {{{"any", "any"}, "bool", comparison}};
+    const VectorWithMemoryTracking<FunctionOverload> compare_overload = {{{"any", "any"}, "bool", comparison}};
     add_function("equals", "equal", compare_overload, Coercion::ToCommonType);
     add_function("notEquals", "not_equal", compare_overload, Coercion::ToCommonType);
     add_function("less", "lt", compare_overload, Coercion::ToCommonType);
@@ -204,14 +204,16 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     add_function("isNull", "is_null", {{{"any"}, "bool", comparison}}).never_null = true;
     add_function("isNotNull", "is_not_null", {{{"any"}, "bool", comparison}}).never_null = true;
 
-    const std::vector<FunctionOverload> boolean_overload = {{{"bool"}, "bool", boolean}};
+    const VectorWithMemoryTracking<FunctionOverload> boolean_overload = {{{"bool"}, "bool", boolean}};
     add_function("and", "and", boolean_overload, Coercion::None, /*variadic=*/true);
     add_function("or", "or", boolean_overload, Coercion::None, /*variadic=*/true);
     add_function("not", "not", boolean_overload);
     add_function("xor", "xor", {{{"bool", "bool"}, "bool", boolean}});
 
-    const std::vector<FunctionOverload> like_sensitive = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}};
-    const std::vector<FunctionOverload> like_insensitive = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_INSENSITIVE"}}}};
+    const VectorWithMemoryTracking<FunctionOverload> like_sensitive
+        = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}};
+    const VectorWithMemoryTracking<FunctionOverload> like_insensitive
+        = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_INSENSITIVE"}}}};
     add_function("like", "like", like_sensitive);
     add_function("ilike", "like", like_insensitive);
     add_function("notLike", "like", like_sensitive).negate_result = true;
@@ -248,9 +250,9 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     return table;
 }
 
-const std::unordered_map<std::string_view, MappedFunction> & functionTable()
+const UnorderedMapWithMemoryTracking<std::string_view, MappedFunction> & functionTable()
 {
-    static const std::unordered_map<std::string_view, MappedFunction> table = buildFunctionTable();
+    static const UnorderedMapWithMemoryTracking<std::string_view, MappedFunction> table = buildFunctionTable();
     return table;
 }
 
@@ -357,7 +359,7 @@ substrait::Expression makeCast(substrait::Type type, substrait::Expression input
 substrait::Expression makeScalarCall(
     std::string_view urn,
     std::string_view signature,
-    std::vector<SubstraitExpressionConverter::ConvertedExpression> && arguments,
+    VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> && arguments,
     const substrait::Type & output_type,
     SubstraitPlanExtensions & extensions,
     const FunctionOptions & options = {})
@@ -499,11 +501,11 @@ SubstraitExpressionConverter::convertProjection(const ActionsDAG & dag, const Bl
         size_t passthrough_position = 0;
     };
 
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> output_nodes;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> output_nodes;
     for (const auto * output : dag.getOutputs())
         output_nodes.try_emplace(output->result_name, output);
 
-    std::vector<ColumnSource> sources;
+    VectorWithMemoryTracking<ColumnSource> sources;
     sources.reserve(output_header.columns());
 
     for (const auto & column : output_header)
@@ -695,7 +697,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 
     const MappedFunction & mapping = it->second;
 
-    std::vector<ConvertedExpression> args;
+    VectorWithMemoryTracking<ConvertedExpression> args;
     args.reserve(node.children.size());
     for (const auto * child : node.children)
     {
@@ -754,7 +756,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         return blocked(fmt::format("arguments of {} have different types ({})", name, fmt::join(type_names, ", ")));
     }
 
-    std::vector<String> arg_shorts;
+    VectorWithMemoryTracking<String> arg_shorts;
     for (const auto & arg : args)
         arg_shorts.push_back(substraitTypeShortName(arg.type, extensions));
 
@@ -818,7 +820,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     if (mapping.negate_result)
     {
         chassert(out.type.kind_case() == substrait::Type::kBool);
-        std::vector<ConvertedExpression> operand(1);
+        VectorWithMemoryTracking<ConvertedExpression> operand(1);
         operand.front().expression = std::move(out.expression);
         out.expression = makeScalarCall(SubstraitExtensionURN::boolean, "not:bool", std::move(operand), out.type, extensions);
     }
@@ -827,7 +829,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 }
 
 substrait::Expression
-makeConjunction(std::vector<SubstraitExpressionConverter::ConvertedExpression> conjuncts, SubstraitPlanExtensions & extensions)
+makeConjunction(VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> conjuncts, SubstraitPlanExtensions & extensions)
 {
     chassert(!conjuncts.empty());
     if (conjuncts.size() == 1)
@@ -842,7 +844,7 @@ substrait::Expression makeIsNan(size_t position, const substrait::Type & type, S
 {
     const auto signature = fmt::format("is_nan:{}", substraitTypeShortName(type, extensions));
     const auto result_type = makeSimpleSubstraitType("bool", isSubstraitTypeNullable(type));
-    std::vector<SubstraitExpressionConverter::ConvertedExpression> argument(1);
+    VectorWithMemoryTracking<SubstraitExpressionConverter::ConvertedExpression> argument(1);
     argument.front().expression = makeColumnReference(position);
     return makeScalarCall(SubstraitExtensionURN::comparison, signature, std::move(argument), result_type, extensions);
 }

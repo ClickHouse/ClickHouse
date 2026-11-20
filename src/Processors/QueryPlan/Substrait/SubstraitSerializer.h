@@ -5,7 +5,6 @@
 #if USE_SUBSTRAIT
 
 #include <expected>
-#include <unordered_map>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Substrait/SubstraitCommon.h>
 #include <substrait/plan.pb.h>
@@ -48,7 +47,7 @@ public:
     const Verdict & visit(const QueryPlan::Node & root);
 
     /// Nodes that do not convert while every child subtree does, with reasons. Empty when the whole visited subtree is eligible.
-    [[nodiscard]] std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
+    [[nodiscard]] VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
     blockingSteps(const QueryPlan::Node & root) const;
 
     /// Builds the final plan for a node with subtree_eligible = true, consuming the subtree's converted relations.
@@ -63,7 +62,8 @@ private:
         bool sort_reaches_output = false; /// Some ClickHouse steps preserve input order while the Substrait equivalents may not.
     };
 
-    std::expected<NodeState, SubstraitBlockingReason> convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children);
+    std::expected<NodeState, SubstraitBlockingReason>
+    convertStep(const QueryPlan::Node & node, VectorWithMemoryTracking<NodeState *> children);
     std::expected<NodeState, SubstraitBlockingReason> convertReadFromMergeTree(const ReadFromMergeTree & read);
     std::expected<NodeState, SubstraitBlockingReason> convertFilterOrExpression(
         const ActionsDAG & dag, const Block & output_header, const std::optional<String> & filter_column_name, NodeState & child);
@@ -71,11 +71,11 @@ private:
     std::expected<NodeState, SubstraitBlockingReason> convertSorting(const SortingStep & sorting, NodeState & child);
     std::expected<NodeState, SubstraitBlockingReason> convertLimit(const LimitStep & limit, NodeState & child);
     std::expected<NodeState, SubstraitBlockingReason> convertOffset(const OffsetStep & offset, NodeState & child);
-    std::expected<NodeState, SubstraitBlockingReason> convertUnion(const std::vector<NodeState *> & children);
+    std::expected<NodeState, SubstraitBlockingReason> convertUnion(const VectorWithMemoryTracking<NodeState *> & children);
     std::expected<NodeState, SubstraitBlockingReason> convertDistinct(const DistinctStep & distinct, NodeState & child);
     std::expected<NodeState, SubstraitBlockingReason> convertJoin(const JoinStepLogical & join, NodeState & left, NodeState & right);
 
-    std::unordered_map<const QueryPlan::Node *, NodeState> states;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NodeState> states;
     SubstraitPlanExtensions extensions;
 };
 

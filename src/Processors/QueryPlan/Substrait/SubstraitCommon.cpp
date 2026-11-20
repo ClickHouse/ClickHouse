@@ -2,10 +2,10 @@
 
 #if USE_SUBSTRAIT
 
-#include <set>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/message.h>
 #include <Common/Exception.h>
+#include <Common/SetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -20,15 +20,15 @@ namespace
 
 struct UsedAnchors
 {
-    std::set<UInt32> functions;
-    std::set<UInt32> types;
+    SetWithMemoryTracking<UInt32> functions;
+    SetWithMemoryTracking<UInt32> types;
 };
 
 /// Collects the anchors that `message` and the messages nested in it reference.
 void collectUsedAnchors(const google::protobuf::Message & message, UsedAnchors & used)
 {
     const auto * reflection = message.GetReflection();
-    std::vector<const google::protobuf::FieldDescriptor *> fields;
+    VectorWithMemoryTracking<const google::protobuf::FieldDescriptor *> fields;
     reflection->ListFields(message, &fields);
     for (const auto * field : fields)
     {
@@ -74,7 +74,7 @@ void SubstraitPlanExtensions::declareUsedIn(substrait::Plan & plan) const
     collectUsedAnchors(plan, used);
 
     /// A URN gets the next anchor the first time a declaration below refers to it.
-    std::map<std::string_view, UInt32> urn_anchors;
+    MapWithMemoryTracking<std::string_view, UInt32> urn_anchors;
     const auto urn_anchor
         = [&](std::string_view urn) { return urn_anchors.try_emplace(urn, static_cast<UInt32>(urn_anchors.size() + 1)).first->second; };
 
