@@ -778,13 +778,13 @@ private:
     }
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
-    /// changes to that directory, or to `/tmp` without a log.
+    /// changes to that directory, or to `/tmp` without a log or with a log without a directory, as `server.log`.
     [[nodiscard]] fs::path logDirectory() const
     {
         if (!is_daemon)
             return startup_directory;
         const std::string log = config.getString("logger.log", "");
-        return log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
+        return fs::path(log).parent_path().empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
     }
 
     /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
