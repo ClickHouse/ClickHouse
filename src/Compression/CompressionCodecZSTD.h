@@ -41,8 +41,4 @@ private:
     const int window_log;
 };
 
-/// Decompresses whole `ZSTD` frames from `source` into `dest` in one call, with a context from the pools of the codec.
-/// Returns the result of `ZSTD_decompressDCtx`: the decompressed size or an error code (see `ZSTD_isError`).
-size_t decompressZSTDWithPooledContext(const char * source, size_t source_size, char * dest, size_t dest_capacity);
-
 }

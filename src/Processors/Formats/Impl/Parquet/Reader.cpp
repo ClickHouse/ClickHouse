@@ -23,7 +23,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
-#include <Compression/CompressionCodecZSTD.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/hasNullable.h>
@@ -41,6 +40,7 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ZstdContext.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
@@ -208,7 +208,7 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 /// Decodes the ZSTD frames at the start of the page until `uncompressed_size` bytes are produced; the rest of the page
 /// is not read. Returns the produced size or a zstd error code.
-static size_t decompressZSTDFramesUntilFull(const char * data, size_t compressed_size, char * out, size_t uncompressed_size)
+static size_t decompressZSTDFramesUntilFull(ZSTD_DCtx * ctx, const char * data, size_t compressed_size, char * out, size_t uncompressed_size)
 {
     size_t consumed = 0;
     size_t produced = 0;
@@ -217,7 +217,7 @@ static size_t decompressZSTDFramesUntilFull(const char * data, size_t compressed
         size_t frame_size = ZSTD_findFrameCompressedSize(data + consumed, compressed_size - consumed);
         if (ZSTD_isError(frame_size))
             return frame_size;
-        size_t res = decompressZSTDWithPooledContext(data + consumed, frame_size, out + produced, uncompressed_size - produced);
+        size_t res = ZSTD_decompressDCtx(ctx, out + produced, uncompressed_size - produced, data + consumed, frame_size);
         if (ZSTD_isError(res))
             return res;
         consumed += frame_size;
@@ -274,9 +274,12 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             break;
         case parq::CompressionCodec::ZSTD:
         {
-            size_t res = decompressZSTDWithPooledContext(data, compressed_size, out, uncompressed_size);
+            ZstdDCtxPtr ctx(ZSTD_createDCtx());
+            if (!ctx)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create a ZSTD decompression context");
+            size_t res = ZSTD_decompressDCtx(ctx.get(), out, uncompressed_size, data, compressed_size);
             if (ZSTD_isError(res))
-                res = decompressZSTDFramesUntilFull(data, compressed_size, out, uncompressed_size);
+                res = decompressZSTDFramesUntilFull(ctx.get(), data, compressed_size, out, uncompressed_size);
             if (ZSTD_isError(res))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ZSTD compressed page: {}", ZSTD_getErrorName(res));
             if (res != uncompressed_size)
