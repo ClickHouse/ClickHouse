@@ -42,3 +42,6 @@
 0
 194
 0
+-- a filter merged after index analysis only from the conditions it was built from must populate the cache
+5000
+1
