@@ -502,6 +502,10 @@ This works while the query is shipped as text, which is the default. With [`seri
 
 A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
 
+## Altering a table that has row policies {#altering-a-table-that-has-row-policies}
+
+A column that a row policy reads cannot be dropped or renamed while the policy exists: `ALTER TABLE ... DROP COLUMN` and `ALTER TABLE ... RENAME COLUMN` fail with `ALTER_OF_COLUMN_IS_FORBIDDEN`. Change or drop the policy first. Other alterations, such as `MODIFY COLUMN` or `CLEAR COLUMN`, are not affected.
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl). This is also the convenient way to create the policy on the local tables of every server of the cluster.
