@@ -2586,7 +2586,7 @@ TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
         .forbid_implicit_credentials = false,
     };
 
-    const auto check_profile_file_credentials = [&](const std::string & access_key)
+    const auto check_profile_file_credentials = [&](std::string_view access_key)
     {
         std::filesystem::remove(credentials_file);
         DB::S3::S3CredentialsProviderChain chain(client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
