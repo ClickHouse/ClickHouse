@@ -6132,7 +6132,7 @@ For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its 
 hosts whose profiles set different defaults can run the delete in different modes. A replicated
 shard executes on one replica, so there it is that replica's settings that decide. Setting it in
 the session of the initiating query overrides this, because the distributed DDL entry carries
-session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+session changes.
 A host that constrains the setting clamps the value back.
 )", 0, \
         {"25.5", "alter_update", "alter_update", "A new setting"}) \
@@ -7905,7 +7905,20 @@ Possible values:
 Cloud default value: `none_only_active`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
-Compatibility version of distributed DDL (ON CLUSTER) queries
+Compatibility version of distributed DDL (ON CLUSTER) queries. Use a lower value to keep older servers in the
+cluster able to execute the queries.
+
+Servers do not execute entries with versions `1` and `2`. Older servers write those for the setting values `1`, `2`
+and `3`, so before upgrading set this setting to at least `4` on all servers and wait until the distributed DDL
+queue is processed.
+
+Possible values:
+- `3` — The same as `4`. It is written as `4`, because older servers reject entries with version `3`.
+- `4` — The entry carries the settings changed in the session and the OpenTelemetry tracing context, and `CREATE` queries are normalized on the initiator.
+- `5` — Also preserves the `initial_query_id` of the query.
+- `6` — Also carries whether the query is a part of `BACKUP` or `RESTORE`.
+- `7` — Also carries the UUID of the parent table, which a `Replicated` database uses to execute the query only if the table exists.
+- `8` — Also carries the user and the roles of the initiator, which the hosts use with the server setting `distributed_ddl_use_initial_user_and_roles`.
 
 Cloud default value: `6`.
 )", 0) \
@@ -8212,14 +8225,17 @@ Toggles a query-plan-level optimization which copies filter conjuncts from one s
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
 on the other side can use them.
 
-Applies when the filter and the `MergeTree` read are separated from the join only by expression
-and filter steps, and when the copied conjunct compares a primary key column with a constant
-(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
-comparison between two key columns, is left alone: it could not drive primary key pruning on the
-other side, so copying it would only add work.
+Applies when the filter and the read are separated from the join only by expression and filter
+steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
+either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
+object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
+default expression, whose row groups the read can skip by min/max statistics. A predicate below a
+nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
+not drive pruning on the other side, so copying it would only add work.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0, \
+        {"26.11", true, true, "Also copies filter conjuncts onto integer, Date and Decimal columns of Parquet reads, which skip row groups by their statistics."}, \
         {"26.9", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
@@ -8287,7 +8303,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -8300,6 +8316,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, optimize_read_in_window_order, \
+        {"26.11", false, true, "Enable by default again: the sorting now scatters the merged stream by the `PARTITION BY` columns, so the window functions run in parallel. This also applies to the alias `optimize_read_in_window_order`."}, \
         {"26.1", true, false, "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
@@ -9228,7 +9245,7 @@ Maximum time to read from a pipe for receiving information from the threads when
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
 
-Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`, and is refused in readonly mode (`readonly` above 0, which every HTTP GET request implies). `DESCRIBE` does not build the data-reading pipeline that renames, so neither of these two restrictions applies to it.
 
 ### Placeholders
 
@@ -10622,6 +10639,13 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_max_data_files_in_upload, 8, R"(
+The maximum number of finished data files of one insert stream whose upload is not waited for while the `INSERT` writes the next
+file, for object storages that upload in the background (S3, Azure). Such a file holds its upload buffers until its upload
+completes, so higher values hide more upload latency at the cost of memory. `0` waits for the upload of each data file before
+writing the next one.
+)", 0, \
+        {"26.11", 0, 8, "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}) \
     DECLARE(UInt64, iceberg_insert_max_sort_buffer_bytes, 1_GiB, R"(
 Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
 writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.

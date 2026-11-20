@@ -194,6 +194,7 @@ public:
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
+    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     /// The sorted chunks of a partition's next data file, merged when it is written.
     struct SortedPendingFile
