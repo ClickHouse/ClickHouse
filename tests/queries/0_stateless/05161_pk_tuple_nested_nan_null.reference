@@ -96,3 +96,12 @@ a NULL nested deeper: in an inner Tuple, under LowCardinality, below a Nullable 
 2
 2
 2
+a negated comparison over a Float element, kept as NOT of a range
+2
+2
+2
+2
+2
+2
+2
+2

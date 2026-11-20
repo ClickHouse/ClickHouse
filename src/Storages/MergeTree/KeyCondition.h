@@ -379,6 +379,9 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Whether the atom is under an odd number of FUNCTION_NOT. Assigned when the condition is built.
+        bool negated = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 

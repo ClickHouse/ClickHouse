@@ -320,3 +320,22 @@ SELECT count() FROM t_pk_nullable_tuple_null_inside WHERE t >= (2, 0) SETTINGS o
 SELECT sum(x) FROM t_pk_nullable_tuple_null_inside WHERE t >= (2, 0);
 
 DROP TABLE t_pk_nullable_tuple_null_inside;
+
+SELECT 'a negated comparison over a Float element, kept as NOT of a range';
+
+-- `NOT (t < c)` is not folded to `t >= c` when the key may hold a NaN, so the range atom is under `NOT`.
+CREATE TABLE t_pk_tuple_not_range_nested_null (t Tuple(Int32, Nullable(Float64)), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 3, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_not_range_nested_null VALUES ((2,1),1),((2,NULL),1),((3,0),1);
+
+SELECT count() FROM t_pk_tuple_not_range_nested_null WHERE NOT (t < (2, 0)) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT sum(x) FROM t_pk_tuple_not_range_nested_null WHERE NOT (t < (2, 0));
+SELECT count() FROM t_pk_tuple_not_range_nested_null WHERE NOT (t <= (2, 0)) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT sum(x) FROM t_pk_tuple_not_range_nested_null WHERE NOT (t <= (2, 0));
+SELECT count() FROM t_pk_tuple_not_range_nested_null WHERE NOT (t = (2, 0)) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT sum(x) FROM t_pk_tuple_not_range_nested_null WHERE NOT (t = (2, 0));
+SELECT count() FROM t_pk_tuple_not_range_nested_null WHERE t >= (2, 0) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT sum(x) FROM t_pk_tuple_not_range_nested_null WHERE t >= (2, 0);
+
+DROP TABLE t_pk_tuple_not_range_nested_null;
