@@ -1,11 +1,15 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/Context_fwd.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -32,16 +36,57 @@ public:
     static constexpr auto name = "toFixedString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Injective only for a `FixedString(M)` argument that fits into the target width. A `String` is
+    /// NUL-padded to the target width, so 'a' and 'a\0' both become the same `FixedString(2)`. Every
+    /// value of a `FixedString(M)`, in contrast, has the same length, so padding appends the same
+    /// suffix to all of them - but only when `M <= N`; otherwise execution throws, and eliminating
+    /// the call would silently turn a query that must fail into one that succeeds.
+    /// A caller that passes no arguments gets no claim, because the answer depends on them.
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if (sample_columns.size() != 2)
+            return false;
+
+        const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(
+            removeNullable(recursiveRemoveLowCardinality(sample_columns[0].type)).get());
+        if (!fixed_string)
+            return false;
+
+        /// The target width has to be known to compare it with the source width. It also has to be
+        /// an unsigned integer: `getReturnTypeImpl` rejects everything else, and reading a negative
+        /// or a `NULL` width here would either wrap around to a huge `UInt64` or throw, in both
+        /// cases eliminating a call that must raise
+        /// `Second argument for function toFixedString must be unsigned integer`.
+        if (!isUInt(sample_columns[1].type))
+            return false;
+
+        const auto & width_column = sample_columns[1].column;
+        if (!width_column || !isColumnConst(*width_column))
+            return false;
+
+        return fixed_string->getN() <= width_column->getUInt(0);
+    }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// The result `FixedString(N)` takes its size from the const-`UInt` second argument. Capture
+    /// it as `N` and spell the parameterised result type, so this is computable on the types-only
+    /// `getReturnTypeImpl(DataTypes)` fallback too: when the value is unavailable there (no column),
+    /// the DSL reports a clean `ILLEGAL_COLUMN` ("argument must be a constant expression") instead
+    /// of the internal exception a bare `FixedString` return raised by resolving to the zero-argument
+    /// `FixedString` type function.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(StringOrFixedString, const N UInt) -> FixedString(N)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUInt(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be unsigned integer", getName());
@@ -54,10 +99,10 @@ public:
         return std::make_shared<DataTypeFixedString>(n);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto n = arguments[1].column->getUInt(0);
         return executeForN<ConvertToFixedStringExceptionMode::Throw>(arguments, n);

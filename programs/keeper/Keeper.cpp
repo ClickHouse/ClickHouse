@@ -249,47 +249,47 @@ struct KeeperHTTPContext : public IHTTPContext
         : context(std::move(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override
+    [[nodiscard]] uint64_t getMaxHstsAge() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.hsts_max_age", 0);
     }
 
-    uint64_t getMaxUriSize() const override
+    [[nodiscard]] uint64_t getMaxUriSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_uri_size", 1048576);
     }
 
-    uint64_t getMaxFields() const override
+    [[nodiscard]] uint64_t getMaxFields() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_fields", 1000000);
     }
 
-    uint64_t getMaxFieldNameSize() const override
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
-    uint64_t getMaxFieldValueSize() const override
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
-    uint64_t getMaxRequestHeaderSize() const override
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
     }
 
-    Poco::Timespan getHeadersReadTimeout() const override
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
     }
 
-    Poco::Timespan getReceiveTimeout() const override
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
     }
 
-    Poco::Timespan getSendTimeout() const override
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
@@ -451,7 +451,8 @@ try
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers->size());
             for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{
+                    server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         },
         /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
@@ -502,6 +503,7 @@ try
             servers->emplace_back(
                 listen_host,
                 port_name,
+                ServerType::Type::END,
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
@@ -524,6 +526,7 @@ try
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
+                ServerType::Type::END,
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
@@ -563,6 +566,7 @@ try
                     servers->emplace_back(
                         listen_host,
                         port_name,
+                        ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(my_http_context), handler_factory, server_pool, socket, http_params));
@@ -586,6 +590,7 @@ try
                 servers->emplace_back(
                     listen_host,
                     port_name,
+                    ServerType::Type::END,
                     "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
@@ -616,6 +621,7 @@ try
                 servers->emplace_back(
                     listen_host,
                     port_name,
+                    ServerType::Type::END,
                     "HTTPS Control: https://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),

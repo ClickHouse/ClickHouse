@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -25,6 +26,9 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
     /// Send copies of data to num_buckets outputs
     auto & pipeline = *pipelines.front();
 
+    /// Combine small chunks: every chunk becomes one packet for each destination.
+    ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
+
     /// Serialize once on every stream; the copies for the destinations share the packets instead of
     /// serializing them again.
     pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
@@ -44,7 +48,7 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id), /*advisory*/ false);
     });
 
     if (bucket != num_buckets)

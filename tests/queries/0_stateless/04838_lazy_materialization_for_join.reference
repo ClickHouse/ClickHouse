@@ -1,0 +1,121 @@
+-- inner
+6	l6	r6
+297	l297	r297
+588	l588	r588
+2
+-- left, the right side stands at its defaults where nothing matched
+6	l6	r6	2
+103	l103		0
+200	l200		0
+297	l297	r297	10
+394	l394		0
+2
+-- right
+13	l13	r12	4
+280	l280	r279	4
+547	l547	r546	4
+814	l814	r813	4
+1081	l1081	r1080	4
+2
+-- full
+0		0	r0
+0	l0	0	
+0		267	r267
+0		534	r534
+0		801	r801
+1
+-- one row of a side matches many of the other
+0	l0	r0
+0	l0	r267
+0	l0	r534
+0	l0	r801
+1	l1	r3
+1	l1	r270
+2
+-- three tables, a table joined twice
+96	l96	r96	r99
+387	l387	r387	r390
+678	l678	r678	r681
+969	l969	r969	r972
+3
+-- a value the filter uses is computed again after the LIMIT
+9876	167	l9876
+9873	163	l9873
+9870	159	l9870
+-- a filter above the join guards an expression that would throw below it
+252	11	l252
+255	11	l255
+258	11	l258
+-- the other side is not a table
+0	l0	45
+97	l97	45
+194	l194	45
+1
+-- join_use_nulls: the values of the side the join can leave unmatched are recomputed under a mask
+6	l6	r6!	3
+103	l103	\N	\N
+200	l200	\N	\N
+297	l297	r297!	11
+394	l394	\N	\N
+2	1
+0	l0	\N	\N
+97	l97	\N	\N
+194	l194	\N	\N
+291	l291	\N	\N
+388	l388	\N	\N
+96	l96	r96	r99
+193	l193	\N	\N
+290	l290	\N	\N
+387	l387	r387	r390
+484	l484	\N	\N
+581	l581	\N	\N
+-- a value that can throw is not computed for the rows the join left unmatched
+6	l6	r6	50
+103	l103		0
+200	l200		0
+297	l297	r297	10
+394	l394		0
+-- the build side of a join with a runtime filter is read lazily too
+6	l6	r6
+297	l297	r297
+588	l588	r588
+2	1
+6	l6
+103	l103
+200	l200
+-- a column the read keeps for PREWHERE crosses under the name the plan gives it
+0	0	0	p0	q0
+291	291	291	p291	q291
+582	582	582	p582	q582
+2
+-- a random value the filter used is not drawn again after the LIMIT
+3	0
+3	1
+-- the same results without the optimization
+6	l6	r6!	3
+103	l103	\N	\N
+200	l200	\N	\N
+297	l297	r297!	11
+394	l394	\N	\N
+96	l96	r96	r99
+193	l193	\N	\N
+290	l290	\N	\N
+387	l387	r387	r390
+484	l484	\N	\N
+581	l581	\N	\N
+6	l6	r6	2
+103	l103		0
+200	l200		0
+297	l297	r297	10
+394	l394		0
+0		0	r0
+0	l0	0	
+0		267	r267
+0		534	r534
+0		801	r801
+0	l0	r0
+0	l0	r267
+0	l0	r534
+0	l0	r801
+1	l1	r3
+1	l1	r270

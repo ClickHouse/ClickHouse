@@ -1,4 +1,7 @@
 #include <Common/CurrentThread.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Formats/FormatSettings.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
@@ -7,10 +10,17 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
+#include <Analyzer/TableQualifiers.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -21,9 +31,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IQueryPlanStep::IQueryPlanStep()
+IQueryPlanStep::IQueryPlanStep() = default;
+
+IQueryPlanStep::StepIndex::StepIndex()
+    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
 {
-    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
@@ -50,15 +62,75 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)
+IQueryPlanStep::PrunedInput IQueryPlanStep::PrunedInput::unchanged(const SharedHeader & header)
+{
+    return {.dropped_positions = {}, .header = header};
+}
+
+bool IQueryPlanStep::alignInputsWithPrunedChild(
+    ActionsDAG & dag, const VectorWithMemoryTracking<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned)
+{
+    VectorWithMemoryTracking<bool> kept(old_header.columns(), true);
+    for (size_t position : pruned.dropped_positions)
+        kept.at(position) = false;
+
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), old_header);
+
+    /// Inputs are paired with header columns by name, in order, so a new input consumes the first column of its name that
+    /// no input reads. A column that passes through before it would be consumed in its place.
+    UnorderedSetWithMemoryTracking<std::string_view> passthrough_names;
+    const auto consume = [&](ColumnsWithTypeAndName & to_consume, const ColumnWithTypeAndName & column)
+    {
+        if (passthrough_names.contains(column.name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot consume column {}: a column of the same name passes through before it", column.name);
+        to_consume.push_back(column);
+    };
+
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> kept_inputs;
+    ColumnsWithTypeAndName to_consume;
+    for (size_t position = 0; position < old_header.columns(); ++position)
+    {
+        const auto usage = usages.at(position);
+        if (!kept[position])
+        {
+            if (usage == InputColumnUsage::ReadNeeded || usage == InputColumnUsage::PassesThroughNeeded)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The child dropped column {}, which the step needs", old_header.getByPosition(position).name);
+            continue;
+        }
+
+        if (!header_columns.passesThrough(position))
+            kept_inputs.insert(dag.getInputs()[header_columns.read_by[position]]);
+        else if (usage == InputColumnUsage::PassesThroughDropped)
+            consume(to_consume, old_header.getByPosition(position));
+        else
+            passthrough_names.insert(old_header.getByPosition(position).name);
+    }
+
+    const size_t kept_count = old_header.columns() - pruned.dropped_positions.size();
+    for (size_t position = kept_count; position < pruned.header->columns(); ++position)
+        consume(to_consume, pruned.header->getByPosition(position));
+
+    bool changed = dag.removeUnusedActions(kept_inputs);
+    for (const auto & column : to_consume)
+        dag.addInput(column.name, column.type);
+
+    return changed || !to_consume.empty();
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+IQueryPlanStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & /*inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
-bool IQueryPlanStep::canRemoveColumnsFromOutput() const
+IQueryPlanStep::UnneededInputPositions
+IQueryPlanStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const
 {
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnneededColumns is not implemented for step {}", getName());
 }
+
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
@@ -239,7 +311,7 @@ static bool areProcessorsSimilarForExplain(const IProcessor & lhs, const IProces
 }
 
 static bool areProcessorChainsSimilar(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t first_chain_begin,
     size_t second_chain_begin,
     size_t chain_size,
@@ -264,7 +336,7 @@ static bool hasConnectionTo(const IProcessor & from, const IProcessor & to)
     return false;
 }
 
-static bool isProcessorChain(const std::vector<const IProcessor *> & processors, size_t chain_begin, size_t chain_size)
+static bool isProcessorChain(const VectorWithMemoryTracking<const IProcessor *> & processors, size_t chain_begin, size_t chain_size)
 {
     for (size_t processor_offset = 0; processor_offset + 1 < chain_size; ++processor_offset)
     {
@@ -277,10 +349,10 @@ static bool isProcessorChain(const std::vector<const IProcessor *> & processors,
     return true;
 }
 
-using ProcessorChainIndexes = std::unordered_map<const IProcessor *, size_t>;
+using ProcessorChainIndexes = UnorderedMapWithMemoryTracking<const IProcessor *, size_t>;
 
 static ProcessorChainIndexes collectProcessorChainIndexes(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t repeated_chains_begin,
     size_t chain_size,
     size_t chain_count)
@@ -318,7 +390,7 @@ static bool hasConnectionToDifferentProcessorChain(
 }
 
 static bool hasConnectionBetweenRepeatedProcessorChains(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t repeated_chains_begin,
     size_t chain_size,
     size_t chain_count)
@@ -339,7 +411,7 @@ static bool hasConnectionBetweenRepeatedProcessorChains(
 }
 
 static bool isRepeatedProcessorChainIndependent(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t repeated_chains_begin,
     size_t chain_size,
     size_t chain_count)
@@ -355,7 +427,7 @@ static bool isRepeatedProcessorChainIndependent(
 }
 
 static std::pair<size_t, size_t> findRepeatedProcessorChainRange(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t begin,
     bool compare_headers)
 {
@@ -382,7 +454,7 @@ static std::pair<size_t, size_t> findRepeatedProcessorChainRange(
 }
 
 static void doDescribeRepeatedProcessorChains(
-    const std::vector<const IProcessor *> & processors,
+    const VectorWithMemoryTracking<const IProcessor *> & processors,
     size_t begin,
     size_t length,
     size_t count,
@@ -390,7 +462,7 @@ static void doDescribeRepeatedProcessorChains(
 {
     static constexpr size_t marker_padding = 4;
 
-    std::vector<String> processor_lines;
+    VectorWithMemoryTracking<String> processor_lines;
     processor_lines.reserve(length);
     size_t max_line_width = 0;
 
@@ -445,7 +517,7 @@ static void doDescribePipelineWithRepeatedProcessorChainCompaction(
     IQueryPlanStep::FormatSettings & settings)
 {
     /// Scan processors in display order.
-    std::vector<const IProcessor *> ordered_processors;
+    VectorWithMemoryTracking<const IProcessor *> ordered_processors;
     ordered_processors.reserve(processors.size());
     for (auto it = processors.rbegin(); it != processors.rend(); ++it)
         ordered_processors.emplace_back(it->get());
@@ -496,9 +568,26 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
+StepAnalyzer IQueryPlanStep::makeAnalyzer() const
+{
+    StepAnalyzer analyzer;
+
+    analyzer.groups.clear();
+    for (size_t group : getStepGroups())
+        analyzer.groups.push_back({group, getStepGroupName(group)});
+
+    /// No reporter: a step reports no metrics of its own unless it overrides this.
+    analyzer.finish = [](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeDefaultStep(context, std::move(report));
+    };
+
+    return analyzer;
+}
+
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index);
+    return fmt::format("{}_{}", getName(), step_index.value);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
@@ -507,5 +596,13 @@ void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
 }
 
 void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+
+void IQueryPlanStep::Serialization::writeColumnName(const String & name) const
+{
+    if (for_cache_key)
+        writeCacheKeyColumnName(name, input_header, out);
+    else
+        writeStringBinary(name, out);
+}
 
 }

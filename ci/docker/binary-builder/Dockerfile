@@ -1,5 +1,7 @@
 # docker build -t clickhouse/binary-builder .
+ARG CCTOOLS_TAG
 ARG FROM_TAG
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/fasttest:$FROM_TAG
 ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
@@ -7,11 +9,10 @@ ENV CXX=clang++-${LLVM_VERSION}
 
 #non-functional change
 
-# If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
+COPY --from=cctools /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=cctools \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
@@ -19,18 +20,17 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /etc/ssl/
 
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
-    && apt-get update \
-    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
 
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
-    && apt-get update \
+RUN apt-get update \
     && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
+        libzstd-dev \
         python3-boto3 \
+        pigz \
         yasm \
         zstd \
         zip \
@@ -45,11 +45,11 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
+ARG TOOLCHAIN_COMMIT=51fdb0b1b64e10e205041802cd91d962fb1d281c
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and
 # has changed it, so the location is pinned next to the commit instead of being
 # spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
-ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
+ARG TOOLCHAIN_S3_DIR=REFs/master/51fdb0b1b64e10e205041802cd91d962fb1d281c/optimizetoolchain
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
@@ -158,7 +158,7 @@ RUN case "${TARGETARCH}" in \
 # cmake/target.cmake plus the RelWithDebInfo optimization flags.
 RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
   && em++ -O3 -sMEMORY64=1 -fwasm-exceptions -pthread \
-      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
+      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=2147483648 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
       -g0 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
       /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
   && rm -f /tmp/em_prewarm.*
