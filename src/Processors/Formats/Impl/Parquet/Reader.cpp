@@ -226,6 +226,37 @@ static size_t decompressZSTDFramesUntilFull(ZSTD_DCtx * ctx, const char * data, 
     return produced;
 }
 
+namespace
+{
+
+/// The context shared by the ZSTD pages that the current `decodePrimitiveColumn` call decodes on this thread.
+thread_local ZstdDCtxPtr * current_zstd_context = nullptr;
+
+class ScopedZstdContext
+{
+public:
+    ScopedZstdContext() : outer(current_zstd_context)
+    {
+        if (!outer)
+            current_zstd_context = &ctx;
+    }
+
+    ~ScopedZstdContext()
+    {
+        if (!outer)
+            current_zstd_context = nullptr;
+    }
+
+    ScopedZstdContext(const ScopedZstdContext &) = delete;
+    ScopedZstdContext & operator=(const ScopedZstdContext &) = delete;
+
+private:
+    ZstdDCtxPtr ctx;
+    ZstdDCtxPtr * outer;
+};
+
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
@@ -274,9 +305,14 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             break;
         case parq::CompressionCodec::ZSTD:
         {
-            ZstdDCtxPtr ctx(ZSTD_createDCtx());
+            ZstdDCtxPtr own_ctx;
+            ZstdDCtxPtr & ctx = current_zstd_context ? *current_zstd_context : own_ctx;
             if (!ctx)
-                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create a ZSTD decompression context");
+            {
+                ctx.reset(ZSTD_createDCtx());
+                if (!ctx)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create a ZSTD decompression context");
+            }
             size_t res = ZSTD_decompressDCtx(ctx.get(), out, uncompressed_size, data, compressed_size);
             if (ZSTD_isError(res))
                 res = decompressZSTDFramesUntilFull(ctx.get(), data, compressed_size, out, uncompressed_size);
@@ -3662,6 +3698,8 @@ static constexpr size_t max_coalesced_value_bytes = 8;
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
+    ScopedZstdContext zstd_context;
+
     /// Allocate columns for values, null map, and array offsets.
     /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
     constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
