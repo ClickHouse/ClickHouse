@@ -181,12 +181,14 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char file_read_inject_version_token_mismatch[];
     extern const char file_top_k_query_condition_cache_inject_file_change[];
+    extern const char split_on_write_fail_to_publish_third_path[];
 }
 
 using String = std::string;
@@ -4025,13 +4027,15 @@ private:
 
         /// The file is complete - only now it becomes a part of the table. If the insert fails while
         /// writing it, the table keeps reading the files of the previous shards, and not a truncated one.
-        /// A complete file is not removed as an unfinished one even if the publication fails: the table
-        /// may list it already, as a truncating insert overwrites the files the table knows.
+        /// The file stays owned by the sink until the publication succeeds: if registering it throws (e.g. on
+        /// an allocation), `StorageFile::appendPath` rolls the registration back, and the destructor removes the
+        /// complete but unregistered file. Otherwise a glob pattern over the directory would read it, and the next
+        /// truncating insert would not delete it, as it deletes only the files the table knows.
         if (!path_is_published)
         {
-            path_is_published = true;
             if (publish_path)
                 publish_path(path);
+            path_is_published = true;
         }
     }
 
@@ -4552,7 +4556,17 @@ void StorageFile::appendPath(const String & path, bool written_by_split)
     std::lock_guard lock(paths_mutex);
     const bool is_new_path = std::find(paths.begin(), paths.end(), path) == paths.end();
     if (is_new_path)
+    {
+        /// The third path: the failure happens after a split insert has already published a shard of its own.
+        if (paths.size() == 2)
+        {
+            fiu_do_on(FailPoints::split_on_write_fail_to_publish_third_path,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure to publish the new path {}", path);
+            });
+        }
         paths.push_back(path);
+    }
     if (!written_by_split)
         return;
 

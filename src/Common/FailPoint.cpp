@@ -118,6 +118,7 @@ static struct InitFiu
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
+    ONCE(split_on_write_fail_to_publish_third_path) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
     ONCE(object_storage_queue_skip_one_file_in_batch) \

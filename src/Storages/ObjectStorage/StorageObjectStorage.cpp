@@ -1218,13 +1218,37 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// does not tell the next insert that it is taken. Once its object is committed, it is kept as committed in the
     /// configuration instead, before the reservation is released, so that the next insert with
     /// `*_create_new_file_on_insert` steps aside from it even if the object storage does not report it yet.
-    publish_path = [config = configuration, reservations, raw_key,
+    ///
+    /// A new key whose registration fails (e.g. on an allocation) is removed together with its committed object:
+    /// otherwise a glob pattern over the prefix would read it, and the next truncating insert would not delete it,
+    /// as it deletes only the keys the table knows. The key is still reserved by this insert while it is removed.
+    publish_path = [config = configuration, storage = object_storage, reservations, raw_key,
                     written_by_split = settings.split_on_write_by_size_bytes != 0](const String & new_key)
     {
         if (new_key == raw_key)
+        {
             config->commitPathWrittenByInsert(new_key);
-        else
+            return;
+        }
+
+        try
+        {
             config->appendPath({new_key}, written_by_split);
+        }
+        catch (...)
+        {
+            try
+            {
+                storage->removeObjectIfExists(StoredObject(new_key));
+                LOG_INFO(getLogger("StorageObjectStorage"), "Removed the object {} that a failed insert has not managed to register", new_key);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("StorageObjectStorage"),
+                    fmt::format("Cannot remove the object {} that a failed insert has not managed to register", new_key));
+            }
+            throw;
+        }
     };
 
     auto sink = std::make_shared<StorageObjectStorageSink>(

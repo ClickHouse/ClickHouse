@@ -171,17 +171,9 @@ public:
     /// An insert split by size publishes every object it writes, so the list is mutated in place rather than
     /// copied per object - a split export of thousands of objects would otherwise copy the whole list as many times.
     /// `written_by_split` marks a key written by an insert with `*_split_on_write_by_size_bytes`, see `getSplitTailPaths`.
-    void appendPath(const Path & path, bool written_by_split)
-    {
-        std::lock_guard lock(paths_mutex);
-        if (written_by_split)
-            paths_written_by_split.insert(path.path);
-        Paths & paths = getMutablePathsUnlocked();
-        if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) != paths.end())
-            return;
-        paths.push_back(path);
-        onPathsUpdatedUnlocked();
-    }
+    /// Either both the path and its provenance are registered, or nothing is: if it throws (e.g. on an allocation),
+    /// the list is left as it was, and the writer removes the object that it has not managed to register.
+    void appendPath(const Path & path, bool written_by_split);
 
     /// The keys after the first one that were written by an insert split by size, in the order of the list.
     /// A truncating insert that is not split itself deletes only these: the keys that an insert stepped aside
