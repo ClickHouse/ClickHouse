@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// ROWS frames keep only the row indexes of the bounds up to date; RANGE and GROUPS frames also keep `location`.
 struct FrameBounds
 {
     RowPoint start;

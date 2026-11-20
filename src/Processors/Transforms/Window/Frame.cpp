@@ -38,14 +38,13 @@ bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition.
-bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
+bool advanceToRow(const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
 {
     if (target_row_index >= partition.rows_count)
         return advanceToPartitionEnd(partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
     chassert(bound.row_index_in_partition <= row_index);
-    bound.location = blocks.move(bound.location, row_index - bound.row_index_in_partition);
     bound.row_index_in_partition = row_index;
     return true;
 }
@@ -133,7 +132,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(blocks, partition, current.row_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
+                    return advanceToRow(partition, current.row_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.begin_offset, frame.begin_preceding, false, start);
                 case WindowFrame::FrameType::GROUPS:
@@ -154,7 +153,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(blocks, partition, current.row_index_in_partition + 1, end);
+                    return advanceToRow(partition, current.row_index_in_partition + 1, end);
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
                     return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + 1, end);
@@ -163,7 +162,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return advanceToRow(blocks, partition, current.row_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
+                    return advanceToRow(partition, current.row_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.end_offset, frame.end_preceding, true, end);
                 case WindowFrame::FrameType::GROUPS:
