@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <algorithm>
+#include <typeinfo>
 
 using namespace DB;
 
@@ -276,7 +277,12 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
     for (const auto & query : queries)
     {
         ASTPtr ast = parse(query);
-        EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+        const ASTPtr cloned = ast->clone();
+        EXPECT_EQ(cloned->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+
+        const IAST & original_ref = *ast;
+        const IAST & cloned_ref = *cloned;
+        EXPECT_EQ(typeid(cloned_ref), typeid(original_ref)) << query;
     }
 }
 

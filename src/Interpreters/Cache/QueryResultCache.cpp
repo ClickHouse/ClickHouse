@@ -259,7 +259,7 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier can be nested
     ///    into `ASTSelectIntersectExceptQuery` nodes (see `ASTSelectIntersectExceptQuery::getTrailingSettings`),
     ///    and it governs every node on the way to it.
-    if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(node.get()))
         context = applyQueryLevelSettings(query_with_output->settings_ast, context);
 
     if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())
