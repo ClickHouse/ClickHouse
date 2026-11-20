@@ -116,7 +116,9 @@ namespace
         /// user-defined, WASM) leave the cells empty. Aliases resolve to their
         /// canonical function below and inherit its metadata.
         String signature;
-        bool inserted_function_flags = false;
+        UInt8 is_deterministic = 0;
+        UInt8 is_higher_order = 0;
+        bool has_function_flags = false;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             try
@@ -128,11 +130,9 @@ namespace
                 if (auto resolver = factory.tryGet(name, context))
                 {
                     signature = resolver->getSignatureString();
-                    const UInt8 is_deterministic = resolver->isDeterministic();
-                    const UInt8 is_higher_order = resolver->isHigherOrderFunction();
-                    res_columns[i++]->insert(is_deterministic);
-                    res_columns[i++]->insert(is_higher_order);
-                    inserted_function_flags = true;
+                    is_deterministic = resolver->isDeterministic();
+                    is_higher_order = resolver->isHigherOrderFunction();
+                    has_function_flags = true;
                 }
             }
             catch (...)
@@ -147,7 +147,12 @@ namespace
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
             }
         }
-        if (!inserted_function_flags)
+        if (has_function_flags)
+        {
+            res_columns[i++]->insert(is_deterministic);
+            res_columns[i++]->insert(is_higher_order);
+        }
+        else
         {
             res_columns[i++]->insertDefault();
             res_columns[i++]->insertDefault();
