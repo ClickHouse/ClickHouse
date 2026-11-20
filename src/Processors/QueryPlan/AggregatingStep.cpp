@@ -863,6 +863,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in);
+    checkDeserializedAggregateOutputNames(keys, aggregates);
+    checkDeserializedAggregateArguments(aggregates, *ctx.input_headers.front());
 
     UInt64 stats_key = 0;
     if (has_stats_key)
