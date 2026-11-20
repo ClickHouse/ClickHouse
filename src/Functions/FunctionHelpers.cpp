@@ -598,21 +598,49 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
             *max_value);
 }
 
+static bool uint64ColumnMayHoldValueAboveInt64(const IColumn & column)
+{
+    const IColumn * values = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
+        values = &column_const->getDataColumn();
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(values))
+        values = column_low_cardinality->getDictionary().getNestedNotNullableColumn().get();
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(values))
+        values = &column_nullable->getNestedColumn();
+
+    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
+    if (!column_uint64)
+        return true;
+
+    const auto & data = column_uint64->getData();
+    const auto max_value = findExtremeMax(data.data(), 0, data.size());
+    return max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max());
+}
+
 bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
 {
     bool has_uint64 = false;
     bool has_nullable = false;
+    bool has_low_cardinality_uint64 = false;
     for (const auto & argument : arguments)
     {
         if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64())
         {
             /// The dictionary of a `LowCardinality` column may keep values that no row references, e.g. after a filter.
-            if (argument.type->lowCardinality())
-                return true;
+            has_low_cardinality_uint64 |= argument.type->lowCardinality();
             has_uint64 = true;
         }
         has_nullable |= isNullableOrLowCardinalityNullable(argument.type);
     }
-    return has_uint64 && has_nullable;
+    if (!has_low_cardinality_uint64 && !(has_uint64 && has_nullable))
+        return false;
+
+    for (const auto & argument : arguments)
+    {
+        if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64()
+            && (!argument.column || uint64ColumnMayHoldValueAboveInt64(*argument.column)))
+            return true;
+    }
+    return false;
 }
 }

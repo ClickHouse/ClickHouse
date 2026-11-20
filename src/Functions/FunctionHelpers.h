@@ -238,6 +238,7 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
 /// Whether a UInt64 argument may hold values that are not the input of any row with a computed result, which
 /// `checkIntegerArgumentFitsInt64` must not reject: the value of a row whose result is NULL, because some argument
 /// (the same or another one) is Nullable, or a dictionary entry of a `LowCardinality` argument that no row references.
+/// Only a value of 2^63 or more counts, so a UInt64 argument that holds none, even behind a NULL, keeps the regular path.
 /// A function returns the negation from `canBeExecutedOnDefaultArguments`, so that the framework drops such values.
 bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments);
 }
