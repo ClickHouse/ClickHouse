@@ -1639,9 +1639,9 @@ add_dependencies(musl musl-headers)
 # x86_64). -iquote also bypasses CMake's include deduplication against the SYSTEM
 # PUBLIC dirs below, which would otherwise flip the order.
 target_compile_options(musl BEFORE PRIVATE
-    "-iquote" "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
-    "-iquote" "${MUSL_SOURCE_DIR}/arch/generic"
-    "-iquote" "${MUSL_GENERATED_DIR}"
+    "SHELL:-iquote ${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
+    "SHELL:-iquote ${MUSL_SOURCE_DIR}/arch/generic"
+    "SHELL:-iquote ${MUSL_GENERATED_DIR}"
 )
 target_include_directories(musl BEFORE PRIVATE
     "${MUSL_SOURCE_DIR}/src/include"

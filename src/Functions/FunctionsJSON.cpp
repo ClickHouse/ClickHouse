@@ -80,6 +80,12 @@ concept Reservable = requires (T t)
 };
 
 template <typename T>
+concept ParsableInPlace = requires (T t, typename T::Element & element)
+{
+    t.parse(std::string_view{}, size_t{0}, element);
+};
+
+template <typename T>
 concept Preparable = requires (T t)
 {
     t.prepare(
@@ -170,7 +176,11 @@ public:
                 if (!col_json_const)
                 {
                     std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
-                    document_ok = parser.parse(json, document);
+                    /// The bytes of the next rows serve as padding, so only the last rows are copied.
+                    if constexpr (ParsableInPlace<JSONParser>)
+                        document_ok = parser.parse(json, chars.size() - offsets[i], document);
+                    else
+                        document_ok = parser.parse(json, document);
                 }
 
                 bool added_to_column = false;
