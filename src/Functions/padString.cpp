@@ -3,6 +3,7 @@
 #include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
+#include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -10,6 +11,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -26,6 +28,29 @@ namespace
 {
     /// The maximum new padded length.
     constexpr ssize_t MAX_NEW_LENGTH = 1'000'000;
+
+    ssize_t getPaddedLength(const IColumn & column, size_t row)
+    {
+        return Field::dispatch([]<typename T>(const T & length) -> ssize_t
+        {
+            if constexpr (is_integer<T>)
+            {
+                if constexpr (is_signed_v<T>)
+                {
+                    if (length < 0)
+                        throw Exception(ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
+                            "New padded length ({}) is negative", DB::toString(length));
+                }
+                if (accurate::greaterOp(length, MAX_NEW_LENGTH))
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "New padded length ({}) is too big, maximum is: {}", DB::toString(length), MAX_NEW_LENGTH);
+
+                return static_cast<ssize_t>(length);
+            }
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected an integer column for the new padded length");
+        }, column[row]);
+    }
 
     /// Appends padding characters to a sink based on a pad string.
     /// Depending on how many padding characters are required to add
@@ -274,17 +299,7 @@ namespace
                 {
                     /// If `is_const_new_length` is true we can get and check the new length only once.
                     auto new_length_slice = lengths.getWhole();
-                    new_length = new_length_slice.elements->getInt(new_length_slice.position);
-                    if (new_length > MAX_NEW_LENGTH)
-                    {
-                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "New padded length ({}) is too big, maximum is: {}",
-                            std::to_string(new_length), std::to_string(MAX_NEW_LENGTH));
-                    }
-                    if (new_length < 0)
-                    {
-                        throw Exception(
-                            ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE, "New padded length ({}) is negative", std::to_string(new_length));
-                    }
+                    new_length = getPaddedLength(*new_length_slice.elements, new_length_slice.position);
                     if (is_const_new_length)
                     {
                         size_t rows_count = res_sink.offsets.size();
