@@ -126,7 +126,7 @@ With 'hottest' and 'coldest', the queue is walked from one end and the walk stop
 
 With 'random', the whole queue is walked to take a uniform sample of at most `max_elements` segments, ignoring `max_total_size`. The sample is then shuffled, and segments are dropped from its end until the total `size` is at most `max_total_size`, so the result can be smaller than what would fit.
 
-A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue, and the data queue always comes first, in every order.
+A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue: the system one, which holds the metadata needed to read the data, is more important than data one, so 'hottest' walks it first and 'coldest' last.
 
 Caches with the `LRU_OVERCOMMIT` and `SLRU_OVERCOMMIT` policies are not supported.
 

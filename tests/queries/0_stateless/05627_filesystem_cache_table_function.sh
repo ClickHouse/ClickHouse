@@ -102,7 +102,7 @@ SELECT 'hottest';
 SELECT priority_rank, queue, offset, size FROM filesystemCache('$slru', 100, 1000000, 'hottest');
 "
 
-echo "SplitCache: the data queue is always walked before the system one"
+echo "SplitCache: the system queue is more important than the data one"
 split="cache_05627_split"
 # Attaching the table reads its metadata files (System), the select reads its data (Data).
 $CLICKHOUSE_CLIENT -m --query "
@@ -126,16 +126,26 @@ SELECT count() FROM
     SELECT cache_path, concat('SplitCache_', segment_type) FROM system.filesystem_cache WHERE cache_name = '$split'
 );
 "
+# 'hottest' walks the system queue first, 'coldest' and 'random' (whose ranks are those of 'coldest') the data queue first.
 for order in hottest coldest random; do
+    if [ "$order" = hottest ]; then first=SplitCache_System; second=SplitCache_Data; else first=SplitCache_Data; second=SplitCache_System; fi
     $CLICKHOUSE_CLIENT --query "
-    SELECT '$order', maxIf(priority_rank, queue = 'SplitCache_Data') < minIf(priority_rank, queue = 'SplitCache_System')
+    SELECT '$order', '$first', maxIf(priority_rank, queue = '$first') < minIf(priority_rank, queue = '$second')
     FROM filesystemCache('$split', 1000, 1000000, '$order')
-    HAVING countIf(queue = 'SplitCache_Data') > 0 AND countIf(queue = 'SplitCache_System') > 0;
+    HAVING countIf(queue = '$first') > 0 AND countIf(queue = '$second') > 0;
     "
 done
-# When the limit is reached in the data queue, the system queue is not walked.
+# 'hottest' is the reverse of 'coldest'.
+$CLICKHOUSE_CLIENT --query "
+SELECT
+    (SELECT arrayMap(x -> x.2, arraySort(groupArray((priority_rank, path)))) FROM filesystemCache('$split', 1000, 1000000, 'hottest'))
+    = arrayReverse((SELECT arrayMap(x -> x.2, arraySort(groupArray((priority_rank, path)))) FROM filesystemCache('$split', 1000, 1000000, 'coldest')));
+"
+# When the limit is reached in the first queue, the second one is not walked.
 data_count=$($CLICKHOUSE_CLIENT --query "SELECT countIf(queue = 'SplitCache_Data') FROM filesystemCache('$split', 1000, 1000000)")
+system_count=$($CLICKHOUSE_CLIENT --query "SELECT countIf(queue = 'SplitCache_System') FROM filesystemCache('$split', 1000, 1000000)")
 $CLICKHOUSE_CLIENT --query "SELECT groupUniqArray(queue) FROM filesystemCache('$split', $data_count, 1000000, 'coldest')"
+$CLICKHOUSE_CLIENT --query "SELECT groupUniqArray(queue) FROM filesystemCache('$split', $system_count, 1000000, 'hottest')"
 
 echo "Access: requires SELECT on system.filesystem_cache"
 user="user_05627_${CLICKHOUSE_DATABASE}"

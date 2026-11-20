@@ -41,13 +41,15 @@ hottest
 2	SLRU_Protected	0	4
 3	SLRU_Probationary	4	4
 4	SLRU_Probationary	0	4
-SplitCache: the data queue is always walked before the system one
+SplitCache: the system queue is more important than the data one
 1
 0
-hottest	1
-coldest	1
-random	1
+hottest	SplitCache_System	1
+coldest	SplitCache_Data	1
+random	SplitCache_Data	1
+1
 ['SplitCache_Data']
+['SplitCache_System']
 Access: requires SELECT on system.filesystem_cache
 ACCESS_DENIED
 ACCESS_DENIED

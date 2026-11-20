@@ -133,10 +133,21 @@ void SplitFileCachePriority::iterate(
     QueueEntryType /* queue_entry_type */,
     FileSegmentSummaryInfos & result)
 {
-    /// Decision to iterate first over data than system queue
-    getPriority(SegmentType::Data).iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
-    getPriority(SegmentType::System)
-        .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
+    /// System is more important than Data + it is much smaller size
+    if (query_order == IterationOrder::HOTTEST)
+    {
+        getPriority(SegmentType::System)
+            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
+        getPriority(SegmentType::Data)
+            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
+    }
+    else
+    {
+        getPriority(SegmentType::Data)
+            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
+        getPriority(SegmentType::System)
+            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
+    }
 }
 
 bool SplitFileCachePriority::modifySizeLimits(

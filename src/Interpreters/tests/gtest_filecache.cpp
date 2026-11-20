@@ -4820,21 +4820,24 @@ try
         const ExpectedSegment system_head{system_key, Range(0, 4), QueueEntryType::SplitCache_System, "/System/"};
         const ExpectedSegment system_tail{system_key, Range(5, 9), QueueEntryType::SplitCache_System, "/System/"};
 
-        /// The data queue comes first in both orders.
+        /// The system queue is more important one: 'hottest' walks it first, 'coldest' last, so one order is the reverse of the other.
         assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_head, data_tail, system_head, system_tail});
-        assert_observed(cache.observeFilesystemCache(10, 100, Order::HOTTEST), {data_tail, data_head, system_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::HOTTEST), {system_tail, system_head, data_tail, data_head});
 
-        /// The limits and the ranks continue from the data queue to the system queue.
+        /// The limits and the ranks continue from the first queue to the second one.
         assert_observed(cache.observeFilesystemCache(3, 100, Order::COLDEST), {data_head, data_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(3, 100, Order::HOTTEST), {system_tail, system_head, data_tail});
         /// The data queue stops on its second segment (10 + 10 > 15), so the system queue is not walked,
         /// even though `system_head` would fit.
         assert_observed(cache.observeFilesystemCache(10, 15, Order::COLDEST), {data_head});
-        assert_observed(cache.observeFilesystemCache(10, 15, Order::HOTTEST), {data_tail});
+        /// The data queue stops on its first segment (5 + 5 + 10 > 15).
+        assert_observed(cache.observeFilesystemCache(10, 15, Order::HOTTEST), {system_tail, system_head});
         assert_observed(cache.observeFilesystemCache(10, 25, Order::COLDEST), {data_head, data_tail, system_head});
-        assert_observed(cache.observeFilesystemCache(10, 25, Order::HOTTEST), {data_tail, data_head, system_tail});
-        /// The data queue fills `query_max_total_size` exactly, so the system queue is not walked.
+        assert_observed(cache.observeFilesystemCache(10, 25, Order::HOTTEST), {system_tail, system_head, data_tail});
+        /// The first queue fills `query_max_total_size` exactly, so the second one is not walked.
         assert_observed(cache.observeFilesystemCache(10, 20, Order::COLDEST), {data_head, data_tail});
-        assert_observed(cache.observeFilesystemCache(10, 30, Order::HOTTEST), {data_tail, data_head, system_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(10, 10, Order::HOTTEST), {system_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(10, 30, Order::HOTTEST), {system_tail, system_head, data_tail, data_head});
         assert_observed(cache.observeFilesystemCache(10, 0, Order::COLDEST), {});
 
         /// The ranks of a sample continue from the data queue to the system one.
