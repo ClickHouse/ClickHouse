@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -222,7 +223,17 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        /// A write to a local shard runs this sink in a nested pipeline that a `KILL` of the query does not cancel.
+        auto query_status = context->getProcessListElementSafe();
+
+        /// A Buffer flush builds this context from the shared Buffer context, which has no process list element.
+        /// The flush runs on the thread of the INSERT that triggered it, so that thread's query context still sees the `KILL`.
+        /// Background flushes have no query context and keep waiting.
+        if (!query_status)
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                query_status = query_context->getProcessListElementSafe();
+
+        storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
         is_first_chunk = false;
     }
 
@@ -496,7 +507,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
+                        context->getProcessListElementSafe()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }
@@ -759,7 +771,7 @@ DistributedSink::~DistributedSink()
 {
     /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
     /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
-    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread
     std::lock_guard lock(execution_mutex);
     cancelExecutors();
 }
