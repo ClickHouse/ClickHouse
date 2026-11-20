@@ -2293,7 +2293,7 @@ Enable it only after all replicas are upgraded to a version that knows this sett
 write `ttl.txt` without the time, so a TTL merge executed by them is not byte-identical to the same merge
 executed with this setting, and the replica that commits it later has to fetch the merged part.
 )", 0, \
-        {"26.11", false, false, "New setting to store the time of the last TTL merge in the parts, so that `merge_with_ttl_timeout` survives a restart."}) \
+        {"26.12", false, false, "New setting to store the time of the last TTL merge in the parts, so that `merge_with_ttl_timeout` survives a restart."}) \
     DECLARE(Bool, ttl_only_drop_parts, false, R"(
 Controls whether data parts are fully dropped in MergeTree tables when all
 rows in that part have expired according to their `TTL` settings.
