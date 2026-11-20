@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -266,6 +267,15 @@ std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
 
 /// With an overflow mode other than `throw` CH returns a part of the result once the limit is reached. No Substrait relation does that.
 bool truncatesResult(const SizeLimits & limits) { return limits.hasLimits() && limits.overflow_mode != OverflowMode::THROW; }
+
+/// ClickHouse join keys match NaN with NaN and tell -0 from 0. Substrait `equal` does neither.
+bool hasFloatKey(const ActionsDAG::Node & node)
+{
+    const bool is_equality = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "equals";
+    if (is_equality && std::ranges::any_of(node.children, JoinCommon::keyMatchesValuesEqualsRejects, &ActionsDAG::Node::result_type))
+        return true;
+    return std::ranges::any_of(node.children, [](const auto * child) { return hasFloatKey(*child); });
+}
 
 /// True when rows leave the step in an order a sort below established.
 /// A sorting step starts it, the steps that destroy row order end it, and every other step is assumed to keep it.
@@ -874,6 +884,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
     {
         if (join_operator.expression.empty())
             return blocked("JOIN without a condition is not supported");
+        if (std::ranges::any_of(join_operator.expression, [](const auto & conjunct) { return hasFloatKey(*conjunct.getNode()); }))
+            return blocked("JOIN on a floating-point key is not supported");
         auto * join_body = join_rel.mutable_join();
         join_body->mutable_common()->mutable_direct();
         join_body->set_type(*join_type);
