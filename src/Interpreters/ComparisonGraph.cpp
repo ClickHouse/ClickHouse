@@ -269,7 +269,8 @@ bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNode
 {
     const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
     const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
-    return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type)) || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
+    return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type))
+        || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
 }
 
 bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
