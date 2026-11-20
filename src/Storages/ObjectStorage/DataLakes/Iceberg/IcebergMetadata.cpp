@@ -166,7 +166,8 @@ extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
-extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
+extern const SettingsUInt64 iceberg_compaction_max_bytes_to_merge;
+extern const SettingsUInt64 iceberg_compaction_max_rows_to_merge;
 extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
@@ -872,11 +873,10 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             "iceberg_snapshot_lease_seconds",
             "iceberg_outdated_snapshot_lifetime_seconds",
             "iceberg_compaction_commit_batch_size",
-            "iceberg_compaction_max_rows_in_data_file",
-            "iceberg_compaction_max_bytes_in_data_file",
             "iceberg_max_number_datafiles_to_compact",
             "iceberg_data_file_size_lower_threshold_compaction",
-            "iceberg_data_file_size_upper_threshold_compaction",
+            "iceberg_compaction_max_bytes_to_merge",
+            "iceberg_compaction_max_rows_to_merge",
         });
 
         auto check_setting = [](std::string_view setting_name)
@@ -1622,33 +1622,23 @@ std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
     LoggerPtr log)
 {
-    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
-    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
-    size_t skipped_delete_files = 0;
-    for (const auto & position_delete : position_deletes)
-    {
-        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
-        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
-            deletes_by_data_file[*lower].push_back(position_delete);
-        else
-            ++skipped_delete_files;
-    }
-    if (skipped_delete_files)
+    auto grouped = groupPositionDeletesByDataFile(position_deletes);
+    if (!grouped.other.empty())
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
+            log, "The row estimate does not subtract {} position delete files that cover several data files", grouped.other.size());
 
     UInt64 deleted_rows = 0;
-    if (deletes_by_data_file.empty())
+    if (grouped.single_data_file.empty())
         return deleted_rows;
 
     /// `defineDeletesSpan` needs them in the order of `operator<=>`.
-    for (auto & [_, deletes] : deletes_by_data_file)
+    for (auto & [_, deletes] : grouped.single_data_file)
         std::sort(deletes.begin(), deletes.end());
 
     for (const auto & data_file : data_files)
     {
-        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
-        if (it == deletes_by_data_file.end())
+        const auto it = grouped.single_data_file.find(data_file->parsed_entry->file_path_key);
+        if (it == grouped.single_data_file.end())
             continue;
 
         UInt64 file_scoped_rows = 0;

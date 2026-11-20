@@ -143,6 +143,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -169,6 +170,9 @@ public:
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    /// Renaming the files read (`rename_files_after_processing`) is a write to the source.
+    static void checkAccessForRenamingFiles(const ContextPtr & context);
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
@@ -494,6 +498,8 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
@@ -529,6 +535,8 @@ public:
 
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
 
     ReadFromFile(
         const Names & column_names_,
