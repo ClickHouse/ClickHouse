@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: Parquet support is not built in fast-test images
+-- Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_max_dictionary_size=(1048576, None)
 
 -- An out-of-range compression codec of a column chunk makes the dictionary filter skip that column; reading the
 -- column reports the corrupted codec.
