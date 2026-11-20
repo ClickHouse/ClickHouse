@@ -4,6 +4,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -18,11 +19,14 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class AddingDefaultsTransform final : public ISimpleTransform
 {
 public:
+    /// If `needed_columns_` is set, the other columns are dropped afterwards, so only the defaults of `needed_columns_`
+    /// and of the columns which their defaults depend on are computed.
     AddingDefaultsTransform(
         SharedHeader header,
         const ColumnsDescription & columns_,
         IInputFormat & input_format_,
-        ContextPtr context_);
+        ContextPtr context_,
+        const std::optional<NamesAndTypesList> & needed_columns_ = {});
 
     String getName() const override { return "AddingDefaultsTransform"; }
 
@@ -34,6 +38,8 @@ protected:
 private:
     const ColumnsDescription columns;
     const ColumnDefaults column_defaults;
+    /// The names in storage of `needed_columns_`.
+    std::optional<NameSet> needed_columns;
     IInputFormat & input_format;
     ContextPtr context;
 

@@ -39,3 +39,12 @@ default_by_other_column
 100	100	('default',25)
 100	100	('default',25)
 100	100	('default',25)
+JSONColumns, JSONCompactColumns, JSONColumnsWithMetadata
+7	14
+8	16
+9	18
+10	20
+11	100
+12	24
+13	0
+14	28

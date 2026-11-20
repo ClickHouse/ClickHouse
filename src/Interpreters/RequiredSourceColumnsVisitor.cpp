@@ -64,6 +64,11 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
 
 void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 {
+    /// An alias of any expression, e.g. of an identifier in `(c AS a).x`, hides the column `a` from `a.x` in its scope.
+    if (data.mask_subcolumns_of_aliases)
+        if (const String alias = ast->tryGetAlias(); !alias.empty())
+            data.alias_scopes[alias].insert(data.current_scopes.back());
+
     /// results are columns
 
     if (auto * t = ast->as<ASTIdentifier>())
@@ -170,8 +175,17 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty name");
 
-    if (!data.private_aliases.contains(node.name()))
-        data.addColumnIdentifier(node);
+    if (data.private_aliases.contains(node.name()))
+        return;
+
+    if (data.mask_subcolumns_of_aliases && node.compound())
+    {
+        if (data.private_aliases.contains(node.name_parts.front()))
+            return;
+        data.compound_identifiers[node.name()].push_back({node.name_parts.front(), data.current_scopes});
+    }
+
+    data.addColumnIdentifier(node);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr &, Data & data)
@@ -185,7 +199,9 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
                 local_aliases.push_back(name);
 
         /// visit child with masked local aliases
+        data.current_scopes.push_back(data.scopes_count++);
         RequiredSourceColumnsVisitor(data).visit(node.arguments->children[1]);
+        data.current_scopes.pop_back();
 
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);
