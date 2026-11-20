@@ -23,6 +23,12 @@ ORDER BY i ASC NULLS LAST WITH FILL TO 2, k WITH FILL;
 SELECT * FROM values('a Int64, o Int64, b Int64', (1, 0, 2), (1, 5, 1), (2, 0, 0))
 ORDER BY a WITH FILL, o, b WITH FILL;
 
+SELECT * FROM values('a Int64, o Int64, b Int64', (1, 2, 1), (1, 0, 0), (2, 3, 2))
+ORDER BY a WITH FILL TO 4, o DESC, b WITH FILL TO 2;
+
+SELECT * FROM values('a Int64, o Int64, b Int64', (1, 2, 0), (1, 0, 0), (2, 3, 2))
+ORDER BY a WITH FILL TO 4, o DESC, b WITH FILL TO 2;
+
 SELECT * FROM values('g Int64, i Int64', (0, 1), (0, 3), (1, 2), (1, 4))
 ORDER BY g, i WITH FILL
 SETTINGS use_with_fill_by_sorting_prefix = 0;
