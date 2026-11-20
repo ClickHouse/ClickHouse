@@ -1,5 +1,11 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/typeid_cast.h>
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -25,6 +31,57 @@ UInt64 LazyObjectStorageFileRegistry::registerFile(const ObjectInfoPtr & object_
             files.size());
     files.push_back(object_info);
     return files.size() - 1;
+}
+
+namespace
+{
+
+std::optional<size_t> countLeafColumnsOfType(const IDataType & type)
+{
+    if (isObject(type) || isDynamic(type))
+        return std::nullopt;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return countLeafColumnsOfType(*nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return countLeafColumnsOfType(*low_cardinality->getDictionaryType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return countLeafColumnsOfType(*array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        const auto keys = countLeafColumnsOfType(*map->getKeyType());
+        const auto values = countLeafColumnsOfType(*map->getValueType());
+        if (!keys || !values)
+            return std::nullopt;
+        return *keys + *values;
+    }
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        size_t leaves = 0;
+        for (const auto & element : tuple->getElements())
+        {
+            const auto element_leaves = countLeafColumnsOfType(*element);
+            if (!element_leaves)
+                return std::nullopt;
+            leaves += *element_leaves;
+        }
+        return std::max<size_t>(leaves, 1);
+    }
+    return 1;
+}
+
+}
+
+std::optional<size_t> countLeafColumns(const Block & header)
+{
+    size_t leaves = 0;
+    for (const auto & column : header)
+    {
+        const auto column_leaves = countLeafColumnsOfType(*column.type);
+        if (!column_leaves)
+            return std::nullopt;
+        leaves += *column_leaves;
+    }
+    return leaves;
 }
 
 ObjectStorageLazyMaterializingRows::ObjectStorageLazyMaterializingRows(LazyObjectStorageFileRegistryPtr file_registry_)
@@ -70,7 +127,9 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     const std::optional<DB::FormatSettings> & format_settings_,
     ReadFromFormatInfo info_,
     ContextPtr context_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t main_read_leaf_columns_,
+    size_t max_num_streams_)
     : ISourceStep(std::move(header))
     , storage_id(storage_id_)
     , object_storage(std::move(object_storage_))
@@ -80,6 +139,8 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
+    , main_read_leaf_columns(main_read_leaf_columns_)
+    , max_num_streams(max_num_streams_)
 {
 }
 
@@ -88,7 +149,7 @@ void LazilyReadFromObjectStorage::setLazyMaterializingRows(ObjectStorageLazyMate
     lazy_materializing_rows = std::move(lazy_materializing_rows_);
 }
 
-void LazilyReadFromObjectStorage::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void LazilyReadFromObjectStorage::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazilyReadFromObjectStorage: lazy_materializing_rows is not set");
@@ -103,6 +164,8 @@ void LazilyReadFromObjectStorage::initializePipeline(QueryPipelineBuilder & pipe
         info,
         context,
         max_block_size,
+        std::min(settings.max_threads, max_num_streams),
+        main_read_leaf_columns,
         lazy_materializing_rows);
 
     processors.emplace_back(source);

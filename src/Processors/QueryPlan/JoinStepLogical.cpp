@@ -25,15 +25,18 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/if.h>
+#include <Functions/indexHint.h>
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
@@ -766,9 +769,14 @@ void JoinStepLogical::updateOutputHeader()
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
+bool JoinStepLogical::isDummyResultColumn(const ActionsDAG::Node & node)
+{
+    return node.result_name == join_dummy_result_name;
+}
+
 bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
 {
-    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
+    return isDummyResultColumn(*node) && JoinActionRef(node, expression_actions).fromNone();
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)
@@ -781,12 +789,18 @@ JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoin
 
 void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_builder, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
-    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {}, false);
+    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {});
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
 QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
+    return {&child_plan};
+}
+
+QueryPlanRawPtrs JoinStepLogicalLookup::getBuiltChildPlans()
+{
+    /// The plan is held, not built on demand, so observing it costs nothing.
     return {&child_plan};
 }
 
@@ -869,6 +883,51 @@ struct JoinPlanningContext
     UnorderedMapWithMemoryTracking<String, ColumnStats> right_column_stats;
     bool is_prebuilt_hash_join{};
 };
+
+/// The comparison functions compare `FixedString` with `String` as if the shorter value were padded with zero bytes,
+/// so values that differ only in trailing zero bytes are equal (`toFixedString('a', 3) = 'a'`). The cast to the common
+/// type `String` drops the trailing zero bytes of the `FixedString` operand; the `String` operand needs the same
+/// normalization, otherwise the keys would order `'a'` before `'a\0\0'` where the operator sees a tie.
+/// The same holds for the elements of tuples, see `hasAlignedStringVsFixedStringElement`: this trims every `String`
+/// it finds in `node`. A rebuilt tuple loses its element names, so the caller casts the result to the common type.
+static const ActionsDAG::Node * addTrimZeroBytes(ActionsDAG & dag, const ActionsDAG::Node * node, const DataTypePtr & other_type)
+{
+    if (!hasAlignedStringVsFixedStringElement(node->result_type, other_type))
+        return node;
+
+    const auto & factory = FunctionFactory::instance();
+    if (!isTuple(removeNullable(node->result_type)))
+    {
+        auto string_type = std::make_shared<DataTypeString>();
+        const auto & zero_byte = dag.addColumn(string_type->createColumnConst(1, String(1, '\0')), string_type, "'\\0'_String");
+        return &dag.addFunction(factory.get("trimRight", nullptr), {node, &zero_byte}, {});
+    }
+
+    const bool is_nullable = node->result_type->isNullable();
+    const auto * tuple_node = is_nullable ? &dag.addFunction(factory.get("assumeNotNull", nullptr), {node}, {}) : node;
+
+    const auto other_tuple_type = removeLowCardinalityAndNullable(other_type);
+    const auto & other_elements = assert_cast<const DataTypeTuple &>(*other_tuple_type).getElements();
+    auto index_type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG::NodeRawConstPtrs elements;
+    for (size_t i = 0; i < other_elements.size(); ++i)
+    {
+        const auto & index = dag.addColumn(index_type->createColumnConst(1, i + 1), index_type, fmt::format("{}_UInt64", i + 1));
+        const auto & element = dag.addFunction(factory.get("tupleElement", nullptr), {tuple_node, &index}, {});
+        elements.push_back(addTrimZeroBytes(dag, &element, other_elements[i]));
+    }
+
+    const auto * result = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>()), elements, {});
+    if (!is_nullable)
+        return result;
+
+    /// A NULL tuple stays NULL.
+    const auto & is_null = dag.addFunction(factory.get("isNull", nullptr), {node}, {});
+    return &dag.addFunction(
+        createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
+        {&is_null, node, result},
+        {});
+}
 
 /** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
   * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
@@ -953,19 +1012,28 @@ static void predicateOperandsToCommonType(
             return mapped_it->second;
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
-    if (!left_type->equals(*common_type))
+
+    /// The trim goes before the cast: it rebuilds a tuple without its element names, and the cast restores them.
+    auto trim_transform = [](const DataTypePtr & other_type)
+    {
+        return [&other_type](ActionsDAG & dag, auto && nodes) { return addTrimZeroBytes(dag, nodes.at(0), other_type); };
+    };
+
+    if (!cast_to_subtype && hasAlignedStringVsFixedStringElement(left_type, right_type))
+        left_node = JoinActionRef::transform({left_node}, trim_transform(right_type));
+    if (!left_node.getType()->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
-    auto cast_right_node = [&]
+    auto transform_right_node = [&](auto && transform)
     {
         /// The build-side key name is the rendezvous between the shared runtime filter descriptors
         /// registered by the joinRuntimeFilter optimization and `HashJoin::publishSharedRuntimeFilters`;
-        /// keep the descriptors pointing at the cast key the join clause will use.
-        String name_before_cast = right_node.getColumnName();
-        right_node = JoinActionRef::transform({right_node}, cast_transform);
+        /// keep the descriptors pointing at the rewritten key the join clause will use.
+        String name_before = right_node.getColumnName();
+        right_node = JoinActionRef::transform({right_node}, transform);
         for (auto & descriptor : shared_runtime_filter_descriptors)
         {
-            if (descriptor.build_key_name == name_before_cast)
+            if (descriptor.build_key_name == name_before)
             {
                 descriptor.build_key_name = right_node.getColumnName();
                 descriptor.common_type = common_type;
@@ -978,8 +1046,9 @@ static void predicateOperandsToCommonType(
         /// A `Join` table engine keeps the key declared by its storage. Under the subtype fallback
         /// the check above guarantees that a prebuilt hash table uses the subtype modulo the
         /// `LowCardinality` and `Nullable` wrappers, so its key must not be rewritten at all.
+        /// The same holds for the zero-byte normalization: the hash table is already built over the raw keys.
         if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
-            cast_right_node();
+            transform_right_node(cast_transform);
     }
     else if (planning_context.is_storage_join
         && (!cast_to_subtype || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type))))
@@ -989,12 +1058,14 @@ static void predicateOperandsToCommonType(
         /// a nullable probe key does not require converting the dictionary key to `Nullable`,
         /// which would turn it into a derived expression and disable the direct algorithm.
         if (!removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type)))
-            cast_right_node();
+            transform_right_node(cast_transform);
     }
     else
     {
-        if (!right_type->equals(*common_type))
-            cast_right_node();
+        if (!cast_to_subtype && hasAlignedStringVsFixedStringElement(right_type, left_type))
+            transform_right_node(trim_transform(left_type));
+        if (!right_node.getType()->equals(*common_type))
+            transform_right_node(cast_transform);
     }
 }
 
@@ -1323,17 +1394,22 @@ static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
     }
 }
 
+/// The statistics range of a key operand, or std::nullopt when it is missing, not numeric, or
+/// does not give `guarantee`.
 static std::optional<IEJoinOperandRange> getIEJoinOperandRange(
-    const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats, const JoinActionRef & operand, ValueRangeGuarantee guarantee)
 {
     auto it = column_stats.find(operand.getColumnName());
-    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+    if (it == column_stats.end())
         return {};
-    auto min_value = statisticsFieldToFloat64(*it->second.min_value);
-    auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+    const auto range = it->second.valueRange(guarantee);
+    if (!range)
+        return {};
+    auto min_value = statisticsFieldToFloat64(range->min);
+    auto max_value = statisticsFieldToFloat64(range->max);
     if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
         return {};
-    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = range->null_fraction};
 }
 
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
@@ -1352,8 +1428,9 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
-    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs);
-    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs);
+    /// Uniform interpolation tolerates inexact endpoints, but the values must be spread over the range.
+    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs, ValueRangeGuarantee::Representative);
+    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs, ValueRangeGuarantee::Representative);
     if (!left_range || !right_range)
         return {};
 
@@ -1408,8 +1485,10 @@ static Float64 estimateIEJoinKeyPairSelectivity(
     bool first_bound_is_upper = shared_column_on_left ? isLessFamily(first_op) : !isLessFamily(first_op);
     const auto & lower_bound = first_bound_is_upper ? second_bound : first_bound;
     const auto & upper_bound = first_bound_is_upper ? first_bound : second_bound;
-    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound);
-    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound);
+    /// Refuting `lo <= hi` from min/max needs the true extremes of the joined rows; without them the
+    /// pair is scored as independent.
+    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound, ValueRangeGuarantee::Exact);
+    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound, ValueRangeGuarantee::Exact);
     bool bounds_ordered = lower_bound_range && upper_bound_range
         && lower_bound_range->min <= upper_bound_range->min && lower_bound_range->max <= upper_bound_range->max;
 
@@ -2020,6 +2099,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     auto & join_expression = join_operator.expression;
 
+    /// `indexHint` is always 1 and only index analysis reads its argument, which a condition still in `ON` never reaches.
+    std::erase_if(join_expression, [](const JoinActionRef & condition)
+    {
+        const auto * node = condition.getNode();
+        return node->type == ActionsDAG::ActionType::FUNCTION && FunctionIndexHint::tryGet(node->function_base);
+    });
+
     const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
     const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
@@ -2062,8 +2148,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            const QueryPlanOptimizations::RelationStatsOptions stats_options{
+                .find_single_node_read = &optimization_settings.find_single_node_read};
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0], stats_options).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1], stats_options).column_stats;
         }
     }
 
@@ -2550,7 +2638,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
         auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            ? QueryPlanOptimizations::estimateReadRowsCount(
+                  *children[1],
+                  QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+                  .column_stats
             : right_relation_column_stats;
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
@@ -2879,6 +2970,31 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
         auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
             continue;
+
+        bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+
+        /// The callers compare the extracted keys at their least supertype, so `FixedString` vs `String` values, also as
+        /// tuple elements, leave here normalized: the `String` ones trimmed, the others by the cast to the common type.
+        const auto lhs_type = lhs.getType();
+        const auto rhs_type = rhs.getType();
+        const bool has_strings_to_trim = is_key_pair
+            && (hasAlignedStringVsFixedStringElement(lhs_type, rhs_type) || hasAlignedStringVsFixedStringElement(rhs_type, lhs_type));
+        /// Without a common type the join reports the mismatch itself.
+        if (auto common_type = has_strings_to_trim ? tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) : nullptr)
+        {
+            common_type = JoinCommon::compareBoolKeysAsUInt8(common_type, lhs_type, rhs_type);
+            auto normalize = [&](JoinActionRef & operand, const DataTypePtr & other_type)
+            {
+                operand = JoinActionRef::transform({operand}, [&](ActionsDAG & dag, auto && nodes)
+                {
+                    const auto * node = addTrimZeroBytes(dag, nodes.at(0), other_type);
+                    return node->result_type->equals(*common_type) ? node : &dag.addCast(*node, common_type, {}, nullptr);
+                });
+            };
+            normalize(lhs, rhs_type);
+            normalize(rhs, lhs_type);
+            expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
+        }
 
         const auto * left_node = lhs.getNode();
         const auto * right_node = rhs.getNode();
