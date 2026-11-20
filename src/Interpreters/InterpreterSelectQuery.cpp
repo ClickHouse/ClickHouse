@@ -35,6 +35,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -52,7 +53,6 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
@@ -128,6 +128,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -149,7 +150,6 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
-    extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
@@ -168,7 +168,7 @@ namespace Setting
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -218,7 +218,9 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
+    extern const SettingsBool enable_parallel_single_level_merge_by_index;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -445,15 +447,8 @@ void checkAccessRightsForSelect(
         /// In this case just checking access for `required_columns` doesn't work correctly
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
-        auto access = context->getAccess();
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        for (const auto & column : table_metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the same column of its target table.
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
-                return;
-        }
+        if (!getColumnsSelectableByTrivialQuery(storage, table_id, table_metadata->getColumns(), context).empty())
+            return;
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
@@ -462,7 +457,21 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) back to their parent storage
+    /// column names before the access check. Column-level grants are stored against top-level
+    /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
+    if (table_metadata)
+    {
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            table_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck(), context, table_id));
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    }
 }
 
 /// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
@@ -507,8 +516,8 @@ ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
-/// Returns true if we should ignore quotas and limits for a specified table in the system database.
-bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+/// Returns true if we should ignore quotas for a specified table in the system database.
+bool shouldIgnoreQuota(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -642,12 +651,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     query_info.query = query_ptr->clone();
-
-    if (settings[Setting::count_distinct_optimization])
-    {
-        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
-        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
-    }
 
     if (settings[Setting::optimize_uniq_to_count])
     {
@@ -788,7 +791,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
-    max_streams = getEffectiveMaxThreads(settings);
+    max_streams = getEffectiveMaxThreads(*context);
     ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
@@ -1101,12 +1104,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             checkAccessRightsForFilter(
                 context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
-        /// Remove limits for some tables in the `system` database.
-        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
-        {
+        /// Remove quota for some tables in the `system` database.
+        if (shouldIgnoreQuota(table_id) && (joined_tables.tablesCount() <= 1))
             options.ignore_quota = true;
-            options.ignore_limits = true;
-        }
     }
 
     /// Add prewhere actions with alias columns and record needed columns from storage.
@@ -2055,7 +2055,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
 
-                    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
+                    auto join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentHeader(),
                         joined_plan->getCurrentHeader(),
                         expressions.join,
@@ -2064,11 +2064,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /* min_block_size_bytes_ */ 0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
-                        /* keep_left_read_in_order_ = */ false,
                         /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
-                    std::vector<QueryPlanPtr> plans;
+                    QueryPlanPtrs plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
 
@@ -2349,12 +2348,13 @@ static void executeMergeAggregatedImpl(
     bool final,
     bool is_remote_storage,
     bool has_grouping_sets,
-    const Settings & settings,
+    const Context & context,
     const NamesAndTypesList & aggregation_keys,
     const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
     bool should_produce_results_in_order_of_bucket_number)
 {
+    const Settings & settings = context.getSettingsRef();
     auto keys = aggregation_keys.getNames();
 
     /** There are two modes of distributed aggregation.
@@ -2376,11 +2376,12 @@ static void executeMergeAggregatedImpl(
         keys,
         aggregates,
         overflow_row,
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(context),
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
@@ -2440,32 +2441,12 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
 {
-    if (input_pipe || !storage || !storage->supportsPrewhere())
+    if (input_pipe || !storage)
         return false;
 
-    /// A remote storage cannot carry the filter at all: read() only ships query text to the
-    /// remote servers and never lowers the filter into it, so pushing would silently drop an
-    /// access-control filter. Refuse, and let the stage check fail closed.
-    if (storage->isRemote())
-        return false;
-
-    /// The filter is built against this table's schema, but read() hands it to wrapper
-    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-    /// Push it down only if every column it consumes is in the PREWHERE contract.
     /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
     /// analysis_result exists; they share the same object.
-    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-    {
-        const auto & table_columns = metadata_snapshot->getColumns();
-        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
-        {
-            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                return false;
-        }
-    }
-
-    return true;
+    return canPushDownRowPolicyFilter(*storage, metadata_snapshot->getColumns(), row_policy_info->actions.getRequiredColumnsNames());
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
@@ -2791,7 +2772,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
-    size_t max_threads_execute_query = getEffectiveMaxThreads(settings);
+    size_t max_threads_execute_query = getEffectiveMaxThreads(*context);
 
     /**
      * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -2981,7 +2962,7 @@ static Aggregator::Params getAggregatorParams(
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
         context.getTempDataOnDisk(),
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(context),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],
@@ -2994,7 +2975,9 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_parallel_single_level_merge_by_index],
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
@@ -3039,7 +3022,7 @@ void InterpreterSelectQuery::executeAggregation(
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])
-        : getEffectiveMaxThreads(settings);
+        : getEffectiveMaxThreads(*context);
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
@@ -3079,7 +3062,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         final,
         storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
-        context->getSettingsRef(),
+        *context,
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
@@ -3226,7 +3209,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         bool need_sort = !window.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+            const size_t effective_max_threads = getEffectiveMaxThreads(*context);
             need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
                 || (effective_max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
         }
@@ -3261,6 +3244,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 

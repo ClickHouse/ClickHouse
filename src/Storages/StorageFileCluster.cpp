@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -97,8 +98,7 @@ namespace
 void checkWriteAccessIfFilesAreRenamed(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        StorageFile::checkAccessForRenamingFiles(context);
 }
 
 }
@@ -122,7 +122,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
     if (add_structure_and_format)
         TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
             format_name,
             context
         );
