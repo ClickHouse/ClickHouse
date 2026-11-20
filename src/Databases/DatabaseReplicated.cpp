@@ -1631,10 +1631,44 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
-        for (const auto & command : query_alter->command_list->children)
+        /// The other table of a partition command must be in this database. A table of another database is a different table
+        /// on each replica, and an empty database, which the access check resolves with the current database of the query,
+        /// would be resolved with the name of this database on the replicas. The name of this database is removed, because it
+        /// may be different on the other replicas.
+        auto check_database = [&](String & database)
         {
-            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
+            const String & resolved = database.empty() ? query_context->getCurrentDatabase() : database;
+            if (resolved != getDatabaseName())
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "A partition command with a table of another database ({}) is not supported for Replicated engine", resolved);
+            }
+            database.clear();
+        };
+
+        for (const auto & command_ast : query_alter->command_list->children)
+        {
+            auto & command = command_ast->as<ASTAlterCommand &>();
+            if (!isSupportedAlterTypeForOnClusterDDLQuery(command.type))
+            {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
+            }
+
+            if (command.type == ASTAlterCommand::MOVE_PARTITION && command.move_destination_type == DataDestinationType::TABLE)
+            {
+                check_database(command.to_database);
+            }
+
+            if (command.type == ASTAlterCommand::REPLACE_PARTITION)
+            {
+                if (command.from_database.empty()
+                    && query_context->tryResolveStorageID(StorageID{command.from_database, command.from_table}, Context::ResolveExternal))
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "A temporary table cannot be the source of a partition in a query replicated by a Replicated database");
+                }
+                check_database(command.from_database);
+            }
         }
     }
 
@@ -3379,6 +3413,8 @@ The [system.clusters](/reference/system-tables/clusters) system table contains a
 When creating a new replica of the database, this replica creates tables by itself. If the replica has been unavailable for a long time and has lagged behind the replication log — it checks its local metadata with the current metadata in ZooKeeper, moves the extra tables with data to a separate non-replicated database (so as not to accidentally delete anything superfluous), creates the missing tables, updates the table names if they have been renamed. The data is replicated at the `ReplicatedMergeTree` level, i.e. if the table is not replicated, the data will not be replicated (the database is responsible only for metadata).
 
 [`ALTER TABLE FREEZE|ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](/reference/statements/alter/partition) queries are allowed but not replicated. The database engine will only add/fetch/remove the partition/part to the current replica. However, if the table itself uses a Replicated table engine, then the data will be replicated after using `ATTACH`.
+
+The other table of [`MOVE PARTITION ... TO TABLE`](/reference/statements/alter/partition#move-partition-to-table) and [`REPLACE PARTITION ... FROM`](/reference/statements/alter/partition#replace-partition) must be in the same database when the query is replicated: a table of another database is a different table on each replica, so such a query is refused.
 
 In case you need only configure a cluster without maintaining table replication, refer to [Cluster Discovery](/guides/oss/deployment-and-scaling/cluster-discovery) feature.
 
