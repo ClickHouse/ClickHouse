@@ -30,7 +30,7 @@ namespace DB
 /* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
- *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... } },
+ *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... }, "key_ranges": { "column_name": [0, 999] } },
  *   ...
  * }';
  */
@@ -74,6 +74,20 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
             auto column_bytes = stat_object->getObject("column_bytes");
             for (const auto & [key, value] : *column_bytes)
                 stats.column_stats[key].avg_bytes = value.convert<Float64>();
+        }
+
+        /// `"key_ranges": { "column_name": [min, max] }`
+        if (stat_object->isObject("key_ranges"))
+        {
+            auto key_ranges = stat_object->getObject("key_ranges");
+            for (const auto & [key, value] : *key_ranges)
+            {
+                const auto & range = value.extract<Poco::JSON::Array::Ptr>();
+                if (!range || range->size() != 2)
+                    continue;
+                stats.column_stats[key].min_value = Field(range->get(0).convert<Float64>());
+                stats.column_stats[key].max_value = Field(range->get(1).convert<Float64>());
+            }
         }
         LOG_DEBUG(
             getLogger("optimizeJoin"),

@@ -17,6 +17,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 struct StorageID;
 
@@ -103,9 +104,9 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
-    // INSERT INTO TABLE FUNCTION ... PARTITION BY
-    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr &) {}
+    /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
+    /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
+    void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
@@ -147,6 +148,17 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
+    /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    [[nodiscard]] String getEngineNameForAccessCheck() const;
+
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
+    static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -165,6 +177,10 @@ protected:
     void checkSourceStorageAccess(
         const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const;
 
+    /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
+    /// so it needs its own write access check.
+    ASTPtr partition_by;
+
 private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
@@ -182,9 +198,6 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
-
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

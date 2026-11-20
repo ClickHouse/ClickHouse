@@ -209,8 +209,7 @@ public:
     /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
     /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
     void replaceSetAndKey(SetAndKeyPtr set);
-    SetAndKeyPtr detachSetAndKey();
-    const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
+    [[nodiscard]] const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
