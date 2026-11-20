@@ -197,7 +197,10 @@ void QueryPipelineBuilder::addDefaultTotals()
         }
 
         auto column = elem.type->createColumn();
-        column->insertDefault();
+        if (elem.type->isDefaultInsertTrivial())
+            column->insertDefault();
+        else
+            elem.type->insertDefaultInto(*column);
         columns.emplace_back(std::move(column));
     }
 

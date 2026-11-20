@@ -708,10 +708,17 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
         else
             col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        if (col.column->size() != 1)
-            col.column = col.column->cloneResized(1);
+        col.column = totalsColumnToSingleRow(col.column, col.type);
     }
+}
+
+ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type)
+{
+    if (column->empty() && !isColumnConst(*column) && !type->isDefaultInsertTrivial())
+        return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    if (column->size() != 1)
+        return column->cloneResized(1);
+    return column;
 }
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
