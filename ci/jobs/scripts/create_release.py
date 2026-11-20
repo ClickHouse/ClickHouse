@@ -254,7 +254,8 @@ class ReleaseInfo:
                 strict=True,
                 verbose=True,
             )
-            commit_ref = Git.get_commit_sha("origin/master")
+            # The local master is the cut, and the master bump step commits on it.
+            Shell.check(f"{GIT_PREFIX} checkout -B master origin/master", strict=True, verbose=True)
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
@@ -520,7 +521,6 @@ class ReleaseInfo:
             with checkout("master"):
                 # No fetch: the bump goes on the cut, so a push rejected because master moved aborts the run.
                 master_bumped = not CHVersion.get_version_at_commit("origin/master").is_older(version)
-                Shell.check(f"{GIT_PREFIX} reset --hard {self.commit_sha}", strict=True, verbose=True)
                 if master_bumped:
                     print(f"master already at version [{version.string}] — nothing to push")
                 else:
