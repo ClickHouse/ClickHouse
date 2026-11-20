@@ -240,6 +240,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
     const ssize_t size = ::recvmsg(fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
     if (size < 0)
         return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
+    bool unexpected_descriptors = false;
     /// The `CMSG_NXTHDR` of musl casts and compares in ways that `-Weverything` refuses.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcast-align"
@@ -254,12 +255,27 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
             std::memcpy(&credentials, CMSG_DATA(cmsg), sizeof(credentials));
             sender = credentials.pid;
         }
-        else if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
-            std::memcpy(&passed_fd, CMSG_DATA(cmsg), sizeof(int));
+        else if (cmsg->cmsg_type == SCM_RIGHTS)
+        {
+            /// The kernel installs every descriptor that fits, and the alignment leaves room for more than one.
+            const size_t count = (static_cast<size_t>(cmsg->cmsg_len) - CMSG_LEN(0)) / sizeof(int);
+            for (size_t i = 0; i < count; ++i)
+            {
+                int received = -1;
+                std::memcpy(&received, CMSG_DATA(cmsg) + i * sizeof(int), sizeof(int));
+                if (passed_fd < 0 && !unexpected_descriptors)
+                    passed_fd = received;
+                else
+                {
+                    closeDescriptor(received);
+                    unexpected_descriptors = true;
+                }
+            }
+        }
     }
 #pragma clang diagnostic pop
-    /// The space is for one descriptor: with more, the kernel sets `MSG_CTRUNC` and closes the others.
-    if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
+    /// Only one descriptor is expected. The kernel closes the ones that do not fit, and sets `MSG_CTRUNC`.
+    if (unexpected_descriptors || (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)))
     {
         if (passed_fd >= 0)
             closeDescriptor(passed_fd);
