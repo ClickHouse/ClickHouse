@@ -69,20 +69,16 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     /// when mutation commands are re-read from ZooKeeper or disk. Leave
                     /// `fields_count` unset, the same as for an unsubstituted parameter; it is
                     /// deduced from the cast operand in `MergeTreeData::getPartitionIDFromQuery`.
-                    /// A `DateTime64` / `Time64` parameter is substituted as a cast of a cast of a literal.
-                    const ASTFunction * cast_function = function_ast;
-                    ASTPtr cast_operand;
-                    const ASTFunction * inner_function = nullptr;
-                    while (true)
+                    /// A `DateTime64` / `Time64` parameter becomes a cast of a cast of a literal.
+                    ASTPtr cast_operand = value;
+                    const ASTFunction * inner_function = function_ast;
+                    while (isFunctionCast(inner_function))
                     {
-                        if (!cast_function->arguments || cast_function->arguments->children.size() != 2)
+                        if (!inner_function->arguments || inner_function->arguments->children.size() != 2)
                             return false;
 
-                        cast_operand = cast_function->arguments->children.at(0);
+                        cast_operand = inner_function->arguments->children.at(0);
                         inner_function = cast_operand->as<ASTFunction>();
-                        if (!isFunctionCast(inner_function))
-                            break;
-                        cast_function = inner_function;
                     }
 
                     bool is_tuple_function = inner_function && inner_function->name == "tuple";
