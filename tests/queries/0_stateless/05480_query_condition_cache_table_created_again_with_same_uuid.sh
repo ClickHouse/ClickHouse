@@ -181,4 +181,27 @@ create_text "$uuid"
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number, if(number = 999, 'apple', 'pear') FROM numbers(1000)"
 query_text
 
+# Other engines read through the mmap cache too when the reader executor passes the file size.
+function create_log()
+{
+    $CLICKHOUSE_CLIENT -q "
+        DROP TABLE IF EXISTS tab_log SYNC;
+        CREATE TABLE tab_log UUID '$2' (a UInt64 CODEC(NONE)) ENGINE = $1;"
+}
+
+function query_log()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab_log WHERE a < 50
+        SETTINGS use_reader_executor = 1, local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1"
+}
+
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+create_log Log "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab_log SELECT number + 100 FROM numbers(100)"
+query_log
+create_log Log "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab_log SELECT number FROM numbers(100)"
+query_log
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_log SYNC"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"
