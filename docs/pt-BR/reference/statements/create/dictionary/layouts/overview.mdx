@@ -8,9 +8,7 @@ doc_type: 'referência'
 
 import CloudDetails from '/snippets/pt-BR/_snippet_dictionary_in_cloud.mdx';
 
-<div id="storing-dictionaries-in-memory">
-  ## Tipos de layout de dicionário
-</div>
+## Tipos de layout de dicionário {#storing-dictionaries-in-memory}
 
 Há várias formas de armazenar dicionários em memória, cada uma com diferentes compensações entre uso de CPU e de RAM.
 
@@ -43,9 +41,11 @@ Há várias formas de armazenar dicionários em memória, cada uma com diferente
   Layouts com cache não são recomendados devido ao desempenho potencialmente ruim e à dificuldade de ajustar os parâmetros — veja [cache](/pt-BR/reference/statements/create/dictionary/layouts/cache) para mais detalhes.
 </Tip>
 
-<div id="specify-dictionary-layout">
-  ## Especifique o layout de dicionário
-</div>
+<Note>
+  Layouts baseados em cache não são adequados para um enriquecimento confiável no momento da inserção, pois suas entradas já aquecidas ficam restritas a cada servidor e se perdem quando um servidor é reiniciado ou substituído. O autoscaling do ClickHouse Cloud e a substituição gerenciada de nós tornam essa situação mais provável. Em vez disso, use um layout totalmente carregado; veja [Dicionários com cache em caminhos de ingestão](/pt-BR/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
+
+## Especifique o layout de dicionário {#specify-dictionary-layout}
 
 <CloudDetails />
 
@@ -139,9 +139,7 @@ Dicionários cujo layout não contém a palavra `complex-key*` têm uma chave do
   </Tab>
 </Tabs>
 
-<div id="improve-performance">
-  ## Melhore o desempenho do dicionário
-</div>
+## Melhore o desempenho do dicionário {#improve-performance}
 
 Há várias formas de melhorar o desempenho do dicionário:
 

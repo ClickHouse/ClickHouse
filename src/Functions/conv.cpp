@@ -2,6 +2,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -16,6 +17,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
@@ -23,16 +27,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
-}
-
-namespace
-{
-
-bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
-{
-    return isStringOrFixedString(arg) || isNativeNumber(arg);
-}
-
+extern const int LOGICAL_ERROR;
 }
 
 class FunctionConv final : public IFunction
@@ -41,29 +36,32 @@ public:
     static constexpr auto name = "conv";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConv>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// Neither an empty number nor a zero base is valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"number", &isStringOrFixedStringOrNativeNumber, nullptr, "String, FixedString or Number"},
-            {"from_base", &isNativeInteger, nullptr, "Integer"},
-            {"to_base", &isNativeInteger, nullptr, "Integer"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        return "(String | FixedString | NativeNumber, NativeInteger, NativeInteger) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
-        if (!isString(arguments[0].type))
+        if (WhichDataType(arguments[0].type).isNativeFloat())
         {
-            ColumnWithTypeAndName string_arg = {number_column, arguments[0].type, arguments[0].name};
+            number_column = floatsToIntegerDigits(*number_column->convertToFullColumnIfConst());
+        }
+        else if (!isString(arguments[0].type))
+        {
+            /// Bool storage (Bool, SimpleAggregateFunction over Bool) prints as 'true'/'false'; convert the stored value.
+            DataTypePtr number_type = arguments[0].type;
+            if (isUInt8(number_type) && number_type->getCustomSerialization())
+                number_type = std::make_shared<DataTypeUInt8>();
+            ColumnWithTypeAndName string_arg = {number_column, number_type, arguments[0].name};
             number_column = castColumn(string_arg, std::make_shared<DataTypeString>());
         }
         const auto * number_col = checkAndGetColumn<ColumnString>(number_column.get());
@@ -86,7 +84,7 @@ public:
                 number_str = number_const_col->getValue<String>();
             const Int64 from_base = from_base_column->getInt(i);
             const Int64 to_base = to_base_column->getInt(i);
-            std::string result = convertNumber(number_str, static_cast<int>(from_base), static_cast<int>(to_base));
+            std::string result = convertNumber(number_str, from_base, to_base);
             result_column->insertData(result.data(), result.size());
         }
 
@@ -94,7 +92,37 @@ public:
     }
 
 private:
-    static std::string convertNumber(const std::string & number, const int from_base, const int to_base)
+    /// A float prints in exponent form ('1e21', '1e-07') or as 'nan'/'inf', whose letters are digits in the higher bases.
+    /// Take the digits of its integer part instead, so that it converts as the same number written as a string.
+    static ColumnPtr floatsToIntegerDigits(const IColumn & column)
+    {
+        auto result = ColumnString::create();
+        auto convert = [&](const auto & floats)
+        {
+            /// The integer part of the largest Float64 has 309 digits.
+            char buf[std::numeric_limits<Float64>::max_exponent10 + 8];
+            for (const auto value : floats.getData())
+            {
+                const auto x = static_cast<Float64>(value);
+                if (!std::isfinite(x))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function conv cannot convert a non-finite number: {}", x);
+                const auto [end, error] = std::to_chars(buf, buf + sizeof(buf), std::trunc(x), std::chars_format::fixed, 0);
+                if (error != std::errc())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format the integer part of {} in function conv", x);
+                result->insertData(buf, end - buf);
+            }
+        };
+
+        if (const auto * floats64 = checkAndGetColumn<ColumnFloat64>(&column))
+            convert(*floats64);
+        else if (const auto * floats32 = checkAndGetColumn<ColumnFloat32>(&column))
+            convert(*floats32);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function conv", column.getName());
+        return result;
+    }
+
+    static std::string convertNumber(const std::string & number, const Int64 from_base, const Int64 to_base)
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
             throw Exception(
@@ -131,12 +159,12 @@ private:
 
         try
         {
-            UInt64 value = parseFromBase(clean_number, from_base);
+            UInt64 value = parseFromBase(clean_number, static_cast<int>(from_base));
             if (is_negative)
             {
                 value = 0ULL - value;
             }
-            return formatToBase(value, to_base);
+            return formatToBase(value, static_cast<int>(to_base));
         }
         catch (...)
         {

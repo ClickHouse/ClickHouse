@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 
+#include <bit>
 #include <functional>
 #include <random>
 #include <vector>
@@ -99,11 +100,11 @@ namespace Hashes
         size_t operator()(Key x) const
         {
             x = (~x) + (x << 18);
-            x = x ^ ((x >> 31) | (x << 33));
+            x = x ^ std::rotr(x, 31);
             x = x * 21;
-            x = x ^ ((x >> 11) | (x << 53));
+            x = x ^ std::rotr(x, 11);
             x = x + (x << 6);
-            x = x ^ ((x >> 22) | (x << 42));
+            x = x ^ std::rotr(x, 22);
 
             return x;
         }

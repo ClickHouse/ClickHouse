@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -207,7 +208,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -483,7 +484,7 @@ protected:
 
         /// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
-        std::stack<backtrack_info> back_stack;
+        StackWithMemoryTracking<backtrack_info> back_stack;
 
         VectorWithMemoryTracking<typename Data::Timestamp> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
@@ -624,21 +625,28 @@ protected:
                     sequence_match_max_iterations);
         }
 
-        /// if there are some actions remaining
-        if (action_it != action_end)
-        {
-            /// match multiple empty strings at end
-            while (action_it->type == PatternActionType::KleeneStar ||
-                   action_it->type == PatternActionType::TimeLessOrEqual ||
-                   action_it->type == PatternActionType::TimeLess ||
-                   (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0))
-                ++action_it;
-        }
+        /// match multiple empty strings at end
+        while (action_it != action_end
+            && (action_it->type == PatternActionType::KleeneStar
+                || action_it->type == PatternActionType::TimeLessOrEqual
+                || action_it->type == PatternActionType::TimeLess
+                || (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0)))
+            ++action_it;
 
         if (events_it == events_begin)
             ++events_it;
 
-        return action_it == action_end;
+        const bool matched = action_it == action_end;
+
+        /// `best_matched_events` holds the longest chain over all the attempts, which is only what to report
+        /// without a match: an abandoned attempt can be as long as the chain that matched.
+        if constexpr (remember_matched_events)
+        {
+            if (matched)
+                best_matched_events->assign(current_matched_events.begin(), current_matched_events.end());
+        }
+
+        return matched;
     }
 
     template <typename EventEntry>
@@ -772,9 +780,9 @@ public:
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
-    String getName() const override { return "sequenceMatch"; }
+    [[nodiscard]] String getName() const override { return "sequenceMatch"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -808,9 +816,9 @@ public:
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEvents<T, Data>>::AggregateFunctionSequenceBase;
 
-    String getName() const override { return "sequenceMatchEvents"; }
+    [[nodiscard]] String getName() const override { return "sequenceMatchEvents"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -859,9 +867,9 @@ public:
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
-    String getName() const override { return "sequenceCount"; }
+    [[nodiscard]] String getName() const override { return "sequenceCount"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {

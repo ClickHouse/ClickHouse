@@ -77,8 +77,8 @@ export const quickStartsData = [
   },
   {
     "id": "insert-data-using-clickhouse-client",
-    "title": "使用 clickhouse-client 将数据插入到 ClickHouse Cloud",
-    "description": "了解如何通过命令行使用 clickhouse-client，将本地 CSV 和 Parquet 文件中的数据插入到 ClickHouse Cloud 服务中。",
+    "title": "使用 ClickHouse 客户端 将数据插入到 ClickHouse Cloud",
+    "description": "了解如何通过命令行使用 ClickHouse 客户端，将本地 CSV 和 Parquet 文件中的数据插入到 ClickHouse Cloud 服务中。",
     "href": "/zh/get-started/quickstarts/insert-data-using-clickhouse-client",
     "useCases": [
       "all"
