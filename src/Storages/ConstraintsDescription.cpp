@@ -343,6 +343,10 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (arguments.size() == 2 && hasDynamicArgument(arguments[0], arguments[1]))
                 continue;
 
+            /// `CHECK d = dt` holds for the date 2020-01-02 and the time 2020-01-02 00:00:00, but the graph would compare 18263 days with 1577923200 seconds.
+            if (arguments.size() == 2 && comparesDateWithDateTime(arguments[0], arguments[1]))
+                continue;
+
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);

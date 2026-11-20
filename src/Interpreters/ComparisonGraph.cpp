@@ -265,6 +265,13 @@ bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr
     return (has_fixed_string(left_type) || has_fixed_string(right_type)) && !left_type->equals(*right_type);
 }
 
+bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
+    const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
+    return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type)) || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
+}
+
 bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
 {
     auto has_dynamic = [](const QueryTreeNodePtr & node)
@@ -421,10 +428,11 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
     /// A string constant compared with another type is a value of that type, which the bounds do not know.
     /// A `FixedString` compared with another string type is padded with zero bytes. A `Dynamic` compares by its active type.
+    /// A `Date` compared with a `DateTime` is converted to a time, but its bounds count days.
     if constexpr (!with_ast)
     {
         if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
-            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right))
+            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 
