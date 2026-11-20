@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT -q "
         background_download_threads = 0,
         cache_on_write_operations = 0),
     min_bytes_for_wide_part = 0,
-    index_granularity = 8192, prewarm_mark_cache = 0, prewarm_primary_key_cache = 0"
+    index_granularity = 8192, prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t"
 # 6.4 MB of data: more than the probationary queue, less than the cache.
