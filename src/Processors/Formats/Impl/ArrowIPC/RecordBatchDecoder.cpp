@@ -29,6 +29,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -1018,6 +1019,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     VectorWithMemoryTracking<ColumnPtr> child_null_map_holders;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
+    /// No requested type reaches a child, as `fieldToCHType` declares the children below. The requested type
+    /// of the union does not say which child it describes, and the children restart the dotted path, so a
+    /// name looked up from it would belong to an unrelated column of the header.
+    const bool outer_below_union = decoding_below_union;
+    decoding_below_union = true;
+    SCOPE_EXIT({ decoding_below_union = outer_below_union; });
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
     {
         const ArrowField & child = type.children[child_idx];
@@ -1801,7 +1808,7 @@ DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hin
     /// which resolves a `date32` addressed as a subcolumn (e.g. `t.d`).
     if (parent_hint)
         return parent_hint;
-    if (target_types)
+    if (target_types && !decoding_below_union)
     {
         auto it = target_types->find(path);
         if (it != target_types->end())
