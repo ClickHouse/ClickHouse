@@ -33,6 +33,7 @@ echo "--- an unknown name"
 create "" "postgresql_connection_pool_siez = 3"
 create "" "postgresql_connection_pool_siez = DEFAULT"
 create "" "param_postgresql_connection_pool_size = 3"
+create "ON CLUSTER test_shard_localhost" "postgresql_connection_pool_siez = 3"
 create "ON CLUSTER test_shard_localhost" "postgresql_connection_pool_siez = DEFAULT"
 create "ON CLUSTER test_shard_localhost" "param_postgresql_connection_pool_size = 3"
 
