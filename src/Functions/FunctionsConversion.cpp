@@ -2673,8 +2673,15 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (isFloat(*from) && isFloat(*to_inner))
         return from->equals(*to_inner);
 
-    /// A CAST reads a number into Time/Time64 as whole seconds, while the parser reads it as ticks.
-    if (isTimeOrTime64(*to_inner))
+    /// A CAST between a Decimal and a float or another Decimal does decimal arithmetic (e.g. Float64 0.58 to
+    /// Decimal64(2) truncates to 0.57), while the parser reads the text, so only an identical type matches.
+    if (isDecimal(*from) || isDecimal(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST into a date/time type interprets the source's internal value (a number as whole seconds, a Time
+    /// as 1970-01-01 plus the time), while the parser reads the text (ticks, the current date), so only an
+    /// identical type matches. DateTime sources are handled above.
+    if (isDateOrDate32(*to_inner) || isTimeOrTime64(*to_inner) || isDateTimeOrDateTime64(*to_inner))
         return from->equals(*to_inner);
 
     /// A CAST writes an Array/Tuple/Map/Variant/Object source in ClickHouse text, not the JSON text the
@@ -3106,7 +3113,12 @@ ColumnPtr convertTypedColumnToDynamic(
     auto src_serialization = src_type->getDefaultSerialization();
     auto dynamic_node = buildJSONExtractTree<JSONParserForConversion>(dynamic_type, "JSON type conversion");
     JSONParserForConversion parser;
+    /// A nested JSON value reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
     JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
 
     const FormatSettings values_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
     const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
@@ -3161,7 +3173,12 @@ ColumnPtr convertDynamicColumnToTyped(
     auto dynamic_serialization = dynamic_type->getDefaultSerialization();
     auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
     JSONParserForConversion parser;
+    /// A nested JSON destination reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
     JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
 
     const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
     const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
@@ -3231,7 +3248,12 @@ ColumnPtr convertTypedColumnToTyped(
     auto src_serialization = src_type->getDefaultSerialization();
     auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
     JSONParserForConversion parser;
+    /// A nested JSON destination reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
     JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
 
     FormatSettings json_format_settings = isDateTimeToDateTimeConversion(src_type, dest_type)
         ? getJSONRoundTripFormatSettingsForInstants(format_settings)

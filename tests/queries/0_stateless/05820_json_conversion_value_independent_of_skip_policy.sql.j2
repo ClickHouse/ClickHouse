@@ -29,6 +29,13 @@ SETTINGS {{ settings }};
 {{ check('Array(Float32) to Array(Float64)', 'JSON(a Array(Float32))', 'JSON(a Array(Float64))', '{"a": [0.1, 0.2]}', 'arrayMap(x -> reinterpretAsUInt64(x), j.a)') }}
 -- A structural source goes to String as JSON text, not ClickHouse array/tuple text.
 {{ check('Array(String) to String', 'JSON(a Array(String))', 'JSON(a String)', '{"a": ["x", "y"]}', 'j.a') }}
+-- A Decimal conversion reads text through the parser, not decimal arithmetic through a CAST.
+{{ check('Float64 to Decimal64', 'JSON(a Float64)', 'JSON(a Decimal64(2))', '{"a": 0.58}', 'j.a') }}
+{{ check('Decimal256 to Float64', 'JSON(a Decimal256(30))', 'JSON(a Float64)', '{"a": 0.1}', 'j.a') }}
+{{ check('Decimal64(2) to Decimal64(4)', 'JSON(a Decimal64(2))', 'JSON(a Decimal64(4))', '{"a": 1.25}', 'j.a') }}
+-- A date/time destination reads the text through the parser, not the source's internal value through a CAST.
+{{ check('Time to DateTime', 'JSON(a Time)', 'JSON(a DateTime)', '{"a": "00:00:01"}', 'j.a') }}
+{{ check('Date to DateTime', 'JSON(a Date)', 'JSON(a DateTime)', '{"a": "2024-01-15"}', 'j.a') }}
 
 SELECT name, cfg, result FROM k_results
 WHERE name IN (SELECT name FROM k_results GROUP BY name HAVING uniqExact(result) > 1)

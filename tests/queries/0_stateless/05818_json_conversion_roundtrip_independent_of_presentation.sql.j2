@@ -56,6 +56,10 @@ SETTINGS {{ (settings ~ ', ') if settings }}json_use_optimized_type_conversion =
 -- = 0) is serialized and cannot be scanned cheaply, so the unchanged path is normalized conservatively.
 {{ check('negative zero in nested shared data', 'JSON(a JSON(max_dynamic_paths = 0))', 'JSON(a JSON(max_dynamic_paths = 0), z Int8)', '{"a": {"b": -0.0}}', 'reinterpretAsUInt64(j.a.b::Float64)') }}
 {{ check('negative zero in nested shared variant', 'JSON(a JSON(max_dynamic_types = 0))', 'JSON(a JSON(max_dynamic_types = 0), z Int8)', '{"a": {"b": -0.0}}', 'reinterpretAsUInt64(j.a.b::Float64)') }}
+-- Normalizing an unchanged nested JSON path must keep the object-parser flags: json_type_escape_dots_in_keys
+-- preserves a dotted key rather than splitting it into nested paths, on both shared carriers.
+{{ check('escape dots in nested shared data', 'JSON(a JSON(max_dynamic_paths = 0))', 'JSON(a JSON(max_dynamic_paths = 0), z Int8)', '{"a": {"b.c": 1}}', 'toString(j.a)', 'json_type_escape_dots_in_keys = 1') }}
+{{ check('escape dots in nested shared variant', 'JSON(a JSON(max_dynamic_types = 0))', 'JSON(a JSON(max_dynamic_types = 0), z Int8)', '{"a": {"b.c": 1}}', 'toString(j.a)', 'json_type_escape_dots_in_keys = 1') }}
 
 SELECT name, optimized, result FROM rt_results
 WHERE name IN (SELECT name FROM rt_results GROUP BY name HAVING uniqExact(result) > 1)
