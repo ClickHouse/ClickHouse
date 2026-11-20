@@ -4,27 +4,21 @@
 
 DROP TABLE IF EXISTS t_undecided_l;
 DROP TABLE IF EXISTS t_undecided_o;
-DROP TABLE IF EXISTS t_undecided_wc;
-DROP TABLE IF EXISTS t_undecided_wo;
-DROP TABLE IF EXISTS t_undecided_wl;
+DROP TABLE IF EXISTS t_undecided_wd;
+DROP TABLE IF EXISTS t_undecided_wt;
 
 CREATE TABLE t_undecided_l (l_orderkey UInt64, l_price Float64) ENGINE = MergeTree ORDER BY l_orderkey;
 CREATE TABLE t_undecided_o (o_orderkey UInt64, o_total Float64) ENGINE = MergeTree ORDER BY o_orderkey;
 INSERT INTO t_undecided_l SELECT number % 10000, number % 1000 FROM numbers(100000);
 INSERT INTO t_undecided_o SELECT number, number % 1000 FROM numbers(10000);
 
--- Without column statistics, so that the row estimates of a filtered read come from index analysis alone, which the
--- granularity decides.
-CREATE TABLE t_undecided_wc (c_custkey UInt32, c_nationkey UInt8) ENGINE = MergeTree ORDER BY c_custkey
+-- Column statistics on one side of the join only, so that a filtered read of the other is estimated from index analysis.
+CREATE TABLE t_undecided_wd (id UInt64 STATISTICS(uniq), v UInt64 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY id
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-CREATE TABLE t_undecided_wo (o_orderkey UInt32, o_custkey UInt32, o_orderdate Date) ENGINE = MergeTree ORDER BY (o_orderdate, o_orderkey)
+CREATE TABLE t_undecided_wt (id UInt64, k UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-CREATE TABLE t_undecided_wl (l_orderkey UInt32, l_price Float64) ENGINE = MergeTree ORDER BY l_orderkey
-    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-INSERT INTO t_undecided_wc SELECT number, number % 25 FROM numbers(15000) SETTINGS materialize_statistics_on_insert = 0;
-INSERT INTO t_undecided_wo SELECT number, number % 15000, toDate('1992-01-01') + number % 2400 FROM numbers(150000)
-SETTINGS materialize_statistics_on_insert = 0;
-INSERT INTO t_undecided_wl SELECT number % 150000, number % 1000 FROM numbers(600000) SETTINGS materialize_statistics_on_insert = 0;
+INSERT INTO t_undecided_wd SELECT number % 10000, 10000 + number % 5000 FROM numbers(300000) SETTINGS materialize_statistics_on_insert = 1;
+INSERT INTO t_undecided_wt SELECT number, 10000 + number % 20000, number FROM numbers(300000) SETTINGS materialize_statistics_on_insert = 0;
 
 SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -80,19 +74,31 @@ FORMAT Null SETTINGS log_comment = 'undecided_no_rows_3', automatic_parallel_rep
 SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
 FORMAT Null SETTINGS log_comment = 'undecided_no_rows_4', automatic_parallel_replicas_remember_boundary = 0;
 
--- Without column statistics the plan with parallel replicas has no row estimates for the filtered read, so its joins
--- are ordered differently and the two plans cannot be compared. The first run measures the hash tables; with their
+-- The two subqueries are identical reads of the same table, so the reads of the plan with parallel replicas cannot be
+-- paired with those of the single-node plan and take no row estimates from its index analysis. The joins of the two
+-- plans are ordered differently, and the plans cannot be compared. The first run measures the hash tables; with their
 -- sizes, the second, which builds the plan again at once, orders both plans alike, matches them and collects
 -- statistics. The third decides from them.
-SELECT c_nationkey, sum(l_price) FROM t_undecided_wc, t_undecided_wo, t_undecided_wl
-WHERE c_custkey = o_custkey AND l_orderkey = o_orderkey AND o_orderdate < '1992-03-01'
-GROUP BY c_nationkey FORMAT Null SETTINGS log_comment = 'undecided_warm_1';
-SELECT c_nationkey, sum(l_price) FROM t_undecided_wc, t_undecided_wo, t_undecided_wl
-WHERE c_custkey = o_custkey AND l_orderkey = o_orderkey AND o_orderdate < '1992-03-01'
-GROUP BY c_nationkey FORMAT Null SETTINGS log_comment = 'undecided_warm_2';
-SELECT c_nationkey, sum(l_price) FROM t_undecided_wc, t_undecided_wo, t_undecided_wl
-WHERE c_custkey = o_custkey AND l_orderkey = o_orderkey AND o_orderdate < '1992-03-01'
-GROUP BY c_nationkey FORMAT Null SETTINGS log_comment = 'undecided_warm_3';
+SET use_statistics = 1, enable_join_runtime_filters = 0, query_plan_propagate_predicate_across_join = 0,
+    parallel_replicas_plan_based = 0, optimize_move_to_prewhere = 1;
+SELECT count(), sum(d.v), sum(a.v), sum(b.v)
+FROM t_undecided_wd AS d
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS a ON d.id = a.id
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS b ON d.v = b.k
+WHERE b.id < 1000
+FORMAT Null SETTINGS log_comment = 'undecided_warm_1';
+SELECT count(), sum(d.v), sum(a.v), sum(b.v)
+FROM t_undecided_wd AS d
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS a ON d.id = a.id
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS b ON d.v = b.k
+WHERE b.id < 1000
+FORMAT Null SETTINGS log_comment = 'undecided_warm_2';
+SELECT count(), sum(d.v), sum(a.v), sum(b.v)
+FROM t_undecided_wd AS d
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS a ON d.id = a.id
+INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS b ON d.v = b.k
+WHERE b.id < 1000
+FORMAT Null SETTINGS log_comment = 'undecided_warm_3';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -116,6 +122,5 @@ ORDER BY log_comment;
 
 DROP TABLE t_undecided_l;
 DROP TABLE t_undecided_o;
-DROP TABLE t_undecided_wc;
-DROP TABLE t_undecided_wo;
-DROP TABLE t_undecided_wl;
+DROP TABLE t_undecided_wd;
+DROP TABLE t_undecided_wt;
