@@ -66,6 +66,7 @@ void RabbitMQPublisher::connect()
 void RabbitMQPublisher::setupChannel()
 {
     channel = connection.createChannel();
+    channel_error.clear();
     LOG_TRACE(log, "Created a producer channel");
 
     channel->onError([&](const char * message)
@@ -229,7 +230,10 @@ String RabbitMQPublisher::publishStep(Payloads & payloads)
         /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
         /// A new channel is rejected the same way.
         if (!reconnect_failed && connection.isConnected())
-            return fmt::format("Cannot publish to RabbitMQ exchange '{}': {}", exchange_name, channel_error);
+            return fmt::format(
+                "Cannot publish to RabbitMQ exchange '{}': {}",
+                exchange_name,
+                channel_error.empty() ? "the channel is closed" : channel_error);
 
         reconnect_failed = !connection.reconnect();
         if (!reconnect_failed)
