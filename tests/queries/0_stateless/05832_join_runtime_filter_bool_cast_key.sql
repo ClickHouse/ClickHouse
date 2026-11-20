@@ -6,12 +6,15 @@ SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0, join_algorithm = 'hash';
 SET date_time_overflow_behavior = 'ignore';
+SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;
 DROP TABLE IF EXISTS probe_u8_null;
 DROP TABLE IF EXISTS probe_u16;
 DROP TABLE IF EXISTS probe_u16_set;
+DROP TABLE IF EXISTS probe_bool_set;
+DROP TABLE IF EXISTS probe_variant;
 DROP TABLE IF EXISTS probe_time;
 DROP TABLE IF EXISTS probe_dec;
 DROP TABLE IF EXISTS probe_tuple;
@@ -20,6 +23,8 @@ DROP TABLE IF EXISTS build_true;
 DROP TABLE IF EXISTS build_false;
 DROP TABLE IF EXISTS build_two;
 DROP TABLE IF EXISTS build_u8;
+DROP TABLE IF EXISTS build_u8_two;
+DROP TABLE IF EXISTS build_variant;
 DROP TABLE IF EXISTS build_tokyo;
 DROP TABLE IF EXISTS build_dec;
 DROP TABLE IF EXISTS build_tuple;
@@ -45,6 +50,16 @@ INSERT INTO probe_u16 SELECT number FROM numbers(4096);
 CREATE TABLE probe_u16_set (id UInt64, x UInt16, INDEX idx_x x TYPE set(0) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
 INSERT INTO probe_u16_set SELECT number, number FROM numbers(4096);
+
+-- `reinterpret` keeps the bytes other than 0 and 1 in a `Bool` column.
+CREATE TABLE probe_bool_set (id UInt64, x Bool, INDEX idx_x x TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO probe_bool_set SELECT number, reinterpret(toUInt8(intDiv(number, 16)), 'Bool') FROM numbers(4096);
+
+CREATE TABLE probe_variant (id UInt64, x Variant(Bool, UInt8), INDEX idx_x x TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO probe_variant SELECT number, if(number % 2, CAST(true, 'Variant(Bool, UInt8)'), CAST(toUInt8(intDiv(number, 16)), 'Variant(Bool, UInt8)'))
+FROM numbers(4096);
 
 CREATE TABLE probe_time (d Date, t DateTime('UTC'), INDEX idx_t t TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8;
@@ -72,6 +87,12 @@ INSERT INTO build_two SELECT * FROM format(RowBinary, 'flag Bool', unhex('02'));
 
 CREATE TABLE build_u8 (u UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_u8 VALUES (1);
+
+CREATE TABLE build_u8_two (u UInt8) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_u8_two VALUES (2);
+
+CREATE TABLE build_variant (k Variant(Bool, UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_variant SELECT CAST(toUInt8(2), 'Variant(Bool, UInt8)');
 
 CREATE TABLE build_tokyo (t DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_tokyo SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + toIntervalDay(number) FROM numbers(3);
@@ -136,6 +157,19 @@ SELECT 'u16_u8_bool_byte_build_set', count() FROM probe_u16_set AS p JOIN build_
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
     enable_join_seal_gated_reading = 0, log_comment = '05832_u16_u8_bool_byte_build_set';
 
+-- A `Bool` key holding the byte 2, compared with a `UInt8` or a `Bool` build key holding 2, with a `set` index.
+SELECT 'bool_byte_u8_byte_build_set', count() FROM probe_bool_set AS p JOIN build_u8_two AS b ON p.x = b.u
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+    enable_join_seal_gated_reading = 0, log_comment = '05832_bool_byte_u8_byte_build_set';
+SELECT 'bool_byte_bool_byte_build_set', count() FROM probe_bool_set AS p JOIN build_two AS b ON p.x = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+    enable_join_seal_gated_reading = 0, log_comment = '05832_bool_byte_bool_byte_build_set';
+
+-- A `Variant` key holding both `Bool` and `UInt8`.
+SELECT 'variant_bool_u8', count() FROM probe_variant AS p JOIN build_variant AS b ON p.x = b.k
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+    enable_join_seal_gated_reading = 0;
+
 -- A `Date` key cast to `DateTime('UTC')`, compared with a `DateTime('Asia/Tokyo')` build key.
 SELECT 'date_utc_tokyo_build', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.d AS DateTime('UTC')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0;
@@ -158,8 +192,9 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RuntimeFilterGranulesDropped'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05832_bool_read', '05832_bool_read_range', '05832_date32_overflow', '05832_datetime_time_zone',
-        '05832_decimal_precision', '05832_u16_u8_bool_byte_build_set')
+    AND log_comment IN ('05832_bool_byte_bool_byte_build_set', '05832_bool_byte_u8_byte_build_set', '05832_bool_read',
+        '05832_bool_read_range', '05832_date32_overflow', '05832_datetime_time_zone', '05832_decimal_precision',
+        '05832_u16_u8_bool_byte_build_set')
 ORDER BY log_comment;
 
 DROP TABLE probe_u8;
@@ -167,6 +202,8 @@ DROP TABLE probe_u8_si;
 DROP TABLE probe_u8_null;
 DROP TABLE probe_u16;
 DROP TABLE probe_u16_set;
+DROP TABLE probe_bool_set;
+DROP TABLE probe_variant;
 DROP TABLE probe_time;
 DROP TABLE probe_dec;
 DROP TABLE probe_tuple;
@@ -175,6 +212,8 @@ DROP TABLE build_true;
 DROP TABLE build_false;
 DROP TABLE build_two;
 DROP TABLE build_u8;
+DROP TABLE build_u8_two;
+DROP TABLE build_variant;
 DROP TABLE build_tokyo;
 DROP TABLE build_dec;
 DROP TABLE build_tuple;

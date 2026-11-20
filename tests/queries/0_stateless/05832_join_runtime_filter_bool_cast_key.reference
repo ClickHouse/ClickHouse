@@ -11,10 +11,15 @@ bool_u8_build	4080
 u16_bool_u8_build	4095
 u16_u8_bool_build	16
 u16_u8_bool_byte_build_set	16
+bool_byte_u8_byte_build_set	16
+bool_byte_bool_byte_build_set	16
+variant_bool_u8	8
 date_utc_tokyo_build	48
 date32_overflow	256
 datetime_time_zone	48
 decimal_precision	16
+05832_bool_byte_bool_byte_build_set	1
+05832_bool_byte_u8_byte_build_set	1
 05832_bool_read	1
 05832_bool_read_range	1
 05832_date32_overflow	1
