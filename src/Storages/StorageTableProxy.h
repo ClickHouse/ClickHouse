@@ -3,6 +3,7 @@
 #include <atomic>
 #include <functional>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
@@ -16,11 +17,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
 class StorageTableProxy final : public StorageProxy
@@ -31,14 +27,21 @@ public:
     /// engine may use its database and table name in the constructor (e.g. the default `kafka_client_id`).
     using GetNestedFunc = std::function<StoragePtr(const StorageID &)>;
 
+    /// `storage_def` is the `ENGINE` clause of the `CREATE` query, kept only if the engine answers the database rename
+    /// check from it, see `checkTableCanBeRenamedByDatabaseRename`.
     StorageTableProxy(
-        const StorageID & table_id_, GetNestedFunc get_nested_, ColumnsDescription cached_columns, String engine_name_)
+        const StorageID & table_id_,
+        GetNestedFunc get_nested_,
+        ColumnsDescription cached_columns,
+        String engine_name_,
+        const ASTStorage & storage_def)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
         , engine_name(std::move(engine_name_))
         , stores_data_on_disk(engineStoresDataOnDisk(engine_name))
         , supports_replication(engineSupportsReplication(engine_name))
-        , checks_database_rename(engineChecksDatabaseRename(engine_name))
+        , check_database_rename_fn(engineCheckDatabaseRenameFn(engine_name))
+        , storage_def_for_database_rename(check_database_rename_fn ? storage_def.clone() : nullptr)
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -304,25 +307,16 @@ public:
         storage->checkTableCanBeRenamed(new_name);
     }
 
-    /// Whether the table has to be loaded before its database is renamed, so that the engine can answer
-    /// `checkTableCanBeRenamedByDatabaseRename`. It cannot be loaded there, with the database mutex held.
-    bool needsLoadForDatabaseRename() const
-    {
-        return checks_database_rename && !nestedIfResolved();
-    }
-
-    /// A stand-in of an engine that never refuses the new name is deliberately not loaded to ask. One that may refuse
-    /// it, such as `S3Queue` whose Keeper path expands the `{database}` macro, is loaded by `DatabaseAtomic::renameDatabase`
-    /// in advance. Should it still be a stand-in (a concurrent `ATTACH TABLE`), the rename is refused rather than
-    /// allowed unchecked: that could silently move the table to another Keeper path, losing its progress.
+    /// A stand-in is not loaded to ask, since `DatabaseAtomic::renameDatabase` asks with the database mutex held, and
+    /// loading may construct the storage with I/O (`S3Queue` reads Keeper) and start its background work, even for a
+    /// rename that fails afterwards. An engine that may refuse the new name, such as `S3Queue` whose Keeper path expands
+    /// the `{database}` macro, answers from the definition instead, as its storage would under the current name.
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
         if (auto storage = nestedIfResolved())
             storage->checkTableCanBeRenamedByDatabaseRename(new_database_name);
-        else if (checks_database_rename)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot rename the database of table {} to {}, because the table is not loaded yet. Retry the query",
-                getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
+        else if (check_database_rename_fn)
+            check_database_rename_fn(storage_def_for_database_rename->as<const ASTStorage &>(), getStorageID(), new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override
@@ -407,10 +401,10 @@ private:
             && (features->supports_replication || features->has_builtin_setting_fn == &DataLakeStorageSettings::hasBuiltin);
     }
 
-    static bool engineChecksDatabaseRename(const String & engine_name_)
+    static StorageFactory::CheckDatabaseRenameFn * engineCheckDatabaseRenameFn(const String & engine_name_)
     {
         const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
-        return features && features->checks_database_rename;
+        return features ? features->check_database_rename_fn : nullptr;
     }
 
     /// The storage of a table that was never loaded, built without startup for `DROP` and kept so that
@@ -452,7 +446,9 @@ private:
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     const bool supports_replication; /// Whether the engine replicates, reported until the real storage exists.
-    const bool checks_database_rename; /// See `needsLoadForDatabaseRename`.
+    /// See `checkTableCanBeRenamedByDatabaseRename`.
+    StorageFactory::CheckDatabaseRenameFn * const check_database_rename_fn;
+    const ASTPtr storage_def_for_database_rename;
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     mutable StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
     mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see `getLoadedTable`.

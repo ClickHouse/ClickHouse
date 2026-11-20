@@ -45,6 +45,11 @@ public:
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
     using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
+    /// Answers `IStorage::checkTableCanBeRenamedByDatabaseRename` for a table of the engine from its definition only, like
+    /// the storage would if it were constructed under `table_id`. A database with `lazy_load_tables` asks this for a
+    /// table it has not loaded yet, since constructing the storage may run I/O and starting it runs background work.
+    using CheckDatabaseRenameFn = void(const ASTStorage & storage_def, const StorageID & table_id, const String & new_database_name);
+
     struct Arguments
     {
         const String & engine_name;
@@ -101,9 +106,9 @@ public:
         /// The background job only feeds dependent views, so a table that has none is deferred like
         /// any other, while one that has some is loaded eagerly to keep them fed.
         bool defers_only_without_dependent_views = false;
-        /// Whether `IStorage::checkTableCanBeRenamedByDatabaseRename` of the engine can refuse the new name. A deferred
-        /// table of such an engine is loaded before its database is renamed, see `DatabaseAtomic::renameDatabase`.
-        bool checks_database_rename = false;
+        /// Set if `IStorage::checkTableCanBeRenamedByDatabaseRename` of the engine can refuse the new name. A deferred
+        /// table of such an engine that is not loaded yet is asked through this, see `StorageTableProxy`.
+        CheckDatabaseRenameFn * check_database_rename_fn = nullptr;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -157,7 +162,7 @@ public:
         .supports_sql_security = false,
         .supports_deferred_load = false,
         .defers_only_without_dependent_views = false,
-        .checks_database_rename = false,
+        .check_database_rename_fn = nullptr,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,

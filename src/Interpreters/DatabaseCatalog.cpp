@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
@@ -2825,6 +2826,33 @@ bool isAnyAccessGranted(
     return std::ranges::any_of(accesses, [&](AccessType access) { return isAnyAccessGranted(table, table_id, context, access); });
 }
 
+/// The table that a command naming `table` loads if it is a lazily loaded one: for an `Alias`, the last table of its chain.
+/// Every `Alias` forwards the engine facts and the metadata to its target, which loads the target, but checks the rights on
+/// the target only when it reads or writes, after that. The rights on the last table of the chain are the ones its read or
+/// write eventually requires. Returns null if the chain has no last table (a cycle or a missing target).
+std::pair<StoragePtr, StorageID> resolveAliasTarget(const StoragePtr & table, const StorageID & table_id, const ContextPtr & context)
+{
+    const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+    if (!alias)
+        return {table, table_id};
+
+    const auto chain = alias->getTargetChain();
+    if (chain.empty())
+        return {nullptr, StorageID::createEmpty()};
+
+    StorageID target_id(chain.back().first, chain.back().second);
+    auto target = DatabaseCatalog::instance().tryGetTable(target_id, context);
+    if (!target || dynamic_cast<const StorageAlias *>(target.get()))
+        return {nullptr, StorageID::createEmpty()};
+    return {std::move(target), std::move(target_id)};
+}
+
+bool isUnloadedLazyTable(const StoragePtr & table)
+{
+    const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+    return proxy && proxy->isLazyStandIn() && !proxy->tryGetNested();
+}
+
 }
 
 void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access)
@@ -2833,26 +2861,36 @@ void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType 
     if (DatabaseCatalog::instance().isRemoteDatabase(table_id.database_name))
         return;
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
-    if (!table)
+    auto named_table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!named_table)
         return;
 
-    if (!isAnyAccessGranted(*table, table_id, context, access))
+    auto [table, resolved_id] = resolveAliasTarget(named_table, table_id, context);
+    if (!table || !isUnloadedLazyTable(table))
+        return;
+
+    if (!isAnyAccessGranted(*table, resolved_id, context, access))
         return;
 
     resolveStorageProxyLoading(table);
 }
 
 void checkAccessBeforeLoadingLazyTable(
-    const StoragePtr & table, const StorageID & table_id, const ContextPtr & context, std::initializer_list<AccessType> accesses)
+    const StoragePtr & table,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::initializer_list<AccessType> accesses,
+    LazyTableThroughAlias through_alias)
 {
     chassert(accesses.size() != 0);
-    const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
-    if (!proxy || !proxy->isLazyStandIn() || proxy->tryGetNested())
+    auto [checked_table, checked_id] = through_alias == LazyTableThroughAlias::Check
+        ? resolveAliasTarget(table, table_id, context)
+        : std::pair{table, table_id};
+    if (!checked_table || !isUnloadedLazyTable(checked_table))
         return;
 
-    if (!isAnyAccessGranted(*table, table_id, context, accesses))
-        context->checkAccess(*accesses.begin(), table_id.database_name, table_id.table_name);
+    if (!isAnyAccessGranted(*checked_table, checked_id, context, accesses))
+        context->checkAccess(*accesses.begin(), checked_id.database_name, checked_id.table_name);
 }
 
 }

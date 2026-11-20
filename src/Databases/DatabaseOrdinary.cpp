@@ -716,7 +716,7 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns), query.storage->engine->name);
+        table_id, std::move(get_nested), std::move(columns), query.storage->engine->name, *query.storage);
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

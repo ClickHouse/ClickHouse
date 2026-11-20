@@ -1412,6 +1412,83 @@ def check_storage_casts(files) -> str:
     return "\n".join(violations)
 
 
+def _without_string_literals(text):
+    """Blanks out string and character literals, keeping offsets, so that braces inside them do not count."""
+    return re.sub(
+        r'R"(?P<delim>[^(\s"]*)\(.*?\)(?P=delim)"|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])+\'',
+        lambda m: m.group(0)[0] + re.sub(r"[^\n]", " ", m.group(0)[1:-1]) + m.group(0)[-1],
+        text,
+        flags=re.S,
+    )
+
+
+def _matching_brace(text, open_brace):
+    """The offset of the '}' closing the '{' at `open_brace`, or None when unbalanced."""
+    depth = 0
+    for i in range(open_brace, len(text)):
+        depth += (text[i] == "{") - (text[i] == "}")
+        if not depth:
+            return i
+    return None
+
+
+def _function_bodies(text, name):
+    """The bodies of the free functions or lambdas named `name` that are defined in `text`."""
+    bodies = []
+    # `StoragePtr name(args) {`, or `auto name = [](args) -> StoragePtr {`.
+    definition = re.compile(
+        r"(?:\b" + name + r"\s*\([^;{}]*\)(?:\s*->\s*[\w:<>]+)?|\b" + name
+        + r"\s*=\s*\[[^\]]*\]\s*\([^;{}]*\)(?:\s*->\s*[\w:<>]+)?)\s*\{"
+    )
+    for match in definition.finditer(text):
+        end = _matching_brace(text, match.end() - 1)
+        if end is not None:
+            bodies.append(text[match.end() : end])
+    return bodies
+
+
+def _created_storage_classes(text, body, depth=0):
+    """The storage classes a creator body returns, following the helpers it returns through.
+
+    Only what is returned counts, since the sinks, sources and configurations created along the
+    way are not what the catalog hands out. None means the creator returns something else.
+    """
+    classes = set(re.findall(r"\breturn\s+std::make_shared<\s*(Storage\w+)\s*>", body))
+    # `auto storage = std::make_shared<StorageX>(...); ...; return storage;`
+    for var, cls in re.findall(r"\b(\w+)\s*=\s*std::make_shared<\s*(Storage\w+)\s*>", body):
+        if re.search(r"\breturn\s+" + var + r"\s*;", body):
+            classes.add(cls)
+    helpers = set(re.findall(r"\breturn\s+(\w+)\s*(?:<[^<>;()]*>)?\s*\(", body)) - {"std", "make_shared"}
+    for helper in helpers:
+        if depth >= 3:
+            break
+        for helper_body in _function_bodies(text, helper):
+            classes |= _created_storage_classes(text, helper_body, depth + 1) or set()
+    return classes or None
+
+
+def _storage_creators(text):
+    """The bodies of the creators passed to `registerStorage` in `text`, with their line numbers."""
+    creators = []
+    for match in re.finditer(r"\bregisterStorage\s*\(", text):
+        # The creator is the second argument.
+        comma = re.compile(r"\s*(?:\"[^\"]*\"|[\w:.]+)\s*,\s*").match(text, match.end())
+        if not comma:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        start = comma.end()
+        lambda_head = re.compile(r"\[[^\]]*\]\s*\([^{}]*?\)[^{};]*\{", re.S).match(text, start)
+        if lambda_head:
+            end = _matching_brace(text, lambda_head.end() - 1)
+            creators.append((line, text[lambda_head.end() : end] if end is not None else ""))
+            continue
+        name = re.compile(r"(\w+)\s*[,)]").match(text, start)
+        if name:
+            bodies = _function_bodies(text, name.group(1))
+            creators.append((line, " ".join(bodies)))
+    return creators
+
+
 def check_deferrable_engines_are_audited(files) -> str:
     """An engine that sets `supports_deferred_load = true` must have the class it creates in
     `DEFERRABLE_STORAGE_CLASSES`, otherwise the casts to that class are never checked."""
@@ -1425,10 +1502,19 @@ def check_deferrable_engines_are_audited(files) -> str:
             continue
         if "supports_deferred_load = true" not in text:
             continue
-        # The storage a registration returns is the one the catalog hands out, unlike the sinks,
-        # sources and configurations created along the way.
-        registrations = text[text.find("registerStorage"):]
-        created = set(re.findall(r"return\s+std::make_shared<\s*(Storage\w+)\s*>", registrations))
+        text = _without_string_literals(text)
+        created = set()
+        for line, body in _storage_creators(text):
+            classes = _created_storage_classes(text, body)
+            if classes is None:
+                violations.append(
+                    f"{path}:{line}: cannot tell which storage class this registration creates, so the engine that "
+                    f"opts into deferred loading cannot be checked against DEFERRABLE_STORAGE_CLASSES in "
+                    f"ci/jobs/check_style.py. Return `std::make_shared<StorageX>` from the creator or from a "
+                    f"helper defined in the same file."
+                )
+                continue
+            created |= classes
         for cls in sorted(created - set(DEFERRABLE_STORAGE_CLASSES)):
             violations.append(
                 f"{path}: `{cls}` is created by an engine that opts into deferred loading, but it is not in "

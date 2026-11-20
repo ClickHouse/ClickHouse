@@ -99,6 +99,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// The right on the table itself is checked above, but an `Alias` loads a lazily loaded target when it is asked
+    /// the engine facts below, and checks the rights on the target only when it mutates it.
+    checkAccessBeforeLoadingLazyTable(table, table_id, getContext(), {AccessType::ALTER_DELETE});
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");

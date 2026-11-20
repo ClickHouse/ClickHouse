@@ -46,6 +46,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -656,6 +657,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             getContext()->checkAccess(getRequiredAccess(
                 nullptr, has_physical_row_exists ? RowExistsColumnKind::Regular : RowExistsColumnKind::LightweightDeleteMarker));
         }
+        /// An `Alias` asks its target whether the commands are possible, which loads a lazily loaded target, and
+        /// checks `ALTER` on the target only after that, when it alters or mutates it.
+        if (table && !skip_access_check && table->as<StorageAlias>())
+            checkAccessBeforeLoadingLazyTable(table, table_id, getContext(), {AccessType::ALTER});
         table = resolveStorageProxyLoading(table);
     }
 

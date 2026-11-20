@@ -134,7 +134,16 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
+    /// The same check from the definition of a table that is not constructed, see `StorageFactory::CheckDatabaseRenameFn`.
+    static void checkDatabaseRenameByDefinition(const ASTStorage & storage_def, const StorageID & table_id, const String & new_database_name);
+
 private:
+    static void checkKeeperPathAllowsDatabaseRename(
+        const std::optional<String> & keeper_path_database_name_,
+        const String & engine_name_,
+        const StorageID & table_id,
+        const String & new_database_name);
+
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;

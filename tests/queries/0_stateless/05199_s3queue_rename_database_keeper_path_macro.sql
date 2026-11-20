@@ -63,7 +63,8 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Ide
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- A lazily loaded queue table that nothing has touched may already have progress in Keeper from an earlier
--- load, so its rename has to be checked as well. The database loads it before the rename to ask it.
+-- load, so its rename has to be checked as well. It answers from its definition, so the refused rename does
+-- not load it: loading reads Keeper and starts the queue.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_untouched (a UInt32)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV)
@@ -80,7 +81,7 @@ SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() A
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- A lazily loaded queue table whose path does not depend on the database name is loaded to ask as well, and the
+-- A lazily loaded queue table whose path does not depend on the database name is not loaded either, and the
 -- rename is allowed.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_free (a UInt32)
@@ -91,5 +92,6 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
 EXISTS TABLE {CLICKHOUSE_DATABASE_2:Identifier}.lazy_free;
+SELECT engine, is_loaded FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'lazy_free';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
