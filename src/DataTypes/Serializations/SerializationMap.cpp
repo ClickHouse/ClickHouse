@@ -48,10 +48,14 @@ UInt128 SerializationMap::getHash(const SerializationPtr & nested_, MergeTreeMap
 SerializationMap::SerializationMap(
     const SerializationPtr & key_serialization_,
     const SerializationPtr & value_serialization_,
+    const DataTypePtr & key_type_,
+    const DataTypePtr & value_type_,
     const SerializationPtr & nested_serialization_,
     MergeTreeMapSerializationVersion serialization_version_)
     : key_serialization(key_serialization_)
     , value_serialization(value_serialization_)
+    , key_type(key_type_)
+    , value_type(value_type_)
     , nested_serialization(nested_serialization_)
     , serialization_version(serialization_version_)
 {
@@ -153,12 +157,17 @@ void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> &
 SerializationPtr SerializationMap::create(
     const SerializationPtr & key_serialization_,
     const SerializationPtr & value_serialization_,
+    const DataTypePtr & key_type_,
+    const DataTypePtr & value_type_,
     const SerializationPtr & nested_serialization_,
     MergeTreeMapSerializationVersion serialization_version_)
 {
     if (!nested_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_));
-    return ISerialization::pooled(getHash(nested_serialization_, serialization_version_), [&] { return new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_); });
+        return std::shared_ptr<ISerialization>(
+            new SerializationMap(key_serialization_, value_serialization_, key_type_, value_type_, nested_serialization_, serialization_version_));
+    return ISerialization::pooled(
+        getHash(nested_serialization_, serialization_version_),
+        [&] { return new SerializationMap(key_serialization_, value_serialization_, key_type_, value_type_, nested_serialization_, serialization_version_); });
 }
 
 namespace
@@ -278,8 +287,8 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
                 break;
 
             if constexpr (throw_exception)
-                reader(istr, key_serialization, key_column);
-            else if (!reader(istr, key_serialization, key_column))
+                reader(istr, key_serialization, key_type, key_column);
+            else if (!reader(istr, key_serialization, key_type, key_column))
                 return on_error_no_throw();
 
             ++size;
@@ -292,8 +301,8 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             skipWhitespaceIfAny(istr);
 
             if constexpr (throw_exception)
-                reader(istr, value_serialization, value_column);
-            else if (!reader(istr, value_serialization, value_column))
+                reader(istr, value_serialization, value_type, value_column);
+            else if (!reader(istr, value_serialization, value_type, value_column))
                 return on_error_no_throw();
 
             skipWhitespaceIfAny(istr);
@@ -365,10 +374,10 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     deserializeTextImpl(column, istr,
-        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, const DataTypePtr & subcolumn_type, IColumn & subcolumn)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization, subcolumn_type.get());
             else
                 subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
@@ -379,10 +388,10 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
 
 bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, const DataTypePtr & subcolumn_type, IColumn & subcolumn)
     {
         if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization, subcolumn_type.get());
         return subcolumn_serialization->tryDeserializeTextQuoted(subcolumn, buf, settings);
     };
 
@@ -467,38 +476,39 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
 template <typename ReturnType>
 ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto deserialize_nested = [&settings](IColumn & subcolumn, ReadBuffer & buf, const SerializationPtr & subcolumn_serialization) -> ReturnType
+    auto deserialize_nested = [&settings](IColumn & subcolumn, ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, const DataTypePtr & subcolumn_type) -> ReturnType
     {
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization, subcolumn_type.get());
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization, subcolumn_type.get());
             return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
         }
     };
 
     if (settings.json.empty_as_default)
         return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
+            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, const DataTypePtr & subcolumn_type, IColumn & subcolumn) -> ReturnType
             {
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(subcolumn, buf,
-                    [&deserialize_nested, &subcolumn_serialization](IColumn & subcolumn_, ReadBuffer & buf_) -> ReturnType
+                    [&deserialize_nested, &subcolumn_serialization, &subcolumn_type](IColumn & subcolumn_, ReadBuffer & buf_) -> ReturnType
                     {
-                        return deserialize_nested(subcolumn_, buf_, subcolumn_serialization);
-                    });
+                        return deserialize_nested(subcolumn_, buf_, subcolumn_serialization, subcolumn_type);
+                    },
+                    subcolumn_type.get());
             });
     return deserializeTextImpl<ReturnType>(
         column,
         istr,
-        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-        { return deserialize_nested(subcolumn, buf, subcolumn_serialization); });
+        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, const DataTypePtr & subcolumn_type, IColumn & subcolumn) -> ReturnType
+        { return deserialize_nested(subcolumn, buf, subcolumn_serialization, subcolumn_type); });
 }
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -647,6 +657,12 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     }
 };
 
+/// A `JSON` or `Dynamic` key hashes differently across versions, so such a `Map` is written in one bucket, read whole by every version.
+size_t getMaxBucketsInMap(const ColumnMap & column, size_t max_buckets_in_map)
+{
+    return column.getNestedData().getColumn(0).hasDynamicStructure() ? 1 : max_buckets_in_map;
+}
+
 }
 
 void SerializationMap::enumerateStreams(
@@ -721,7 +737,7 @@ void SerializationMap::enumerateStreams(
     if (map_deserialize_state)
         buckets = checkAndGetState<DeserializeBinaryBulkStateBucketsInfo>(map_deserialize_state->buckets_info_state)->buckets;
     else if (map_column)
-        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), getMaxBucketsInMap(*map_column, settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
 
     /// Enumerate the bucket index stream (used to preserve original key order).
     /// Only needed when there are multiple buckets — single-bucket serialization
@@ -782,7 +798,7 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
     /// Determine the number of buckets from column statistics and write it to the stream.
     UInt64 buckets = 1;
     ColumnMap::StatisticsPtr statistics = assert_cast<const ColumnMap &>(column).getOrCalculateStatistics();
-    buckets = calculateNumberOfBuckets(statistics, settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+    buckets = calculateNumberOfBuckets(statistics, getMaxBucketsInMap(assert_cast<const ColumnMap &>(column), settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
     writeBinaryLittleEndian(buckets, *stream);
     map_state->buckets = buckets;
 
