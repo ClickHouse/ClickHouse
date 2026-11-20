@@ -214,7 +214,7 @@ std::string PatternFormatter::getProperty(const std::string& name) const
 
 namespace
 {
-	static std::string priorities[] = 
+	[[clang::no_destroy]] static std::string priorities[] = 
 	{
 		"",
 		"Fatal",
