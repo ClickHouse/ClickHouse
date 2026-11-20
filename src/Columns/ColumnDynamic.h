@@ -203,6 +203,9 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
+    /// Hashes the type name of a non-NULL value prefix-free and distinct from the `NULL_DISCRIMINATOR` hashed for NULL.
+    static void updateHashWithTypeName(SipHash & hash, std::string_view type_name);
+
     /// Used for deduplication. Does not depend on which other types the column holds, but a value in the
     /// shared variant hashes differently than the same value in a typed variant.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;

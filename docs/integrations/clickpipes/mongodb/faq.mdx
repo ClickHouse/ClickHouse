@@ -54,6 +54,18 @@ For more examples, see our [Working with JSON guide](/integrations/clickpipes/mo
 
 This error typically occurs when the oplog is truncated and ClickPipe is unable to resume the change stream at the expected point. To resolve this issue, [resync the ClickPipe](/integrations/clickpipes/mongodb/resync). To avoid this issue from recurring, we recommend increasing the oplog retention period. See instructions for [MongoDB Atlas](/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [self-managed MongoDB](/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention), or [Amazon DocumentDB](/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
 
+### How do I handle `Cannot open a new cursor since too many cursors are already opened` error? {#too-many-cursors-error}
+
+Some managed MongoDB providers, like Amazon DocumentDB, limit how many cursors can be open at the same time on each instance. In Amazon DocumentDB, the limit depends on the instance class. For example, `t3.medium` and `t4g.medium` instances allow only 30 open cursors. See [instance limits](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance) for the limit of each instance class.
+
+ClickPipe needs a cursor to read the change stream. When other workloads on the instance use all available cursors, ClickPipe can't open the change stream. ClickPipe retries automatically and resumes replication once cursors become available.
+
+To resolve this issue:
+
+1. Check how many cursors are open on the instance that ClickPipe reads from. Connect to the instance with `mongosh` and run `db.serverStatus().metrics.cursor.open`. In Amazon DocumentDB, you can also compare the `DatabaseCursorsMax` and `DatabaseCursorsLimit` metrics in Amazon CloudWatch.
+2. Reduce the number of cursors that other workloads keep open. For example, close cursors when the application no longer needs them.
+3. If your workload needs more cursors, scale the instance to a larger instance class.
+
 ### How is replication managed? {#how-is-replication-managed}
 
 We use MongoDB's native Change Streams API to track changes in the database. Change Streams API provides a resumable stream of database changes by leveraging MongoDB's oplog (operations log). ClickPipe uses MongoDB's resume tokens to track the position in the oplog and ensure every change is replicated to ClickHouse.
@@ -81,3 +93,18 @@ If you prefer to connect to a single node in your cluster, you can skip replica 
 For replica set connection, you can set up PrivateLink for MongoDB with either VPC Resource or VPC Endpoint Service. If you go with VPC Resource, you would need to create a `GROUP` resource configuration, plus a `CHILD` resource configuration for each node in the cluster. If you go with VPC Endpoint Service, you would need to create a separate Endpoint Service (and a separate NLB) for each node in the cluster. 
 
 See the [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink) documentation for more details. Please reach out to ClickHouse support for assistance.
+
+### Why is the `_peerdb_raw_mirror_*` table so large, and how do I limit it? {#raw-mirror-table-retention}
+
+A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. Depending on when the pipe was created, the table may have no TTL and keep every event. Check with `SHOW CREATE TABLE`, and add or change the TTL with:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+```
+
+If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
+
+<Warning>
+The TTL is evaluated on wall-clock time and doesn't know the pipe state. If the pipe is paused or stalled for longer than the TTL, events that weren't normalized yet are deleted and never reach the target tables. Choose a retention longer than any planned pause.
+</Warning>

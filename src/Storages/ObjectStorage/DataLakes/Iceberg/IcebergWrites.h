@@ -53,6 +53,7 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> column_sizes;
     std::vector<std::pair<Int32, Int64>> value_counts;
     std::vector<std::pair<Int32, Int64>> null_value_counts;
+    std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
 };
@@ -84,7 +85,7 @@ public:
 
     void add(const Row & partition_value);
 
-    const std::vector<FieldSummary> & getFields() const { return fields; }
+    [[nodiscard]] const std::vector<FieldSummary> & getFields() const { return fields; }
 
 private:
     std::vector<FieldSummary> fields;
@@ -193,6 +194,7 @@ public:
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
+    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
@@ -234,6 +236,8 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
+    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
