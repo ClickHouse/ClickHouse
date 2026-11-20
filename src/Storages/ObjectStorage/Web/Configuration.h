@@ -67,7 +67,7 @@ public:
         setPaths({path});
         setPathForRead(path);
     }
-    [[nodiscard]] const String & getRawURI() const override { return raw_url; }
+    [[nodiscard]] std::string_view getRawURI() const override { return raw_url; }
 
     [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
