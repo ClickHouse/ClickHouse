@@ -21,6 +21,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/HTTPConnectionInfo.h>
+#include <base/scope_guard.h>
 
 #include <utility>
 
@@ -679,6 +680,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
+    SCOPE_EXIT(reportOutcome(req));
 
     /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
     /// and rejects its `x-goog-if-generation-match` translation.
@@ -754,6 +756,16 @@ bool WriteBufferFromS3::completeMultipartUpload()
         last_error_details, max_retry, key, bucket);
 }
 
+void WriteBufferFromS3::reportOutcome(const S3::RequestWithIdempotencyId & request)
+{
+    write_outcome.store(request.getAttemptsRecord().outcome());
+}
+
+std::optional<WriteOutcome> WriteBufferFromS3::getWriteOutcome() const
+{
+    return write_outcome.load();
+}
+
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -807,6 +819,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();
+        SCOPE_EXIT(reportOutcome(request));
 
         size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
         for (size_t i = 0; i < max_retry; ++i)

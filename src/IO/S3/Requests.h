@@ -8,6 +8,7 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
+#include <Common/WriteOutcome.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/http/HttpRequest.h>
@@ -256,8 +257,12 @@ public:
     void setIdempotencyId(std::string_view value) { idempotency_id = value; }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
+    [[nodiscard]] AttemptsRecord & getAttemptsRecord() { return attempts_record; }
+    [[nodiscard]] const AttemptsRecord & getAttemptsRecord() const { return attempts_record; }
+
 private:
     Aws::String idempotency_id;
+    AttemptsRecord attempts_record;
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId

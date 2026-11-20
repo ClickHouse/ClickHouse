@@ -1837,6 +1837,39 @@ TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
 /// data-transfer timeouts are: a looser component is lowered to the cap, a non-positive one
 /// (unbounded downstream) takes the cap, and one already tighter than the cap is kept rather than
 /// raised. The connect timeout is passed through untouched.
+/// Only a known answer that refuses a request before it is applied proves that an attempt of a write was not applied.
+TEST(IOTestAwsS3Client, AttemptMayHaveBeenApplied)
+{
+    using Aws::Http::HttpResponseCode;
+    using DB::S3::attemptMayHaveBeenApplied;
+
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::MOVED_PERMANENTLY, "PermanentRedirect"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::TEMPORARY_REDIRECT, "TemporaryRedirect"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::BAD_REQUEST, "RequestTimeout"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::FORBIDDEN, "AccessDenied"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::CONFLICT, "ConditionalRequestConflict"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::PRECONDITION_FAILED, "PreconditionFailed"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::TOO_MANY_REQUESTS, "SlowDown"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::NOT_FOUND, "NoSuchBucket"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::NOT_FOUND, "NoSuchUpload"));
+    EXPECT_FALSE(attemptMayHaveBeenApplied(HttpResponseCode::SERVICE_UNAVAILABLE, "SlowDown"));
+
+    /// No answer, or a code that some HTTP clients and proxies give for none.
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::REQUEST_NOT_MADE, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::REQUEST_TIMEOUT, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::NO_RESPONSE, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::CLIENT_CLOSED_TO_REQUEST, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::NETWORK_READ_TIMEOUT, ""));
+
+    /// An answer without a known cause, a broken answer, or a server error.
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::NOT_FOUND, "NoSuchKey"));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::NOT_FOUND, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::OK, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::INTERNAL_SERVER_ERROR, "InternalError"));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::GATEWAY_TIMEOUT, ""));
+    EXPECT_TRUE(attemptMayHaveBeenApplied(HttpResponseCode::SERVICE_UNAVAILABLE, "ServiceUnavailable"));
+}
+
 TEST(IOTestAwsS3Client, CredentialAcquisitionTimeoutsAreCapped)
 {
     const Poco::Timespan request_cap(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);

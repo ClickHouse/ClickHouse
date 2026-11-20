@@ -41,6 +41,9 @@ public:
     void cancelImpl() noexcept override;
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
+    /// `Create` claims the path, and only `Flush` publishes the content. After the claim, a failure leaves the outcome
+    /// unknown, because nothing proves what readers see at the path.
+    std::optional<WriteOutcome> getWriteOutcome() const override { return attempts_record.outcome(); }
 
 private:
     void ensureCreated();
@@ -59,6 +62,8 @@ private:
     const size_t max_unexpected_write_error_retries;
 
     bool file_created = false;
+    /// Set on the thread of `finalize`.
+    AttemptsRecord attempts_record;
     bool is_prefinalized = false;
     int64_t bytes_appended = 0;
 

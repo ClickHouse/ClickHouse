@@ -10,6 +10,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/FiberLocal.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -43,6 +44,7 @@ namespace DB::FailPoints
     extern const char azure_inject_poco_timeout_once[];
     extern const char azure_inject_poco_network_error[];
     extern const char azure_inject_poco_network_error_once[];
+    extern const char azure_inject_lost_response_of_conditional_write_once[];
     extern const char azure_inject_bad_request[];
 }
 
@@ -154,6 +156,62 @@ private:
 
 }
 
+namespace
+{
+
+constinit FiberLocal<PocoAzureHTTPClient::WriteAttemptsScope *, FiberLocalSlot::AZURE_WRITE_ATTEMPTS_SCOPE> current_write_attempts_scope;
+
+/// Only a known refusal proves that an attempt was not applied. No answer, a success, a server error, or any other answer
+/// may follow an applied attempt.
+bool attemptMayHaveBeenApplied(std::optional<Azure::Core::Http::HttpStatusCode> code)
+{
+    if (!code)
+        return true;
+    using Azure::Core::Http::HttpStatusCode;
+    switch (*code)
+    {
+        case HttpStatusCode::BadRequest:
+        case HttpStatusCode::Unauthorized:
+        case HttpStatusCode::Forbidden:
+        case HttpStatusCode::NotFound:
+        case HttpStatusCode::Conflict:
+        case HttpStatusCode::PreconditionFailed:
+        case HttpStatusCode::PayloadTooLarge:
+        case HttpStatusCode::TooManyRequests:
+            return false;
+        default:
+            return true;
+    }
+}
+
+}
+
+PocoAzureHTTPClient::WriteAttemptsScope::WriteAttemptsScope(AttemptsRecord & record_)
+    : record(record_)
+    , previous(current_write_attempts_scope)
+{
+    current_write_attempts_scope = this;
+}
+
+PocoAzureHTTPClient::WriteAttemptsScope::~WriteAttemptsScope()
+{
+    current_write_attempts_scope = previous;
+}
+
+/// Other requests of the scope, e.g. for a token of the credentials, do not publish the blob.
+void PocoAzureHTTPClient::recordWriteAttempt(
+    const Azure::Core::Http::Request & request, std::optional<Azure::Core::Http::HttpStatusCode> code)
+{
+    auto * scope = current_write_attempts_scope.get();
+    if (!scope || request.GetMethod() != Azure::Core::Http::HttpMethod::Put)
+        return;
+    if (attemptMayHaveBeenApplied(code))
+        scope->record.may_have_been_applied = true;
+    /// 409 `BlobAlreadyExists` or `PathAlreadyExists` answers `If-None-Match: *`, and 412 `ConditionNotMet` answers `If-Match`.
+    scope->record.precondition_refused
+        = code == Azure::Core::Http::HttpStatusCode::Conflict || code == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
+}
+
 std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
@@ -200,7 +258,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
 
     size_t redirects_left = max_redirects;
     // Just make a single request attempt, retries will be handled by the caller
-    return makeRequestInternalImpl(request, context, redirects_left);
+    std::unique_ptr<Azure::Core::Http::RawResponse> response;
+    try
+    {
+        response = makeRequestInternalImpl(request, context, redirects_left);
+    }
+    catch (...)
+    {
+        recordWriteAttempt(request, std::nullopt);
+        throw;
+    }
+    recordWriteAttempt(request, response->GetStatusCode());
+    return response;
 }
 
 void PocoAzureHTTPClient::addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount) const
@@ -518,6 +587,15 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
         int status = static_cast<int>(poco_response.getStatus());
+
+        /// Test-only: lose the answer to an applied conditional write. The condition comes first, so that another request
+        /// does not use up the failpoint.
+        if (status < 300 && method == Poco::Net::HTTPRequest::HTTP_PUT
+            && (poco_request.has("If-None-Match") || poco_request.has("If-Match")))
+        {
+            fiu_do_on(DB::FailPoints::azure_inject_lost_response_of_conditional_write_once,
+                { throw Poco::Net::ConnectionResetException("connection reset after the answer (injected by failpoint)"); });
+        }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, // HTTP/1.1

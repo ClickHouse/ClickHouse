@@ -240,6 +240,8 @@ private:
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
+    /// The outcome of the metadata commit is unknown: the new version may be published, so its files are kept.
+    bool commit_outcome_unknown = false;
 
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;

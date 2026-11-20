@@ -796,7 +796,8 @@ static bool writeMetadataFiles(
     }
     catch (...)
     {
-        cleanup();
+        if (!isCommitOutcomeUnknown())
+            cleanup();
         throw;
     }
     return true;

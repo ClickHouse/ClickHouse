@@ -38,8 +38,11 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -88,9 +91,7 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
 extern const int NOT_IMPLEMENTED;
-extern const int FILE_ALREADY_EXISTS;
-extern const int STALE_VERSION;
-extern const int S3_ERROR;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -341,13 +342,24 @@ void writeMessageToFile(
     ContextPtr context,
     const std::string & write_if_none_match,
     const std::string & write_if_match,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    std::optional<WriteOutcome> * write_outcome)
 {
     auto write_settings = context->getWriteSettings();
     write_settings.object_storage_write_if_none_match = write_if_none_match;
     write_settings.object_storage_write_if_match = write_if_match;
+    /// Nothing is sent until the storage creates the buffer of the write, e.g. when it refuses the condition.
+    if (write_outcome)
+        *write_outcome = WriteOutcome::NotApplied;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    /// Not owned by the compressing buffer, so that it outlives the report even if that buffer cannot be created.
+    std::unique_ptr<WriteBuffer> compressed_buffer_metadata;
+    WriteBuffer * out = buffer_metadata.get();
+    SCOPE_EXIT({
+        if (write_outcome)
+            *write_outcome = buffer_metadata->getWriteOutcome();
+    });
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
@@ -360,28 +372,17 @@ void writeMessageToFile(
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
         /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
         /// stay interoperable with other Iceberg engines.
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
-            std::move(buffer_metadata),
+        compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            buffer_metadata.get(),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
             SnappyMode::Basic,
             buf_size);
-        compressed_buffer_metadata->write(data.data(), data.size());
-        compressed_buffer_metadata->finalize();
+        out = compressed_buffer_metadata.get();
     }
-    else
-    {
-        buffer_metadata->write(data.data(), data.size());
-        buffer_metadata->finalize();
-    }
-}
-
-bool isConditionalWriteConflict(const Exception & e)
-{
-    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
-        || e.code() == ErrorCodes::STALE_VERSION
-        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
+    out->write(data.data(), data.size());
+    out->finalize();
 }
 
 /// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
@@ -400,18 +401,56 @@ static bool isRefusedWrite(const Exception & e)
     return false;
 }
 
-/// Whether `path` is known to be absent; a failed check proves nothing.
-static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+/// The upload was sent and failed without proof either way, so it may have published the new version.
+[[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path, std::string_view reason = "")
 {
-    try
+    /// The diagnostics allocate, and a memory limit must not turn this error into one that lets the caller roll back.
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    /// The new error tells the caller to keep the files, and the log keeps the original one with its stack trace.
+    tryLogCurrentException(
+        getLogger("IcebergWrites"),
+        fmt::format("The outcome of writing metadata file {} is unknown{}", storage_metadata_path, reason),
+        LogsLevel::warning);
+    throw Exception(
+        ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+        "The outcome of writing metadata file {} is unknown{}, so the files of the new version are kept: {}",
+        storage_metadata_path,
+        reason,
+        getCurrentExceptionMessage(false));
+}
+
+bool isCommitOutcomeUnknown()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
+/// Decides a failed write of the metadata file by the outcome that the storage reports. Returns true when the file is
+/// published, false after a lost race, and rethrows the exception being handled when nothing was published.
+static bool decideByWriteOutcome(WriteOutcome outcome, const String & storage_metadata_path)
+{
+    /// The diagnostics allocate, and a memory limit must not change the decision.
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    switch (outcome)
     {
-        return !object_storage->exists(StoredObject(path));
+        case WriteOutcome::Applied:
+            tryLogCurrentException(
+                getLogger("IcebergWrites"),
+                fmt::format("Metadata file {} is published, but its write reported an error", storage_metadata_path),
+                LogsLevel::warning);
+            return true;
+        case WriteOutcome::ConditionFailed:
+            LOG_DEBUG(
+                getLogger("IcebergWrites"),
+                "Metadata file {} was written by a concurrent commit: {}",
+                storage_metadata_path,
+                getCurrentExceptionMessage(false));
+            return false;
+        case WriteOutcome::NotApplied:
+            throw;
+        case WriteOutcome::Unknown:
+            throwCommitOutcomeUnknown(storage_metadata_path);
     }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
+    UNREACHABLE();
 }
 
 bool writeMetadataFile(
@@ -422,13 +461,23 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    bool write_attempted = false;
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
+    }
+    catch (...)
+    {
+        /// Nothing is sent yet, so the commit can retry. A refused check is refused again on every retry.
+        if (const auto * e = current_exception_cast<const Exception *>(); e && isRefusedWrite(*e))
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 
-        write_attempted = true;
+    std::optional<WriteOutcome> write_outcome;
+    try
+    {
         Iceberg::writeMessageToFile(
             metadata_file_content,
             storage_metadata_path,
@@ -436,27 +485,16 @@ bool writeMetadataFile(
             context,
             /* write-if-none-match */ "*",
             "",
-            metadata_file_info.compression_method);
-    }
-    catch (const Exception & e)
-    {
-        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
-        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
-        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
-            throw;
-        if (isConditionalWriteConflict(e))
-            LOG_DEBUG(
-                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
-        else
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+            metadata_file_info.compression_method,
+            &write_outcome);
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        /// Ok: the outcome decides, and `decideByWriteOutcome` rethrows or logs.
+        if (!write_outcome)
+            throwCommitOutcomeUnknown(storage_metadata_path, ", because the storage reports no outcome of the write");
+        return decideByWriteOutcome(*write_outcome, storage_metadata_path);
     }
-
     return true;
 }
 
@@ -522,6 +560,7 @@ bool tryWriteVersionHintFile(
         }
 
         /// lastly, let's update it
+        std::optional<WriteOutcome> write_outcome;
         try
         {
             /// Write just the version number for Spark/spec compatibility.
@@ -531,25 +570,29 @@ bool tryWriteVersionHintFile(
                 object_storage,
                 context,
                 write_if_none_match,
-                /* write-if-match */ etag);
+                /* write-if-match */ etag,
+                CompressionMethod::None,
+                &write_outcome);
 
             if (!assert_version_exactly)
                 return true;
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (isConditionalWriteConflict(e))
+            /// The next attempt reads the hint again, so it also tells whether an attempt of unknown outcome landed.
+            if (write_outcome == WriteOutcome::Applied)
+            {
+                if (!assert_version_exactly)
+                    return true;
+            }
+            else if (write_outcome == WriteOutcome::ConditionFailed)
                 LOG_DEBUG(
                     getLogger("IcebergWrites"),
                     "Version hint {} was changed by a concurrent writer: {}",
                     storage_version_hint_path,
-                    e.message());
+                    getCurrentExceptionMessage(false));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
     return false;
@@ -567,14 +610,28 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    (void)tryWriteVersionHintFile(
-        resolver,
-        metadata_file_info,
-        version_hint_path,
-        object_storage,
-        context,
-        /* create */ try_write_version_hint,
-        /* assert_version_exactly */ false);
+    /// The commit is published, so a failure of the hint must not reach the caller, which rolls back on an exception.
+    try
+    {
+        /// Readers with `iceberg_use_version_hint` find the published metadata file through the hint, so a cancellation
+        /// must not leave the hint behind the commit.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+        (void)tryWriteVersionHintFile(
+            resolver,
+            metadata_file_info,
+            version_hint_path,
+            object_storage,
+            context,
+            /* create */ try_write_version_hint,
+            /* assert_version_exactly */ false);
+    }
+    catch (...)
+    {
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        tryLogCurrentException(
+            getLogger("IcebergWrites"),
+            fmt::format("The version hint is not advanced to the published metadata file {}", metadata_file_info.path.serialize()));
+    }
     return true;
 }
 

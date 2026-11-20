@@ -17,6 +17,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 #include <list>
@@ -51,6 +52,9 @@ public:
     void nextImpl() override;
     void preFinalize() override;
     std::string getFileName() const override { return key; }
+
+    /// `NotApplied` also when the request that publishes the object did not run, e.g. after a failed upload of a part.
+    std::optional<WriteOutcome> getWriteOutcome() const override;
     void sync() override { next(); }
 
 private:
@@ -96,6 +100,10 @@ private:
     /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
     /// Empty if disabled by the `use_idempotency_id` request setting.
     const String idempotency_id;
+
+    /// Of the last call that publishes the object. That call runs on a thread of the pool.
+    std::atomic<WriteOutcome> write_outcome = WriteOutcome::NotApplied;
+    void reportOutcome(const S3::RequestWithIdempotencyId & request);
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 

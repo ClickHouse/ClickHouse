@@ -1148,13 +1148,14 @@ void IcebergMetadata::createInitial(
 
     if (!catalog_writes_metadata)
     {
+        std::optional<WriteOutcome> write_outcome;
         try
         {
-            writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+            writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method, &write_outcome);
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (if_not_exists && isConditionalWriteConflict(e))
+            if (if_not_exists && write_outcome == WriteOutcome::ConditionFailed)
                 return;
             throw;
         }

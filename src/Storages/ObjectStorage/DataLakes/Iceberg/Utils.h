@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/WriteOutcome.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -42,6 +43,8 @@ class ICatalog;
 namespace DB::Iceberg
 {
 
+/// Sets `write_outcome`, if given, to the outcome of the write, also on an exception. It stays empty for a storage that
+/// does not track the outcome.
 void writeMessageToFile(
     const String & data,
     const String & filename,
@@ -49,18 +52,22 @@ void writeMessageToFile(
     DB::ContextPtr context,
     const std::string & write_if_none_match,
     const std::string & write_if_match = "",
-    DB::CompressionMethod compression_method = DB::CompressionMethod::None);
+    DB::CompressionMethod compression_method = DB::CompressionMethod::None,
+    std::optional<DB::WriteOutcome> * write_outcome = nullptr);
 
-/// Whether a conditional write failed because another writer created or changed the object first.
-bool isConditionalWriteConflict(const DB::Exception & e);
-
-/// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
+/// Writes the metadata file with If-None-Match. Returns true when it is published, also if a later step of the write
+/// failed. Returns false when nothing was published: the path already exists, or another writer won the race. Throws
+/// `UNKNOWN_STATUS_OF_TRANSACTION` when the outcome of the upload is unknown.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context);
+
+/// Whether the exception being handled leaves the outcome of a commit unknown: the new version may be published,
+/// so a rollback must keep the files that it references.
+bool isCommitOutcomeUnknown();
 
 /// Advances the hint, creating it when requested; exact mode confirms that it resolves to this metadata file.
 bool tryWriteVersionHintFile(

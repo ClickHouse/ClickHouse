@@ -42,6 +42,10 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
+/// Azure allows only C# identifiers as metadata names, so not the name of S3.
+static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse_idempotency_id";
+static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
+
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
     /// Validate the multipart upload settings here rather than in `getRequestSettings`: this is the
@@ -79,6 +83,10 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     , max_unexpected_write_error_retries(write_settings_.is_initial_access_check ? settings_->max_unexpected_write_error_retries * 3 : settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
+    , idempotency_id(
+          write_settings_.object_storage_write_if_none_match.empty() && write_settings_.object_storage_write_if_match.empty()
+              ? ""
+              : getRandomASCIIString(IDEMPOTENCY_ID_LENGTH))
     , blob_container_client(blob_container_client_)
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -159,6 +167,93 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
     }
 }
 
+template <typename Options>
+void WriteBufferFromAzureBlobStorage::setPublishOptions(Options & options) const
+{
+    if (!write_settings.object_storage_write_if_none_match.empty())
+        options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
+    if (!write_settings.object_storage_write_if_match.empty())
+        options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
+    if (!idempotency_id.empty())
+        options.Metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+}
+
+WriteBufferFromAzureBlobStorage::BlobWriter WriteBufferFromAzureBlobStorage::findBlobWriter() const
+{
+    Azure::Storage::Blobs::Models::BlobProperties properties;
+    try
+    {
+        properties = blob_container_client->GetBlobClient(blob_path).GetProperties().Value;
+    }
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        LOG_INFO(log, "There is no readable blob `{}` to prove the write by: {} {}", blob_path, e.what(), e.Message);
+        return BlobWriter::Unproven;
+    }
+    auto it = properties.Metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    return it != properties.Metadata.end() && it->second == idempotency_id ? BlobWriter::ThisWrite : BlobWriter::AnotherWrite;
+}
+
+AttemptsRecord::Proof WriteBufferFromAzureBlobStorage::proveFailedWrite() const
+{
+    using Proof = AttemptsRecord::Proof;
+    if (!idempotency_id.empty() && (attempts_record.precondition_refused || attempts_record.may_have_been_applied))
+    {
+        switch (findBlobWriter())
+        {
+            case BlobWriter::ThisWrite:
+                return Proof::Applied;
+            case BlobWriter::AnotherWrite:
+                /// Only one write can create a blob with `If-None-Match: *`, so this one cannot be applied, now or later.
+                if (!write_settings.object_storage_write_if_none_match.empty())
+                    return Proof::ConditionFailed;
+                break;
+            case BlobWriter::Unproven:
+                break;
+        }
+    }
+    return Proof::None;
+}
+
+void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
+{
+    attempts_record.startCall();
+    try
+    {
+        PocoAzureHTTPClient::WriteAttemptsScope scope(attempts_record);
+        execWithRetry(
+            [&](size_t attempt)
+            {
+                try
+                {
+                    func(attempt);
+                }
+                catch (const Azure::Core::RequestFailedException &)
+                {
+                    /// The transport has recorded the answer.
+                    throw;
+                }
+                catch (...)
+                {
+                    /// Any other exception from inside an attempt, e.g. of memory, can come after its body was sent.
+                    attempts_record.may_have_been_applied = true;
+                    throw;
+                }
+            },
+            num_tries,
+            cost);
+    }
+    catch (...)
+    {
+        attempts_record.proof = proveFailedWrite();
+        if (attempts_record.proof != AttemptsRecord::Proof::Applied)
+            throw;
+        LOG_INFO(log, "Blob `{}` was written by an earlier attempt of this write: {}", blob_path, getCurrentExceptionMessage(false));
+        return;
+    }
+    attempts_record.proof = AttemptsRecord::Proof::Applied;
+}
+
 void WriteBufferFromAzureBlobStorage::preFinalize()
 {
     if (is_prefinalized)
@@ -199,16 +294,12 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             String error_message;
             try
             {
-                execWithRetry(
+                publishWithRetry(
                     [&](size_t retry_attempt)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
 
-                        if (!write_settings.object_storage_write_if_none_match.empty())
-                            options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                        if (!write_settings.object_storage_write_if_match.empty())
-                            options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
+                        setPublishOptions(options);
 
                         block_blob_client.Upload(
                             memory_stream,
@@ -266,16 +357,12 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             String error_message;
             try
             {
-                execWithRetry(
+                publishWithRetry(
                     [&](size_t retry_attempt)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
 
-                        if (!write_settings.object_storage_write_if_none_match.empty())
-                            options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                        if (!write_settings.object_storage_write_if_match.empty())
-                            options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
+                        setPublishOptions(options);
 
                         block_blob_client.Upload(
                             memory_stream,
@@ -352,17 +439,12 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         String error_message;
         try
         {
-            execWithRetry(
+            publishWithRetry(
                 [&](size_t retry_attetmpt)
                 {
                     Azure::Storage::Blobs::CommitBlockListOptions options;
 
-                    if (!write_settings.object_storage_write_if_none_match.empty())
-                        options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                    if (!write_settings.object_storage_write_if_match.empty())
-                        options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
-
+                    setPublishOptions(options);
 
                     block_blob_client.CommitBlockList(
                         block_ids,

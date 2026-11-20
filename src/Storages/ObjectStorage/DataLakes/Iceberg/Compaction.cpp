@@ -1032,7 +1032,8 @@ static bool writeConsolidatedManifestFile(
     }
     catch (...)
     {
-        cleanup();
+        if (!isCommitOutcomeUnknown())
+            cleanup();
         throw;
     }
 

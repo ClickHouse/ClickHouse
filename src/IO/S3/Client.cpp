@@ -11,6 +11,8 @@
 #include <Poco/URI.h>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
+#include <Common/FailPoint.h>
+#include <Common/FiberLocal.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -65,6 +67,7 @@
 #include <base/sleep.h>
 
 #include <Common/thread_local_rng.h>
+#include <Common/WriteOutcome.h>
 #include <random>
 
 
@@ -109,13 +112,113 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int TOO_MANY_REDIRECTS;
+}
+
+namespace FailPoints
+{
+    extern const char s3_client_throw_in_network_error_handler[];
 }
 
 namespace S3
 {
 
 static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
+
+bool isConditionalWriteAttempt(const Aws::Http::HttpRequest & request)
+{
+    const auto method = request.GetMethod();
+    const bool is_write = method == Aws::Http::HttpMethod::HTTP_PUT || method == Aws::Http::HttpMethod::HTTP_POST;
+    return is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match"));
+}
+
+bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name)
+{
+    using Aws::Http::HttpResponseCode;
+    switch (code)
+    {
+        /// A redirect: the server that answered did not process the request.
+        case HttpResponseCode::MOVED_PERMANENTLY:
+        case HttpResponseCode::FOUND:
+        case HttpResponseCode::SEE_OTHER:
+        case HttpResponseCode::TEMPORARY_REDIRECT:
+        case HttpResponseCode::PERMANENT_REDIRECT:
+        /// The checks that S3 makes before the commit.
+        case HttpResponseCode::BAD_REQUEST:
+        case HttpResponseCode::UNAUTHORIZED:
+        case HttpResponseCode::FORBIDDEN:
+        case HttpResponseCode::METHOD_NOT_ALLOWED:
+        case HttpResponseCode::CONFLICT:
+        case HttpResponseCode::LENGTH_REQUIRED:
+        case HttpResponseCode::PRECONDITION_FAILED:
+        case HttpResponseCode::REQUEST_ENTITY_TOO_LARGE:
+        case HttpResponseCode::TOO_MANY_REQUESTS:
+            return false;
+        /// The target does not exist. A `NoSuchKey` to a write has no known cause (at least MinIO gives it).
+        case HttpResponseCode::NOT_FOUND:
+            return exception_name != "NoSuchBucket" && exception_name != "NoSuchUpload";
+        case HttpResponseCode::SERVICE_UNAVAILABLE:
+            return exception_name != "SlowDown";
+        /// No answer, a code that stands for none (e.g. 408, 444 or 499 of some proxies), a broken answer, or a server error.
+        default:
+            return true;
+    }
+}
+
+namespace
+{
+
+constinit FiberLocal<Client::RequestScope *, FiberLocalSlot::S3_REQUEST_SCOPE> current_request_scope;
+
+}
+
+Client::RequestScope::RequestScope(AttemptsRecord * attempts_record_)
+    : attempts_record(attempts_record_)
+    , previous(current_request_scope)
+{
+    current_request_scope = this;
+}
+
+Client::RequestScope::~RequestScope()
+{
+    current_request_scope = previous;
+}
+
+Client::RequestScope * Client::RequestScope::current()
+{
+    return current_request_scope;
+}
+
+namespace
+{
+
+/// Another request of the thread inside the scope, e.g. of a credentials provider, is recorded too: it can only make the
+/// outcome more careful.
+void recordAttemptThatMayHaveBeenApplied()
+{
+    if (auto * scope = Client::RequestScope::current(); scope && scope->attempts_record)
+        scope->attempts_record->may_have_been_applied = true;
+}
+
+template <typename ErrorType>
+bool isPreconditionFailure(const Aws::Client::AWSError<ErrorType> & error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED || error.GetExceptionName() == "PreconditionFailed";
+}
+
+template <typename ErrorType>
+void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
+{
+    auto * scope = Client::RequestScope::current();
+    if (!scope || !scope->attempts_record)
+        return;
+    if (attemptMayHaveBeenApplied(error.GetResponseCode(), error.GetExceptionName()))
+        scope->attempts_record->may_have_been_applied = true;
+    scope->attempts_record->precondition_refused = isPreconditionFailure(error);
+}
+
+}
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
@@ -184,6 +287,7 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
     if (!httpResponseOutcome.IsSuccess())
     {
         const auto & error = httpResponseOutcome.GetError();
+        recordFailedAttempt(error);
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
@@ -585,11 +689,11 @@ Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipar
         request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
-bool Client::isObjectWrittenWithIdempotencyId(
+Client::ObjectWriter Client::findObjectWriter(
     const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id, bool warn_if_unproven) const
 {
     if (idempotency_id.empty())
-        return false;
+        return ObjectWriter::Unproven;
 
     Expect404ResponseScope scope; /// The object is absent whenever the write did not land.
 
@@ -613,46 +717,97 @@ bool Client::isObjectWrittenWithIdempotencyId(
             log, logs_level, priority,
             "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
             key, bucket, head_outcome.GetError().GetMessage());
-        return false;
+        return ObjectWriter::Unproven;
     }
 
     const auto & metadata = head_outcome.GetResult().GetMetadata();
     auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
     if (it != metadata.end() && it->second == idempotency_id)
-        return true;
+        return ObjectWriter::ThisWrite;
 
     LOG_IMPL(log, logs_level, priority, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
-    return false;
+    return ObjectWriter::AnotherWrite;
+}
+
+namespace
+{
+
+/// Whether a `HeadObject` of the key can prove the outcome of a failed write, and is worth its request.
+template <typename RequestType>
+bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error & error)
+{
+    /// A replay over a landed attempt fails its own precondition, or finds its upload id consumed.
+    if (isPreconditionFailure(error) || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+        return true;
+    /// After another error only a conditional write checks, so that an unconditional write costs no request.
+    return request.getAttemptsRecord().may_have_been_applied && (request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet());
+}
+
+}
+
+template <typename RequestType, typename OutcomeType>
+AttemptsRecord::Proof Client::proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
+{
+    using Proof = AttemptsRecord::Proof;
+    const auto & error = outcome.GetError();
+    if (shouldFindObjectWriter(request, error))
+    {
+        switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
+        {
+            case ObjectWriter::ThisWrite:
+                return Proof::Applied;
+            case ObjectWriter::AnotherWrite:
+                /// Only one write can create a key with `If-None-Match: *`, so this one cannot be applied, now or later.
+                if (request.IfNoneMatchHasBeenSet())
+                    return Proof::ConditionFailed;
+                break;
+            case ObjectWriter::Unproven:
+                break;
+        }
+    }
+    return Proof::None;
+}
+
+template <typename RequestType, typename RequestFn>
+std::invoke_result_t<RequestFn, RequestType &> Client::publish(RequestType & request, RequestFn request_fn) const
+{
+    auto & attempts_record = request.getAttemptsRecord();
+    attempts_record.startCall();
+    auto outcome = [&]
+    {
+        RequestScope scope(&attempts_record);
+        return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(request, std::move(request_fn));
+    }();
+
+    if (outcome.IsSuccess())
+    {
+        attempts_record.proof = AttemptsRecord::Proof::Applied;
+        return outcome;
+    }
+
+    /// A replay of an applied attempt fails its own condition, or finds its upload id consumed, and so does a write over
+    /// the object of another writer: only the stamped id tells them apart. A 412 can be an ordinary lost race, but an
+    /// upload id that the server no longer has cannot, so its failed proof is a warning.
+    const auto & error = outcome.GetError();
+    attempts_record.proof = proveFailedWrite(request, outcome, error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD);
+    if (attempts_record.proof == AttemptsRecord::Proof::Applied)
+    {
+        LOG_INFO(
+            log,
+            "The object was written by an earlier attempt of this write ({}). Key: {}, Bucket: {}",
+            error.GetExceptionName(), request.GetKey(), request.GetBucket());
+        outcome = decltype(outcome)(std::decay_t<decltype(outcome.GetResult())>());
+    }
+    return outcome;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
-    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    auto outcome = publish(
         request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
-
-    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
-    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
-    const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
-        && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
-            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
-
-    if (may_be_replay_of_a_landed_completion)
-    {
-        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
-        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-
-        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), warn_if_unproven))
-        {
-            LOG_INFO(
-                log,
-                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
-                outcome.GetError().GetExceptionName(), key, bucket);
-            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
-        }
-    }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
@@ -687,7 +842,7 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    return publish(
         request,
         [this](Model::PutObjectRequest & req)
         {
@@ -695,21 +850,6 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
                 return putObjectWithGOOG4Signature(req);
             return PutObject(req);
         });
-
-    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
-    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
-    {
-        const auto & key = request.GetKey();
-        const auto & bucket = request.GetBucket();
-
-        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), /* warn_if_unproven= */ false))
-        {
-            LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
-            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
-        }
-    }
-
-    return outcome;
 }
 
 Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
@@ -942,6 +1082,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
         auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
+            /// First, and without allocating: the error handling below can throw, e.g. of memory, and the request may be
+            /// applied already.
+            recordAttemptThatMayHaveBeenApplied();
+            fiu_do_on(FailPoints::s3_client_throw_in_network_error_handler,
+                { throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory limit exceeded in the error handling (injected by failpoint)"); });
+
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
@@ -953,6 +1099,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /*name*/ "",
                 /*message*/ awsFormat("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
                 /*retryable*/ true);
+            recordFailedAttempt(outcome.GetError());
 
             // network exceptions are always retryable, we could just return true here
             // but we have to check cancellation points for query, ShouldRetry method does it already
@@ -990,6 +1137,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (outcome.IsSuccess())
                     break;
 
+                /// The SDK reported its attempts already. A client without the SDK loop (e.g. in tests) reports here.
+                recordFailedAttempt(outcome.GetError());
+
                 // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
                 /// Unless retries are coordinated across threads, the SDK has already retried this error.
@@ -1011,6 +1161,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// This includes "Timeout"
                 if (!net_exception_handler())
                     break;
+            }
+            catch (...)
+            {
+                /// Any other exception from inside an attempt, e.g. of memory, can come after its body was sent.
+                recordAttemptThatMayHaveBeenApplied();
+                throw;
             }
         }
 
@@ -1715,6 +1871,8 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
             error = BuildAWSError(response);
         }
 
+        /// This loop bypasses `RetryStrategy::RequestBookkeeping`, so it records its attempts itself.
+        recordFailedAttempt(error);
         if (!retry_strategy->ShouldRetry(error, retries))
             return Aws::S3::S3Error(error);
 

@@ -100,6 +100,13 @@ private:
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
 
+/// Whether a failed attempt of a write can have been applied. Only a known answer that refuses the request before it is
+/// applied proves that it was not. Any other answer, or no answer, proves nothing.
+bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
+
+/// Whether an attempt on the wire is a write with a precondition: a `PUT` or a `POST` with `If-None-Match` or `If-Match`.
+bool isConditionalWriteAttempt(const Aws::Http::HttpRequest & request);
+
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
@@ -130,6 +137,30 @@ class Client : private Aws::S3::S3Client
 {
 public:
     class RetryStrategy;
+
+    /// The state of one call of a request. The SDK reports every attempt of a call to the retry strategy on the fiber
+    /// that sends it, but all requests share the strategy, and it gets no request, so it finds the state through the
+    /// fiber, or the thread outside fibers. A fiber that waits for I/O lets other fibers run on its thread, so the state
+    /// is fiber-local. `PocoHTTPClient` refuses a conditional attempt that runs without a record of its attempts. Scopes
+    /// nest.
+    class RequestScope
+    {
+    public:
+        explicit RequestScope(AttemptsRecord * attempts_record_);
+        ~RequestScope();
+
+        RequestScope(const RequestScope &) = delete;
+        RequestScope & operator=(const RequestScope &) = delete;
+
+        /// The scope of the call that the current fiber sends, or null.
+        static RequestScope * current();
+
+        /// Where the attempts of a write that publishes an object are recorded, or null.
+        AttemptsRecord * const attempts_record;
+
+    private:
+        RequestScope * const previous;
+    };
 
     /// we use a factory method to verify arguments before creating a client because
     /// there are certain requirements on arguments for it to work correctly
@@ -315,11 +346,28 @@ private:
     bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
     Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
 
-    /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
+    /// Who wrote the object at `key`, told by the `idempotency_id` in its metadata.
+    enum class ObjectWriter : uint8_t
+    {
+        ThisWrite,
+        AnotherWrite,
+        /// No id, a failed `HeadObject`, or no object.
+        Unproven,
+    };
+
     /// One HeadObject. Logs a failed proof, at warning level if asked.
-    bool isObjectWrittenWithIdempotencyId(
+    ObjectWriter findObjectWriter(
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
+
+    /// What the id proves about a failed write. `Applied` means that an earlier attempt of this write is applied.
+    template <typename RequestType, typename OutcomeType>
+    AttemptsRecord::Proof proveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
+
+    /// Sends a request that publishes an object, and records its outcome on the request. A failure that the id proves to
+    /// answer an applied earlier attempt of this write is a success.
+    template <typename RequestType, typename RequestFn>
+    std::invoke_result_t<RequestFn, RequestType &> publish(RequestType & request, RequestFn request_fn) const;
 
     std::optional<S3::URI> getURIForBucket(std::string_view bucket) const;
 
