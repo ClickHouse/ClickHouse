@@ -23,6 +23,9 @@ public:
     /// left unset. `skip` may be nullptr, then no row is skipped.
     void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 
+    /// False if `buildRange` calls `build` for each row.
+    [[nodiscard]] bool buildsManyRowsAtOnce() const { return layout != Layout::PerRow; }
+
 private:
     enum class Layout : uint8_t
     {

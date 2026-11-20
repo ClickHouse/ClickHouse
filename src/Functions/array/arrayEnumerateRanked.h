@@ -329,9 +329,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     /// When every argument has the depth we look at, the row of an element in every column is the element itself.
     std::optional<ColumnsHashing::Hash128InOrder> element_hashes;
-    if (std::ranges::all_of(arrays_depths.depths, [&](DepthType depth) { return depth == depth_to_look; })
-        && ColumnsHashing::canHash128InPlace(columns))
-        element_hashes.emplace(columns, 0, offsets.empty() ? 0 : offsets.back());
+    if (std::ranges::all_of(arrays_depths.depths, [&](DepthType depth) { return depth == depth_to_look; }))
+        element_hashes.emplace(columns, offsets.empty() ? 0 : offsets.back());
 
     /// For each array at the depth we want to look.
     ColumnArray::Offset prev_off = 0;

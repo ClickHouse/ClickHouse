@@ -12,6 +12,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/HashedJoinKey.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
@@ -739,33 +740,54 @@ TEST(ColumnsHashing, Hash128ManyRowsAtOnce)
         for (size_t row = 0; row < rows; ++row)
             expected[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
 
+        /// Few skipped rows (every 16th) and many (all but every 3rd), see the two paths of `HashedJoinKey::buildRange`.
+        std::vector<UInt8> few_skipped(rows);
+        std::vector<UInt8> many_skipped(rows);
+        for (size_t row = 0; row < rows; ++row)
+        {
+            few_skipped[row] = row % 16 == 5;
+            many_skipped[row] = row % 3 != 0;
+        }
+
+        HashedJoinKey hashed_key(key_columns);
         std::vector<UInt128> hashes(rows);
         std::vector<size_t> bounds = {0, 1, 7, 8, 9, 255, 256, 257, rows};
         std::erase_if(bounds, [rows](size_t bound) { return bound > rows; });
-        for (size_t begin : bounds)
+        const UInt8 * const skips[] = {nullptr, few_skipped.data(), many_skipped.data()};
+        for (const UInt8 * skip : skips)
         {
-            for (size_t end : bounds)
+            for (size_t begin : bounds)
             {
-                if (begin > end)
-                    continue;
-                ColumnsHashing::hash128Range(key_columns, begin, end, hashes.data());
-                for (size_t i = 0; i < end - begin; ++i)
-                    ASSERT_EQ(hashes[i], expected[begin + i]) << "range [" << begin << ", " << end << "), row " << begin + i;
+                for (size_t end : bounds)
+                {
+                    if (begin > end)
+                        continue;
+                    hashed_key.buildRange(begin, end, hashes.data(), skip);
+                    for (size_t i = 0; i < end - begin; ++i)
+                        if (!skip || !skip[begin + i])
+                            ASSERT_EQ(hashes[i], expected[begin + i]) << "range [" << begin << ", " << end << "), row " << begin + i;
+                }
             }
         }
 
         {
-            ColumnsHashing::Hash128InOrder in_order(key_columns, 0, rows);
+            ColumnsHashing::Hash128InOrder in_order(key_columns, rows);
             for (size_t row = 0; row < rows; ++row)
                 ASSERT_EQ(in_order.get(row), expected[row]) << "row " << row;
         }
         {
-            /// Rows before the range, skips, a skip over a whole chunk, and a read back.
-            ColumnsHashing::Hash128InOrder in_order(key_columns, std::min<size_t>(3, rows), rows);
+            /// Skips, a skip over a whole chunk, and a read back.
+            ColumnsHashing::Hash128InOrder in_order(key_columns, rows);
             for (size_t row = 0; row < rows; row += 1 + row % 300)
                 ASSERT_EQ(in_order.get(row), expected[row]) << "row " << row;
             if (rows > 5)
                 ASSERT_EQ(in_order.get(5), expected[5]);
+        }
+        {
+            ColumnsHashing::Hash128InOrder in_order(key_columns, rows, many_skipped.data());
+            for (size_t row = 0; row < rows; ++row)
+                if (!many_skipped[row])
+                    ASSERT_EQ(in_order.get(row), expected[row]) << "row " << row;
         }
     }
 }

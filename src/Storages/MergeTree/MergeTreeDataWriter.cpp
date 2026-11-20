@@ -150,12 +150,10 @@ void buildScatterSelector(
     size_t partitions_count = 0;
     size_t throw_on_limit = context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block];
 
-    std::optional<ColumnsHashing::Hash128InOrder> hashes;
-    if (ColumnsHashing::canHash128InPlace(columns))
-        hashes.emplace(columns, 0, num_rows);
+    ColumnsHashing::Hash128InOrder hashes(columns, num_rows);
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = hashes ? hashes->get(i) : ColumnsHashing::hash128(i, columns.size(), columns);
+        Data::key_type key = hashes.get(i);
         typename Data::LookupResult it = nullptr;
         bool inserted = false;
         partitions_map.emplace(key, it, inserted);

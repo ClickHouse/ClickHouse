@@ -39,9 +39,9 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/HashedJoinKey.h>
 
 namespace DB
 {
@@ -152,10 +152,11 @@ inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_
     return h.get128();
 }
 
-/// `sipHash128AtRowConsistentWithEquals` of every row, many rows at once. Empty where `canHash128InPlace` is false.
+/// `sipHash128AtRowConsistentWithEquals` of every row, many rows at once. Empty where `HashedJoinKey` hashes each row
+/// alone, and for a `Nullable` float column.
 PaddedPODArray<UInt128> sipHash128OfRowsConsistentWithEquals(const IColumn & column, bool normalize_float_zero)
 {
-    if (!ColumnsHashing::canHash128InPlace({&column}))
+    if (!HashedJoinKey({&column}).buildsManyRowsAtOnce())
         return {};
 
     MutableColumnPtr normalized;
@@ -181,7 +182,7 @@ PaddedPODArray<UInt128> sipHash128OfRowsConsistentWithEquals(const IColumn & col
 
     const IColumn & values = normalized ? *normalized : column;
     PaddedPODArray<UInt128> hashes(values.size());
-    ColumnsHashing::hash128Range({&values}, 0, values.size(), hashes.data());
+    HashedJoinKey({&values}).buildRange(0, values.size(), hashes.data(), nullptr);
     return hashes;
 }
 

@@ -260,17 +260,7 @@ void FunctionArrayDistinct::executeHashed(
         src_null_map = &nullable_col->getNullMapData();
 
     Set set;
-    std::optional<ColumnsHashing::Hash128InOrder> hashes;
-    if (ColumnsHashing::canHash128InPlace({&src_data}))
-        hashes.emplace(ColumnRawPtrs{&src_data}, 0, src_data.size());
-    auto get_hash = [&](size_t row)
-    {
-        if (hashes)
-            return hashes->get(row);
-        SipHash hash_function;
-        src_data.updateHashWithValue(row, hash_function);
-        return hash_function.get128();
-    };
+    ColumnsHashing::Hash128InOrder hashes({&src_data}, src_data.size(), src_null_map ? src_null_map->data() : nullptr);
 
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
@@ -284,7 +274,7 @@ void FunctionArrayDistinct::executeHashed(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            const auto hash = get_hash(j);
+            const auto hash = hashes.get(j);
 
             if (set.insert(hash).second)
                 res_data_col.insertFrom(src_data, j);
