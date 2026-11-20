@@ -74,6 +74,9 @@ for FORMAT in Arrow ArrowStream; do
     round_trip "$FORMAT" 'Variant(IPv6, Int128)' "toIPv6('::1')" 'toInt128(-7)' 'NULL' 'toInt128(42)'
     round_trip "$FORMAT" 'Variant(FixedString(16), IPv6)' "toFixedString('abcdefghijklmnop', 16)" "toIPv6('::2')"
     round_trip "$FORMAT" 'Variant(DateTime, IPv4)' 'toDateTime(1641600000)' "toIPv4('1.2.3.4')"
+    # `Variant(Date, UInt16)` is suspicious, and the writer stores `Date` as `uint16` only on request.
+    CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_suspicious_variant_types 1 --output_format_arrow_date_as_uint16 1" \
+        round_trip "$FORMAT" 'Variant(Date, UInt16)' "toDate('2022-01-08')" 'toUInt16(7)'
 done
 
 python3 - "${CLICKHOUSE_USER_FILES_UNIQUE}" <<'PY'

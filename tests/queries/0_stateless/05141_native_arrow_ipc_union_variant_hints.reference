@@ -22,6 +22,9 @@ abcdefghijklmnop	FixedString(16)
 v	Variant(DateTime, IPv4)					
 2022-01-08 00:00:00	DateTime
 1.2.3.4	IPv4
+v	Variant(Date, UInt16)					
+2022-01-08	Date
+7	UInt16
 --- ArrowStream: union children the writer stores alike are told apart by their names ---
 v	Variant(IPv6, Int128)					
 ::1	IPv6
@@ -34,6 +37,9 @@ abcdefghijklmnop	FixedString(16)
 v	Variant(DateTime, IPv4)					
 2022-01-08 00:00:00	DateTime
 1.2.3.4	IPv4
+v	Variant(Date, UInt16)					
+2022-01-08	Date
+7	UInt16
 --- union<bool, int8> as Variant(Bool, UInt8) ---
 true	Variant(Bool, UInt8)
 7	Variant(Bool, UInt8)
