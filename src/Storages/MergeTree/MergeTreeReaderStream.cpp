@@ -11,6 +11,7 @@
 #include <ranges>
 #include <utility>
 #include <filesystem>
+#include <IO/ByteRangeSet.h>
 
 namespace fs = std::filesystem;
 
