@@ -1,0 +1,36 @@
+-- two DELETEs of the same data file
+operation=overwrite added-delete-files=1 removed-delete-files=- added-position-deletes=3 removed-position-deletes=- total-delete-files=1 total-position-deletes=3
+entries	1	puffin	1	3
+max live vectors per data file	1
+operation=overwrite added-delete-files=2 removed-delete-files=1 added-position-deletes=6 removed-position-deletes=3 total-delete-files=2 total-position-deletes=6
+entries	1	puffin	2	6
+entries	2	puffin	1	3
+max live vectors per data file	1
+[3,4,6,8,9,100,101,102,103,104,106,107,108,109]
+-- a DELETE that matches nothing commits nothing
+no new metadata
+-- UPDATE
+operation=overwrite added-delete-files=2 removed-delete-files=2 added-position-deletes=8 removed-position-deletes=6 total-delete-files=2 total-position-deletes=8
+entries	1	puffin	2	8
+entries	2	puffin	2	6
+max live vectors per data file	1
+3	3	3	1
+4	updated	4	5
+6	6	6	1
+106	updated	16	5
+107	107	17	2
+14
+-- partitioned
+operation=overwrite added-delete-files=2 removed-delete-files=2 added-position-deletes=7 removed-position-deletes=4 total-delete-files=2 total-position-deletes=7
+entries	1	puffin	2	7
+entries	2	puffin	2	4
+max live vectors per data file	1
+even	[6,8,10,12,14,16,18]
+odd	[7,9,13,15,17,19]
+odd	[7,9,13,15,17,19]
+-- position delete files of a table upgraded from format-version 2 are merged into the deletion vector
+operation=overwrite added-delete-files=1 removed-delete-files=- added-position-deletes=4 removed-position-deletes=- total-delete-files=3 total-position-deletes=7
+entries	1	Parquet	2	3
+entries	1	puffin	1	4
+max live vectors per data file	1
+[2,3,4,6,7,8]

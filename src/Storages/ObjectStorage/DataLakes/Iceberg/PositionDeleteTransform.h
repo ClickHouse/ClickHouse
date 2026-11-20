@@ -7,6 +7,8 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
+#include <roaring/roaring64map.hh>
+#include <functional>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
 namespace DB::Iceberg
@@ -55,6 +57,8 @@ protected:
     /// Returns the number of rows kept (0 if the chunk has no matching rows).
     size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
 
+    void forEachDeletedPosition(const std::function<void(UInt64)> & callback);
+
     SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
     const ObjectStoragePtr object_storage;
@@ -93,6 +97,12 @@ private:
     ExcludedRows bitmap;
 };
 
+
+roaring::Roaring64Map readDeletedPositions(
+    IcebergDataObjectInfoPtr iceberg_object_info,
+    ObjectStoragePtr object_storage,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context);
 
 /// Requires both the deletes and the input Chunk-s to arrive in order of increasing row number.
 class IcebergStreamingPositionDeleteTransform final : public IcebergPositionDeleteTransform

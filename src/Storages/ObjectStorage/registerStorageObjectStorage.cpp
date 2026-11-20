@@ -1377,8 +1377,7 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
-Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
-`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
+`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` of an Iceberg format-version 3 table write deletion vectors, because format-version 3 forbids new position delete files. A snapshot holds at most one deletion vector per data file, so a mutation of a data file that already has deleted rows writes a new deletion vector with all of them, including the rows deleted by the position delete files of a table upgraded from format-version 2, and removes the previous deletion vector. The rows changed by `ALTER TABLE ... UPDATE` keep their `_row_id`. ClickHouse does not compact deletion vectors.
 
 ### Basic usage {#basic-usage}
 ```sql

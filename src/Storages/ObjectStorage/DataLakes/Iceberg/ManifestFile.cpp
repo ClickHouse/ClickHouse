@@ -120,6 +120,13 @@ std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const 
         <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
 }
 
+bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path)
+{
+    const auto & lower = position_delete.lower_reference_data_file_path;
+    const auto & upper = position_delete.upper_reference_data_file_path;
+    return (!lower.has_value() || *lower <= data_file_path) && (!upper.has_value() || *upper >= data_file_path);
+}
+
 std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     ProcessedManifestFileEntryPtr data_object_,
     const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,

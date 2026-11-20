@@ -62,6 +62,7 @@ public:
     GeneratedMetadataFileWithInfo generateMetadataPathWithInfo();
     Iceberg::IcebergPathFromMetadata generateVersionHint();
     Iceberg::IcebergPathFromMetadata generatePositionDeleteFile();
+    Iceberg::IcebergPathFromMetadata generateDeletionVectorFile();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
