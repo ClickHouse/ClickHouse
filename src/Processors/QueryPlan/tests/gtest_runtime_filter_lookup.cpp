@@ -304,8 +304,11 @@ TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItTh
 
     filter.insert(makeUInt64Column({6}));
     filter.finishInsert();
-    /// No key is lost; other values may pass the Bloom filter.
+    /// No key is lost, and the probe is checked rather than skipped as for a dropped key set. Other values may pass
+    /// the Bloom filter.
     expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7}, type)), {1, 1, 1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
 }
 
 TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterThrows)
@@ -335,6 +338,8 @@ TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterT
     destination->finishInsert();
     ASSERT_TRUE(destination->isReady());
     expectMask(destination->find(makeUInt64ColumnWithType({0, 5, 6}, type)), {1, 1, 1});
+    EXPECT_EQ(destination->getStats().rows_checked.load(), 3);
+    EXPECT_EQ(destination->getStats().rows_skipped.load(), 0);
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
