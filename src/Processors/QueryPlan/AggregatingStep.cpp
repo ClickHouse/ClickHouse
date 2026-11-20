@@ -81,13 +81,13 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
+    extern const QueryPlanSerializationSettingsUInt64 aggregation_direct_index_max_cells;
 }
 
 namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 min_bytes_before_external_group_by;
-    extern const SettingsUInt64 aggregation_direct_index_max_cells;
 }
 
 namespace ErrorCodes
@@ -1341,6 +1341,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation] = params.enable_prefetch;
     settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys] = params.optimize_group_by_constant_keys;
     settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization] = params.min_hit_rate_to_use_consecutive_keys_optimization;
+    /// Not gated on the version: a peer that does not know the name skips it, and the setting changes only the speed.
+    settings[QueryPlanSerializationSetting::aggregation_direct_index_max_cells] = params.aggregation_direct_index_max_cells;
 
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation] = params.stats_collecting_params.isCollectionAndUseEnabled();
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
@@ -1747,7 +1749,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
-    params.aggregation_direct_index_max_cells = ctx.context->getSettingsRef()[Setting::aggregation_direct_index_max_cells];
+    params.aggregation_direct_index_max_cells = ctx.settings[QueryPlanSerializationSetting::aggregation_direct_index_max_cells];
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
