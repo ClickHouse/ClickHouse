@@ -6,6 +6,7 @@ rewrite_in_to_join = 0
 [0]
 [1]
 [1]
+[1]
 1
 0
 rewrite_in_to_join = 1
@@ -14,6 +15,7 @@ rewrite_in_to_join = 1
 [1]
 [1]
 [0]
+[1]
 [1]
 [1]
 1
