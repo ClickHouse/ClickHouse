@@ -191,17 +191,23 @@ function create_log()
 
 function query_log()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab_log WHERE a < 50
+    $CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_log_$1" -q "SELECT count() FROM tab_log WHERE a < 50
         SETTINGS use_reader_executor = 1, local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1"
 }
 
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 create_log Log "$uuid"
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab_log SELECT number + 100 FROM numbers(100)"
-query_log
+query_log 1
 create_log Log "$uuid"
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab_log SELECT number FROM numbers(100)"
-query_log
+query_log 2
+# Both reads went through the mmap cache: the legacy read path, which the executor can fall back to, does not map these files.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(ProfileEvents['MMappedFileCacheHits'] + ProfileEvents['MMappedFileCacheMisses'] > 0)
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+        AND query_id IN ('${CLICKHOUSE_DATABASE}_log_1', '${CLICKHOUSE_DATABASE}_log_2')"
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab_log SYNC"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"
