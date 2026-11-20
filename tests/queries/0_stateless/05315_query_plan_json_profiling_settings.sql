@@ -45,7 +45,7 @@ FROM
         log_comment,
         toJSONString(query_plan) AS plan,
         JSONExtractRaw(
-            arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'Join', JSONExtractArrayRaw(plan, 'Nodes'))[1],
+            arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'Join', JSONExtractArrayRaw(plan, 'Nodes'))[1],
             'Statistics') AS join_stats
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05315_default', '05315_both')

@@ -73,6 +73,7 @@ struct QueryLogElement
     std::set<String> query_columns;
     std::set<String> query_partitions;
     std::set<String> query_projections;
+    std::set<String> used_data_skipping_indices;
     std::set<String> query_views;
 
     std::unordered_set<String> used_aggregate_functions;
@@ -130,7 +131,8 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
-    /// The executed query plan as JSON text, parsed into the `JSON` column when the row is appended.
+    /// The query's plan as JSON text, parsed into the `JSON` column when the row is appended. On a
+    /// row for a query that threw, this is the plan it had built by then, which it may never have run.
     /// Only filled when `log_query_plans` is enabled.
     String query_plan;
 

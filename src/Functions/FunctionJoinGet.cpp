@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -49,13 +50,13 @@ public:
         , result_columns(result_columns_)
     {}
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
 private:
     const char * function_name;
@@ -125,6 +126,15 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 
+    /// Documentation-only — `joinGet[OrNull](join_table, attribute_name, key, ...)`
+    /// returns the value of the named attribute from the JOIN table for the
+    /// given key. The result type is read from the JOIN table's column type
+    /// (wrapped in `Nullable` for the OrNull variant).
+    String getSignatureString() const override
+    {
+        return "(const String, const String, Any, ...) -> Any";
+    }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -156,7 +166,11 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
     Names column_names = storage_join->getKeyNames();
     column_names.push_back(attr_name);
     const auto storage_id = storage_join->getStorageID();
-    context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    auto metadata_snapshot = storage_join->getInMemoryMetadataPtr(context, false);
+    context->checkAccess(
+        AccessType::SELECT,
+        storage_id,
+        metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
 
     /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
     auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
@@ -183,8 +197,10 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     const auto qualified_name = QualifiedTableName::parseFromString(join_name);
     const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
 
+    /// Otherwise the errors below would reveal the existence and the engine of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, storage_id);
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
+    auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
     /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.

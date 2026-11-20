@@ -38,11 +38,11 @@ UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
     return hash.get128();
 }
 
-SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
+SerializationPtr SerializationArray::create(const SerializationPtr & nested_, const DataTypePtr & nested_type_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationArray(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
+        return std::shared_ptr<ISerialization>(new SerializationArray(nested_, nested_type_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_, nested_type_); });
 }
 
 bool SerializationArray::isArraySizesSubcolumn(const SubstreamPath & path)
@@ -212,29 +212,30 @@ namespace
         }
     }
 
-    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
-    {
-        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+}
 
-        if (column_offsets.empty())
-            return column_sizes;
+ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+{
+    const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+    MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
 
-        const auto & offsets_data = column_offsets.getData();
-        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
-
-        sizes_data.resize(offsets_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
-        {
-            auto current_offset = offsets_data[i];
-            sizes_data[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
+    if (column_offsets.empty())
         return column_sizes;
+
+    const auto & offsets_data = column_offsets.getData();
+    auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+    sizes_data.resize(offsets_data.size());
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+    {
+        auto current_offset = offsets_data[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
     }
+
+    return column_sizes;
 }
 
 DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
@@ -242,9 +243,9 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
     return std::make_shared<DataTypeArray>(prev);
 }
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr & prev_type) const
 {
-    return SerializationArray::create(prev);
+    return SerializationArray::create(prev, prev_type);
 }
 
 ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -709,7 +710,7 @@ void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, co
         [&](IColumn & nested_column)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested, nested_type.get());
             else
                 nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
@@ -723,7 +724,7 @@ bool SerializationArray::tryDeserializeText(IColumn & column, ReadBuffer & istr,
     auto read_nested = [&](IColumn & nested_column)
     {
         if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested);
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested, nested_type.get());
         return nested->tryDeserializeTextQuoted(nested_column, istr, settings);
     };
 
@@ -817,23 +818,23 @@ ReturnType SerializationArray::deserializeTextJSONImpl(IColumn & column, ReadBuf
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested, nested_type.get());
             else
                 nested->deserializeTextJSON(nested_column, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested, nested_type.get());
             return nested->tryDeserializeTextJSON(nested_column, buf, settings);
         }
     };
 
     if (settings.json.empty_as_default)
         return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType
+            [&deserialize_nested, &istr, this](IColumn & nested_column) -> ReturnType
             {
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr, deserialize_nested);
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr, deserialize_nested, nested_type.get());
             }, false);
     return deserializeTextImpl<ReturnType>(
         column,
@@ -896,7 +897,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
             [&](IColumn & nested_column)
             {
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested);
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested, nested_type.get());
                 else
                     nested->deserializeTextCSV(nested_column, rb, settings);
             }, true);
@@ -907,7 +908,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
             [&](IColumn & nested_column)
             {
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested, nested_type.get());
                 else
                     nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
@@ -926,7 +927,7 @@ bool SerializationArray::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
         auto read_nested = [&](IColumn & nested_column)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested, nested_type.get());
             return nested->tryDeserializeTextCSV(nested_column, rb, settings);
         };
 
@@ -936,7 +937,7 @@ bool SerializationArray::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
     auto read_nested = [&](IColumn & nested_column)
     {
         if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested, nested_type.get());
         return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
     };
 

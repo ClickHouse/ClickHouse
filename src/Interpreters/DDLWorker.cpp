@@ -87,6 +87,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -269,6 +270,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return nullptr;
     };
 
+    std::optional<ExecutionStatus> parse_error;
     try
     {
         /// Stage 1: parse entry
@@ -277,11 +279,30 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     }
     catch (...)
     {
+        parse_error = ExecutionStatus::fromCurrentException();
+    }
+
+    if (parse_error)
+    {
+        out_reason = "Incorrect task format";
+
+        /// An entry of an unsupported version still has its hosts parsed, so report the error under the one of this host.
+        if (parse_error->code == ErrorCodes::UNKNOWN_FORMAT_VERSION && !task->entry.hosts.empty())
+        {
+            updateHostIDs(task->entry.hosts);
+            if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
+            {
+                out_reason = "There is no a local address in host list";
+                return add_to_skip_set();
+            }
+            write_error_status(task->host_id_str, *parse_error, out_reason);
+            return add_to_skip_set();
+        }
+
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
-        out_reason = "Incorrect task format";
-        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
+        write_error_status(host_fqdn_id, *parse_error, out_reason);
         return add_to_skip_set();
     }
 
@@ -590,7 +611,22 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope = QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        /// A server-owned handler query lifts the parser limits by sending `max_parser_depth = 0` /
+        /// `max_parser_backtracks = 0` with the entry settings (see `executeQueryImpl`), which
+        /// `makeQueryContext` has applied to `query_context` clamped to this host's constraints.
+        /// Ordinary distributed DDL therefore keeps this host's parser limits. `query_to_execute` is SQL
+        /// this server formatted rather than text the initiator typed, so `makeQueryContext` resets `dialect`
+        /// on the replay context and the parse of the text is not bounded by the entry's `max_query_size`
+        /// (the setting itself is kept: it also bounds the metadata size an `ALTER` may produce).
+        executeQuery(
+            istr,
+            nullwb,
+            query_context,
+            {},
+            QueryFlags{
+                .internal = internal,
+                .distributed_backup_restore = task.entry.is_backup_restore,
+                .parse_server_formatted_query_text = true });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {

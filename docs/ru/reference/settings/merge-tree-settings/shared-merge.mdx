@@ -74,7 +74,7 @@ Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Координированные слияния включены по умолчанию"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
-Включает стратегию координированных слияний
+Включает назначение слияний координатором для `SharedMergeTree`. Координатор слияний подготавливает записи о слияниях и распределяет их между активными воркерами слияний, а не полагается исключительно на независимый выбор слияний.
 
 ## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 
@@ -90,7 +90,7 @@ Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Синхронизация с Cloud"}]}]} />
 
-Включить проверку устаревших частей. Доступно только в ClickHouse Cloud
+Включает фоновую проверку `SharedMergeTree`, которая выявляет утратившие актуальность части данных и передаёт их процессу обновления частей. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 
@@ -119,7 +119,7 @@ Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "новая настройка"}]}]} />
 
-Начальная задержка перед обновлением частей. Доступно только в ClickHouse Cloud
+Начальная задержка в миллисекундах перед повторной попыткой обновления частей `SharedMergeTree`. С каждой следующей попыткой задержка увеличивается вплоть до значения `shared_merge_tree_max_parts_update_backoff_ms`. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 
@@ -171,7 +171,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "новая настройка"}]}]} />
 
-Максимальная задержка при обновлении частей. Доступно только в ClickHouse Cloud
+Максимальная задержка (в миллисекундах) между повторными попытками операции обновления частей `SharedMergeTree`. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 
@@ -179,7 +179,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Синхронизация с Cloud"}]}]} />
 
-Максимальное число лидеров обновления частей. Доступно только в ClickHouse Cloud
+Максимальное число реплик в рамках сервиса, которые могут одновременно выполнять роль лидера обновления частей. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 
@@ -187,7 +187,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Синхронизация с Cloud"}]}]} />
 
-Максимальное число лидеров обновления частей. Доступно только в ClickHouse Cloud
+Максимальное число реплик в пределах одной зоны доступности, которые могут одновременно выполнять роль лидера обновления частей. Учитываются как это ограничение, так и `shared_merge_tree_max_parts_update_leaders_in_total`. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 

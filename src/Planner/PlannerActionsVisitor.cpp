@@ -2,8 +2,6 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <WindowFunctions/IWindowFunction.h>
-
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -202,6 +200,20 @@ public:
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
+                    else if (!constant_node.hasSourceExpression())
+                    {
+                        /** The constant did not come from the query text: a query tree pass built it the
+                          * same way on this server as on the initiator (for example the index mask that
+                          * `GroupingFunctionsResolvePass` adds as a trailing argument of
+                          * `__groupingOrdinary`). There is no initiator naming to simulate, so name it
+                          * exactly as the initiator does, or a header the initiator expects from this shard
+                          * would not match. A constant that does come from the query text is unaffected:
+                          * the initiator writes the ones that need a cast as `_CAST(...)`, which arrive here
+                          * with a source expression, and the rest need no cast, so their name is the same
+                          * either way.
+                          */
+                        result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    }
                     else
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
@@ -359,7 +371,7 @@ public:
                 if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -438,9 +450,8 @@ public:
         return name + "_" + constant_node.getResultType()->getName();
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node_)
     {
-        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
         const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
@@ -508,10 +519,9 @@ public:
             }
         }
 
-        auto window_frame_opt = extractWindowFrame(function_node);
-        if (window_frame_opt)
+        const WindowFrame & window_frame = window_node.getWindowFrame();
+        if (!window_frame.is_default)
         {
-            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
@@ -543,7 +553,7 @@ public:
     ActionsScopeNode & operator=(const ActionsScopeNode &) = delete;
     ActionsScopeNode & operator=(ActionsScopeNode &&) = delete;
 
-    const QueryTreeNodePtr & getScopeNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getScopeNode() const
     {
         return scope_node;
     }
@@ -732,7 +742,7 @@ private:
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        size_t max() const { return 64 - getLeadingZeroBits(mask); }
+        [[nodiscard]] size_t max() const { return 64 - getLeadingZeroBits(mask); }
 
     private:
         uint64_t mask = 0;
@@ -1014,6 +1024,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+
+        if (!constant_node.hasSourceExpression())
+        {
+            /** The constant did not come from the query text: a query tree pass built it the same way
+              * on this server as on the initiator (for example the index mask that
+              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
+              * There is no initiator naming to simulate, so name it exactly as the initiator does,
+              * or a header the initiator expects from this shard would not match. A constant that
+              * does come from the query text is unaffected: the initiator writes the ones that need
+              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
+              * need no cast, so their name is the same either way.
+              */
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
@@ -1076,7 +1101,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), CompileExpressions::yes);
+    /// A lambda's `ExpressionActions` is built here, while planning, so its DAG is the very one that
+    /// gets serialized when this plan is shipped to another node. A JIT-compiled node cannot be
+    /// serialized: its `getName` is a dump of the compiled expression, not a name `FunctionFactory`
+    /// knows, and the receiving node fails with `UNKNOWN_FUNCTION and(UInt8, less(UInt64, 1000 :
+    /// UInt16))`. Leave the body uncompiled in a plan that may be shipped - the receiving node compiles
+    /// it itself when it rebuilds the lambda from the serialized plan.
+    auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
+    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
@@ -1168,6 +1200,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & function_node = node->as<FunctionNode &>();
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
+    const auto * query_tree_index_hint = FunctionIndexHint::tryGet(function_node.getFunction());
+    bool implied = query_tree_index_hint && query_tree_index_hint->isImplied();
+
+    size_t index_hint_function_level = actions_stack.size() - 1;
+    if (const auto * existing_node = actions_stack[index_hint_function_level].tryGetNode(function_node_name))
+    {
+        /// Equal hints share one node, so a user-written one makes it not implied.
+        auto * existing_index_hint = FunctionIndexHint::tryGet(existing_node->function_base);
+        if (existing_index_hint && !implied)
+            existing_index_hint->setImplied(false);
+
+        return {function_node_name, Levels(index_hint_function_level)};
+    }
+
     ActionsDAG index_hint_actions_dag;
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
@@ -1191,9 +1237,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto index_hint_function = std::make_shared<FunctionIndexHint>();
     index_hint_function->setActions(std::move(index_hint_actions_dag));
+    index_hint_function->setImplied(implied);
     auto index_hint_function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function));
 
-    size_t index_hint_function_level = actions_stack.size() - 1;
     actions_stack[index_hint_function_level].addFunctionIfNecessary(function_node_name, {}, index_hint_function_overload_resolver);
 
     return {function_node_name, Levels(index_hint_function_level)};
@@ -1236,7 +1282,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 /// gates on the setting).
 void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
 {
-    auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    const auto secret_arguments = findSecretArguments(function_node);
     if (!secret_arguments.hasSecrets())
         return;
 
@@ -1508,11 +1554,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(function_node, window_node);
+    return helper.calculateWindowNodeActionName(window_node);
 }
 
 }
