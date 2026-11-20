@@ -112,7 +112,8 @@ size_t StatisticsUniqV2::allocatedBytes() const
     size_t res = sizeof(*this) + sizeof(Arena) + arena->allocatedBytes() + 4 * serialized.count();
     /// A node of `std::map` holds the value and three pointers and a color.
     for (const auto & [path, path_stats] : paths)
-        res += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes();
+        res += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes()
+            + path_stats->descriptionAllocatedBytes();
     return res;
 }
 

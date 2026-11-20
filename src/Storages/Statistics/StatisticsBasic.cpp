@@ -390,7 +390,7 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion versio
         sum->function.function->deserialize(sum->state, buf);
 
     /// After the sum, which a `JSON` column does not track.
-    tracks_paths = (mask & BasicFeatureMask::PathStatistics) != 0;
+    tracks_paths = (mask & BasicFeatureMask::PathStatistics) != 0 && isObject(data_type);
     if (tracks_paths)
     {
         UInt64 num_paths = 0;
@@ -463,7 +463,8 @@ size_t StatisticsBasic::allocatedBytes() const
         bytes += sizeof(Sum);
     /// A node of `std::map` holds the value and three pointers and a color.
     for (const auto & [path, path_stats] : paths)
-        bytes += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes();
+        bytes += sizeof(decltype(paths)::value_type) + 4 * sizeof(void *) + path.capacity() + path_stats->allocatedBytes()
+            + path_stats->descriptionAllocatedBytes();
     return bytes;
 }
 
