@@ -218,12 +218,20 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
                     add_resolved_role_id(role_name);
             }
 
-            for (const auto & role_id : changed_role_ids)
+            // Only the roles of this user are visited, not the whole batch of changed roles: otherwise reloading many
+            // roles mapped to different users would perform a quadratic number of grants and revokes.
+            std::vector<UUID> role_ids_to_revoke;
+            for (const auto & role_id : user->granted_roles.getGranted())
             {
-                if (resolved_role_ids.contains(role_id))
+                if (changed_role_ids.contains(role_id) && !resolved_role_ids.contains(role_id))
+                    role_ids_to_revoke.push_back(role_id);
+            }
+            changed_user->granted_roles.revoke(role_ids_to_revoke);
+
+            for (const auto & role_id : resolved_role_ids)
+            {
+                if (changed_role_ids.contains(role_id))
                     changed_user->granted_roles.grant(role_id);
-                else
-                    changed_user->granted_roles.revoke(role_id);
             }
             return changed_user;
         }
