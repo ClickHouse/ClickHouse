@@ -2570,6 +2570,26 @@ bool floatColumnHasNegativeZero(const IColumn & column)
         for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
             if (floatColumnHasNegativeZero(col_tuple->getColumn(i)))
                 return true;
+        return false;
+    }
+    if (const auto * col_variant = typeid_cast<const ColumnVariant *>(&column))
+    {
+        for (size_t i = 0; i < col_variant->getNumVariants(); ++i)
+            if (floatColumnHasNegativeZero(col_variant->getVariantByLocalDiscriminator(i)))
+                return true;
+        return false;
+    }
+    if (const auto * col_dynamic = typeid_cast<const ColumnDynamic *>(&column))
+        return floatColumnHasNegativeZero(col_dynamic->getVariantColumn());
+    if (const auto * col_object = typeid_cast<const ColumnObject *>(&column))
+    {
+        for (const auto & [path, path_column] : col_object->getTypedPaths())
+            if (floatColumnHasNegativeZero(*path_column))
+                return true;
+        for (const auto & [path, path_column] : col_object->getDynamicPaths())
+            if (floatColumnHasNegativeZero(*path_column))
+                return true;
+        return false;
     }
     return false;
 }
@@ -2606,6 +2626,13 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     /// SimpleAggregateFunction(any, Bool) is a Boolean too (its serializer writes true/false).
     if (isBool(to_inner) || isSimpleAggregateFunctionOfBool(*to_inner))
         return isBool(from) || isSimpleAggregateFunctionOfBool(*from);
+
+    /// An enum-to-enum CAST copies the numeric values of members not named in both definitions, and a
+    /// numeric-to-enum CAST can skip membership validation (check_conversion_from_numbers_to_enum), so a
+    /// stored value may be absent from the destination enum. Only an identical enum matches; otherwise the
+    /// parser validates membership.
+    if (isEnum(*to_inner))
+        return from->equals(*to_inner);
 
     auto all_values_convert_exactly = [&]
     {
@@ -3367,9 +3394,9 @@ ColumnPtr convertObjectColumns(
             auto it = src_typed_paths.find(path);
             const auto & type = dst_typed_path_types.at(path);
             /// Reusing the column is valid only when format+parse gives the same bytes. A negative zero
-            /// survives the reuse, but its text round trip collapses it to +0.0, so normalize that path.
-            if (anyInTypeTree(*type, [](const IDataType & t) { return isFloat(t); })
-                && floatColumnHasNegativeZero(*it->second))
+            /// survives the reuse, but its text round trip collapses it to +0.0, so normalize that path
+            /// (floatColumnHasNegativeZero descends every carrier, including Variant and nested JSON).
+            if (floatColumnHasNegativeZero(*it->second))
                 dst_typed_columns[path] = convertTypedColumnToTyped(it->second, type, type, rows, format_settings, /*skip_on_failure=*/false);
             else
                 dst_typed_columns[path] = it->second;

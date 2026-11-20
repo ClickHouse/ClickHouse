@@ -68,6 +68,9 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 -- A changed String path to DateTime follows the parser's overflow policy: it saturates by default.
 {{ check('changed String to DateTime overflow saturates by default', 'JSON(a String)', 'JSON(a DateTime)', ['{"a": "2024-01-15 12:30:00"}', '{"a": "2280-01-01 00:00:00"}']) }}
 
+-- Dropping an unused enum member keeps a value that is still in the destination.
+{{ check('changed enum drops unused member', "JSON(a Enum8('x' = 1, 'y' = 2))", "JSON(a Enum8('x' = 1))", ['{"a": "x"}']) }}
+
 SELECT name, optimized, result FROM results
 WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
 ORDER BY name, optimized DESC;

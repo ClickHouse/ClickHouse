@@ -49,6 +49,9 @@ SETTINGS {{ (settings ~ ', ') if settings }}json_use_optimized_type_conversion =
 {{ check('negative zero bits in array', 'JSON', 'JSON(a Array(Float64))', '{"a": [-0.0, 1.5]}', 'arrayMap(x -> reinterpretAsUInt64(x), j.a)') }}
 {{ check('negative zero bits skip', 'JSON', 'JSON(a Float64)', '{"a": -0.0}', 'reinterpretAsUInt64(j.a)', 'type_json_skip_invalid_typed_paths = 1') }}
 {{ check('negative zero to String', 'JSON', 'JSON(a String)', '{"a": -0.0}', 'j.a') }}
+-- A negative zero hidden in an unchanged Variant alternative or nested JSON typed path must be normalized too.
+{{ check('negative zero under Variant alternative', 'JSON(a Variant(Float64, String))', 'JSON(a Variant(Float64, String), b Int8)', '{"a": -0.0}', "reinterpretAsUInt64(variantElement(j.a, 'Float64'))") }}
+{{ check('negative zero under nested JSON path', 'JSON(a JSON(b Float64))', 'JSON(a JSON(b Float64), z Int8)', '{"a": {"b": -0.0}}', 'reinterpretAsUInt64(j.a.b)') }}
 
 SELECT name, optimized, result FROM rt_results
 WHERE name IN (SELECT name FROM rt_results GROUP BY name HAVING uniqExact(result) > 1)

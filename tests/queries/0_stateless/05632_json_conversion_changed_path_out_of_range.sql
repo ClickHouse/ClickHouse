@@ -58,3 +58,12 @@ SELECT CAST('{"a":"2024-01-15 12:30:00"}'::JSON, 'JSON(a Date)') SETTINGS input_
 -- (the direct CAST throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, the parser INCORRECT_DATA).
 SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST('{"a":"2280-01-01 00:00:00"}'::JSON(a String), 'JSON(a DateTime)') SETTINGS date_time_overflow_behavior = 'throw', json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+
+-- Removing a populated enum member rejects a value that is no longer in the destination, instead of keeping
+-- its number. Holds for an array of enums and for a numeric source with membership checking disabled.
+SELECT CAST('{"a":"y"}'::JSON(a Enum8('x'=1,'y'=2)), 'JSON(a Enum8(''x''=1))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":"y"}'::JSON(a Enum8('x'=1,'y'=2)), 'JSON(a Enum8(''x''=1))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":["y"]}'::JSON(a Array(Enum8('x'=1,'y'=2))), 'JSON(a Array(Enum8(''x''=1)))'); -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":["y"]}'::JSON(a Array(Enum8('x'=1,'y'=2))), 'JSON(a Array(Enum8(''x''=1)))') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":2}'::JSON, 'JSON(a Enum8(''x''=1))') SETTINGS check_conversion_from_numbers_to_enum = 0; -- { serverError INCORRECT_DATA }
+SELECT CAST('{"a":2}'::JSON, 'JSON(a Enum8(''x''=1))') SETTINGS check_conversion_from_numbers_to_enum = 0, json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
