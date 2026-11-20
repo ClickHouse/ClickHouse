@@ -273,11 +273,10 @@ QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
         auto filter_column_name = filter_dag.getOutputs().front()->result_name;
         /// the next step reads the source columns again, so the filter keeps the columns that it reads
         for (const auto * input : filter_dag.getInputs())
-            if (input->result_name != filter_column_name)
-                filter_dag.getOutputs().push_back(input);
+            filter_dag.getOutputs().push_back(input);
 
         plan.addStep(std::make_unique<FilterStep>(
-            plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/false));
+            plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/true));
     }
 
     return plan;
