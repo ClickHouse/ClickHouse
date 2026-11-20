@@ -13,6 +13,8 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <Interpreters/convertFieldToType.h>
+
 #include <algorithm>
 
 namespace DB
@@ -644,9 +646,12 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         if (comparesEnumWithString(equal_constant->getResultType(), node->getResultType()))
             return std::nullopt;
 
-        const auto & constant = getConstantValue(equal_constant);
-        auto constant_node = std::make_shared<ConstantNode>(constant, node->getResultType());
-        return constant_node;
+        /// `CHECK e = 1.0` gives `e` a `Float64` constant, which has no exact conversion to the `Enum` of `e`.
+        Field constant = tryConvertFieldToTypeExact(getConstantValue(equal_constant), *node->getResultType(), equal_constant->getResultType().get());
+        if (constant.isNull())
+            return std::nullopt;
+
+        return std::make_shared<ConstantNode>(std::move(constant), node->getResultType());
     }
 }
 
