@@ -241,12 +241,17 @@ TEST(SchedulerCPULeaseAllocation, ParkingDoesNotExtendSlotLease)
     auto * master = dynamic_cast<ISlotLease *>(master_slot.get());
     auto * worker = dynamic_cast<ISlotLease *>(worker_slot.get());
 
+    const UInt64 requests_before = queue->dequeued_requests;
+    const ResourceCost cost_before = queue->dequeued_cost;
     for (size_t i = 0; i < 20; ++i)
     {
         ASSERT_TRUE(worker->park());
         worker->unpark();
         ASSERT_TRUE(waitUntil([&] { return !allocation->isRequesting(); }));
     }
+    // Nothing was consumed, so the unparks reuse the budget instead of asking for a quantum each
+    EXPECT_EQ(queue->dequeued_requests - requests_before, 20u);
+    EXPECT_LT(queue->dequeued_cost - cost_before, quantum_ns) << "each unpark asks for a new quantum";
 
     // Another query waits for a slot, while the master consumes CPU
     auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
