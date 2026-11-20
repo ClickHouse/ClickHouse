@@ -1,0 +1,22 @@
+<!--
+    Decoding of ZSTD Parquet pages whose frames have no content size, as written by parquet-java (Spark, Hive,
+    Iceberg Java) and by ClickHouse 26.10 and older. The server under test writes frames with a content size, so the
+    data comes from `user_files/parquet_zstd_pages_without_content_size.parquet` (88 KB, 98 PLAIN pages of about 1 MB),
+    written by ClickHouse 26.10.5.57:
+
+        clickhouse local -q "INSERT INTO FUNCTION file('parquet_zstd_pages_without_content_size.parquet') SELECT concat(leftPad(toString(number % 100), 4, '0'), repeat('x', 252)) AS s FROM numbers(400000) SETTINGS output_format_parquet_compression_method = 'zstd', output_format_parquet_max_dictionary_size = 0, output_format_parquet_write_bloom_filter = 0, output_format_parquet_write_page_index = 0, output_format_parquet_parallel_encoding = 0, max_threads = 1"
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT sum(cityHash64(*)) FROM
+        (
+            SELECT * FROM loop(file('parquet_zstd_pages_without_content_size.parquet'))
+            LIMIT 8000000
+        )
+        FORMAT Null
+    </query>
+</test>
