@@ -148,6 +148,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
@@ -232,6 +233,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
@@ -512,6 +514,8 @@ namespace FailPoints
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Throws `CANNOT_SCHEDULE_TASK` instead of handing an outdated part to the loading thread pool.
+    extern const char merge_tree_load_outdated_parts_schedule_error[];
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
@@ -650,7 +654,7 @@ struct TableDiskRoot
 };
 
 std::mutex table_disk_roots_mutex;
-std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
+[[clang::no_destroy]] std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
 
 /// Whether one path is equal to the other one or contains it, compared by path components.
 bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
@@ -1383,6 +1387,19 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         window_begin = window_end;
     }
+}
+
+bool MergeTreeData::isInsertOrderSensitive() const
+{
+    /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
+    /// `Replacing` keeps the last inserted row among rows with equal versions too.
+    /// A table with a `UNIQUE KEY` resolves a conflict between two rows by the order in which their
+    /// blocks are committed (see `unique_key_conflict_action`), so it depends on the input order as well.
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Coalescing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::Replacing
+        || hasUniqueKey();
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -2730,7 +2747,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     /// TODO Checks for Graphite mode.
 }
 
-const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
+[[clang::no_destroy]] const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
 
 Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const
 {
@@ -4343,8 +4360,8 @@ try
         }
 
         /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
-                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
+        auto load_part = [this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                          &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
@@ -4400,7 +4417,31 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, Priority{});
+        };
+
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_outdated_parts_schedule_error,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected scheduling error for outdated part {}", part->name);
+            });
+
+            runner.enqueueAndKeepTrack(std::move(load_part), Priority{});
+        }
+        catch (const Exception & e)
+        {
+            /// E.g. no thread can be started because queries exhausted the global thread pool.
+            /// The pool has not taken the load, so the part is retried later like a retryable load error.
+            if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                throw;
+
+            std::lock_guard lock(failed_parts_mutex);
+            failed_parts.push_back(part);
+            if (!retryable_exception)
+                retryable_exception = std::current_exception();
+            has_retryable_exception = true;
+            break;
+        }
     }
 
     /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
@@ -6584,9 +6625,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
+    const bool disk_setting_changed = new_metadata.hasSettingsChanges() && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
-        /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        /*new_changes=*/new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes);
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
@@ -6770,7 +6811,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
-            if (old_metadata.settings_changes == nullptr)
+            if (!old_metadata.hasSettingsChanges())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
 
@@ -7244,9 +7285,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
     /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
     MergeTreeSettingsPtr alter_effective_settings = getSettings();
-    if (new_metadata.settings_changes)
+    if (new_metadata.hasSettingsChanges())
     {
-        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         /// The settings constraints below compare the resolved `disk`, so it is resolved here. A changed
         /// `disk` is a fresh definition and is checked as one, before anything registers the disk unchecked.
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
@@ -7277,7 +7318,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (new_storage_policy != getStoragePolicy())
     {
         /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
-        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context, /* check_remote_hosts */ true);
 
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
@@ -7369,7 +7410,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (old_metadata.hasSettingsChanges())
     {
         auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
@@ -13324,10 +13365,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     {
         auto func = column.getAggregateFunction();
         Arena & arena = column.createOrGetArena();
-        size_t size_of_state = func->sizeOfData();
-        size_t align_of_state = func->alignOfData();
-        auto * place = arena.alignedAlloc(size_of_state, align_of_state);
-        func->create(place);
+        column.insertDefault();
+        auto * place = column.getData().back();
         if (const AggregateFunctionCount * /*agg_count*/ _ = typeid_cast<const AggregateFunctionCount *>(func.get()))
             AggregateFunctionCount::set(place, value.safeGet<UInt64>());
         else
@@ -13336,7 +13375,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto * value_column_ptr = value_column.get();
             func->add(place, &value_column_ptr, 0, &arena);
         }
-        column.insertFrom(place);
     };
 
     Block virtual_columns_block;
@@ -13410,6 +13448,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
+    /// published only when the block is returned, otherwise the ordinary read counts the same parts
+    size_t granules_dropped_by_partition_key = 0;
     DataPartsVector real_parts;
     real_parts.reserve(rows);
     for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
@@ -13438,12 +13478,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
-                continue;
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
+        }
+
+        if (partition_pruner && partition_pruner->canBePruned(*part))
+        {
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
+            continue;
         }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
@@ -13572,6 +13615,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
 
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
     return res;
 }
 
@@ -13627,9 +13671,10 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
 void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
 {
     auto settings = getDefaultSettings();
-    if (metadata.settings_changes)
+    if (metadata.hasSettingsChanges())
     {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        const auto settings_changes_ast = metadata.getSettingsChanges();
+        const auto & changes = settings_changes_ast->as<const ASTSetQuery &>().changes;
         settings->applyChangesLeavingDiskUnresolved(changes);
     }
 
@@ -15964,6 +16009,27 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
         LOG_TRACE(log, "Outdated parts {} may be hold by SELECT query and still need the index", fmt::join(getPartsNames(parts_in_use), ", "));
 
     return parts_to_clear.size();
+}
+
+void MergeTreeData::clearVectorSimilarityIndexCache() const
+{
+    auto vector_similarity_index_cache = getContext()->getVectorSimilarityIndexCache();
+    if (!vector_similarity_index_cache)
+        return;
+
+    /// The cache is keyed by the paths of the parts. We also take outdated parts: the entries of an
+    /// outdated part stay in the cache until the part is destroyed or the cleanup thread clears the caches of the part.
+    std::unordered_set<String> paths_to_data_parts;
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & part : data_parts_by_info)
+            /// Skip `PreActive` parts: an INSERT renames them in `Transaction::renameParts` without holding `data_parts_mutex`, so
+            /// reading their paths would be a data race. Also, queries never read `PreActive` parts, so there can be no cache entries.
+            if (part->getState() != DataPartState::PreActive)
+                paths_to_data_parts.insert(part->getPathForCacheKey());
+    }
+
+    vector_similarity_index_cache->clear(paths_to_data_parts);
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
