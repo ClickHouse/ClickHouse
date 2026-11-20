@@ -526,6 +526,19 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
     )
+    # `clickhouse-examples` (the parser and storage memory profilers of the memory checks) is
+    # built by `arm_binary`, which links without ThinLTO: the ThinLTO backend of a second
+    # binary over the same 10-12k modules cost the `arm_release` build 140-220 CPU-minutes.
+    # Only the workflows that run the memory checks (PR and MasterCI, which provides their
+    # master baseline) take this list.
+    build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_BINARY})" in job.name
+        else job
+        for job in build_jobs
+    ]
     coverage_build_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
@@ -570,14 +583,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    release_build_jobs_with_examples = [
-        job.set_command(f"{job.command} --build-examples").set_provides(
-            ArtifactNames.CLICKHOUSE_EXAMPLES
-        )
-        if f"({BuildTypes.ARM_RELEASE})" in job.name
-        else job
-        for job in release_build_jobs
-    ]
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
@@ -610,28 +615,23 @@ class JobConfigs:
     # fills the shared sccache that PR builds read, and the arm one gives the
     # "Build profile diff" check its master baseline for object sizes and compile
     # times (see _PROFILED_BUILDS in build_profile_hook.py).
-    performance_reference_build_jobs = [
-        job.set_command(f"{job.command} --build-examples")
-        if f"({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})" in job.name
-        else job
-        for job in common_build_job_config.set_post_hooks(
-            post_hooks=[
-                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-            ],
-        ).parametrize(
-            Job.ParamSet(
-                parameter=BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE,
-                provides=[ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE],
-                runs_on=RunnerLabels.ARM_LARGE,
-                timeout=3 * 3600,
-            ),
-            Job.ParamSet(
-                parameter=BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
-                provides=[ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE],
-                runs_on=RunnerLabels.ARM_LARGE,
-            ),
-        )
-    ]
+    performance_reference_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE,
+            provides=[ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=3 * 3600,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
+            provides=[ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -1724,6 +1724,21 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_binary, AsyncInsert, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+    )
+    # The `ParallelReplicas` configuration with `parallel_replicas_plan_based` enabled. Not a coverage
+    # replacement: no coverage job runs it, so `ci-coverage` does not skip it (`ci-llvm-coverage`
+    # skips it like every other non-coverage job).
+    functional_tests_arm_binary_plan_based_parallel_replicas_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, sequential",
             runs_on=RunnerLabels.ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),

@@ -49,11 +49,12 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 ## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="UInt64" default_value="100" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "100"},{"label": "The same as `max_parts_to_merge_at_once` for `MergeTree`: a merge reads all its inputs at once, and the selection of merges keeps the candidate ranges of every partition."}]}]}/>
 
-Threshold for compaction data files in iceberg.
+Max number of data files merged by one compaction merge of an Iceberg table, the same as `max_parts_to_merge_at_once` for `MergeTree`.
+A merge reads all its input files at once, so its memory grows with the number of inputs.
 
 ## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
 
