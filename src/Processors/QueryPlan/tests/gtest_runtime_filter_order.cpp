@@ -84,6 +84,13 @@ TEST(RuntimeFilterOrder, NeitherProbeTimeKnownMovesWhenRejectingMore)
     EXPECT_EQ(orderRuntimeFilterSteps({measured(0.3), measured(0.5, {}, true, 0.3)}), (PrewhereStepOrder{1, 0}));
 }
 
+TEST(RuntimeFilterOrder, NeitherProbeTimeKnownMovesWhenPassingClearlyFewer)
+{
+    /// 0.9998 rejected is not 10% more than 0.97, but 0.0002 passed is far fewer than 0.03.
+    EXPECT_EQ(orderRuntimeFilterSteps({measured(0.03), measured(0.0002)}), (PrewhereStepOrder{1, 0}));
+    EXPECT_EQ(orderRuntimeFilterSteps({measured(0.0002), measured(0.03)}), (PrewhereStepOrder{0, 1}));
+}
+
 TEST(RuntimeFilterOrder, OnlyAheadMeasuredMovesCheapMover)
 {
     EXPECT_EQ(orderRuntimeFilterSteps({measured(0.5, 1), measured(0.1, {}, /*cheap_to_probe=*/ true)}), (PrewhereStepOrder{1, 0}));

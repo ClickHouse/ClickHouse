@@ -27,9 +27,9 @@ namespace DB
 /// - Measurements: selectivity, rejected rows (rows in blocks rejected whole count extra: later steps skip reading them), and
 ///   probe time per row.
 /// - If both steps have a probe time: the one with the lower cost per rejected row goes first (5% margin).
-/// - Otherwise: the one that rejects more goes first (10% margin). That move is blind to cost, so an expensive filter (a bloom
-///   filter or a large exact set) may not jump ahead of a cheap-to-probe one (a fixed hash table or a small exact set) whose
-///   probe time is known.
+/// - Otherwise: the one that rejects more goes first (10% margin on rejected rows or on passed rows, whichever is larger). That
+///   move is blind to cost, so an expensive filter (a bloom filter or a large exact set) may not jump ahead of a cheap-to-probe
+///   one (a fixed hash table or a small exact set) whose probe time is known.
 /// - Probe time is measured on large blocks only. A probe call has a fixed cost (about 10 µs), so on the small blocks that
 ///   reach a step behind a selective one, the call, not the filter, sets the time per row. In practice only the step that runs
 ///   first gets large blocks, so often only one step of a pair has a probe time.

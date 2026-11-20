@@ -57,9 +57,13 @@ Float64 probeTimePerRejectedRow(const RuntimeFilterStepMeasurement & step)
     return *step.probe_nanoseconds_per_row / rejected_rows;
 }
 
+/// Relative to the rows passed too, so a step rejecting 97% still yields to one rejecting 99.98%.
 bool rejectsClearlyMore(const RuntimeFilterStepMeasurement & mover, const RuntimeFilterStepMeasurement & other)
 {
-    return rejectedRowsAgainst(mover, other) > rejected_rows_margin * rejectedRowsAgainst(other, mover);
+    const Float64 mover_rejected = rejectedRowsAgainst(mover, other);
+    const Float64 other_rejected = rejectedRowsAgainst(other, mover);
+    auto passed = [](Float64 rejected_rows) { return std::max(1.0 - rejected_rows, 0.0); };
+    return mover_rejected > rejected_rows_margin * other_rejected || rejected_rows_margin * passed(mover_rejected) < passed(other_rejected);
 }
 
 bool movesAhead(const RuntimeFilterStepMeasurement & mover, const RuntimeFilterStepMeasurement & ahead)
