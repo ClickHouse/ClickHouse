@@ -35,7 +35,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-    extern const char host_resolvers_pool_pause_before_insert[];
+    extern const char host_resolvers_pool_drop_cache_during_resolve[];
 }
 
 HostResolverMetrics HostResolver::getMetrics()
@@ -393,7 +393,8 @@ HostResolver::Ptr HostResolversPool::getResolver(const String & host)
     /// the requests to all other hosts as well as `dropCache`.
     auto resolver = HostResolver::create(host);
 
-    FailPointInjection::pauseFailPoint(FailPoints::host_resolvers_pool_pause_before_insert);
+    /// Simulates `dropCache` called by another thread during the resolution.
+    fiu_do_on(FailPoints::host_resolvers_pool_drop_cache_during_resolve, { dropCache(); });
 
     std::lock_guard lock(mutex);
 
