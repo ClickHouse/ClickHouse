@@ -9,7 +9,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -35,16 +34,16 @@ struct DecimalOpHelpers
      *
      * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
      */
-    static VectorWithMemoryTracking<UInt8> multiply(const VectorWithMemoryTracking<UInt8> & num1, const VectorWithMemoryTracking<UInt8> & num2)
+    static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
         const auto len1 = static_cast<UInt16>(num1.size());
         const auto len2 = static_cast<UInt16>(num2.size());
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
+        std::vector<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
-        UInt16 i_n2 = 0;
+        UInt16 i_n2;
 
         for (Int32 i = len1 - 1; i >= 0; --i)
         {
@@ -85,15 +84,15 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
+    static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
     {
-        VectorWithMemoryTracking<UInt8> result;
+        std::vector<UInt8> result;
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
         Int256 temp = 0;
 
-        while (temp < divisor && max_index >= idx)
+        while (temp < divisor && max_index > idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
@@ -113,9 +112,9 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static VectorWithMemoryTracking<UInt8> toDigits(Int256 x)
+    static std::vector<UInt8> toDigits(Int256 x)
     {
-        VectorWithMemoryTracking<UInt8> result;
+        std::vector<UInt8> result;
         if (x >= 10)
             result = toDigits(x / 10);
 
@@ -123,7 +122,7 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static UInt256 fromDigits(const VectorWithMemoryTracking<UInt8> & digits)
+    static UInt256 fromDigits(const std::vector<UInt8> & digits)
     {
         Int256 result = 0;
         UInt32 scale = 0;
@@ -232,34 +231,22 @@ struct DecimalArithmeticsImpl
 
 
 template <typename Transform>
-class FunctionsDecimalArithmetics final : public IFunction
+class FunctionsDecimalArithmetics : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsDecimalArithmetics>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return Transform::valid_on_default_arguments; }
-    /// `divideDecimal` throws on a zero divisor, `multiplyDecimal` on overflow.
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
-    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
-    /// third argument is a const-`UInt8` scale for the result. The output is
-    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
-    /// stays authoritative.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -301,27 +288,17 @@ public:
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return resolveOverload(arguments, result_type, input_rows_count);
     }
 
 private:
     // long resolver to call proper templated func
-    [[nodiscard]] ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());

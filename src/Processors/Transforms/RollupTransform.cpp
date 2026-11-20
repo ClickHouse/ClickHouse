@@ -10,7 +10,6 @@ GroupByModifierTransform::GroupByModifierTransform(SharedHeader header, Aggregat
     : IAccumulatingTransform(std::move(header), std::make_shared<const Block>(generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_)))
     , params(std::move(params_))
     , use_nulls(use_nulls_)
-    , finalized_header(params->getHeader())
 {
     keys.reserve(params->params.keys_size);
     for (const auto & key : params->params.keys)
@@ -43,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
+            columns[key] = makeNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 
@@ -59,7 +58,7 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
         agg_chunks.emplace_back(std::move(chunk));
 
     auto & aggregator = is_input ? params->aggregator : *output_aggregator;
-    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled, /* dataflow_cache_updater= */ nullptr);
+    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled);
     return std::move(result.chunk);
 }
 
@@ -75,6 +74,14 @@ RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParams
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
+
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
+{
+    auto const & col = header.getByPosition(key);
+    auto result_column = col.column->cloneEmpty();
+    col.type->insertManyDefaultsInto(*result_column, n);
+    return result_column;
+}
 
 Chunk RollupTransform::generate()
 {
@@ -100,7 +107,7 @@ Chunk RollupTransform::generate()
         current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
-    finalizeChunk(gen_chunk, aggregates_mask, finalized_header);
+    finalizeChunk(gen_chunk, aggregates_mask);
     if (!gen_chunk.empty())
         gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), set_counter++));
     return gen_chunk;

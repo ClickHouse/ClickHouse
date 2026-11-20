@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <Common/PODArray.h>
-#include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
@@ -49,7 +48,7 @@ public:
         }
     }
 
-    [[nodiscard]] size_t getSizeInBytes() const
+    size_t getSizeInBytes() const
     {
         return parent_to_children_keys_range.getBufferSizeInBytes() + (keys.size() * sizeof(UInt64));
     }
@@ -196,7 +195,7 @@ namespace detail
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_func)
     {
-        chassert(keys.size() == in_keys.size());
+        assert(keys.size() == in_keys.size());
 
         PaddedPODArray<UInt8> result;
         result.resize_fill(keys.size());
@@ -296,8 +295,7 @@ namespace detail
             Int64 depth;
         };
 
-        /// Cleared after every requested key that has children, so clearing must not cost O(capacity).
-        ClearableHashSet<UInt64> already_processed_keys_during_loop;
+        HashSet<UInt64> already_processed_keys_during_loop;
         already_processed_keys_during_loop.reserve(keys_size);
 
         PaddedPODArray<KeyAndDepth> next_keys_to_process_stack;
@@ -337,7 +335,7 @@ namespace detail
                     if (depth == key_range_requires_update)
                     {
                         auto * it = already_processed_keys_to_range.find(key);
-                        chassert(it);
+                        assert(it);
 
                         auto & range_to_update = it->getMapped();
                         range_to_update.end_index = descendants.size();

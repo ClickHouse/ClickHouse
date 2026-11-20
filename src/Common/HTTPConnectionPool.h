@@ -43,7 +43,7 @@ public:
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
     virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
-    [[nodiscard]] virtual const Metrics & getMetrics() const = 0;
+    virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 
     IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
@@ -59,18 +59,6 @@ enum class HTTPConnectionGroupType : uint8_t
     DISK,
     STORAGE,
     HTTP,
-    AMBER,
-};
-
-/// How a pooled connection does socket I/O. It is fixed for the lifetime of the connection,
-/// including a response body that is read later. Independent of `HTTPConnectionGroupType`,
-/// which defines limits and metrics.
-enum class HTTPConnectionTransport : uint8_t
-{
-    /// Poco sockets: waiting for I/O in a fiber holds its scheduler thread, so the other fibers of the thread do not run.
-    FiberUnaware,
-    /// Silk sockets: waiting for I/O suspends the calling fiber, a plain thread waits through a proxy fiber.
-    FiberAware,
 };
 
 class HTTPConnectionPools
@@ -86,12 +74,6 @@ public:
         static constexpr size_t warning_step = 100;
     };
 
-    struct SocketBufferSizes
-    {
-        size_t rcvbuf = 0;
-        size_t sndbuf = 0;
-    };
-
     /// Socket inodes of live connections, grouped by connection pool type.
     struct PoolSocketInodes
     {
@@ -99,7 +81,7 @@ public:
         std::vector<uint64_t> storage;
         std::vector<uint64_t> http;
 
-        [[nodiscard]] bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
+        bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
     };
 
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
@@ -111,20 +93,10 @@ private:
 public:
     static HTTPConnectionPools & instance();
 
-    void setLimits(Limits disk, Limits storage, Limits http, Limits amber);
-    /// Whether the group holds at least `soft_limit` connections, in use and idle together. Above
-    /// the soft limit the pool economizes connections: idle ones expire sooner, and readers that
-    /// consult this stop keeping a connection open between reads.
-    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const;
-    void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http, SocketBufferSizes amber);
-    [[nodiscard]] SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
+    void setLimits(Limits disk, Limits storage, Limits http);
     void dropCache();
 
-    IHTTPConnectionPoolForEndpoint::Ptr getPool(
-        HTTPConnectionGroupType type,
-        const Poco::URI & uri,
-        const ProxyConfiguration & proxy_configuration,
-        HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware);
+    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);
 
     /// Collect socket inodes of all tracked HTTP connections, grouped by pool type.
     /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.

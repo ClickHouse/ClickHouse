@@ -3,6 +3,7 @@
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 
@@ -47,13 +48,9 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
-    bool isRemote() const override { return object_storage->isRemote(); }
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return true; }
-    /// Blobs are removed right in the transaction, and there is nothing to replicate.
-    bool hasDeadBlobsQueue() const override { return false; }
-    bool hasMissingBlobsQueue() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -92,7 +89,7 @@ public:
     void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
     void createDirectory(const std::string & /*path*/) override {}
     void createDirectoryRecursive(const std::string & /*path*/) override {}
-    [[nodiscard]] bool supportsChmod() const override { return false; }
+    bool supportsChmod() const override { return false; }
 
     void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
     void removeDirectory(const std::string & path) override;
