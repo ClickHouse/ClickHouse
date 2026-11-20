@@ -2739,9 +2739,6 @@ FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
             "Observing the filesystem cache '{}' is not supported for the overcommit cache policies",
             getName());
 
-    /// The walk copies up to `query_max_elements` queue entries and then takes a key lock for each of them.
-    /// Asking for more segments than the cache holds is fine: at most all of them are copied.
-    /// The count covers all sub-queues of the cache together (SLRU, split cache), as does `query_max_elements`.
     const size_t limit = max_observed_elements.load(std::memory_order_relaxed);
     const size_t requested = std::min<UInt64>(query_max_elements, main_priority->getElementsCountApprox());
     if (requested > limit)
@@ -2752,7 +2749,8 @@ FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
             getName(),
             limit);
 
-    return main_priority->observeFilesystemCache(query_max_elements, query_max_total_size, query_order, cancellation_flag);
+    return main_priority->observeFilesystemCache(
+        std::min<UInt64>(query_max_elements, limit), query_max_total_size, query_order, cancellation_flag);
 }
 
 IFileCachePriority::Type FileCache::getEvictionPolicyType()

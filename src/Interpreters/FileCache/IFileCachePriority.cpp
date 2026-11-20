@@ -10,6 +10,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace DB
 {
@@ -170,6 +171,9 @@ IFileCachePriority::observeFilesystemCache(
     /// The entries whose segments are gone by now are skipped, so the result can have fewer than `query_max_elements` rows.
     FileSegmentSummaryInfoList result;
     result.reserve(walk.entries.size());
+    /// Deduplicate SLRU entries that could be moved
+    std::unordered_set<FileCacheKeyAndOffset, FileCacheKeyAndOffsetHash> returned_segments;
+    returned_segments.reserve(walk.entries.size());
     UInt64 total_size = 0;
     size_t read_entries = 0;
     for (const auto & observed : walk.entries)
@@ -177,7 +181,11 @@ IFileCachePriority::observeFilesystemCache(
         if (++read_entries % observe_check_cancellation_every == 0 && walk.isCancelled())
             return {};
 
-        auto info = tryGetSummaryInfo(*observed.entry, observed.observed_queue);
+        const auto & entry = *observed.entry;
+        if (returned_segments.contains({entry.key, entry.offset}))
+            continue;
+
+        auto info = tryGetSummaryInfo(entry, observed.observed_queue);
         if (!info)
             continue;
 
@@ -185,6 +193,7 @@ IFileCachePriority::observeFilesystemCache(
         if (query_order != IterationOrder::RANDOM && info->size > query_max_total_size - total_size)
             break;
 
+        returned_segments.emplace(entry.key, entry.offset);
         info->priority_rank = result.size() + 1;
         total_size += info->size;
         result.push_back(std::move(*info));
