@@ -2247,6 +2247,10 @@ TEST_F(FileCacheTest, SLRUSharesAddUpToTotal)
         ASSERT_TRUE(priority.canFit(2, 1, lock));
     }
 
+    /// This limit rounds up when converted to double; at ratio 1, nothing is left for probationary.
+    const size_t huge = 9007199254740995;
+    ASSERT_THROW(SLRUFileCachePriority(IFileCachePriority::QueueType::Main, huge, huge, 1.0, "test_slru_huge"), DB::Exception);
+
     /// The same for the data and the system part of a split cache.
     {
         std::vector<std::pair<size_t, size_t>> part_limits;
@@ -2260,6 +2264,9 @@ TEST_F(FileCacheTest, SLRUSharesAddUpToTotal)
         ASSERT_EQ(part_limits.size(), 2u);
         ASSERT_EQ(part_limits[0].first + part_limits[1].first, 5u);
         ASSERT_EQ(part_limits[0].second + part_limits[1].second, 5u);
+        ASSERT_THROW(
+            SplitFileCachePriority(IFileCachePriority::QueueType::Main, creator, huge, huge, 0.5, 1.0, "test_split_huge"),
+            DB::Exception);
     }
 }
 

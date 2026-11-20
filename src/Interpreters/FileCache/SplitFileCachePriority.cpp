@@ -22,7 +22,7 @@ namespace
 {
 size_t getRatio(size_t total, double ratio)
 {
-    return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
+    return std::min<size_t>(total, std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
 }
 }
 

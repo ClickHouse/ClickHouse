@@ -41,7 +41,8 @@ namespace
     {
         if (ceil)
             return static_cast<size_t>(std::ceil(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
-        return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
+        /// `static_cast<double>(total)` can round up, past `total`.
+        return std::min<size_t>(total, std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
     }
 
     size_t excess(size_t a, size_t b) { return a > b ? a - b : 0; }

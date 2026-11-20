@@ -320,7 +320,7 @@ void FileCacheSettings::validate()
         /// The same rounding as in `SplitFileCachePriority` and `SLRUFileCachePriority`.
         auto get_ratio = [](size_t total, double ratio)
         {
-            return static_cast<size_t>(std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
+            return std::min<size_t>(total, std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
         };
 
         const size_t max_size = settings[FileCacheSetting::max_size];
