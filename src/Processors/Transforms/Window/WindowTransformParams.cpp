@@ -1,4 +1,5 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,7 +9,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -231,20 +232,20 @@ Block materializeHeader(Block header)
     return header;
 }
 
-std::vector<size_t> findPositions(const Block & header, const SortDescription & description)
+VectorWithMemoryTracking<size_t> findPositions(const Block & header, const SortDescription & description)
 {
     return description
         | std::views::transform([&](const SortColumnDescription & column) { return header.getPositionByName(column.column_name); })
-        | std::ranges::to<std::vector<size_t>>();
+        | std::ranges::to<VectorWithMemoryTracking<size_t>>();
 }
 
-std::vector<bool> markColumnsToMaterialize(
+VectorWithMemoryTracking<bool> markColumnsToMaterialize(
     const Block & header,
     const SortDescription & partition_by,
     const SortDescription & order_by,
-    const std::vector<WindowFunctionDescription> & functions)
+    const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
 {
-    std::vector<bool> should_materialize(header.columns(), false);
+    VectorWithMemoryTracking<bool> should_materialize(header.columns(), false);
 
     /// Compared across blocks to find the partition end.
     for (const auto & column : partition_by)
@@ -260,18 +261,6 @@ std::vector<bool> markColumnsToMaterialize(
             should_materialize[header.getPositionByName(argument_name)] = true;
 
     return should_materialize;
-}
-
-WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vector<WindowFunctionDescription> & functions)
-{
-    if (!frame.is_default || functions.size() != 1)
-        return frame;
-
-    const auto * window_function = dynamic_cast<const IWindowFunction *>(functions[0].aggregate_function.get());
-    if (!window_function)
-        return frame;
-
-    return window_function->getDefaultFrame().value_or(frame);
 }
 
 /// Converts an INTERVAL offset into the units of the ORDER BY key: days for Date/Date32, seconds for DateTime.
@@ -352,7 +341,7 @@ struct RangeOffsets
 /// and chooses a comparator for each bound. Null comparators for every frame but RANGE OFFSET, which has
 /// exactly one ORDER BY key.
 RangeOffsets prepareRangeOffsets(
-    const Block & header, const WindowFrame & frame, const SortDescription & order_by, const std::vector<size_t> & order_by_indices)
+    const Block & header, const WindowFrame & frame, const SortDescription & order_by, const VectorWithMemoryTracking<size_t> & order_by_indices)
 {
     RangeOffsets result;
     result.frame = frame;
@@ -405,21 +394,44 @@ RangeOffsets prepareRangeOffsets(
     return result;
 }
 
+WindowFunctionRequirements collectRequirements(const WindowDescription & description, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+{
+    WindowFunctionRequirements requirements;
+    for (const auto & function : functions)
+    {
+        if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            requirements = unionOf(requirements, general->getRequirements(description));
+        else
+            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
+    }
+
+    return requirements;
+}
+
+bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFunctionRequirements & requirements)
+{
+    const bool functions_read_peer_groups = requirements.peers_start || requirements.peers_end;
+    const bool frame_reads_peer_groups = (requirements.frame_start || requirements.frame_end) && description.frame.type != WindowFrame::FrameType::ROWS;
+    return functions_read_peer_groups || frame_reads_peer_groups;
+}
+
 }
 
 WindowTransformParams WindowTransformParams::create(
     const Block & input_header,
     const WindowDescription & window_description,
-    const std::vector<WindowFunctionDescription> & functions)
+    const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
 {
     auto header = materializeHeader(input_header);
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
-    auto range_offsets = prepareRangeOffsets(header, applyFunctionDefaultFrame(window_description.frame, functions), window_description.order_by, order_by_indices);
+    auto range_offsets = prepareRangeOffsets(header, window_description.frame, window_description.order_by, order_by_indices);
 
     WindowDescription description = window_description;
     description.frame = std::move(range_offsets.frame);
+    auto requirements = collectRequirements(description, functions);
+    auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 
     return WindowTransformParams{
         std::move(header),
@@ -430,6 +442,8 @@ WindowTransformParams WindowTransformParams::create(
         range_offsets.begin_comparator,
         range_offsets.end_comparator,
         range_offsets.time_zone,
+        std::move(requirements),
+        std::move(needs_peer_group_indexes),
     };
 }
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['параллельная обработка', 'оптимизация запросов', 'производительность', 'многопоточность', 'лучшие практики']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse [разработан для скорости](/ru/get-started/about/why-clickhouse-is-so-fast). Он выполняет запросы с высокой степенью параллелизма, используя все доступные ядра процессора, распределяя данные по линиям обработки и нередко доводя оборудование почти до предела возможностей.
 
 В этом руководстве пошагово объясняется, как в ClickHouse работает параллелизм запросов и как его можно настраивать и отслеживать, чтобы повысить производительность при высоких нагрузках.
@@ -21,7 +19,15 @@ ClickHouse [разработан для скорости](/ru/get-started/about/
 
 Когда ClickHouse ① выполняет агрегационный запрос с фильтром по первичному ключу таблицы, он ② загружает первичный индекс в память, чтобы ③ определить, какие гранулы нужно обработать, а какие можно безопасно пропустить:
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Анализ индекса" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Анализ индекса](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### Распределение работы между линиями обработки
@@ -29,7 +35,15 @@ ClickHouse [разработан для скорости](/ru/get-started/about/
 
 Затем выбранные данные [динамически](#load-balancing-across-processing-lanes) распределяются между `n` параллельными [линиями обработки](/ru/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), которые передают и обрабатывают данные [блок](/ru/resources/develop-contribute/introduction/architecture#block) за блоком, формируя итоговый результат:
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 параллельные линии обработки" />
+<div className="ch-image-md">
+
+<Frame>
+
+![4 параллельные линии обработки](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -39,7 +53,15 @@ ClickHouse [разработан для скорости](/ru/get-started/about/
 
 На машине с `8` ядрами пропускная способность выполнения запроса примерно удвоилась бы (но использование памяти также соответственно увеличилось бы), поскольку больше линий обработки обрабатывают данные параллельно:
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 параллельных линий обработки" />
+<div className="ch-image-md">
+
+<Frame>
+
+![8 параллельных линий обработки](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -53,7 +75,15 @@ ClickHouse [разработан для скорости](/ru/get-started/about/
 
 Когда данные таблицы распределены по нескольким серверам в виде [сегментов](/ru/guides/oss/deployment-and-scaling/shards), каждый сервер параллельно обрабатывает свой сегмент. На каждом сервере локальные данные обрабатываются с использованием параллельных линий обработки, как описано выше:
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Распределённые линии" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Распределённые линии](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -127,7 +157,15 @@ FROM
 
 Встроенный [веб-интерфейс](/ru/concepts/features/interfaces/http) ClickHouse (доступный по конечной точке `/play`) может отображать приведённый выше физический план в виде графической визуализации. В этом примере мы устанавливаем `max_threads` в `4`, чтобы визуализация оставалась компактной и показывала только 4 параллельные линии обработки:
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Конвейер запроса" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Конвейер запроса](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
+
+</div>
 
 Примечание: Читайте визуализацию слева направо. Каждая строка соответствует параллельной линии обработки, которая передаёт данные блок за блоком, применяя такие преобразования, как фильтрация, агрегация и финальные этапы обработки. В этом примере показаны четыре параллельные линии, соответствующие настройке `max_threads = 4`.
 

@@ -60,7 +60,7 @@
 #ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
-#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {:#x} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<uintptr_t>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
 #else
 #include <base/defines.h>
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)
@@ -79,6 +79,7 @@ namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
+    extern const Event ConcurrencyControlWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -218,6 +219,9 @@ private:
     }
 };
 
+namespace
+{
+
 struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
     WorkloadEntityTestStorage storage;
@@ -341,6 +345,8 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
     }
 };
+
+}
 
 using TestGuard = ResourceTest::Guard;
 
@@ -953,7 +959,7 @@ public:
         return *this;
     }
 
-    UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
+    [[nodiscard]] UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
     {
         // It is hard to calculate tight upper bound for burst.
         // First, we take into account configured burst,
@@ -1529,6 +1535,41 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
     t.wait();
 }
 
+/// The wait for a CPU slot is accounted to the query even when the allocation outlives the thread that created it
+/// (here: destroyed on another thread while its request is still queued, like a `KILL QUERY` of a waiting query).
+TEST(SchedulerWorkloadResourceManager, CPUSlotsWaitTimerOutlivesCreatingThread)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 1");
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("cpu");
+
+    /// Takes the only slot, so the next allocation keeps its request queued.
+    auto blocker = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+    auto blocker_slot = blocker->acquire();
+
+    std::weak_ptr<ThreadGroup> weak_group;
+    SlotAllocationPtr allocation;
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        weak_group = group;
+        CurrentThread::attachToGroupIfDetached(group);
+        allocation = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+        CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+
+    ASSERT_TRUE(allocation->isRequesting());
+    /// The creating thread is gone, so only the allocation can still own the group.
+    ThreadGroupPtr group = weak_group.lock();
+    ASSERT_NE(group, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    allocation.reset();
+    EXPECT_GE(group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], 10'000);
+}
+
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
 {
     ResourceTest t;
@@ -1773,13 +1814,13 @@ struct ProfileEventCounter
         initial_value = getValue();
     }
 
-    size_t count() const
+    [[nodiscard]] size_t count() const
     {
         return getValue() - initial_value;
     }
 
 private:
-    size_t getValue() const
+    [[nodiscard]] size_t getValue() const
     {
         return ProfileEvents::global_counters[event];
     }
@@ -4547,6 +4588,65 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
             t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
             DB::Exception);
     }
+}
+
+/// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
+static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, const String & parent, const String & child)
+{
+    bool seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        auto parent_pos = path.find("/" + parent + "/");
+        if (r == resource && parent_pos != String::npos && path.find("/" + child, parent_pos + parent.size() + 1) != String::npos)
+            seen = true;
+    });
+    return seen;
+}
+
+// Moving workloads so that a parent becomes a child is applied in an order that keeps the hierarchy acyclic
+TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    // An unchanged workload between the moved ones
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a; CREATE WORKLOAD c IN b");
+    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD c IN b; CREATE WORKLOAD a IN c");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
+}
+
+// A workload replaced by a resource of the same name is dropped only after its children leave it
+TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+
+    bool has_b_in_a = false;
+    t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode *)
+    {
+        if (resource == "a" && path.ends_with("/b"))
+            has_b_in_a = true;
+    });
+    EXPECT_TRUE(has_b_in_a);
+}
+
+// A resource replaced by a workload of the same name is created before its new children are attached to it
+TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_FALSE(t.manager->hasResource("a"));
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

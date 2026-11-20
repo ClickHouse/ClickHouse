@@ -1,10 +1,12 @@
 #pragma once
 
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+
 #include <Interpreters/WindowDescription.h>
 
-#include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <vector>
+#include <Core/Block.h>
 
 class DateLUTImpl;
 
@@ -24,20 +26,22 @@ struct WindowTransformParams
 {
     const Block input_header;
     const WindowDescription window_description;
-    const std::vector<size_t> partition_by_indices;
-    const std::vector<size_t> order_by_indices;
-    const std::vector<bool> should_materialize;
+    const VectorWithMemoryTracking<size_t> partition_by_indices;
+    const VectorWithMemoryTracking<size_t> order_by_indices;
+    const VectorWithMemoryTracking<bool> should_materialize;
     /// The start and the end of the frame differ when only one of them is a calendar INTERVAL.
     const RangeOffsetComparator range_begin_offset_comparator;
     const RangeOffsetComparator range_end_offset_comparator;
     /// Null unless a frame bound is a calendar INTERVAL.
     const DateLUTImpl * const time_zone;
+    const WindowFunctionRequirements requirements;
+    const bool needs_peer_group_indexes;
 
 public:
     static WindowTransformParams create(
         const Block & input_header,
         const WindowDescription & window_description,
-        const std::vector<WindowFunctionDescription> & functions);
+        const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 };
 
 }

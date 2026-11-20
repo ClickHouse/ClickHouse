@@ -25,7 +25,7 @@ public:
 
     void unregisterTable(const StorageID & storage, bool if_exists = false);
 
-    void renameTable(const StorageID & from, const StorageID & to);
+    void renameTable(const StorageID & from, const StorageID & to, bool if_exists = false);
 
     void shutdown();
 
