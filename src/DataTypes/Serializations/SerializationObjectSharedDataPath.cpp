@@ -21,6 +21,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     SerializationObjectSharedData::SerializationVersion serialization_version_,
     const String & path_,
     const String & path_subcolumn_,
+    size_t path_subcolumn_array_level_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_,
@@ -30,6 +31,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
     , path(path_)
     , path_subcolumn(path_subcolumn_)
+    , path_subcolumn_array_level(path_subcolumn_array_level_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
     , dynamic_serialization(dynamic_serialization_)
@@ -37,7 +39,7 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
 {
 }
 
-UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket_)
+UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket_)
 {
     SipHash hash;
     hash.update("ObjectSharedDataPath");
@@ -47,6 +49,7 @@ UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nest
     hash.update(path_);
     hash.update(path_subcolumn_.size());
     hash.update(path_subcolumn_);
+    hash.update(path_subcolumn_array_level_);
     auto dynamic_type_name = dynamic_type_->getName();
     hash.update(dynamic_type_name.size());
     hash.update(dynamic_type_name);
@@ -58,11 +61,13 @@ UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nest
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket)
+SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket)
 {
     if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket));
-    return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket));
+    return ISerialization::pooled(
+        getHash(nested_, serialization_version_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket),
+        [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket); });
 }
 
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
@@ -289,7 +294,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
         {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr());
+            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr(), path_subcolumn_array_level);
             column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
@@ -333,7 +338,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
-                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
+                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second, path_subcolumn_array_level);
                     column.insertRangeFrom(*subcolumn, chunk_structure.offset, chunk_structure.limit);
                 }
             }

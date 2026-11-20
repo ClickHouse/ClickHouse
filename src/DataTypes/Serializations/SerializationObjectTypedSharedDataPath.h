@@ -19,7 +19,8 @@ private:
         const SerializationObjectTypedSharedData::SharedTypedPath & path_,
         size_t path_index_,
         size_t num_paths_,
-        const String & subcolumn_name_);
+        const String & subcolumn_name_,
+        size_t subcolumn_array_level_);
 
 public:
     static UInt128 getHash(
@@ -27,14 +28,16 @@ public:
         const SerializationObjectTypedSharedData::SharedTypedPath & path_,
         size_t path_index_,
         size_t num_paths_,
-        const String & subcolumn_name_);
+        const String & subcolumn_name_,
+        size_t subcolumn_array_level_);
 
     static SerializationPtr create(
         const SerializationPtr & nested_,
         const SerializationObjectTypedSharedData::SharedTypedPath & path_,
         size_t path_index_,
         size_t num_paths_,
-        const String & subcolumn_name_);
+        const String & subcolumn_name_,
+        size_t subcolumn_array_level_);
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && path.serialization->supportsPooling(); }
@@ -73,6 +76,8 @@ private:
     size_t num_paths;
     /// Empty when the whole path is read.
     String subcolumn_name;
+    /// The array level the name was resolved at, which `sizeN` in it counts from.
+    size_t subcolumn_array_level;
 };
 
 }

@@ -1,6 +1,8 @@
 #include <DataTypes/subcolumnResolution.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <optional>
@@ -87,6 +89,16 @@ void forEachSubcolumnCandidate(
 /// path `a`, so it means the array sizes of `a`.
 bool isHiddenByDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len, const String & name, const SubstreamData & data, size_t initial_array_level)
 {
+    /// The null map of a variant is not a substream of the variant, it follows the variants and belongs to the one of its name.
+    if (path[prefix_len - 1].type == ISerialization::Substream::VariantElementNullMap)
+    {
+        const auto * variant_type = prefix_len > 1 ? typeid_cast<const DataTypeVariant *>(path[prefix_len - 2].data.type.get()) : nullptr;
+        if (!variant_type)
+            return false;
+        auto discriminator = variant_type->tryGetVariantDiscriminator(path[prefix_len - 1].variant_element_name);
+        return discriminator && variant_type->getVariant(*discriminator)->canResolveDynamicSubcolumn("null");
+    }
+
     auto declared_parent = findDeclaredParent(path, prefix_len);
     const auto & parent_data = declared_parent ? path[*declared_parent].data : data;
     if (!parent_data.type)
@@ -119,21 +131,15 @@ std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(
     return result;
 }
 
-/// Resolves the requested name as a dynamic subcolumn of the last substream in dynamic_parent_path.
+/// Completes a dynamic subcolumn of the last substream in dynamic_parent_path to a subcolumn of the whole type.
 /// That substream's creator wraps the result.
-std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
-    const SubstreamPath & dynamic_parent_path, std::string_view dynamic_subcolumn_name, size_t initial_array_level)
+std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
+    const SubstreamPath & dynamic_parent_path, std::unique_ptr<IDataType::SubcolumnInfo> dynamic_subcolumn)
 {
-    size_t parent = dynamic_parent_path.size() - 1;
-    auto dynamic_subcolumn = dynamic_parent_path[parent].data.type->getDynamicSubcolumnInfo(
-        dynamic_subcolumn_name,
-        dynamic_parent_path[parent].data,
-        initial_array_level + ISerialization::getArrayLevel(dynamic_parent_path, dynamic_parent_path.size()),
-        /*throw_if_null=*/ false);
-
     if (!dynamic_subcolumn)
         return nullptr;
 
+    size_t parent = dynamic_parent_path.size() - 1;
     auto resolved_path = dynamic_parent_path;
     if (auto creator = resolved_path[parent].creator)
     {
@@ -155,6 +161,26 @@ std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
 
     resolved_path[parent].data = dynamic_subcolumn->data;
     return makeSubcolumnInfo(resolved_path, resolved_path.size(), dynamic_subcolumn.get());
+}
+
+/// Resolves the name as a dynamic subcolumn of the last substream in dynamic_parent_path.
+std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
+    const SubstreamPath & dynamic_parent_path, std::string_view dynamic_subcolumn_name, size_t initial_array_level)
+{
+    const auto & parent_data = dynamic_parent_path.back().data;
+    size_t array_level = initial_array_level + ISerialization::getArrayLevel(dynamic_parent_path, dynamic_parent_path.size());
+    return wrapDynamicSubcolumn(
+        dynamic_parent_path, parent_data.type->getDynamicSubcolumnInfo(dynamic_subcolumn_name, parent_data, array_level, /*throw_if_null=*/ false));
+}
+
+/// Resolves the name as a subcolumn the type of the last substream in dynamic_parent_path knows.
+std::unique_ptr<IDataType::SubcolumnInfo> resolveKnownDynamicSubcolumn(
+    const SubstreamPath & dynamic_parent_path, std::string_view dynamic_subcolumn_name, size_t initial_array_level)
+{
+    const auto & parent_data = dynamic_parent_path.back().data;
+    size_t array_level = initial_array_level + ISerialization::getArrayLevel(dynamic_parent_path, dynamic_parent_path.size());
+    return wrapDynamicSubcolumn(
+        dynamic_parent_path, parent_data.type->getKnownDynamicSubcolumnInfo(dynamic_subcolumn_name, parent_data, array_level));
 }
 
 /// One entry per name: a declared name replaces one already found, so nothing can be emitted before
@@ -197,7 +223,7 @@ std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data, size_t init
         {
             element_data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
             {
-                if (auto resolved = resolveDynamicSubcolumn(prefix, known_name, initial_array_level))
+                if (auto resolved = resolveKnownDynamicSubcolumn(prefix, known_name, initial_array_level))
                     add({resolved->substreams_path, name + "." + known_name, resolved->data});
             }, initial_array_level + ISerialization::getArrayLevel(path, prefix_len));
         }
@@ -210,7 +236,7 @@ std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data, size_t init
     {
         data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
         {
-            if (auto info = data.type->getDynamicSubcolumnInfo(known_name, data, initial_array_level, false))
+            if (auto info = data.type->getKnownDynamicSubcolumnInfo(known_name, data, initial_array_level))
                 add({info->substreams_path, known_name, info->data});
         }, initial_array_level);
     }
@@ -236,9 +262,21 @@ void forEachSubcolumn(const SubstreamData & data, const IDataType::SubcolumnCall
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
-    std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null)
+    std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null, bool allow_dynamic_subcolumns)
 {
-    std::optional<SubstreamPath> found_path;
+    /// The subcolumns the type knows are candidates in the order the listing offers them, and the listing's rule
+    /// picks one: a declared subcolumn takes the place of a generated one, and of two declared ones the first is kept.
+    std::unique_ptr<IDataType::SubcolumnInfo> found;
+    auto is_declared = [](const IDataType::SubcolumnInfo & info)
+    {
+        return ISerialization::isDeclaredSubstream(info.substreams_path, info.substreams_path.size());
+    };
+    auto take = [&](std::unique_ptr<IDataType::SubcolumnInfo> candidate)
+    {
+        if (!found || (is_declared(*candidate) && !is_declared(*found)))
+            found = std::move(candidate);
+    };
+
     /// Substreams owning a prefix of the requested name whose type may resolve the rest as a dynamic
     /// subcolumn, e.g. `a` of JSON(`a` JSON) for a.some.path. The predicate is coarse - for `Dynamic` it
     /// only checks the leading type name - so a prefix may qualify yet fail to resolve, and the rest it
@@ -247,48 +285,70 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
 
     auto collect = [&](const SubstreamPath & path, size_t prefix_len, const String & name)
     {
-        /// A declared name is the answer, nothing can replace it.
-        if (found_path && ISerialization::isDeclaredSubstream(*found_path, found_path->size()))
+        if (found && is_declared(*found))
             return;
 
         if (name == subcolumn_name)
         {
             /// A generated name loses to the one already found and to a dynamic subcolumn of that name.
-            if (!ISerialization::isDeclaredSubstream(path, prefix_len) && (found_path || isHiddenByDynamicSubcolumn(path, prefix_len, name, data, initial_array_level)))
+            if (!ISerialization::isDeclaredSubstream(path, prefix_len) && (found || isHiddenByDynamicSubcolumn(path, prefix_len, name, data, initial_array_level)))
                 return;
 
-            found_path = copyPathPrefix(path, prefix_len);
+            take(makeSubcolumnInfo(path, prefix_len, nullptr));
         }
         else if (subcolumn_name.starts_with(name + ".") && path[prefix_len - 1].data.type)
         {
+            const auto & element_type = path[prefix_len - 1].data.type;
+            auto prefix = copyPathPrefix(path, prefix_len);
             auto name_in_parent = subcolumn_name.substr(name.size() + 1);
-            if (path[prefix_len - 1].data.type->canResolveDynamicSubcolumn(name_in_parent))
-                dynamic_parents.emplace_back(copyPathPrefix(path, prefix_len), name_in_parent);
+
+            /// A subcolumn the element's type knows is a candidate here, at the element, as in the listing.
+            if (element_type->hasDynamicSubcolumnsData())
+            {
+                if (auto known = resolveKnownDynamicSubcolumn(prefix, name_in_parent, initial_array_level))
+                {
+                    take(std::move(known));
+                    return;
+                }
+            }
+
+            if (allow_dynamic_subcolumns && element_type->canResolveDynamicSubcolumn(name_in_parent))
+                dynamic_parents.emplace_back(std::move(prefix), name_in_parent);
         }
     };
 
     forEachSubcolumnCandidate(data, initial_array_level, collect, /*enumerate_dynamic_streams=*/ false);
 
-    if (found_path)
-        return makeSubcolumnInfo(*found_path, found_path->size(), nullptr);
-
-    /// The most specific prefix leaves the shortest rest; of several, the one that actually resolves
-    /// wins: for `a.b.some.path` of Tuple(`a` JSON, `a.b` JSON) the declared `a.b` answers, not `a`.
-    std::stable_sort(
-        dynamic_parents.begin(),
-        dynamic_parents.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.second.size() < rhs.second.size(); });
-
-    for (const auto & [parent_path, name_in_parent] : dynamic_parents)
+    /// The subcolumns the type itself knows, which the listing offers after the walk.
+    if ((!found || !is_declared(*found)) && data.type->hasDynamicSubcolumnsData())
     {
-        if (auto res = resolveDynamicSubcolumn(parent_path, name_in_parent, initial_array_level))
-            return res;
+        if (auto known = data.type->getKnownDynamicSubcolumnInfo(subcolumn_name, data, initial_array_level))
+            take(std::move(known));
     }
 
-    if (data.type->canResolveDynamicSubcolumn(subcolumn_name))
+    if (found)
+        return found;
+
+    if (allow_dynamic_subcolumns)
     {
-        if (auto res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, initial_array_level, throw_if_null))
-            return res;
+        /// The most specific prefix leaves the shortest rest; of several, the one that actually resolves
+        /// wins: for `a.b.some.path` of Tuple(`a` JSON, `a.b` JSON) the declared `a.b` answers, not `a`.
+        std::stable_sort(
+            dynamic_parents.begin(),
+            dynamic_parents.end(),
+            [](const auto & lhs, const auto & rhs) { return lhs.second.size() < rhs.second.size(); });
+
+        for (const auto & [parent_path, name_in_parent] : dynamic_parents)
+        {
+            if (auto res = resolveDynamicSubcolumn(parent_path, name_in_parent, initial_array_level))
+                return res;
+        }
+
+        if (data.type->canResolveDynamicSubcolumn(subcolumn_name))
+        {
+            if (auto res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, initial_array_level, throw_if_null))
+                return res;
+        }
     }
 
     if (throw_if_null)

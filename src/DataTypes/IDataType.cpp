@@ -13,7 +13,6 @@
 #include <DataTypes/subcolumnResolution.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -158,21 +157,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     std::string_view subcolumn_name,
     const SubstreamData & data,
     size_t initial_array_level,
-    bool throw_if_null)
+    bool throw_if_null,
+    bool allow_dynamic_subcolumns)
 {
-    return SubcolumnResolution::findSubcolumn(subcolumn_name, data, initial_array_level, throw_if_null);
-}
-
-String IDataType::getSubcolumnNameForZeroArrayLevel(std::string_view subcolumn_name, const SubstreamPath & resolved_path)
-{
-    if (!SerializationArray::isArraySizesSubcolumn(resolved_path))
-        return String(subcolumn_name);
-
-    /// `ArraySizes` is terminal, so the number is always in the last component, and the depth of the
-    /// sizes inside the resolved path is the number they get at level 0.
-    auto dot_pos = subcolumn_name.rfind('.');
-    auto prefix = dot_pos == std::string_view::npos ? std::string_view{} : subcolumn_name.substr(0, dot_pos + 1);
-    return String(prefix) + "size" + toString(ISerialization::getArrayLevel(resolved_path));
+    return SubcolumnResolution::findSubcolumn(subcolumn_name, data, initial_array_level, throw_if_null, allow_dynamic_subcolumns);
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getDynamicSubcolumnInfo(
@@ -253,22 +241,23 @@ ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const Colu
     return subcolumn_data ? subcolumn_data->data.column : nullptr;
 }
 
-ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
+ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, size_t initial_array_level) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-        return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
+        return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr(), initial_array_level), column_const->size());
 
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
-    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, initial_array_level, true)->data.column;
     if (!subcolumn)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subcolumn {} of type {} cannot be extracted from a column in memory", subcolumn_name, getName());
     return subcolumn;
 }
 
-SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+SerializationPtr IDataType::getSubcolumnSerialization(
+    std::string_view subcolumn_name, const SerializationPtr & serialization, size_t initial_array_level) const
 {
     auto data = SubstreamData(serialization).withType(getPtr());
-    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.serialization;
+    return getSubcolumnInfo(subcolumn_name, data, initial_array_level, true)->data.serialization;
 }
 
 Names IDataType::getSubcolumnNames() const

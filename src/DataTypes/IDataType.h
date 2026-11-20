@@ -107,9 +107,12 @@ public:
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
-    SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
+    /// `initial_array_level` is the number of `Array` wrappers above this type in the column the name was resolved
+    /// against, which is what `sizeN` counts from.
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, size_t initial_array_level = 0) const;
+    SerializationPtr getSubcolumnSerialization(
+        std::string_view subcolumn_name, const SerializationPtr & serialization, size_t initial_array_level = 0) const;
 
     using SubstreamData = SerializationSubstreamData;
     using SubstreamPath = SerializationSubstreamPath;
@@ -401,6 +404,13 @@ public:
         size_t initial_array_level,
         bool throw_if_null) const;
 
+    /// Resolves only the names forEachKnownDynamicSubcolumnName offers, nullptr for any other name.
+    virtual std::unique_ptr<SubcolumnInfo> getKnownDynamicSubcolumnInfo(
+        std::string_view /*subcolumn_name*/, const SubstreamData & /*data*/, size_t /*initial_array_level*/) const
+    {
+        return nullptr;
+    }
+
     /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
     virtual bool hasDynamicStructure() const { return false; }
 
@@ -424,20 +434,13 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
+    /// With `allow_dynamic_subcolumns` false, only the subcolumns the type knows are resolved, none from the data.
     static std::unique_ptr<SubcolumnInfo> getSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
         size_t initial_array_level,
-        bool throw_if_null);
-
-    /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
-    /// different number once the name is resolved against the type of a dynamically typed value
-    /// alone, which is what a serialization keeping the name does later: the inner sizes of an
-    /// element of type `Array(Array(Int64))` are "size2" below one wrapper and "size1" there. No
-    /// other name depends on the level, hence `resolved_path` rather than the name alone.
-    static String getSubcolumnNameForZeroArrayLevel(
-        std::string_view subcolumn_name,
-        const SubstreamPath & resolved_path);
+        bool throw_if_null,
+        bool allow_dynamic_subcolumns = true);
 };
 
 

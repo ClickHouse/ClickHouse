@@ -56,3 +56,32 @@ UInt64	1
 UInt64	3
 --- a shorter prefix resolves when the more specific one cannot ---
 7
+--- a typed path is declared: the first declaration of a name wins in the listing and in a read ---
+typed path first	UInt64	7	UInt64	7
+element first	String	x	String	x
+two typed paths	UInt8	1	UInt8	1
+typed path and sizes	UInt8	5	UInt8	5
+two sizes	UInt64	3	UInt64	3
+path in a typed path	UInt64	2	UInt64	2
+typed path below a prefix	UInt8	0	UInt8	0
+--- inside a Variant or a Dynamic, a name the variant type claims is hidden, as for the type itself ---
+Array(JSON)	Array(Dynamic)	[9]
+Variant(Array(JSON))	Array(Dynamic)	[9]
+Dynamic of Array(JSON)	Array(Dynamic)	[9]
+Nullable(JSON)	Dynamic	5
+Variant(JSON)	Dynamic	5
+Dynamic of JSON	Dynamic	5
+Dynamic of Array(JSON), null	Array(Dynamic)	[5]
+Variant(String)	UInt8	0
+Variant(Array(UInt8))	UInt64	2
+Dynamic of String	UInt8	0
+v	Variant(Array(JSON), JSON)						0
+v.Array(JSON)	Array(JSON)						1
+v.JSON	Nullable(JSON)						1
+direct read	Array(Dynamic)	[9]
+--- a value read whole from shared data resolves the name at the array level it was requested at ---
+shared typed path, sizes	Array(UInt64)	[2]
+shared typed path, element	Array(Array(UInt8))	[[7,8]]
+fixture check: in the shared variant	[true]
+shared variant, sizes	Array(UInt64)	[2]
+shared variant, element	Array(Array(UInt8))	[[7,8]]

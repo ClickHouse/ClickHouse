@@ -628,7 +628,11 @@ ColumnPtr extractCombinedColumn(
 
 /// The reader of a SHARED path, or of a subcolumn of it, over the typed shared data of the part.
 SerializationPtr createSharedTypedPathSerialization(
-    const SerializationObject & object_serialization, const String & path, const SerializationPtr & nested, const String & path_subcolumn)
+    const SerializationObject & object_serialization,
+    const String & path,
+    const SerializationPtr & nested,
+    const String & path_subcolumn,
+    size_t path_subcolumn_array_level)
 {
     const auto & all_shared_typed_paths = object_serialization.getSharedTypedPaths();
     auto shared_it = std::lower_bound(
@@ -639,7 +643,7 @@ SerializationPtr createSharedTypedPathSerialization(
     if (shared_it == all_shared_typed_paths.end() || shared_it->name != path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SHARED path {} is missing in the serialization of the type", path);
     return SerializationObjectTypedSharedDataPath::create(
-        nested, *shared_it, shared_it - all_shared_typed_paths.begin(), all_shared_typed_paths.size(), path_subcolumn);
+        nested, *shared_it, shared_it - all_shared_typed_paths.begin(), all_shared_typed_paths.size(), path_subcolumn, path_subcolumn_array_level);
 }
 
 /// Builds the sub-object type and serialization for a given path prefix.
@@ -702,6 +706,21 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
 
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
+    return resolveSubcolumn(subcolumn_name, data, initial_array_level, throw_if_null, /*allow_dynamic_subcolumns=*/ true);
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getKnownDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level) const
+{
+    return resolveSubcolumn(subcolumn_name, data, initial_array_level, /*throw_if_null=*/ false, /*allow_dynamic_subcolumns=*/ false);
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::resolveSubcolumn(
+    std::string_view subcolumn_name,
+    const SubstreamData & data,
+    size_t initial_array_level,
+    bool throw_if_null,
+    bool allow_dynamic_subcolumns) const
+{
     const auto & object_serialization = dynamic_cast<const SerializationObject &>(*removeNamedSerialization(data.serialization));
     const auto & typed_paths_serializations = object_serialization.getTypedPathsSerializations();
     const auto & dynamic_path_serialization = object_serialization.getDynamicPathSerialization();
@@ -727,7 +746,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         /// If there is a type hint subcolumn and it matches the typed path's type
         /// (after normalizing JSON parameters), the hint is redundant — strip it.
         if (!split.type_hint.empty())
+        {
+            /// The type knows the typed path by its name alone, not by a spelling with a hint.
+            if (!allow_dynamic_subcolumns)
+                return nullptr;
             path_subcolumn = removeJSONTypeParameters(split.type_hint) == removeJSONTypeParameters(typed_it->second->getName()) ? split.remaining : split.fullSubcolumn();
+        }
     }
     else
     {
@@ -744,7 +768,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             auto candidate_data = SubstreamData(typed_paths_serializations.at(candidate->first)).withType(candidate->second);
             if (data.column)
                 candidate_data.column = extractLiteralColumn(assert_cast<const ColumnObject &>(*data.column), candidate->first, max_dynamic_types);
-            nested_info = IDataType::getSubcolumnInfo(candidate_subcolumn, candidate_data, initial_array_level, false);
+            nested_info = IDataType::getSubcolumnInfo(candidate_subcolumn, candidate_data, initial_array_level, false, allow_dynamic_subcolumns);
             if (!nested_info)
                 continue;
 
@@ -754,6 +778,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             break;
         }
     }
+
+    /// Without a typed path every reading of the name comes from the data.
+    if (typed_it == typed_paths.end() && !allow_dynamic_subcolumns)
+        return nullptr;
 
     /// A typed path wins over the other readings of its name: the special subcolumn of the distinct paths, and a
     /// sub-object or a combined subcolumn whose prefixed name coincides with a path.
@@ -843,7 +871,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
                     res->data.column = object_column.getTypedPaths().at(combined_path);
                 }
                 if (shared_typed_paths.contains(combined_path))
-                    res->data.serialization = createSharedTypedPathSerialization(object_serialization, combined_path, res->data.serialization, "");
+                    res->data.serialization = createSharedTypedPathSerialization(
+                        object_serialization, combined_path, res->data.serialization, /*path_subcolumn=*/ "", initial_array_level);
                 else
                     res->data.serialization = SerializationObjectTypedPath::create(res->data.serialization, combined_path);
                 res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
@@ -858,7 +887,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
                 paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
-            auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
+            auto literal_serialization = SerializationObjectDynamicPath::create(
+                dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", initial_array_level, dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
 
             auto res = std::make_unique<SubcolumnInfo>();
             res->data = SubstreamData(SerializationObjectCombinedPath::create(
@@ -911,23 +941,21 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
     if (!path_subcolumn.empty())
     {
         if (!nested_info)
-            nested_info = DB::IDataType::getSubcolumnInfo(path_subcolumn, res->data, initial_array_level, throw_if_null);
+            nested_info = DB::IDataType::getSubcolumnInfo(path_subcolumn, res->data, initial_array_level, throw_if_null, allow_dynamic_subcolumns);
         if (!nested_info)
             return nullptr;
-
-        /// The dynamic and the shared path readers resolve this name again against the path's type alone, at array
-        /// level zero, to extract the subcolumn from a path read from the shared data; an own typed path has streams
-        /// of its own and does not use it.
-        path_subcolumn = getSubcolumnNameForZeroArrayLevel(path_subcolumn, nested_info->substreams_path);
 
         res->data = std::move(nested_info->data);
         res->substreams_path.insert(
             res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());
     }
 
+    /// The dynamic and the shared path readers resolve the subcolumn name again against the path's type alone, at the
+    /// same array level, to extract it from a path read from the shared data; an own typed path has streams of its own.
     if (shared_typed_paths.contains(path))
     {
-        res->data.serialization = createSharedTypedPathSerialization(object_serialization, path, res->data.serialization, path_subcolumn);
+        res->data.serialization = createSharedTypedPathSerialization(
+            object_serialization, path, res->data.serialization, path_subcolumn, initial_array_level);
     }
     else if (typed_paths.contains(path))
     {
@@ -935,7 +963,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
     }
     else
     {
-        res->data.serialization = SerializationObjectDynamicPath::create(res->data.serialization, path, path_subcolumn, getDynamicType(), dynamic_path_serialization, res->data.type);
+        res->data.serialization = SerializationObjectDynamicPath::create(
+            res->data.serialization, path, path_subcolumn, initial_array_level, getDynamicType(), dynamic_path_serialization, res->data.type);
     }
 
     return res;

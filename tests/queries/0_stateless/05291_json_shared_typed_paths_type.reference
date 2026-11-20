@@ -99,7 +99,6 @@ v.JSON(SHARED a UInt64)	Nullable(JSON(SHARED a UInt64))						1
 v.JSON(SHARED a UInt64).a	Nullable(UInt64)						1
 v.String	Nullable(String)						1
 v.String.size	Nullable(UInt64)						1
-v.JSON(SHARED a UInt64).null	UInt8						1
 v.String.null	UInt8						1
 aa.c	Array(Array(Array(UInt8)))						1
 aa.c.size2	Array(Array(UInt64))						1

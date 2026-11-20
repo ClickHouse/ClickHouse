@@ -780,7 +780,7 @@ bool ISerialization::isDeclaredSubstream(const SubstreamPath & path, size_t pref
 
     auto type = path[prefix_len - 1].type;
     /// A shared typed path is declared like any other, only its data lives elsewhere.
-    return type == Substream::TupleElement || type == Substream::ObjectTypedPath
+    return type == Substream::TupleElement || type == Substream::VariantElement || type == Substream::ObjectTypedPath
         || type == Substream::ObjectTypedSharedDataPath;
 }
 

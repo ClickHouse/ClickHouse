@@ -109,20 +109,25 @@ DataTypePtr DataTypeNullable::doCloneWithChildren(const DataTypes & new_children
 }
 
 
-std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+/// The data of the nested values, which a subcolumn of the nullable is resolved against.
+static IDataType::SubstreamData getNullableElementsData(const IDataType::SubstreamData & data)
 {
-    auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
     const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
-    ISerialization::SubstreamData nested_data(nullable_serialization.getNested());
-    nested_data.type = nested_type;
+    IDataType::SubstreamData nested_data(nullable_serialization.getNested());
+    nested_data.type = assert_cast<const DataTypeNullable &>(*data.type).getNestedType();
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
+    return nested_data;
+}
 
-    auto nested_subcolumn_info = DB::IDataType::getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level, throw_if_null);
+/// Completes a subcolumn of the nested values to a subcolumn of the nullable.
+static std::unique_ptr<IDataType::SubcolumnInfo> wrapNullableElementsSubcolumn(
+    const IDataType::SubstreamData & data, std::unique_ptr<IDataType::SubcolumnInfo> nested_subcolumn_info)
+{
     if (!nested_subcolumn_info)
         return nullptr;
 
     auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
-    auto res = std::make_unique<SubcolumnInfo>();
+    auto res = std::make_unique<IDataType::SubcolumnInfo>();
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
@@ -134,6 +139,18 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
         res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
 
     return res;
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+{
+    auto nested_data = getNullableElementsData(data);
+    return wrapNullableElementsSubcolumn(data, DB::IDataType::getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level, throw_if_null));
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getKnownDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level) const
+{
+    auto nested_data = getNullableElementsData(data);
+    return wrapNullableElementsSubcolumn(data, nested_data.type->getKnownDynamicSubcolumnInfo(subcolumn_name, nested_data, initial_array_level));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
