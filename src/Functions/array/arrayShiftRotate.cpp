@@ -1,4 +1,5 @@
 #include <limits>
+#include <utility>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -32,6 +33,22 @@ enum class ShiftRotateDirection : uint8_t
     Left,
     Right
 };
+
+template <ShiftRotateDirection direction>
+static std::pair<UInt64, ShiftRotateDirection> readShiftCount(const IColumn & counts, size_t row, bool is_uint64)
+{
+    if (is_uint64)
+        return {counts.getUInt(row), direction};
+
+    const Int64 count = counts.getInt(row);
+    if (count >= 0)
+        return {static_cast<UInt64>(count), direction};
+    if (count == std::numeric_limits<Int64>::min())
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Shift number {} is out of range", count);
+
+    constexpr auto opposite = direction == ShiftRotateDirection::Left ? ShiftRotateDirection::Right : ShiftRotateDirection::Left;
+    return {static_cast<UInt64>(-count), opposite};
+}
 
 template <typename Impl, typename Name>
 class FunctionArrayShiftRotate final : public IFunction
@@ -144,6 +161,7 @@ public:
             column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
         }
 
+        const bool shift_is_uint64 = isUInt64(removeNullable(arguments[1].type));
         ColumnPtr shift_num_column = arguments[1].column;
         if (arguments[1].type->isNullable())
         {
@@ -179,11 +197,11 @@ public:
 
             default_column = default_column->convertToFullColumnIfConst();
 
-            return Impl::execute(*column_array, shift_num_column, default_column, input_rows_count);
+            return Impl::execute(*column_array, shift_num_column, shift_is_uint64, default_column, input_rows_count);
         }
         else
         {
-            return Impl::execute(*column_array, shift_num_column, input_rows_count);
+            return Impl::execute(*column_array, shift_num_column, shift_is_uint64, input_rows_count);
         }
     }
 };
@@ -192,7 +210,7 @@ template <ShiftRotateDirection direction>
 struct ArrayRotateImpl
 {
     static constexpr ShiftRotateStrategy strategy = ShiftRotateStrategy::Rotate;
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr shift_num_column, size_t input_rows_count)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr shift_num_column, bool shift_is_uint64, size_t input_rows_count)
     {
         size_t batch_size = array.getData().size();
 
@@ -204,21 +222,10 @@ struct ArrayRotateImpl
         {
             const size_t offset = offsets[i];
             const size_t nested_size = offset - current_offset;
-            Int64 shift_num_value = shift_num_column->getInt(i);
-
-            // Rotating left to -N is the same as rotating right to N.
-            ShiftRotateDirection actual_direction = direction;
-            if (shift_num_value < 0)
-            {
-                if (shift_num_value == std::numeric_limits<Int64>::min())
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Shift number {} is out of range", shift_num_value);
-                actual_direction = (direction == ShiftRotateDirection::Left) ? ShiftRotateDirection::Right : ShiftRotateDirection::Left;
-                shift_num_value = -shift_num_value;
-            }
-
-            size_t shift_num = static_cast<size_t>(shift_num_value);
-            if (nested_size > 0 && shift_num >= nested_size)
-                shift_num %= nested_size;
+            const auto [count, actual_direction] = readShiftCount<direction>(*shift_num_column, i, shift_is_uint64);
+            if (nested_size == 0)
+                continue;
+            size_t shift_num = count < nested_size ? count : count % nested_size;
 
             // Rotating left to N is the same as shifting right to (size - N).
             if (actual_direction == ShiftRotateDirection::Right)
@@ -240,7 +247,7 @@ struct ArrayShiftImpl
     static constexpr ShiftRotateStrategy strategy = ShiftRotateStrategy::Shift;
 
     static ColumnPtr
-    execute(const ColumnArray & array, ColumnPtr shift_column, ColumnPtr default_column, size_t input_column_rows)
+    execute(const ColumnArray & array, ColumnPtr shift_column, bool shift_is_uint64, ColumnPtr default_column, size_t input_column_rows)
     {
         const IColumn::Offsets & offsets = array.getOffsets();
         const IColumn & array_data = array.getData();
@@ -254,19 +261,8 @@ struct ArrayShiftImpl
         {
             const size_t offset = offsets[i];
             const size_t nested_size = offset - current_offset;
-            Int64 shift_num_value = shift_column->getInt(i);
-
-            // Shifting left to -N is the same as shifting right to N.
-            ShiftRotateDirection actual_direction = direction;
-            if (shift_num_value < 0)
-            {
-                if (shift_num_value == std::numeric_limits<Int64>::min())
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Shift number {} is out of range", shift_num_value);
-                actual_direction = (direction == ShiftRotateDirection::Left) ? ShiftRotateDirection::Right : ShiftRotateDirection::Left;
-                shift_num_value = -shift_num_value;
-            }
-
-            const size_t number_of_default_values = std::min(static_cast<size_t>(shift_num_value), nested_size);
+            const auto [count, actual_direction] = readShiftCount<direction>(*shift_column, i, shift_is_uint64);
+            const size_t number_of_default_values = std::min<UInt64>(count, nested_size);
             const size_t num_of_original_values = nested_size - number_of_default_values;
 
             if (actual_direction == ShiftRotateDirection::Right)
