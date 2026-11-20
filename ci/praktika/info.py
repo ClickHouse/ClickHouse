@@ -296,8 +296,10 @@ class Info:
             return kv_data.get(key, None)
         return kv_data
 
-    def get_changed_files(self):
-        return self.get_kv_data().get("changed_files", None)
+    def get_changed_files(self, default=None):
+        # `None` is stored when the files are unknown, e.g. the first push of a branch
+        files = self.get_kv_data().get("changed_files", None)
+        return default if files is None else files
 
     def get_changed_file_statuses(self):
         return self.get_kv_data().get("changed_file_statuses", None)

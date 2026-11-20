@@ -1847,7 +1847,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # The changed test modules run in every configuration, not only in the flaky
         # check, and so do the modules of packages whose supporting files changed: the
         # coverage selector sees only source files.
-        changed_files = info.get_changed_files() or []
+        changed_files = info.get_changed_files(default=[])
         owning_modules = Targeting.owning_test_modules(changed_files)
         # The modules that run whatever the coverage ranking: the merge-queue check
         # reserves part of its time budget for those of them in the sequential phase.
@@ -1932,12 +1932,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_llvm_coverage
         and not args.test
     ):
-        changed_files = info.get_changed_files()
+        changed_files = info.get_changed_files(default=[])
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
         is_coverage_replacement_with_ci_script_changes = False
         if info.pr_number > 0 and any(
-            Targeting.is_ci_job_script(f) for f in changed_files or []
+            Targeting.is_ci_job_script(f) for f in changed_files
         ):
             # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
             from ci.defs.job_configs import JobConfigs
