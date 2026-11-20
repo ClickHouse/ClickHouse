@@ -973,7 +973,7 @@ static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
     while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
         root = root->children.front();
 
-    std::vector<QueryPlan::Node *> stack = {root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {root};
     while (!stack.empty())
     {
         auto * node = stack.back();
