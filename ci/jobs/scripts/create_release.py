@@ -246,20 +246,15 @@ class ReleaseInfo:
         self.is_bump_landed = False
 
         if release_type == "new":
-            # The cut is the freshest master tip, so master has the least time to move before the bump push.
+            # The master bump must follow the cut directly, which only the master tip allows.
+            assert commit_ref == "master", f"a new release branch starts at the master tip, got ref [{commit_ref}]"
+            # The freshest tip leaves master the least time to move before the bump push.
             Shell.check(
                 f"{GIT_PREFIX} fetch --quiet origin +refs/heads/master:refs/remotes/origin/master",
                 strict=True,
                 verbose=True,
             )
-            if commit_ref == "master":
-                commit_ref = Git.get_commit_sha("origin/master")
-            else:
-                Shell.check(
-                    f"git merge-base --is-ancestor {commit_ref} origin/master",
-                    strict=True,
-                    verbose=True,
-                )
+            commit_ref = Git.get_commit_sha("origin/master")
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()

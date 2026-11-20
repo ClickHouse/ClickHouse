@@ -37,7 +37,7 @@ workflow = Workflow.Config(
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",
-            description="Git reference (branch or commit SHA) to cut the new release branch from",
+            description="Must be master, since a new release branch starts at the master tip",
             is_required=True,
             default_value="",
         ),

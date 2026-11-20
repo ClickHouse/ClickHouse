@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Git reference (branch or commit SHA) to cut the new release branch from
+        description: Must be master, since a new release branch starts at the master tip
         required: true
         default: ''
       dry-run:
@@ -19,7 +19,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: Git reference (branch or commit SHA) to cut the new release branch from
+        description: Must be master, since a new release branch starts at the master tip
         required: true
         type: string
         default: ''
