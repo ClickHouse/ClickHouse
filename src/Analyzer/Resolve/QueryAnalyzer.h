@@ -157,6 +157,12 @@ private:
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, IdentifierResolveScope & scope, bool execute_for_exists = false);
 
+    bool tryEvaluateMergedScalarSubqueries(
+        const QueryTreeNodePtr & first_node,
+        const QueryTreeNodePtrWithHash & first_node_with_hash,
+        IdentifierResolveScope & scope,
+        bool can_use_global_scalars);
+
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
@@ -378,6 +384,11 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
+
+    /// Resolved `SELECT`-list scalar subqueries that may be merged into one scan, keyed by
+    /// `(enclosing query, table key)` and then by merge group key. Built once per key so that
+    /// every sibling subquery is resolved at most once; a group is erased when it is merged.
+    std::map<std::pair<const IQueryTreeNode *, std::string>, std::unordered_map<std::string, QueryTreeNodes>> mergeable_scalar_subqueries;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
