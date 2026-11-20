@@ -5,7 +5,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/CancellationBudget.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -125,18 +124,13 @@ Chunk ValuesBlockInputFormat::read()
     block_missing_values.clear();
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
-    /// One cancellation poll per `CANCELLATION_CHECK_PERIOD_ROWS` rows, so a `KILL` lands inside a large
-    /// block instead of after it. Charging only from the second row reproduces the previous
-    /// `rows % N == 0 && rows != 0` cadence exactly. The named local must outlive the budget, which stores
-    /// a pointer to it.
-    std::function<void()> check_cancellation = [] { CurrentThread::checkIfNotCancelled(); };
-    CancellationBudget cancellation_budget(check_cancellation, CANCELLATION_CHECK_PERIOD_ROWS);
-
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
-        if (rows_in_block != 0)
-            cancellation_budget.charge();
+        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
+        /// and the equivalent one in `IRowInputFormat::read`.
+        if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            CurrentThread::checkIfNotCancelled();
 
         try
         {
