@@ -20,6 +20,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/StorageSystemProjections.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
@@ -149,8 +150,8 @@ protected:
                     }
 
                     /// `StorageAlias::isMergeTree` forwards to its target, so check the actual type.
-                    /// The end of a cyclic chain is an `Alias` and is skipped here.
-                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(data_table.get()))
+                    /// The end of a cyclic chain is an `Alias` and is skipped here, as is a table not loaded yet.
+                    if (const auto merge_tree = castStorage<const MergeTreeData>(data_table, DeferredTable::Skip))
                         parts = merge_tree->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
                 }
 
