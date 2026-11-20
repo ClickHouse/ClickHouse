@@ -115,15 +115,17 @@ bool filterReachesJoinInputAbove(
     const std::array<bool, 2> gets_equal_keys{kind != JoinKind::Right || is_semi, can_push_to_right && (kind != JoinKind::Left || is_semi)};
 
     /// Per input, its keys mapped to the equal keys of the other input. Only same-typed column keys are followed here.
-    /// A key equal to several columns is not followed: which of them the push-down substitutes is not known here.
+    /// A key equal to several same-typed columns or expressions is not followed: which of them the push-down substitutes is not
+    /// known here.
     std::array<NameToNameMap, 2> equal_keys;
     if (join.typeChangingSides().empty())
     {
+        std::array<NameToNameMap, 2> partners;
         std::array<NameSet, 2> ambiguous_keys;
-        auto add_equal_key = [&](size_t side, const String & key, const String & equal_key)
+        auto add_partner = [&](size_t side, const String & key, const String & partner)
         {
-            auto [it, inserted] = equal_keys[side].emplace(key, equal_key);
-            if (!inserted && it->second != equal_key)
+            auto [it, inserted] = partners[side].emplace(key, partner);
+            if (!inserted && it->second != partner)
                 ambiguous_keys[side].insert(key);
         };
 
@@ -136,11 +138,14 @@ bool filterReachesJoinInputAbove(
                 std::swap(lhs, rhs);
             else if (!lhs.fromLeft() || !rhs.fromRight())
                 continue;
-            if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT
-                || !lhs.getType()->equals(*rhs.getType()))
+            if (!lhs.getType()->equals(*rhs.getType()))
                 continue;
-            add_equal_key(0, lhs.getColumnName(), rhs.getColumnName());
-            add_equal_key(1, rhs.getColumnName(), lhs.getColumnName());
+            add_partner(0, lhs.getColumnName(), rhs.getColumnName());
+            add_partner(1, rhs.getColumnName(), lhs.getColumnName());
+            if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT)
+                continue;
+            equal_keys[0].emplace(lhs.getColumnName(), rhs.getColumnName());
+            equal_keys[1].emplace(rhs.getColumnName(), lhs.getColumnName());
         }
 
         for (const size_t side : {0, 1})

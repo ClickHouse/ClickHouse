@@ -17,6 +17,8 @@ stateful key	1
 key equal to a key of a larger input below	2
 key of a smaller input below	1
 key equal to two keys of an input below	1
+key equal to a key and an expression of an input below	1
+key equal to a key and an expression of another type	2
 LEFT SEMI JOIN below	2
 right key of a LEFT SEMI JOIN below	2
 RIGHT SEMI JOIN below	1

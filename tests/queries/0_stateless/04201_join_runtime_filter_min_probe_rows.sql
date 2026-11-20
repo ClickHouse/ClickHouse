@@ -115,10 +115,24 @@ FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JO
 SELECT 'key of a smaller input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.z = s.z);
 
--- A key equal to two keys of the other input is not followed, as it is not known which of them the filter is pushed down with.
+-- A key equal to two keys or expressions of the other input is not followed, as it is not known which of them the filter is
+-- pushed down with.
 SELECT 'key equal to two keys of an input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_s a
       JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND a.y = r.bz
+      JOIN key_path_s c ON a.y = c.y
+      SETTINGS query_plan_optimize_join_order_limit = 2);
+
+SELECT 'key equal to a key and an expression of an input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_s a
+      JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND a.y = toInt32(r.bz + 1)
+      JOIN key_path_s c ON a.y = c.y
+      SETTINGS query_plan_optimize_join_order_limit = 2);
+
+-- The push-down replaces a key by an expression of another type only if no key of the same type is equal to it.
+SELECT 'key equal to a key and an expression of another type' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_s a
+      JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND a.y = r.bz + 1
       JOIN key_path_s c ON a.y = c.y
       SETTINGS query_plan_optimize_join_order_limit = 2);
 
