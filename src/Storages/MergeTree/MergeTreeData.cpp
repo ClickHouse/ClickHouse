@@ -400,6 +400,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsBool use_block_offset_only_with_block_number;
     extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
@@ -2149,9 +2150,12 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata 
     return getMinMaxColumns(metadata, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
-bool MergeTreeData::shouldPersistBlockOffsetColumn(const MergeTreeSettings & data_settings)
+bool MergeTreeData::shouldPersistBlockNumberColumn(const MergeTreeSettings & data_settings)
 {
-    return data_settings[MergeTreeSetting::enable_block_offset_column] && data_settings[MergeTreeSetting::enable_block_number_column];
+    if (data_settings[MergeTreeSetting::enable_block_number_column])
+        return true;
+
+    return data_settings[MergeTreeSetting::enable_block_offset_column] && data_settings[MergeTreeSetting::use_block_offset_only_with_block_number];
 }
 
 ExpressionActionsPtr

@@ -1,0 +1,83 @@
+old part, v1
+_block_offset
+1	0	a
+1	0	b
+1	1	c
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+X
+b
+c
+_block_number
+_block_offset
+1
+old part, v2
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+X
+b
+c
+1
+mutation
+_block_number
+_block_offset
+1	0	a
+1	1	b
+1	2	c
+X
+b
+c
+one block
+_block_offset
+1	1	b
+1	2	c
+both columns stored with duplicate pairs, v1
+_block_number
+_block_offset
+1	0	a
+1	0	b
+1	1	c
+Y
+a
+b
+X
+Y
+b
+a
+b
+c
+both columns stored with duplicate pairs, v2
+Y
+a
+b
+a
+b
+c
+lightweight delete
+a
+c
+a
+c
+apply patches on merge
+X
+b
+c
+replicated
+0	0	a
+0	1	b
+0	2	c
+X
+b
+c
+X
+b
+c
+1

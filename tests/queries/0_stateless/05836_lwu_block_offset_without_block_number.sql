@@ -1,5 +1,5 @@
--- `enable_block_offset_column = 1` with `enable_block_number_column = 0` must behave like
--- `enable_block_offset_column = 0`. Before the fix, merges stored `_block_offset` without `_block_number`.
+-- With `enable_block_offset_column = 1` and `enable_block_number_column = 0`, merges must store `_block_number`
+-- together with `_block_offset`. Before the fix, merges stored `_block_offset` without `_block_number`.
 -- `_block_number` then read as the constant `min_block`, so a part merged from several insert blocks had
 -- duplicate `(_block_number, _block_offset)` pairs. After `enable_block_number_column` was enabled,
 -- a lightweight update changed every row with the same pair, not only the rows it matched.
@@ -21,7 +21,7 @@ INSERT INTO t_lwu_offset_v1 VALUES (0, 'a'), (1, 'c');
 INSERT INTO t_lwu_offset_v1 VALUES (0, 'b');
 OPTIMIZE TABLE t_lwu_offset_v1 FINAL;
 
--- The merged part stores neither column.
+-- The merged part stores both columns.
 SELECT column FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_lwu_offset_v1' AND active AND NOT startsWith(name, 'patch-') AND column IN ('_block_number', '_block_offset')
 ORDER BY column;

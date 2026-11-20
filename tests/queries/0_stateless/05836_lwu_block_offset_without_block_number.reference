@@ -1,4 +1,6 @@
 v1
+_block_number
+_block_offset
 1
 X
 b
@@ -7,6 +9,8 @@ X
 b
 c
 v2
+_block_number
+_block_offset
 1
 X
 b

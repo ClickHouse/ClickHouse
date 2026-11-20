@@ -3,12 +3,13 @@
 -- pairs after a merge: the offsets keep the original per-insert values while the
 -- block number falls back to a single value for the whole merged part. The duplicate
 -- keys must not confuse the alignment of the data stream with the watermark markers.
+-- Older versions wrote such parts, `use_block_offset_only_with_block_number = 0` keeps that behavior.
 
 SET enable_streaming_queries = 1;
 
 CREATE TABLE t_streaming_duplicate_keys (value UInt64, event_time DateTime64(3))
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1, use_block_offset_only_with_block_number = 0;
 
 INSERT INTO t_streaming_duplicate_keys SELECT number, toDateTime64('2020-01-01 00:00:00', 3) + number FROM numbers(5);
 INSERT INTO t_streaming_duplicate_keys SELECT number + 5, toDateTime64('2020-01-01 00:00:05', 3) + number FROM numbers(5);

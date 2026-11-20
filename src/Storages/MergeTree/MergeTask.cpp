@@ -137,7 +137,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
-    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
@@ -1444,7 +1444,7 @@ bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
     if (global_ctx->parent_part)
         return false;
 
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column];
+    return MergeTreeData::shouldPersistBlockNumberColumn(*global_ctx->data_settings);
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
@@ -1452,7 +1452,7 @@ bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
     if (global_ctx->parent_part)
         return false;
 
-    return MergeTreeData::shouldPersistBlockOffsetColumn(*global_ctx->data_settings);
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column];
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
