@@ -884,7 +884,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
                 if (prepared_set->hasExplicitSetElements())
                 {
                     const auto prepared_info = getPreparedSetInfo(prepared_set);
-                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                    if (traverseTreeIn(
+                            function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column,
+                            function.getFunctionBase()->useNullAsUnknownSemanticsForIn(), out))
                         return true;
                 }
             }
@@ -971,6 +973,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const ConstSetPtr & prepared_set,
     const DataTypePtr & type,
     const ColumnPtr & column,
+    bool use_null_as_unknown_semantics,
     RPNElement & out)
 {
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
@@ -980,6 +983,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = *key_position;
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// `in_null_as_unknown` probes both signed-zero representations for floating-point
+        /// membership. A bloom filter hashes only one representation and could prune a match.
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(index_type)))
+            return false;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
@@ -1025,6 +1033,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         auto key_type = key_node.getDAGNode()->result_type;
 
+        /// A missing JSON path yields a floating default of positive zero, which
+        /// matches a negative-zero set member with this setting enabled.
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(key_type)))
+            return false;
+
         /// Check safety: if key type is non-Nullable and the set contains the default value,
         /// we cannot skip granules where the path is absent.
         if (!canContainNull(*key_type))
@@ -1065,7 +1078,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
+                match_with_subtype |= traverseTreeIn(
+                    function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index],
+                    use_null_as_unknown_semantics, out);
 
             return match_with_subtype;
         }
@@ -1074,6 +1089,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
     if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
     {
+        /// The map lookup can return a default floating-point zero for a missing key.
+        /// The set treats both signs of zero as equal, while the bloom index hashes
+        /// their different bit patterns. Decline pruning for this predicate.
+        if (use_null_as_unknown_semantics && isFloat(removeLowCardinalityAndNullable(type)))
+            return false;
+
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
           *

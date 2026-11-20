@@ -121,6 +121,7 @@ private:
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
+        bool use_null_as_unknown_semantics,
         RPNElement & out);
 
     bool traverseTreeEquals(

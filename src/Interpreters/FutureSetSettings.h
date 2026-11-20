@@ -16,6 +16,7 @@ struct FutureSetSettings
     /// `max_rows_in_set`, `max_bytes_in_set` and `set_overflow_mode`.
     SizeLimits size_limits;
     bool transform_null_in = false;
+    bool in_null_as_unknown = false;
     /// The most values that the set keeps for index analysis; 0 keeps all of them.
     size_t max_size_for_index = 0;
 
