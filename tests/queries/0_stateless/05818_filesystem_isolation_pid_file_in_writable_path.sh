@@ -25,6 +25,7 @@ enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, in an overlay of path as its upper directory: refused
 enforce, through the upper directory of an overlay of path given by a link: refused
+enforce, outside of an overlay of path whose upper directory is not here: isolated
 enforce, through a link outside of path: isolated
 enforce, through a link and .. to path: refused
 enforce, through a link in a directory writable by others: refused
@@ -162,6 +163,10 @@ umount "$DIR/merged"
 ln -s "$DIR/overlay/upper" "$DIR/overlay/upper_link"
 mount -t overlay overlay -o "lowerdir=$DIR/overlay/lower,upperdir=$DIR/overlay/upper_link,workdir=$DIR/overlay/work" "$DIR/merged"
 echo "enforce, through the upper directory of an overlay of path given by a link: $(run enforce "$DIR/overlay/upper/run/server.pid" true "" "$DIR/merged")"
+# An upper directory that does not exist here, as the one of the root of a container, which is only on the host.
+mount -t tmpfs tmpfs "$DIR/overlay"
+echo "enforce, outside of an overlay of path whose upper directory is not here: $(run enforce "$DIR/pid_directory/server.pid" true "" "$DIR/merged")"
+umount "$DIR/overlay"
 umount "$DIR/merged"
 umount "$DIR/overlay"
 

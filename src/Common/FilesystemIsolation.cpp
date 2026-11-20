@@ -1380,10 +1380,17 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
     auto get_upper_location = [&](const FilesystemLocation & location) -> std::optional<FilesystemLocation>
     {
         const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
-        if (!upper)
+        /// The option keeps the path as it was given to `mount`, which can have symbolic links, or lead nowhere here, as the
+        /// upper directory of the root of a container, which is only on the host: then no path here leads to it by that name.
+        if (!upper || fs::path(*upper).is_relative())
             return {};
-        /// The option keeps the path as it was given to `mount`, which can have symbolic links.
-        return getFilesystemLocation((fs::canonical(*upper) / fs::path(location.path).relative_path()).string(), mount_info);
+        std::error_code error;
+        const fs::path upper_directory = fs::canonical(*upper, error);
+        if (error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory)
+            return {};
+        if (error)
+            throw fs::filesystem_error("Cannot resolve the upper directory of an overlay", *upper, error);
+        return getFilesystemLocation((upper_directory / fs::path(location.path).relative_path()).string(), mount_info);
     };
     std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
     auto add_writable_location = [&](const Mount & mount, FilesystemLocation location)
