@@ -192,11 +192,6 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
-    bool supportsSubcolumnOptimizationWithFinal() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->supportsSubcolumnOptimizationWithFinal();
-    }
     bool hasBucketedMapSerialization() const override
     {
         auto target = tryGetTargetTable();
