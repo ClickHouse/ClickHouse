@@ -43,6 +43,47 @@ public:
     void handlePart(const Poco::Net::MessageHeader &, ReadBuffer &) override {}
 };
 
+/// What may follow the boundary on a delimiter line (RFC 2046): the "--" of the close delimiter
+/// and then linear whitespace (transport padding). |suffix| is the part of the line after the
+/// boundary, without the trailing CRLF. Returns whether the byte at |pos| may be there, given
+/// that the preceding bytes may.
+bool isValidDelimiterSuffixByte(std::string_view suffix, size_t pos)
+{
+    const bool close_delimiter = suffix[0] == '-';
+    const char c = suffix[pos];
+    if (c == '-')
+        return pos == 0 || (pos == 1 && close_delimiter);
+    if (c == ' ' || c == '\t')
+        return !(pos == 1 && close_delimiter);
+    return false;
+}
+
+/// Whether the whole |suffix| is what may follow the boundary on a delimiter line.
+bool isValidDelimiterSuffix(std::string_view suffix)
+{
+    for (size_t pos = 0; pos < suffix.size(); ++pos)
+        if (!isValidDelimiterSuffixByte(suffix, pos))
+            return false;
+
+    /// A lone '-' is only the beginning of the "--" of the close delimiter.
+    return suffix != "-";
+}
+
+/// The boundary delimiter must not appear inside a part as the prefix of a line (RFC 2046), so a
+/// line that starts with the boundary but is not a valid delimiter line is malformed input. It is
+/// rejected: taking it for a delimiter would silently drop the rest of the line and truncate the
+/// part, while taking it for content would make the parser disagree with the ones that take the
+/// prefix for a delimiter.
+void checkDelimiterSuffix(std::string_view suffix)
+{
+    if (suffix.ends_with("\r\n"))
+        suffix.remove_suffix(2);
+
+    if (!isValidDelimiterSuffix(suffix))
+        throw Poco::Net::HTMLFormException(
+            "Malformed boundary line in a multipart/form-data message: unexpected data after the boundary");
+}
+
 }
 
 [[clang::no_destroy]] const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
@@ -352,6 +393,8 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
         auto line = readLine(true);
         if (startsWith(line, boundary))
         {
+            checkDelimiterSuffix(std::string_view(line).substr(boundary.size()));
+
             /// The state of the new part must be initialized before |next| reads ahead its first line:
             /// otherwise the flag would be consumed by the following line instead (e.g. the second header
             /// of the part, which starts with the CRLF of the first one and would be taken for content).
@@ -414,21 +457,13 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf, bool conte
             /// the limit are allowed only while the line keeps matching that prefix, so the slack
             /// past the limit is bounded by the actually matched prefix, and an attacker cannot
             /// weaken the limit for arbitrary content by choosing a long boundary.
-            /// Past the boundary itself, only what RFC 2046 allows on a delimiter line may follow:
-            /// the "--" of the close delimiter and then linear whitespace (transport padding).
-            /// Otherwise any suffix of a line starting with the boundary would be accepted up to the
-            /// structural limit and then discarded together with the boundary line, which would let
-            /// a client smuggle bytes past the content limit.
+            /// Past the boundary itself, only what RFC 2046 allows on a delimiter line may follow
+            /// (see isValidDelimiterSuffixByte), so that the bytes past the limit are rejected
+            /// right away instead of being accumulated up to the structural limit. The complete
+            /// line is validated the same way by the boundary recognizers (see checkDelimiterSuffix).
             auto is_valid_delimiter_suffix_byte = [this, &line](size_t pos)
             {
-                const size_t suffix_pos = pos - boundary_line.size();
-                const bool close_delimiter = line[boundary_line.size()] == '-';
-                const char c = line[pos];
-                if (c == '-')
-                    return suffix_pos == 0 || (suffix_pos == 1 && close_delimiter);
-                if (c == ' ' || c == '\t')
-                    return !(suffix_pos == 1 && close_delimiter);
-                return false;
+                return isValidDelimiterSuffixByte(std::string_view(line).substr(boundary_line.size()), pos - boundary_line.size());
             };
 
             bool is_boundary_line_prefix = false;
@@ -528,7 +563,9 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     std::string line = readLine(false, first_line_of_part || previous_line_empty);
     first_line_of_part = false;
     previous_line_empty = line == "\r\n";
-    boundary_hit = startsWith(line, "\r\n" + boundary);
+    boundary_hit = startsWith(line, boundary_line);
+    if (boundary_hit)
+        checkDelimiterSuffix(std::string_view(line).substr(boundary_line.size()));
     bool has_next = !boundary_hit && !line.empty();
 
     if (has_next)
