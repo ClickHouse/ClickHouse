@@ -141,15 +141,22 @@ void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_
 {
     stats.blocks_processed++;
     stats.rows_checked += rows_checked;
-    stats.rows_passed += rows_passed;
+    const Int64 total_rows_passed = stats.rows_passed.fetch_add(rows_passed) + static_cast<Int64>(rows_passed);
+    /// Read after the passed rows are added, so it covers the checked rows of every block counted in
+    /// `total_rows_passed`, also of blocks other threads update concurrently: the ratio never comes out too high.
+    const Int64 total_rows_checked = stats.rows_checked.load();
 
     ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksProcessed);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
-    /// Skip the configured number of blocks if too few rows got filtered out.
-    const double rows_passed_threshold = config.pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked);
-    if (static_cast<double>(rows_passed) > rows_passed_threshold)
+    /// Skip the configured number of blocks if too few rows got filtered out, both in this block and in all
+    /// blocks checked so far. On input sorted by the key, blocks pass or fail in runs, so a passing block
+    /// alone says nothing about the next ones; a filter that drops most rows overall stays on.
+    const double threshold = config.pass_ratio_threshold_for_disabling;
+    const auto passes_too_much = [threshold](double passed, double checked) { return passed > threshold * checked; };
+    if (passes_too_much(static_cast<double>(rows_passed), static_cast<double>(rows_checked))
+        && passes_too_much(static_cast<double>(total_rows_passed), static_cast<double>(total_rows_checked)))
         skip_budget.replenish(rows_checked, config.blocks_to_skip_before_reenabling);
 }
 
