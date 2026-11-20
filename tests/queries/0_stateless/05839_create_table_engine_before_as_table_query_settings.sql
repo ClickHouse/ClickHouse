@@ -9,11 +9,12 @@ SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x AS 
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x EMPTY AS src SETTINGS max_threads = 1');
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x CLONE AS src SETTINGS max_threads = 1');
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = TimeSeries DATA ENGINE = MergeTree ORDER BY (id, timestamp) AS src SETTINGS max_threads = 1');
+SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = TimeSeries SETTINGS tags_index_granularity = 128 DATA ENGINE = MergeTree ORDER BY (id, timestamp) AS src SETTINGS max_threads = 1');
+SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128 AS src SETTINGS max_threads = 1');
 
--- Unchanged: no query settings, the storage has its own SETTINGS, or COMMENT / FORMAT is in between.
+-- Unchanged: no query settings, or COMMENT / FORMAT is in between.
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x AS src');
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x COMMENT ''c'' AS src SETTINGS max_threads = 1');
-SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128 AS src SETTINGS max_threads = 1');
 SELECT formatQuerySingleLine('CREATE TABLE dst ENGINE = MergeTree ORDER BY x AS src FORMAT Null SETTINGS max_threads = 1');
 
 CREATE TABLE dst ENGINE = MergeTree ORDER BY x AS src SETTINGS max_partitions_to_read = 1;

@@ -1147,9 +1147,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << " CLONE";
     };
 
-    /// A query SETTINGS right after a storage without SETTINGS of its own is parsed back as the storage's,
-    /// so then `AS table` goes after the storage, the other place the parser accepts it.
-    const bool as_table_after_storage = storage && !storage->settings && !comment && frame.parent_has_trailing_settings;
+    /// A query SETTINGS right after the storage (or its last TimeSeries target engine) is parsed back as that storage's,
+    /// so then `AS table` goes after the storage and its targets, the other place the parser accepts it.
+    const bool as_table_after_storage = storage && !comment && frame.parent_has_trailing_settings;
     auto write_as_table = [&]
     {
         add_empty_if_needed();
