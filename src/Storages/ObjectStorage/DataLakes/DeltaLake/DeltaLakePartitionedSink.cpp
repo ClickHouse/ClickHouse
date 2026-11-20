@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
@@ -225,6 +226,9 @@ DeltaLakePartitionedSink::~DeltaLakePartitionedSink()
 
 void DeltaLakePartitionedSink::cancelBuffers()
 {
+    /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     /// The inner sinks are plain members, not pipeline processors, so the
     /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
     /// this flips its isCancelled(), so its destructor finalizes/cancels its
@@ -460,6 +464,8 @@ void DeltaLakePartitionedSink::onFinish()
     }
     catch (...)
     {
+        /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         for (auto & [_, partition_info] : partitions_data)
         {
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)

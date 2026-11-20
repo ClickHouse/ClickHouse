@@ -50,6 +50,7 @@
 #include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
@@ -1551,6 +1552,9 @@ void IcebergStorageSink::cancelBuffers()
 
 void IcebergStorageSink::removeDataFilesAndManifests()
 {
+    /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     for (const auto & [_, writer] : writer_per_partition_key)
     {
         try
@@ -1616,6 +1620,8 @@ bool IcebergStorageSink::initializeMetadata()
     {
         auto best_effort_remove = [&](const String & path)
         {
+            /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+            ThreadStatus::QueryCancellationBlocker cancellation_blocker;
             try
             {
                 object_storage->removeObjectIfExists(StoredObject(path));

@@ -34,6 +34,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
 
@@ -842,6 +843,8 @@ static bool writeConsolidatedManifestFile(
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
     auto cleanup = [&]()
     {
+        /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         for (const auto & mp : consolidated_manifest_paths)
         {
             try

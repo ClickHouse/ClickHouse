@@ -3,11 +3,13 @@
 import logging
 import os
 import time
+import uuid
 
 import boto3
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_s3_mock
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -999,3 +1001,269 @@ def test_failed_dry_run_retries_multipart_abort(cluster, broken_s3):
                 Key=upload["Key"],
                 UploadId=upload["UploadId"],
             )
+
+
+# One retry step of the `broken_s3_slow_backoff` disk (`configs/storage_conf.xml`). A request that
+# does not observe cancellation in the shared backoff waits until the step ends.
+SLOW_BACKOFF_STEP_SECONDS = 30
+
+# A cancelled request ends its wait within one polling slice and throws without an attempt.
+CANCELLED_WAIT_BUDGET_SECONDS = 10
+
+WRITE_ATTEMPTS_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestAttempts') FROM system.events"
+)
+
+# Counted when a sent write request fails with a network error. A request that stops in the
+# shared backoff sends nothing.
+WRITE_ERRORS_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestsErrors') FROM system.events"
+)
+
+# Counted only when the client retries in its own loop, which is where it moves the shared
+# deadline. Retries inside the SDK are not counted.
+WRITE_RETRIES_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestRetryableErrors') FROM system.events"
+)
+
+
+def wait_until_steady(node, query, window_seconds=1, attempts=30):
+    """The value of `query` once it stays the same for `window_seconds`, or None."""
+    previous = int(node.query(query))
+    for _ in range(attempts):
+        time.sleep(window_seconds)
+        current = int(node.query(query))
+        if current == previous:
+            return current
+        previous = current
+    return None
+
+
+def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
+    """A cancelled merge or query must stop waiting in the backoff that other threads keep open.
+
+    A network error that escapes the SDK moves a retry deadline that all requests of the client
+    share (`Client::updateNextTimeToRetryAfterRetryableError`). Every request waits for it before
+    each attempt, the first one included (`Client::slowDownAfterRetryableError`). That wait did not
+    observe cancellation: a merge stopped by `SYSTEM STOP MERGES` or a killed query slept until the
+    deadline passed, and during an outage the failures of other threads keep moving it.
+
+    An `INSERT` opens the deadline here, so the merge waits in it before it fails even once.
+
+    A cancelled merge leaves `system.merges` only after the rollback of its part, which runs under
+    a `QueryCancellationBlocker` and so waits for the deadline on purpose. For the merge the oracle
+    is therefore that no cancelled upload is sent. The killed `INSERT` deletes nothing, so its end
+    is timed.
+    """
+    node = cluster.instances["node"]
+    merged = "t_backoff_merge"
+    inserted = "t_backoff_insert"
+    insert_query_id = f"backoff_insert_{uuid.uuid4().hex}"
+    optimize = None
+    insert = None
+
+    for table in (merged, inserted):
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+            SETTINGS storage_policy = 'broken_s3_slow_backoff', min_bytes_for_wide_part = 0
+            """
+        )
+    node.query(f"SYSTEM STOP MERGES {merged}")
+    node.query(
+        f"INSERT INTO {merged} SELECT number, repeat('x', 200) FROM numbers(10000)"
+    )
+    node.query(
+        f"INSERT INTO {merged} SELECT number + 10000, repeat('y', 200) FROM numbers(10000)"
+    )
+
+    in_merges = (
+        f"SELECT count() FROM system.merges "
+        f"WHERE database = currentDatabase() AND table = '{merged}'"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+
+    try:
+        # A partial body and then a reset. The SDK reads the body itself, so this error escapes it
+        # and reaches the retry loop of the client. An error before the body is retried inside the
+        # SDK, which does not move the shared deadline.
+        broken_s3.setup_at_object_upload(
+            count=1000000, action="connection_reset_by_peer", action_args=["1"]
+        )
+
+        retries_before = int(node.query(WRITE_RETRIES_QUERY))
+        # Without `async_insert = 0` a flush owns the upload, and `KILL QUERY` does not cancel the
+        # flush. The files of the part upload in parallel, so they all wait for the same deadline.
+        insert = node.get_query_request(
+            f"INSERT INTO {inserted} SELECT number, repeat('z', 200) FROM numbers(10000) "
+            f"SETTINGS async_insert = 0",
+            query_id=insert_query_id,
+        )
+        assert wait_for(
+            node, WRITE_RETRIES_QUERY, lambda v: int(v) > retries_before
+        ), "the INSERT never retried its upload, so it did not open the shared backoff"
+        backoff_opened = time.monotonic()
+
+        # The uploads of the `INSERT` fail together and then wait for the deadline, so the attempt
+        # counter stops. A later attempt is then not one of them.
+        attempts_before = wait_until_steady(node, WRITE_ATTEMPTS_QUERY)
+        assert (
+            attempts_before is not None
+        ), "the INSERT kept making attempts, so it does not wait in the shared backoff"
+        node.query(f"SYSTEM START MERGES {merged}")
+        # Not `node.query`: for a plain table OPTIMIZE runs the merge in this thread.
+        optimize = node.get_query_request(
+            f"OPTIMIZE TABLE {merged} FINAL SETTINGS alter_sync = 0, optimize_throw_if_noop = 0"
+        )
+        # The `INSERT` waits, so a new attempt is the first upload of the merge. That upload now
+        # waits for the deadline of the `INSERT`.
+        assert wait_for(
+            node, WRITE_ATTEMPTS_QUERY, lambda v: int(v) > attempts_before
+        ), "the merge never reached an upload, so it does not wait in the shared backoff"
+        assert (
+            int(node.query(in_merges)) >= 1
+        ), "the merge left system.merges before it was cancelled"
+        assert (
+            int(node.query(insert_running)) == 1
+        ), "the INSERT ended before it was killed"
+
+        errors_before = int(node.query(WRITE_ERRORS_QUERY))
+        cancelled = time.monotonic()
+        logging.info(
+            "Cancelling %.1f s after the INSERT opened the shared backoff",
+            cancelled - backoff_opened,
+        )
+        node.query(f"SYSTEM STOP MERGES {merged}")
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+
+        merge_wait = None
+        insert_wait = None
+        while merge_wait is None or insert_wait is None:
+            elapsed = time.monotonic() - cancelled
+            if merge_wait is None and int(node.query(in_merges)) == 0:
+                merge_wait = elapsed
+            if insert_wait is None and int(node.query(insert_running)) == 0:
+                insert_wait = elapsed
+            if elapsed > 4 * SLOW_BACKOFF_STEP_SECONDS:
+                break
+            time.sleep(0.2)
+        logging.info(
+            "After the cancellation the merge waited %s s and the INSERT %s s",
+            merge_wait,
+            insert_wait,
+        )
+
+        assert merge_wait is not None, "the merge stopped by SYSTEM STOP MERGES never ended"
+        sent_after_cancel = int(node.query(WRITE_ERRORS_QUERY)) - errors_before
+        assert sent_after_cancel == 0, (
+            f"{sent_after_cancel} cancelled uploads were sent and failed: "
+            f"they waited out the shared S3 backoff"
+        )
+        assert insert_wait is not None and insert_wait < CANCELLED_WAIT_BUDGET_SECONDS, (
+            f"the killed INSERT ended only after {insert_wait} s: "
+            f"it waited out the shared S3 backoff"
+        )
+
+        broken_s3.reset()
+        optimize.get_answer_and_error()
+        optimize = None
+        insert.get_answer_and_error()
+        insert = None
+
+        # A cancelled merge keeps its source parts, so no data is lost.
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.parts "
+                    f"WHERE database = currentDatabase() AND table = '{merged}' AND active"
+                )
+            )
+            == 2
+        )
+        assert int(node.query(f"SELECT count() FROM {merged}")) == 20000
+    finally:
+        broken_s3.reset()
+        if optimize is not None:
+            optimize.get_answer_and_error()
+        if insert is not None:
+            insert.get_answer_and_error()
+        # The removal of the blobs waits for the deadline that the `INSERT` opened.
+        for table in (merged, inserted):
+            drop_table_stopping_any_merge(node, table)
+
+
+def test_killed_iceberg_insert_removes_its_data_files_in_shared_backoff(cluster, broken_s3):
+    """A killed `INSERT` into an `Iceberg` table must remove the data files it has uploaded.
+
+    The first data file is uploaded, and the upload of the second one fails in its response body,
+    which opens the shared backoff of the S3 client of the table. The rollback after the kill
+    (`IcebergStorageSink::removeDataFilesAndManifests`) runs under a `QueryCancellationBlocker`, so
+    its deletions wait for the deadline and are sent. Without it the wait throws and the uncommitted
+    file stays. `DeltaLake` cannot run through the mock: `delta-kernel-rs` does not follow its
+    redirects.
+    """
+    node = cluster.instances["node"]
+    table = "t_backoff_iceberg"
+    prefix = f"iceberg_backoff_{uuid.uuid4().hex}/"
+    insert_query_id = f"backoff_iceberg_insert_{uuid.uuid4().hex}"
+    retries_query = (
+        "SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') FROM system.events"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+    insert = None
+
+    def data_files():
+        return [
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=f"{prefix}data/", recursive=True
+            )
+        ]
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'http://resolver:8087/root/{prefix}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # The first upload passes. Every later one gets a partial body and then a reset, an error
+        # that escapes the SDK and so opens the shared backoff.
+        broken_s3.setup_at_object_upload(
+            after=1, count=1000000, action="connection_reset_by_peer", action_args=["1"]
+        )
+        retries_before = int(node.query(retries_query))
+        # Two data files of 10 rows each: the first is uploaded when the second starts.
+        insert = node.get_query_request(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0, max_block_size = 10, "
+            f"min_insert_block_size_rows = 10, min_insert_block_size_bytes = 0, "
+            f"iceberg_insert_max_rows_in_data_file = 10",
+            query_id=insert_query_id,
+        )
+        # The `s3` endpoint settings in `configs/storage_conf.xml` give the S3 client of the table a
+        # backoff step of 10 s, so after one retry the deadline is still open when the rollback starts.
+        assert wait_for(
+            node, retries_query, lambda v: int(v) > retries_before
+        ), "the upload of the second data file did not retry in the shared backoff"
+        uploaded = data_files()
+        assert uploaded, "the first data file was not uploaded, so there is nothing to remove"
+
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+        assert wait_for(
+            node, insert_running, lambda v: int(v) == 0
+        ), "the killed INSERT did not end"
+
+        left = data_files()
+        assert not left, f"the killed INSERT left uncommitted data files: {left}"
+    finally:
+        broken_s3.reset()
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

@@ -29,6 +29,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 
@@ -669,6 +670,8 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
 
 void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> files)
 {
+    /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     for (const auto & path : files)
     {
         try

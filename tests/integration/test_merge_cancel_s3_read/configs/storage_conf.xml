@@ -23,6 +23,19 @@
                 <s3_max_single_part_upload_size>5242880</s3_max_single_part_upload_size>
                 <s3_min_upload_part_size>5242880</s3_min_upload_part_size>
             </broken_s3_multipart>
+            <!-- A disk has its own client and so its own shared backoff, which does not slow down the other tests. -->
+            <broken_s3_slow_backoff>
+                <type>s3</type>
+                <endpoint>http://resolver:8087/root/data_slow_backoff/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+                <s3_retry_attempts>1000000</s3_retry_attempts>
+                <s3_slow_all_threads_after_network_error>1</s3_slow_all_threads_after_network_error>
+                <!-- One backoff step of 30 s, which is `SLOW_BACKOFF_STEP_SECONDS` in the test. -->
+                <s3_retry_initial_delay_ms>30000</s3_retry_initial_delay_ms>
+                <s3_retry_max_delay_ms>30000</s3_retry_max_delay_ms>
+            </broken_s3_slow_backoff>
         </disks>
         <policies>
             <broken_s3>
@@ -31,6 +44,17 @@
             <broken_s3_multipart>
                 <volumes><main><disk>broken_s3_multipart</disk></main></volumes>
             </broken_s3_multipart>
+            <broken_s3_slow_backoff>
+                <volumes><main><disk>broken_s3_slow_backoff</disk></main></volumes>
+            </broken_s3_slow_backoff>
         </policies>
     </storage_configuration>
+    <s3>
+        <!-- One backoff step of 10 s for the S3 client of the Iceberg table, which is not a disk. -->
+        <iceberg_backoff>
+            <endpoint>http://resolver:8087/root/iceberg_backoff_</endpoint>
+            <retry_initial_delay_ms>10000</retry_initial_delay_ms>
+            <retry_max_delay_ms>10000</retry_max_delay_ms>
+        </iceberg_backoff>
+    </s3>
 </clickhouse>
