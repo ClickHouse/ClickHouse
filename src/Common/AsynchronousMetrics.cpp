@@ -168,6 +168,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
     cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -180,6 +181,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+    if (!cgroupcpuset)
+        openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cgroupcpuset);
 
     try
     {
@@ -1843,29 +1846,47 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
-    /// and the limit is only visible in the cpuset. A cpuset with all online CPUs is not a limit.
+    /// and the limit is only visible in the cpuset.
+    /// As for `cpu.max`, the nearest cgroup v2 `cpuset.cpus.effective` can move at runtime. The cgroup v1 file is opened once.
     try
     {
-        std::optional<ReadBufferFromFilePRead> cpuset_file;
-        if (auto dir = getCgroupsV2PathContainingFile("cpuset.cpus.effective"))
-            openFileIfExists((*dir + "/cpuset.cpus.effective").c_str(), cpuset_file);
-        else
-            openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cpuset_file);
-
-        if (cpuset_file)
-        {
-            String cpu_list;
-            readString(cpu_list, *cpuset_file);
-            if (auto cpuset_cpus = countCPUsInList(cpu_list); cpuset_cpus && *cpuset_cpus < getNumberOfLogicalCPUCores())
-            {
-                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
-                max_cpu_cgroups = max_cpu_cgroups > 0 ? std::min(max_cpu_cgroups, cpuset_cores) : cpuset_cores;
-            }
-        }
+        if (getCgroupsV2PathContainingFile("cpuset.cpus.effective") != cgroupcpuset_dir)
+            cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpuset.reset();
+        cgroupcpuset_dir.reset();
+    }
+    if (cgroupcpuset)
+    {
+        try
+        {
+            cgroupcpuset->rewind();
+
+            String cpu_list;
+            readString(cpu_list, *cgroupcpuset);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list))
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                if (max_cpu_cgroups > 0)
+                    max_cpu_cgroups = std::min(max_cpu_cgroups, cpuset_cores);
+                /// Without a quota, a cpuset with all online CPUs is not a limit.
+                else if (*cpuset_cpus < getNumberOfLogicalCPUCores())
+                    max_cpu_cgroups = cpuset_cores;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// Reopened on the next update for cgroup v2.
+            if (cgroupcpuset_dir)
+            {
+                cgroupcpuset.reset();
+                cgroupcpuset_dir.reset();
+            }
+        }
     }
 
     if (max_cpu_cgroups > 0)

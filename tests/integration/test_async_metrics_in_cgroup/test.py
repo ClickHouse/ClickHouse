@@ -14,6 +14,14 @@ node3 = cluster.add_instance(
     cpu_limit=False,
     cpuset="0-1",
 )
+# A quota larger than the cpuset: the cpuset is the limit.
+node4 = cluster.add_instance(
+    "node4",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=4,
+    cpuset="0-1",
+)
 
 
 @pytest.fixture(scope="module")
@@ -113,3 +121,11 @@ def test_cpuset_without_quota(start_cluster):
         check_callback=lambda result: result.strip() == "1",
     )
     assert normalized.strip() == "1"
+
+
+def test_quota_larger_than_cpuset(start_cluster):
+    max_cpu = node4.query_with_retry(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU'",
+        check_callback=lambda result: result.strip() == "2",
+    )
+    assert max_cpu.strip() == "2"
