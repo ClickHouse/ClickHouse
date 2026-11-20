@@ -618,65 +618,16 @@ void GPUDeviceBatch::moveTo(cuda::stream_ref stream)
     ready_stream = stream;
 }
 
-namespace
-{
-size_t experimentAsyncDepth()
-{
-    static const size_t depth = []
-    {
-        const char * value = std::getenv("GPU_EXP_ASYNC_DEPTH"); // NOLINT(concurrency-mt-unsafe)
-        return value ? static_cast<size_t>(std::stoul(value)) : 0;
-    }();
-    return depth;
-}
-}
-
 GPUBatchUploader::GPUBatchUploader(std::shared_ptr<const GPUCompressedLayout> layout_)
-    : layout(std::move(layout_))
+    : layout(std::move(layout_)), decompression(cuda::stream_ref{stream.get()})
 {
     carried.reserve(layout->numColumns());
     for (size_t c = 0; c < layout->numColumns(); ++c)
         carried.emplace_back(cuda::stream_ref{stream.get()});
-    in_flight.resize(std::max<size_t>(1, experimentAsyncDepth()));
 }
 
-GPUBatchUploader::~GPUBatchUploader()
+std::optional<GPUDeviceBatch> GPUBatchUploader::upload(const GPUStagedBatch & staged)
 {
-    try
-    {
-        drain();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("GPUBatchUploader");
-    }
-}
-
-void GPUBatchUploader::finish(InFlight & slot)
-{
-    if (!slot.pending)
-        return;
-    for (size_t i = 0; i < slot.used; ++i)
-        slot.decompressions[i]->waitAndCheck();
-    checkCuda(cudaEventSynchronize(slot.sent.get()), "Cannot wait for the uploads of a batch");
-    slot.keep_alive.reset();
-    slot.used = 0;
-    slot.pending = false;
-}
-
-void GPUBatchUploader::drain()
-{
-    for (auto & slot : in_flight)
-        finish(slot);
-}
-
-std::optional<GPUDeviceBatch> GPUBatchUploader::upload(const GPUStagedBatch & staged, std::shared_ptr<const void> keep_alive)
-{
-    const bool async = keep_alive && experimentAsyncDepth() > 0;
-    InFlight & slot = in_flight[next_in_flight];
-    next_in_flight = (next_in_flight + 1) % in_flight.size();
-    finish(slot);
-
     const cuda::stream_ref own{stream.get()};
     const size_t num_columns = layout->numColumns();
     const size_t first_sizes = layout->firstSizesColumn();
@@ -779,18 +730,13 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::upload(const GPUStagedBatch & st
     }
 
     /// The staged memory is free once the uploads are done; nvcomp waits for them as well.
-    checkCuda(cudaEventRecord(slot.sent.get(), own.get()), "Cannot mark a point in an uploader's stream");
+    checkCuda(cudaEventRecord(staged_sent.get(), own.get()), "Cannot mark a point in an uploader's stream");
     for (auto & [codec, list] : pieces)
     {
-        if (slot.used == slot.decompressions.size())
-            slot.decompressions.push_back(std::make_unique<DecompressionBatch>(own));
-        slot.decompressions[slot.used++]->launch(codec, list, nullptr, slot.sent.get());
+        decompression.launch(codec, list, nullptr, staged_sent.get());
+        decompression.waitAndCheck();
     }
-    slot.pending = true;
-    if (async)
-        slot.keep_alive = std::move(keep_alive);
-    else
-        finish(slot);
+    checkCuda(cudaEventSynchronize(staged_sent.get()), "Cannot wait for the uploads of a batch");
 
     for (size_t c = 0; c < num_columns; ++c)
     {

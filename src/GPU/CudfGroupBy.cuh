@@ -48,12 +48,6 @@ public:
     /// Several may take parts of one `other` at once.
     __host__ void absorbPart(const CudfGroupBy & other, size_t part);
 
-    /// EXPERIMENT: whether its parts may be taken by `absorbPart` while it still takes batches, and then emptied by
-    /// `clearPart`: not of a `streaming_groupby`.
-    __host__ bool handsOffParts() const;
-    __host__ size_t partBytes(size_t part) const;
-    __host__ void clearPart(size_t part);
-
     /// Combines the partial results of every part into the groups. Returns the number of groups.
     __host__ size_t finalize();
 

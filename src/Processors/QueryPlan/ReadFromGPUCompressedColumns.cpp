@@ -32,7 +32,6 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -82,19 +81,7 @@ struct SharedState
     size_t num_parts = 1;
 
     std::atomic<size_t> next_part{0};
-
-    /// EXPERIMENT (`GPU_EXP_EAGER`): of each part, a lane of one part that the lanes hand their parts to as they read,
-    /// which `GPUMergePart` then finishes.
-    std::vector<std::shared_ptr<GPU::GPUGroupingLane>> mergers;
-    std::unique_ptr<std::mutex[]> merger_mutexes;
-    std::atomic<size_t> next_lane{0};
 };
-
-size_t experimentEnv(const char * name, size_t default_value)
-{
-    const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
-    return value ? static_cast<size_t>(std::stoul(value)) : default_value;
-}
 
 using SharedStatePtr = std::shared_ptr<SharedState>;
 
@@ -529,19 +516,11 @@ public:
 
     String getName() const override { return "GPUUpload"; }
 
-    Status prepare() override
-    {
-        const Status status = ISimpleTransform::prepare();
-        if (status == Status::Finished)
-            uploader.drain();
-        return status;
-    }
-
 protected:
     void transform(Chunk & chunk) override
     {
         auto info = infoOrThrow<StagedBatchInfo>(chunk, getName());
-        std::optional<GPU::GPUDeviceBatch> batch = uploader.upload(*info->holder->batch, info->holder);
+        std::optional<GPU::GPUDeviceBatch> batch = uploader.upload(*info->holder->batch);
         info.reset();
 
         chunk.clear();
@@ -625,7 +604,6 @@ protected:
     {
         auto info = infoOrThrow<DeviceBatchInfo>(chunk, getName());
         lane->add(std::move(*info->batch));
-        handOff(false);
 
         if (state->collect && lane->collectedRows() >= collect_flush_rows)
             if (Chunk collected = takeCollected())
@@ -641,37 +619,12 @@ protected:
         if (state->collect)
             return takeCollected();
 
-        handOff(true);
         Chunk chunk(Columns{}, 1);
         chunk.getChunkInfos().add(std::make_shared<LaneGroupsInfo>(lane));
         return chunk;
     }
 
 private:
-    /// EXPERIMENT: hands the parts of at least `GPU_EXP_EAGER_BYTES` to the mergers that are not busy; at the end, all,
-    /// waiting for them.
-    void handOff(bool all)
-    {
-        if (state->mergers.empty() || !lane->handsOffParts())
-            return;
-        static const size_t min_bytes = experimentEnv("GPU_EXP_EAGER_BYTES", 0);
-        const size_t num_parts = state->mergers.size();
-        for (size_t i = 0; i < num_parts; ++i)
-        {
-            const size_t part = (lane_index + i) % num_parts;
-            const size_t bytes = lane->partBytes(part);
-            if (bytes == 0 || (!all && bytes < min_bytes))
-                continue;
-            std::unique_lock lock(state->merger_mutexes[part], std::defer_lock);
-            if (all)
-                lock.lock();
-            else if (!lock.try_lock())
-                continue;
-            state->mergers[part]->absorbPart(*lane, part);
-            lane->clearPart(part);
-        }
-    }
-
     /// The rows collected so far, in the order of the read's header.
     Chunk takeCollected()
     {
@@ -693,7 +646,6 @@ private:
 
     const SharedStatePtr state;
     const std::shared_ptr<GPU::GPUGroupingLane> lane;
-    const size_t lane_index = state->next_lane++;
     bool generated = false;
 };
 
@@ -757,15 +709,7 @@ protected:
         const auto info = infoOrThrow<LanePartInfo>(chunk, getName());
         chunk.clear();
 
-        std::unique_lock<std::mutex> lock;
-        std::shared_ptr<GPU::GPUGroupingLane> merged;
-        if (state->mergers.empty())
-            merged = makeLane(*state, 1);
-        else
-        {
-            lock = std::unique_lock(state->merger_mutexes[info->part]);
-            merged = state->mergers[info->part];
-        }
+        const auto merged = makeLane(*state, 1);
         for (const auto & lane : *info->lanes)
             merged->absorbPart(*lane, info->part);
         const size_t num_groups = merged->finalize();
@@ -886,17 +830,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         sources.emplace_back(std::make_shared<GPUCompressedBlocksSource>(state, settings.process_list_element));
     Pipe pipe = Pipe::unitePipes(std::move(sources));
 
-    if (!collect && !keys.empty() && experimentEnv("GPU_EXP_EAGER", 0))
-    {
-        for (size_t i = 0; i < state->num_parts; ++i)
-            state->mergers.push_back(makeLane(*state, 1));
-        state->merger_mutexes = std::make_unique<std::mutex[]>(state->num_parts);
-    }
-
     pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUUploadTransform>(*state); });
-    /// EXPERIMENT: more threads for the pipeline than its sources, so that the lanes find one while uploads wait.
-    if (const size_t threads = experimentEnv("GPU_EXP_THREADS", 0); threads > num_sources)
-        pipe.resize(threads);
     pipe.resize(num_lanes);
     const SharedHeader lane_header = collect ? getOutputHeader() : emptyHeader();
     pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(state, lane_header); });

@@ -235,35 +235,17 @@ public:
     GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
 
     /// The staged memory is free once it returns. Nothing where no row is complete in every column.
-    /// EXPERIMENT: with `keep_alive` and `GPU_EXP_ASYNC_DEPTH` > 0, it does not wait: `keep_alive` holds the staged memory
-    /// until the batch is checked, when `depth` more batches were sent, or at `drain`.
-    std::optional<GPUDeviceBatch> upload(const GPUStagedBatch & staged, std::shared_ptr<const void> keep_alive = nullptr);
-
-    /// Waits for and checks every batch in flight.
-    void drain();
-
-    ~GPUBatchUploader();
+    std::optional<GPUDeviceBatch> upload(const GPUStagedBatch & staged);
 
 private:
-    struct InFlight
-    {
-        std::vector<std::unique_ptr<DecompressionBatch>> decompressions;
-        size_t used = 0;
-        std::shared_ptr<const void> keep_alive;
-        EventPtr sent = createEvent();
-        bool pending = false;
-    };
-
-    void finish(InFlight & in_flight);
-
     const std::shared_ptr<const GPUCompressedLayout> layout;
     /// First, so that the buffers of its order go before it.
     StreamPtr stream = createStream();
     /// Of each column, what the batches so far did not take: bytes, or of a column of sizes, the offsets of the rows
     /// left, from 0, one more than them.
     std::vector<DeviceBuffer> carried;
-    std::vector<InFlight> in_flight;
-    size_t next_in_flight = 0;
+    DecompressionBatch decompression;
+    EventPtr staged_sent = createEvent();
     /// Of the part being read, the rows sent.
     size_t part_rows_sent = 0;
 };
@@ -299,10 +281,6 @@ public:
 
     /// Of a lane of one part, which took no batch: takes part `part` of `other`, which takes no more.
     void absorbPart(const GPUGroupingLane & other, size_t part);
-    /// EXPERIMENT, see `CudfGroupBy::handsOffParts`.
-    bool handsOffParts() const { return group_by && group_by->handsOffParts(); }
-    size_t partBytes(size_t part) const { return group_by->partBytes(part); }
-    void clearPart(size_t part) { group_by->clearPart(part); }
     /// Returns the number of groups.
     size_t finalize();
     size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
