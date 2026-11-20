@@ -33,6 +33,11 @@ class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
 
+/// Whether reading this URL has to list an HTTP index page. A `*` in the path always does; so does a
+/// `{...}` template, which a Web archive read does not expand locally. A `|` failover group in the path is
+/// the exception: an archive read rejects it before it could list anything, so it is not gated.
+bool urlPathNeedsIndexPageListing(std::string_view uri);
+
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 

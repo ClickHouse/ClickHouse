@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
@@ -101,6 +102,7 @@ namespace FailPoints
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
@@ -3519,6 +3521,17 @@ void registerStorageURL(StorageFactory & factory)
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
 
+            /// This engine does not read archives: a `::` would either become part of the literal URL path or,
+            /// with a listable glob, silently select the object-storage reader. A definition read back from the
+            /// metadata keeps loading, like everywhere else.
+            if (!is_replayed_definition
+                && context->getSettingsRef()[Setting::allow_archive_path_syntax]
+                && getURLAndArchivePattern(config.url).second.has_value())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Archive path syntax is not supported by the `URL` table engine; use the `url` table function, "
+                    "or set `allow_archive_path_syntax = 0` to keep the path literal");
+
             if (!use_object_storage)
             {
                 return std::make_shared<StorageURL>(
@@ -3662,6 +3675,14 @@ When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
+
+## Archive path syntax {#archive-path-syntax}
+
+This engine does not read archives itself for an `http(s)` definition it accepts today: a `::` that would be parsed as archive syntax is rejected, and one that is not becomes part of the literal URL path. Reading a member out of a container archive over `http(s)` is only available through the [`url`](/reference/functions/table-functions/url#working-with-archives) and [`urlCluster`](/reference/functions/table-functions/urlCluster#working-with-archives) table functions, which return a single URL per member. A recognized non-HTTP scheme is dispatched to the matching engine before this rejection, and whether that engine reads archives depends on the engine: `file://` and `s3://` (and its `gs://`/`gcs://`/`oss://` aliases) split a `::` as usual, so `ENGINE = URL('s3://bucket/a.zip::member.csv', ...)` and its `file://` counterpart work, while `az://` and `hdfs://` keep the `::` as part of the literal path. A definition stored by an earlier version that already contains `::` keeps loading; whether its meaning changes depends on the carrier, see below.
+
+When [allow_archive_path_syntax](/reference/settings/session-settings/allow#allow_archive_path_syntax) is enabled, a `URL` argument that would be parsed as archive syntax — for example `URL('http://host/data.zip::member.csv', 'CSV')` — is rejected with `BAD_ARGUMENTS` when the table is created or attached with a full definition. Disable the setting for the query to keep such a URL literal, or use the `url` or `urlCluster` table function if the member really has to be read.
+
+A table whose stored definition already contains `::` keeps loading, and what the `::` means depends on the carrier. Without a glob character in the URL path the engine keeps the plain `StorageURL`, so the `::` stays part of the literal URL before and after the upgrade. With a glob character it reads the source through the object storage and splits the `::` with the server default, as it already did; what changed is where that separator is looked for, so a `::` inside an IPv6 literal or a userinfo is no longer taken for it. Disable the setting for the server, or recreate the table, if it has to keep reading the literal URL. The rejection only applies to definitions created or fully attached after the upgrade.
 
 ## Example {#example}
 
