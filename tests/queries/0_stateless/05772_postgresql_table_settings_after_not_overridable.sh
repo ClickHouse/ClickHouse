@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: depends on libpqxx (the PostgreSQL table engine), which is not built in fast test.
+# no-replicated-database: a named collection created by a query exists only on its server, so the other replicas of the
+# database cannot create the table.
 #
 # The `SETTINGS` clause of a `PostgreSQL` table overrides a key of its named collection. If the collection marks the key
 # `NOT OVERRIDABLE` later, the stored definition still attaches and keeps its value, while a definition that a user gives
