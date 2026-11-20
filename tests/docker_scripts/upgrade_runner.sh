@@ -233,12 +233,13 @@ timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
 echo "Kill the mutations left unfinished by the stress phase"
 
 # Killing a mutation leaves the MUTATE_PART entries that replicas queued or are still logging for it. The
-# replicas that may hold them are listed before the kill, for the drain after it.
+# replicas that may hold them are listed before the kill, for the drain after it. Such an entry can only mismatch
+# another replica's part, so a table that Keeper lists with a single replica is left out of the drain.
 mutation_replicas=$(timeout 1m clickhouse-client --query "
     SELECT DISTINCT base64Encode(database), base64Encode(table)
     FROM system.replicas
     WHERE (zookeeper_name, zookeeper_path) IN (
-        SELECT zookeeper_name, zookeeper_path FROM system.replicas WHERE (database, table) IN (
+        SELECT zookeeper_name, zookeeper_path FROM system.replicas WHERE total_replicas != 1 AND (database, table) IN (
             SELECT database, table FROM system.mutations WHERE NOT is_done
             UNION ALL
             SELECT database, table FROM system.replication_queue WHERE type = 'MUTATE_PART'))
@@ -414,7 +415,9 @@ then
     do
         # Read-only replicas count too: their queue survives into the upgraded server.
         queued_mutation_entries=$(timeout 10s clickhouse-client --query "
-            SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'") \
+            SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART' AND (database, table) IN (
+                SELECT database, table FROM system.replicas WHERE total_replicas != 1 AND (database, table) IN (
+                    SELECT database, table FROM system.replication_queue WHERE type = 'MUTATE_PART'))") \
             || { drain_failed=1; break; }
         if [ "$queued_mutation_entries" = 0 ] || [ "$SECONDS" -ge "$wait_deadline" ]
         then
@@ -435,7 +438,9 @@ then
             queue.num_tries, queue.last_exception, queue.postpone_reason
         FROM system.replication_queue AS queue
         LEFT JOIN system.replicas AS replica ON replica.database = queue.database AND replica.table = queue.table
-        WHERE queue.type = 'MUTATE_PART'
+        WHERE queue.type = 'MUTATE_PART' AND (queue.database, queue.table) IN (
+            SELECT database, table FROM system.replicas WHERE total_replicas != 1 AND (database, table) IN (
+                SELECT database, table FROM system.replication_queue WHERE type = 'MUTATE_PART'))
         ORDER BY queue.database, queue.table, queue.new_part_name
         FORMAT Vertical" > /test_output/undrained_mutation_entries.txt ||:
 fi
