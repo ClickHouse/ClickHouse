@@ -2103,6 +2103,7 @@ class SettingsRandomizer:
         "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_joins": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
         "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
         "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,

@@ -8240,6 +8240,10 @@ Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter furthe
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
+    DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+)", 0, \
+        {"26.11", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 )", 0, \
