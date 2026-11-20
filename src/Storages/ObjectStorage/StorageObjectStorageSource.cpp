@@ -338,6 +338,42 @@ namespace
         return num_urls > 1;
     }
 
+#if ENABLE_DISTRIBUTED_CACHE
+    /// Whether the cache server can read an object of `object_storage` on a cache miss as the direct read would. Its
+    /// connection carries only the endpoint, the credentials and the ETag hash, so it cannot serve reads that rely on
+    /// anything else:
+    /// - `Web`: it has only the first base URL, without the URL shard of the object and without the headers;
+    /// - `S3` with request headers (an `SSE-C` key, `Authorization`): they are not sent to the cache server;
+    /// - `S3` with anonymous credentials (`NOSIGN`): the cache server would use its own credentials instead.
+    /// `Azure` only if requested explicitly (`table_engine_read_through_distributed_cache = 1`), not by `auto`: the
+    /// cache server does not check the ETag of its download, so it could cache a newer generation under the old ETag.
+    bool distributedCacheCanServe(IObjectStorage & object_storage, bool requested_explicitly)
+    {
+        switch (object_storage.getType())
+        {
+            case ObjectStorageType::S3:
+            {
+#if USE_AWS_S3
+                auto client = object_storage.tryGetS3StorageClient();
+                if (!client)
+                    return false;
+                if (!client->getClientConfiguration().extra_headers.empty())
+                    return false;
+                return !client->getCredentials().GetAWSAccessKeyId().empty() || !client->getGCSOAuthToken().empty();
+#else
+                return false;
+#endif
+            }
+            case ObjectStorageType::Azure:
+                return requested_explicitly;
+            case ObjectStorageType::Web:
+                return false;
+            default:
+                return true;
+        }
+    }
+#endif
+
     String getPageCachePathForObjectStorage(
         const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage, const String & credentials_identity)
     {
@@ -2510,11 +2546,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 #if ENABLE_DISTRIBUTED_CACHE
     /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
     /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
-    /// Not for `Web`: its connection to the distributed cache has only the first base URL, without the URL shard of
-    /// the object (`read_source_index`) and without the headers, so the cache server could read another object.
+    const auto & read_through_distributed_cache_setting = settings[Setting::table_engine_read_through_distributed_cache];
     if (!reads_explicit_object_version
-        && object_storage->getType() != ObjectStorageType::Web
-        && settings[Setting::table_engine_read_through_distributed_cache].valueOr(effective_read_settings.read_through_distributed_cache)
+        && read_through_distributed_cache_setting.valueOr(effective_read_settings.read_through_distributed_cache)
+        && distributedCacheCanServe(*object_storage, /* requested_explicitly */ read_through_distributed_cache_setting.valueOrNullopt().has_value())
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az)
         && DistributedCache::getConnectionInfo(*object_storage))
