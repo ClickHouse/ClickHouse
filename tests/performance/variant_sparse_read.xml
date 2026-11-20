@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they cannot store `JSON` or `Variant` columns. -->
     <create_query>CREATE TABLE t_sparse_json (json JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE t_sparse_variant (v Variant(UInt64, String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
