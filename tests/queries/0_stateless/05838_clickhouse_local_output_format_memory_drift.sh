@@ -10,3 +10,10 @@ ${CLICKHOUSE_LOCAL} --max_threads 4 --output_format_parallel_formatting 1 --quer
     SELECT if(value < 8388608, 'OK', 'settled ' || toString(value) || ' bytes')
     FROM (SELECT sum(value) AS value FROM system.events WHERE event = 'QueryMemoryDriftSettledBytes');
 " | tail -n 1
+
+# The same for the output of the logs, which queries without a result also create (about 1 MiB each).
+${CLICKHOUSE_LOCAL} --send_logs_level trace --query "
+    $(for i in $(seq 1 10); do echo "CREATE TABLE t_$i (x UInt8) ENGINE = Memory;"; done)
+    SELECT if(value < 4194304, 'OK', 'settled ' || toString(value) || ' bytes')
+    FROM (SELECT sum(value) AS value FROM system.events WHERE event = 'QueryMemoryDriftSettledBytes');
+" 2>/dev/null | tail -n 1

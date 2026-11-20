@@ -216,6 +216,9 @@ private:
 
     void finishQuery();
 
+    /// Resets `state` of the query that ended; keeps the query attached if the client created an output for it.
+    void resetEndedQueryState();
+
     void updateProgress(const Progress & value);
 
     void sendProfileEvents();

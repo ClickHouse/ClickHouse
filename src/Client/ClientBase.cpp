@@ -1341,6 +1341,9 @@ void ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
+        if (connection)
+            connection->onQueryOutputCreated();
+
         WriteBuffer * wb = out_logs_buf.get();
 
         bool color_logs = false;

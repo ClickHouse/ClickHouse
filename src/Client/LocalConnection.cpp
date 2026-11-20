@@ -752,10 +752,18 @@ void LocalConnection::finishQuery()
     }
 
     state->io.onFinish();
-    if (state->client_output_created)
-        finished_query_scope = std::move(state->query_scope_holder);
-    state.reset();
+    resetEndedQueryState();
     last_sent_snapshots.clear();
+}
+
+void LocalConnection::resetEndedQueryState()
+{
+    /// The state of the query is freed while the thread is still attached to it.
+    QueryScope query_scope = std::move(state->query_scope_holder);
+    const bool client_output_created = state->client_output_created;
+    state.reset();
+    if (client_output_created)
+        finished_query_scope = std::move(query_scope);
 }
 
 bool LocalConnection::poll(size_t)
@@ -1062,9 +1070,7 @@ Packet LocalConnection::receivePacket()
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
             /// An exception is the last packet of the query, as `EndOfStream` is.
-            if (state->client_output_created)
-                finished_query_scope = std::move(state->query_scope_holder);
-            state.reset();
+            resetEndedQueryState();
             last_sent_snapshots.clear();
             break;
         }
