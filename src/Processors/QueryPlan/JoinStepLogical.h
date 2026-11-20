@@ -153,6 +153,11 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+
+    /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
+    /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
+    [[nodiscard]] bool hasRuntimeFilters() const { return has_runtime_filters; }
+    void setHasRuntimeFilters() { has_runtime_filters = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -237,6 +242,8 @@ public:
     /// The index of the input of `side`, which is also its index in the children of the plan node.
     static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
+    static bool isDummyResultColumn(const ActionsDAG::Node & node);
+
     [[nodiscard]] UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
@@ -296,6 +303,10 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
+    /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
+    /// the physical step built from a copy also knows that its plan carries runtime filter identities.
+    bool has_runtime_filters = false;
+
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
@@ -327,6 +338,10 @@ private:
 };
 
 
+/// Intentionally does not implement `clone` (unlike `JoinStep`): it owns `prepared_join_storage`,
+/// a live handle into `StorageJoin` or an `IKeyValueEntity`, whose sharing semantics between two
+/// executing plans are not defined, and its own `child_plan`. `IN`-subquery plans with this step
+/// take the destructive fallback in `FutureSetFromSubquery::buildOrderedSetInplace`.
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
