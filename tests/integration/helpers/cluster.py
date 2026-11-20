@@ -229,11 +229,7 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-# Lines of a sanitizer report in the stderr of a ClickHouse process, as a `grep` basic regular expression. AddressSanitizer and ThreadSanitizer open a report with a line of `=`, but MemorySanitizer (`==PID==WARNING: MemorySanitizer: ...`) and UndefinedBehaviorSanitizer (`file:line:column: runtime error: ...`, then `SUMMARY: UndefinedBehaviorSanitizer: ...`) do not, so the report lines themselves are matched too. The sanitizer name alone is not enough: AddressSanitizer may print `==PID==AddressSanitizer: failed to intercept ...` at startup.
-SANITIZER_SIGN = r"==================\|\(ERROR\|WARNING\|SUMMARY\): [A-Za-z]*Sanitizer:\|Sanitizer: CHECK failed\|: runtime error: "
-SANITIZER_SIGN_RE = re.compile(r"==================|(ERROR|WARNING|SUMMARY): [A-Za-z]*Sanitizer:|Sanitizer: CHECK failed|: runtime error: ")
-# For `docker.log`, which also has the output of other services: Go programs such as MinIO print `panic: runtime error: ...`, so only the lines that name a sanitizer count there.
-DOCKER_LOG_SANITIZER_SIGN_RE = re.compile(r"==================|(ERROR|WARNING|SUMMARY): [A-Za-z]*Sanitizer:|Sanitizer: CHECK failed")
+SANITIZER_SIGN = "=================="
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -4810,7 +4806,7 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if DOCKER_LOG_SANITIZER_SIGN_RE.search(line):
+                        if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4827,7 +4823,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN_RE.search(line) for line in f):
+                        if any(SANITIZER_SIGN in line for line in f):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
