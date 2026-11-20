@@ -54,7 +54,7 @@ public:
     [[nodiscard]] const std::string & getExpressionName() const { return expression_name; }
 
     /// Positions of the projection columns named `expression_name` that are the target, not a source column of that name.
-    const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
+    [[nodiscard]] const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
     std::vector<size_t> & getProjectionColumnIndexes() { return projection_column_indexes; }
     void setProjectionColumnIndexes(std::vector<size_t> indexes) { projection_column_indexes = std::move(indexes); }
 

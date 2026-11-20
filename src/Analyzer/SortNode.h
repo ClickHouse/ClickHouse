@@ -150,10 +150,10 @@ public:
 
     /// Positions of the projection columns that had this expression (for a `tuple`, each argument)
     /// when a query with WITH FILL was analyzed.
-    const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
+    [[nodiscard]] const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
     std::vector<size_t> & getProjectionColumnIndexes() { return projection_column_indexes; }
 
-    const std::vector<std::vector<size_t>> & getArgumentsProjectionColumnIndexes() const { return arguments_projection_column_indexes; }
+    [[nodiscard]] const std::vector<std::vector<size_t>> & getArgumentsProjectionColumnIndexes() const { return arguments_projection_column_indexes; }
     std::vector<std::vector<size_t>> & getArgumentsProjectionColumnIndexes() { return arguments_projection_column_indexes; }
 
     void setProjectionColumnIndexes(std::vector<size_t> indexes, std::vector<std::vector<size_t>> arguments_indexes = {})
