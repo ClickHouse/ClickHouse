@@ -40,7 +40,12 @@ namespace
 
 /// libc's own `dl_iterate_phdr`: a direct call that CFI can check, unlike a pointer from `dlsym`.
 extern "C" int libc_dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
+#if defined(__s390x__)
+/// Added to s390x glibc after its oldest symbol version.
+__asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@GLIBC_2.2.4");
+#else
 __asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@" GLIBC_SYMVER);
+#endif
 
 
 using PHDRCache = std::vector<dl_phdr_info>;
