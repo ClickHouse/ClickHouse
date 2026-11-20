@@ -10,11 +10,20 @@
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
 
+#include <memory>
 #include <mutex>
+
+/// libpq's PGcancel.
+struct pg_cancel;
 
 
 namespace DB
 {
+
+struct PostgreSQLCancelDeleter
+{
+    void operator()(pg_cancel * cancel) const noexcept;
+};
 
 template <typename T = pqxx::ReadTransaction>
 class PostgreSQLSource : public ISource
@@ -50,7 +59,7 @@ protected:
 private:
     void init(const Block & sample_block);
 
-    void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
+    void finalize(pg_cancel * cancel, pqxx::stream_from * stream_to_close) noexcept;
 
     const UInt64 max_block_size;
     bool auto_commit = true;
@@ -65,12 +74,13 @@ private:
     /// Claimed by whichever comes first, the clean finish in prepare() or the interrupt in onCancel().
     std::atomic<bool> teardown_started{false};
 
-    /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
+    /// tx, stream, cancel_handle and interrupt_fd are written only by the pipeline thread; this
+    /// publishes cancel_handle and interrupt_fd to onCancel().
     std::mutex tx_mutex;
     /// Our own duplicate of the connection's socket. The client library may close its own on a failed read.
     int interrupt_fd = -1;
-    /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
-    std::mutex cancel_mutex;
+    /// Built by the thread that runs the read. Sending it reads only this copy, so onCancel() may.
+    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> cancel_handle;
 
     postgres::ConnectionHolderPtr connection_holder;
 
