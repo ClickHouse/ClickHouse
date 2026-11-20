@@ -29,6 +29,11 @@ world	2
 --- given columns of a file in a hive-style partition, which the inferred columns also have
 1	hello
 2	world
+--- given columns and the partition column of a file in a hive-style partition
+1	hello	7
+2	world	7
+7
+7
 --- url
 1	a
 1	a

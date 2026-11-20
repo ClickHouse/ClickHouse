@@ -103,7 +103,8 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
     /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
     /// storage does not support the other kinds of columns. It is created so only when it can parse the data with them: the
-    /// format can read a subset of its columns, or there are as many of them as inferred columns. Otherwise, as for
+    /// format can read a subset of its columns, or there are as many of them as inferred columns, not counting the columns
+    /// of the hive-style partitions of the path, which are read from the path in both cases. Otherwise, as for
     /// `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the data
     /// with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
     /// inferred columns keeps reading them by name: a query names an ordinary or a `MATERIALIZED` stored column or a
@@ -121,42 +122,53 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
             return cached_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
         };
 
+        /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data. The
+        /// storage created with the stored columns also reads those of them that it has from the path.
+        const NamesAndTypesList * partition_columns = nullptr;
+        if (const auto * storage_file = dynamic_cast<const StorageFile *>(storage.get()))
+            partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
+        else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
+            partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
+        const auto is_partition_column = [&](const String & name)
+        {
+            return partition_columns && partition_columns->contains(name);
+        };
+
+        /// A partition column does not make the table read the inferred columns by name, as for `key` of
+        /// `(id UInt32, s String, key UInt32)` of `.../key=7/data.csv`, unless it is a `MATERIALIZED` stored column.
         bool has_inferred_column = false;
         for (const auto & inferred_column : metadata->columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
-            has_inferred_column = has_inferred_column || is_stored(inferred_column.name);
+        {
+            if (!is_partition_column(inferred_column.getNameInStorage()))
+                has_inferred_column = has_inferred_column || is_stored(inferred_column.name);
+        }
 
         bool has_other_column = false;
         ColumnsDescription stored_columns;
+        size_t num_stored_data_columns = 0;
         for (const auto & column : cached_columns)
         {
             const auto kind = column.default_desc.kind;
             if (kind != ColumnDefaultKind::Default && kind != ColumnDefaultKind::Materialized)
                 continue;
 
-            const bool inferred = is_inferred(column.name);
+            const bool partition = kind == ColumnDefaultKind::Default && is_partition_column(column.name);
+            const bool inferred = !partition && is_inferred(column.name);
             has_inferred_column = has_inferred_column || inferred;
 
-            if (kind != ColumnDefaultKind::Default || (!inferred && metadata->virtuals.has(column.name)))
+            if (kind != ColumnDefaultKind::Default || (!inferred && !partition && metadata->virtuals.has(column.name)))
                 continue;
-            has_other_column = has_other_column || !inferred;
+            has_other_column = has_other_column || (!inferred && !partition);
+            num_stored_data_columns += !partition;
             stored_columns.add(column);
         }
 
         const auto can_parse_data_with_stored_columns = [&]
         {
-            /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data.
-            const NamesAndTypesList * partition_columns = nullptr;
-            if (const auto * storage_file = dynamic_cast<const StorageFile *>(storage.get()))
-                partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
-            else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
-                partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
             size_t num_data_columns = 0;
             for (const auto & inferred_column : metadata->columns.getOrdinary())
-            {
-                if (!partition_columns || !partition_columns->contains(inferred_column.name))
-                    ++num_data_columns;
-            }
-            if (stored_columns.size() == num_data_columns)
+                num_data_columns += !is_partition_column(inferred_column.name);
+            if (num_stored_data_columns == num_data_columns)
                 return true;
             /// With the settings of the context that creates the storage, as `input_format_with_names_use_header` for
             /// `CSVWithNames`, which a query could change, as for a table with these columns given as the structure argument.

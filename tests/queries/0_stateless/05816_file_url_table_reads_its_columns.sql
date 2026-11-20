@@ -52,6 +52,11 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05816_hive/key=7/data.csv', 'CS
 CREATE TABLE t_hive (id UInt32, s String) AS file(currentDatabase() || '_05816_hive/key=7/data.csv', 'CSV');
 SELECT * FROM t_hive ORDER BY id;
 
+SELECT '--- given columns and the partition column of a file in a hive-style partition';
+CREATE TABLE t_hive_key (id UInt32, s String, key UInt32) AS file(currentDatabase() || '_05816_hive/key=7/data.csv', 'CSV');
+SELECT * FROM t_hive_key ORDER BY id;
+SELECT key FROM t_hive_key;
+
 SELECT '--- url';
 CREATE TABLE t_url (x UInt8, y String) AS url('http://127.0.0.1:8123/?query=SELECT+1,%27a%27+FORMAT+CSV', 'CSV');
 SELECT * FROM t_url;
@@ -69,4 +74,5 @@ DROP TABLE t_dynamic_subcolumn;
 DROP TABLE t_fewer;
 DROP TABLE t_fewer_subset;
 DROP TABLE t_hive;
+DROP TABLE t_hive_key;
 DROP TABLE t_url;
