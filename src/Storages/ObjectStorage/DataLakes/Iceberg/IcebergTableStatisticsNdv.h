@@ -50,7 +50,7 @@ private:
     ThreadPoolCallbackRunnerLocal<void> runner;
 };
 
-/// Whether a commit writes statistics: `iceberg_write_table_statistics_ndv` is on and no transactional catalog commits it.
+/// Whether a commit writes statistics: `iceberg_write_table_statistics_ndv` is on. Throws if a transactional catalog commits it.
 bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog);
 
 /// Writes the Puffin statistics file of `snapshot` and registers it in `metadata`: `column_sketches`, unioned with the

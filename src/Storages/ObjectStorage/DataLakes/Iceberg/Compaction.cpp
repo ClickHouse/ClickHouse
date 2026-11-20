@@ -845,6 +845,7 @@ static bool writeConsolidatedManifestFile(
     /// Parallel to consolidated_manifest_paths: each manifest's manifest-list `partitions` summary.
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     std::optional<String> statistics_file_path;
 
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
@@ -1006,7 +1007,7 @@ static bool writeConsolidatedManifestFile(
         buffer_manifest_list->finalize();
 
         /// A manifest-only rewrite keeps every row.
-        if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
+        if (write_statistics)
             statistics_file_path = writeIcebergTableStatisticsNdv(
                 /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, metadata_object, new_snapshot.snapshot, generator,
                 path_resolver, object_storage, context);

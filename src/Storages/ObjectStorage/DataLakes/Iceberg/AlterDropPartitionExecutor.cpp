@@ -694,6 +694,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
     filename_generator.setCompressionMethod(compression_method);
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
 
@@ -705,7 +706,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
     /// DROP PARTITION writes no rows.
-    if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
+    if (write_statistics)
         if (auto statistics_file_path = writeIcebergTableStatisticsNdv(
                 /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, state.metadata_object, new_snapshot, filename_generator,
                 components.path_resolver, object_storage, context))

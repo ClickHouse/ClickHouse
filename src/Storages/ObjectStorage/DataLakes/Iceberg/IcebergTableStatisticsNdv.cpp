@@ -28,6 +28,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace Setting
 {
     extern const SettingsBool iceberg_write_table_statistics_ndv;
@@ -404,9 +409,15 @@ std::optional<String> writeIcebergTableStatisticsNdv(
 
 bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog)
 {
+    if (!USE_DATASKETCHES || !context->getSettingsRef()[Setting::iceberg_write_table_statistics_ndv])
+        return false;
     /// TODO: send the statistics file to a transactional catalog as a `set-statistics` update.
-    return USE_DATASKETCHES && context->getSettingsRef()[Setting::iceberg_write_table_statistics_ndv]
-        && !(catalog && catalog->isTransactional());
+    if (catalog && catalog->isTransactional())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `iceberg_write_table_statistics_ndv` is not supported for tables in a catalog of type {}",
+            catalog->getCatalogType());
+    return true;
 }
 
 }
