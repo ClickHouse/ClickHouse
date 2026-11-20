@@ -56,6 +56,7 @@ namespace FailPoints
 {
     extern const char worker_control_loop_break_connection_fails[];
     extern const char worker_control_loop_open_fails_after_post[];
+    extern const char worker_control_loop_break_connections[];
 }
 
 using namespace StatelessWorkerControlProtocol;
@@ -789,8 +790,12 @@ void WorkerControlLoop::flush(Connection & connection)
 void WorkerControlLoop::checkDeadlines()
 {
     const auto now = Clock::now();
+    bool break_all = false;
+    fiu_do_on(FailPoints::worker_control_loop_break_connections, { break_all = true; });
     const auto is_due = [&](const Connection & connection)
     {
+        if (break_all)
+            return true;
         if (!connection.isAccepted())
             return now >= connection.hello_deadline;
         if (connection.write_queue.empty() && now - connection.last_send >= timeouts.ping_interval)
@@ -808,6 +813,8 @@ void WorkerControlLoop::checkDeadlines()
         ThreadGroupSwitcher switcher(connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
         try
         {
+            if (break_all)
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected loss of the connection");
             if (connection->state == State::Connecting && now >= connection->hello_deadline)
                 throw Exception(ErrorCodes::SOCKET_TIMEOUT, "cannot connect within {} ms", timeouts.hello.count());
             if (connection->state == State::HelloSent && now >= connection->hello_deadline)
@@ -939,7 +946,7 @@ WorkerControlConnection::~WorkerControlConnection()
     }
 }
 
-UInt64 WorkerControlConnection::nextRequestId()
+UInt64 WorkerControlConnection::newRequestId()
 {
     if (connection->closing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A request on the control connection to stateless worker {} after it was closed",
@@ -954,28 +961,29 @@ void WorkerControlConnection::post(WorkerControlLoop::OutgoingFrame frame)
 
 UInt64 WorkerControlConnection::startTasks(StartTasks request)
 {
-    request.request_id = nextRequestId();
+    if (request.request_id == 0)
+        request.request_id = newRequestId();
     post(WorkerControlLoop::makeFrame(request));
     return request.request_id;
 }
 
 UInt64 WorkerControlConnection::getStatuses(UInt64 wait_milliseconds, Strings task_ids)
 {
-    const GetStatuses request{.request_id = nextRequestId(), .wait_milliseconds = wait_milliseconds, .task_ids = std::move(task_ids)};
+    const GetStatuses request{.request_id = newRequestId(), .wait_milliseconds = wait_milliseconds, .task_ids = std::move(task_ids)};
     post(WorkerControlLoop::makeFrame(request));
     return request.request_id;
 }
 
 UInt64 WorkerControlConnection::cancelTasks(Strings task_ids)
 {
-    const CancelTasks request{.request_id = nextRequestId(), .task_ids = std::move(task_ids)};
+    const CancelTasks request{.request_id = newRequestId(), .task_ids = std::move(task_ids)};
     post(WorkerControlLoop::makeFrame(request));
     return request.request_id;
 }
 
 UInt64 WorkerControlConnection::forgetTasks(Strings task_ids)
 {
-    const ForgetTasks request{.request_id = nextRequestId(), .task_ids = std::move(task_ids)};
+    const ForgetTasks request{.request_id = newRequestId(), .task_ids = std::move(task_ids)};
     post(WorkerControlLoop::makeFrame(request));
     return request.request_id;
 }

@@ -165,6 +165,7 @@ public:
 
     /// Each request returns its id. Its reply can come before the call returns, so a caller that keeps state for the reply
     /// holds the lock its handler takes across the call. A request on a lost connection is dropped.
+    /// A non-zero `request.request_id` comes from `newRequestId`, for a caller that records the request before the call.
     UInt64 startTasks(StatelessWorkerControlProtocol::StartTasks request);
     UInt64 getStatuses(UInt64 wait_milliseconds, Strings task_ids);
     UInt64 cancelTasks(Strings task_ids);
@@ -174,6 +175,8 @@ public:
     void close();
     /// Detaches the handler and closes the connection at once.
     void abort();
+    /// Returns the id of a new request; throws after `close` or `abort`.
+    UInt64 newRequestId();
     /// Stops the callbacks: once it returns, none runs. It waits for a running one, so the caller must not hold a lock that
     /// the handler takes; it can be called from a callback.
     void detach();
@@ -182,7 +185,6 @@ public:
     [[nodiscard]] const String & getDescription() const;
 
 private:
-    UInt64 nextRequestId();
     void post(WorkerControlLoop::OutgoingFrame frame);
 
     WorkerControlLoop & loop;

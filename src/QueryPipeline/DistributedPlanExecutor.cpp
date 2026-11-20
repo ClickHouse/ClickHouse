@@ -128,6 +128,8 @@ namespace FailPoints
     extern const char distributed_plan_record_failure_while_starting_tasks[];
     extern const char distributed_plan_local_start_stage_fails_after_first_task[];
     extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
+    extern const char distributed_plan_pause_after_queueing_start_tasks[];
+    extern const char distributed_plan_fail_sending_start_tasks[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -1597,7 +1599,7 @@ protected:
             LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", request.tasks.size(), batch.stages.size(), channel.description);
 
             StatelessWorkerControlProtocol::StartTasks message{
-                .request_id = 0,
+                .request_id = channel.connection->newRequestId(),
                 .temp_path = unique_query_id,
                 .collectors = {.logs = receivesWorkerLogs()},
                 .trace_context = {},
@@ -1616,7 +1618,9 @@ protected:
                 message.trace_context.span_id = request.span->getSpanId();
             }
 
-            /// Queued before the send, as the reply can come before `startTasks` returns.
+            /// Recorded before the send, as the reply can come before `startTasks` returns.
+            const UInt64 request_id = message.request_id;
+            request.request_id = request_id;
             {
                 std::lock_guard g(lock);
                 auto & state = worker_states[worker];
@@ -1628,15 +1632,18 @@ protected:
                 }
                 state.start_requests.push_back(std::move(request));
             }
+            FailPointInjection::pauseFailPoint(FailPoints::distributed_plan_pause_after_queueing_start_tasks);
             try
             {
+                fiu_do_on(FailPoints::distributed_plan_fail_sending_start_tasks,
+                    { throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure to send a batch to {}", channel.description); });
                 channel.connection->startTasks(std::move(message));
             }
             catch (...)
             {
-                /// Not sent, so no reply took it.
+                /// Not sent, so no reply took it; the loss of the connection may have dropped it already.
                 std::lock_guard g(lock);
-                worker_states[worker].start_requests.pop_back();
+                std::erase_if(worker_states[worker].start_requests, [request_id](const StartRequest & queued) { return queued.request_id == request_id; });
                 throw;
             }
         }
@@ -1751,6 +1758,7 @@ protected:
 
         struct StartRequest
         {
+            UInt64 request_id = 0;
             VectorWithMemoryTracking<PolledTask> tasks;
             /// Null when the query is not traced.
             std::unique_ptr<OpenTelemetry::ManualSpan> span;

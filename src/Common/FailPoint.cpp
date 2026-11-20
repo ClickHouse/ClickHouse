@@ -518,6 +518,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(stateless_worker_pause_task_before_setup) \
     ONCE(worker_control_loop_break_connection_fails) \
     ONCE(worker_control_loop_open_fails_after_post) \
+    REGULAR(worker_control_loop_break_connections) \
+    PAUSEABLE_ONCE(distributed_plan_pause_after_queueing_start_tasks) \
+    ONCE(distributed_plan_fail_sending_start_tasks) \
     REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \
     PAUSEABLE_ONCE(distributed_plan_runtime_filter_merge_pause_before_finalize) \
     REGULAR(distributed_plan_runtime_filter_merge_fails_before_finalize) \
