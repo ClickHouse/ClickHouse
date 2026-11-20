@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
