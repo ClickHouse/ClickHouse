@@ -62,11 +62,11 @@ public:
     /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
     /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
     void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
-    Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
+    [[nodiscard]] Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
 
     /// The range of one column, as a `minmax_*.idx` file stores it. A non-nullable column cannot store a NULL or an infinite bound.
     static void writeRange(const Range & range, const IDataType & type, WriteBuffer & out);
-    static Range readRange(const IDataType & type, ReadBuffer & in);
+    [[nodiscard]] static Range readRange(const IDataType & type, ReadBuffer & in);
 
     /// For Store
     static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);

@@ -45,7 +45,7 @@ public:
 
 }
 
-const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
+[[clang::no_destroy]] const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
@@ -130,7 +130,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
     fields_carried_over = 0;
 
     Poco::URI uri(request.getURI());
-    const std::string & query = uri.getRawQuery();
+    std::string_view query = uri.getRawQuery();
     if (!query.empty())
     {
         ReadBufferFromString istr(query);

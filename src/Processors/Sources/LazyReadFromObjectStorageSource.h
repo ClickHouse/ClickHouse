@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 
@@ -13,6 +16,8 @@ namespace DB
 /// pipeline executor calls updatePipeline() when the downstream LazyMaterializingTransform
 /// starts pulling from this processor, which happens strictly after it has filled the shared
 /// ObjectStorageLazyMaterializingRows state.
+/// The files are read by up to `max_threads` readers, each over a contiguous group of files, and the
+/// chunks are returned in the order of the groups, so the rows stay sorted by the global row index.
 class LazyReadFromObjectStorageSource final : public IProcessor
 {
 public:
@@ -26,10 +31,12 @@ public:
         ReadFromFormatInfo info_,
         ContextPtr context_,
         size_t max_block_size_,
+        size_t max_threads_,
+        size_t main_read_leaf_columns_,
         ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows_);
 
     String getName() const override { return "LazyReadFromObjectStorageSource"; }
-    Status prepare() override;
+    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     PipelineUpdate updatePipeline() override;
 
 private:
@@ -41,8 +48,16 @@ private:
     ReadFromFormatInfo info;
     ContextPtr context;
     size_t max_block_size;
+    size_t max_threads;
+    size_t main_read_leaf_columns;
 
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows;
+
+    /// The chunks of a reader that are pulled before the readers of the previous groups have finished.
+    VectorWithMemoryTracking<ListWithMemoryTracking<Chunk>> chunks;
+    UnorderedMapWithMemoryTracking<const InputPort *, size_t> input_port_to_index;
+    size_t next_chunk_to_process = 0;
+    InputPorts::iterator next_input_to_process;
 };
 
 }

@@ -173,7 +173,7 @@ public:
     /// Returns false if last boundary found.
     bool skipToNextBoundary();
 
-    bool isActualEOF() const { return found_last_boundary; }
+    [[nodiscard]] bool isActualEOF() const { return found_last_boundary; }
 
     /// While a part's content is being consumed, a buffered line is bounded by the content size
     /// limit; while boundary lines and part headers are being scanned, by the structural HTTP
