@@ -165,3 +165,84 @@ def test_marker_in_the_body_binds_without_a_search():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def _bullet(pr, text):
+    return (
+        f"* {text} [#{pr}](https://github.com/ClickHouse/ClickHouse/pull/{pr}) "
+        f"([Author](https://github.com/author))."
+    )
+
+
+def _changelog(reapply_category):
+    """A raw block with a whole chain: `#100` (tests only), its revert `#200`,
+    and `#300` reverting `#200` under `reapply_category`."""
+    raw = "\n".join(
+        [
+            cn.RAW_BEGIN,
+            '### ClickHouse release 26.11 (sha) FIXME as compared to 26.10 (sha)',
+            "",
+            "#### NOT FOR CHANGELOG / INSIGNIFICANT",
+            "",
+            _bullet(ORIGINAL, "Add tests."),
+            "",
+            "#### NO CL ENTRY",
+            "",
+            _bullet(INNER_REVERT, 'NO CL ENTRY: \'Revert "Add tests"\'.'),
+            "",
+            f"#### {reapply_category}",
+            "",
+            _bullet(OUTER_REVERT, "Fix `INSERT` into a table with a projection."),
+            cn.RAW_END,
+        ]
+    )
+    return (
+        f"{raw}\n\n"
+        '### <a id="2610"></a> ClickHouse release 26.10, 2026-10-22\n\n'
+        "#### Bug Fix (user-visible misbehavior in an official stable release)\n\n"
+        + _bullet("50", "Fix something old.")
+        + "\n"
+    )
+
+
+def _analyze(text):
+    targets = {OUTER_REVERT: {INNER_REVERT}, INNER_REVERT: {ORIGINAL}}
+    with mock.patch.object(
+        cn, "read_revert_ledger", return_value=({}, {}, {}, set())
+    ), mock.patch.object(
+        cn,
+        "resolve_revert_targets",
+        return_value=(targets, {pr: METADATA[pr][0] for pr in targets}, []),
+    ):
+        return cn.analyze_reverts(text, "2611")
+
+
+BUG_FIX = "Bug Fix (user-visible misbehavior in an official stable release)"
+
+
+def test_reapply_with_an_entry_of_its_own_keeps_it():
+    """`#129863` in 26.11: a revert of a revert of a tests-only change that
+    also fixed something and described it in its own changelog entry. Its
+    bullet is the only place the fix appears, so the verifier must not demand
+    its deletion, and the strict-retention rule has to protect it."""
+    text = _changelog(BUG_FIX)
+    reverts = _analyze(text)
+    assert OUTER_REVERT not in reverts["cancelling"]
+    assert reverts["reapplying_with_entry"] == [OUTER_REVERT]
+    # Permitted, not required: merging it into a re-applied entry is fine.
+    assert OUTER_REVERT not in reverts["own_entry_required"]
+    # The intermediate revert still cancels out.
+    assert INNER_REVERT in reverts["cancelling"]
+
+    # An edit that dropped the bullet loses a strict entry.
+    edited = text[text.index('### <a id="2610">') :]
+    lost = cn.disappeared_entries(text, edited, "2611", reverts["cancelling"])
+    assert lost == {OUTER_REVERT}
+
+
+def test_reapply_without_an_entry_of_its_own_leaves_no_trace():
+    """The usual revert-of-revert, with no changelog entry of its own: it
+    cancels the intermediate revert and its bullet goes with it."""
+    reverts = _analyze(_changelog("NO CL ENTRY"))
+    assert OUTER_REVERT in reverts["cancelling"]
+    assert reverts["reapplying_with_entry"] == []

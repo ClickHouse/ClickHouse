@@ -145,7 +145,8 @@ Deleting the entry is only half of it — the revert must not be left behind as
 an entry of its own either, whatever category the autogenerator gave it. The
 user should see no trace of either side. The one place such a PR still appears
 is as the appended link on an entry it *re-applied* (§2.5), where it records
-the re-apply rather than describing a change.
+the re-apply rather than describing a change — unless that re-apply also
+carries a change of its own with its own entry (case 6).
 
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
@@ -186,6 +187,16 @@ the re-apply rather than describing a change.
    `#109946`'s entry with `#114912`'s link appended — and no trace of
    `#114911`. Deleting `#109946` "because it was reverted" drops a fix that
    ships in the release.
+
+   A revert-of-revert can carry more than the re-apply. When its author wrote
+   a changelog entry of its own under a real category (not `NO CL ENTRY` or
+   `NOT FOR CHANGELOG`), read the PR: if the entry describes a change beyond
+   the one it brings back, keep it as a bullet of its own; if it only repeats
+   the re-applied entry, merge it into that entry (§7). Real example from
+   26.11: `#129863` reverted `#129862`, a revert of the tests-only `#129425`,
+   and also fixed `INSERT` into a table whose `PROJECTION` has `GLOBAL IN` in
+   `WHERE`. `#129425` has no entry, so `#129863`'s own `Bug Fix` bullet is the
+   only place the fix appears.
 
    When a release is edited in daily increments, the three PRs arrive on
    three different days: the entry was integrated on the first day, deleted
