@@ -122,29 +122,29 @@ static constexpr std::tuple<size_t, size_t, size_t>
 findURIPasswordRange(const std::string & text, const size_t offset = 0, std::string_view authority_terminators = "/")
 {
     static constexpr std::string_view SEPARATOR = "//";
-    for (size_t separator = [&] -> size_t
-         {
-             const size_t first_at = text.find('@', offset);
-             if (first_at == std::string_view::npos)
-                 return std::string_view::npos;
-             size_t starting_offset = text.find(SEPARATOR, offset);
-             if (offset > 0)
-             {
-                 if (starting_offset == std::string_view::npos)
-                 {
-                     starting_offset = std::string_view(text).substr(offset, first_at - offset).find('|');
-                     if (starting_offset == std::string_view::npos)
-                         return std::string_view::npos;
-                     starting_offset += offset;
-                 }
-                 if (starting_offset > first_at)
-                     if (const size_t first_pipe = std::string_view(text).substr(offset, first_at - offset).find('|');
-                         first_pipe != std::string_view::npos)
-                         return first_pipe + offset;
-             }
-        return first_at > starting_offset ? starting_offset : offset;
-    }(); separator != std::string_view::npos;
-         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
+    auto find_next_separator = [&text](const size_t off) -> size_t
+    {
+        const size_t first_at = text.find('@', off);
+        if (first_at == std::string_view::npos)
+            return std::string_view::npos;
+        size_t starting_offset = text.find(SEPARATOR, off);
+        if (off > 0)
+        {
+            if (starting_offset == std::string_view::npos)
+            {
+                starting_offset = std::string_view(text).substr(off, first_at - off).find('|');
+                if (starting_offset == std::string_view::npos)
+                    return std::string_view::npos;
+                starting_offset += off;
+            }
+            if (starting_offset > first_at)
+                if (const size_t first_pipe = std::string_view(text).substr(off, first_at - off).find('|');
+                    first_pipe != std::string_view::npos)
+                    return first_pipe + off;
+        }
+        return first_at > starting_offset ? starting_offset : off;
+    };
+    for (size_t separator = find_next_separator(offset); separator != std::string_view::npos;)
     {
         const size_t authority_begin = [&]
         {
@@ -177,15 +177,15 @@ findURIPasswordRange(const std::string & text, const size_t offset = 0, std::str
 
         const size_t authority_end = std::min(text.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin), text.length());
         auto authority = std::string_view(text).substr(authority_begin, authority_end - authority_begin);
-        const size_t colon = authority.find(':');
-
-        if (colon == std::string_view::npos || isURIHostAndPort(authority))
+        const size_t last_at = text.rfind('@');
+        if (last_at == std::string::npos)
         {
-            continue;
+            return {std::string_view::npos, std::string_view::npos, text.length()};
         }
-
-        if (const size_t last_at = text.find('@', authority_end + 1); last_at != std::string_view::npos)
+        if (const size_t colon = authority.find(':'); colon != std::string_view::npos && !isURIHostAndPort(authority))
             return {authority_begin + colon + 1, last_at, text.length()};
+
+        break;
     }
 
     return {std::string_view::npos, std::string_view::npos, text.length()};
@@ -203,7 +203,7 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
         {
             uri.replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
             result = true;
-            offset = password_begin + HIDDEN_SECRET.length() + 1 + next_offset - password_end;
+            offset = password_begin + HIDDEN_SECRET.length() + next_offset - password_end;
         } else
         {
             break;
