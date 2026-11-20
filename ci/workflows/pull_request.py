@@ -11,6 +11,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import (
     PR_SINGLE_ARCH_SKIPPED_BUILDS,
     PR_SINGLE_ARCH_SKIPPED_JOBS,
+    configure_amd_release_thinlto,
     configure_performance_shards,
     configure_toolchain_builds,
     should_skip_job,
@@ -315,6 +316,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         configure_performance_shards,
+        configure_amd_release_thinlto,
         configure_toolchain_builds,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
