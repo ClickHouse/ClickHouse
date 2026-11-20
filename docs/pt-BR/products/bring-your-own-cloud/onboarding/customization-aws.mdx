@@ -7,6 +7,8 @@ description: 'Implante o ClickHouse BYOC na sua VPC existente na AWS'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="customer-managed-vpc-aws">
   ## VPC gerenciada pelo cliente (BYO-VPC) para AWS
 </div>
@@ -20,49 +22,20 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     3. Certifique-se de que cada sub-rede tenha um intervalo CIDR mínimo de `/25` (por exemplo, 10.0.0.0/25). Um `/25` comporta aproximadamente 10 nós de servidor do ClickHouse por zona de disponibilidade; `/24` é recomendado para a maioria das implantações, e sub-redes maiores para implantações que você espera expandir. Os endereços IP dos pods são alocados da própria sub-rede, portanto, cada réplica consome endereços da sub-rede.
     4. Adicione as tags `kubernetes.io/role/internal-elb=1` e `clickhouse-byoc="true"` a cada sub-rede para permitir a configuração correta do balanceador de carga.
 
-    <div className="ch-image-lg">
+    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="Sub-rede da VPC BYOC" />
 
-    <Frame>
-
-    ![Sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
-    </div>
-
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Tags da sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="Tags da sub-rede da VPC BYOC" />
   </Step>
 
   <Step title="Configure o endpoint de gateway do S3" id="configure-s3-endpoint">
     Se sua VPC ainda não tiver um endpoint de gateway do S3 configurado, será necessário criar um para habilitar a comunicação segura e privada entre sua VPC e o Amazon S3. Esse endpoint permite que seus serviços do ClickHouse acessem o S3 sem passar pela internet pública. Consulte a captura de tela abaixo para ver um exemplo de configuração.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Endpoint S3 do BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="Endpoint S3 do BYOC" />
   </Step>
 
   <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
     **Acesso de saída à internet**
-    Sua VPC deve permitir pelo menos acesso de saída à internet, diretamente ou por meio de um NAT gateway. Duas coisas dependem disso:
-
-    * **Tailscale.** Os componentes do ClickHouse BYOC se registram no plano de controle do Tailscale, que fornece uma rede segura de confiança zero para operações privadas de gerenciamento sem exigir acesso público de entrada. O registro inicial e a configuração exigem conectividade com a internet pública.
-    * **Imagens de contêiner.** Algumas imagens executadas pela implantação não são espelhadas no registry do BYOC, incluindo imagens da comunidade, e são obtidas de seus registries upstream.
-
-    Uma VPC sem caminho de saída não concluirá o provisionamento. Não há uma lista única de endpoints publicada; se sua network policy exigir um inventário explícito, entre em contato com o suporte para revisar sua configuração.
+    Sua VPC deve permitir pelo menos acesso de saída à internet para que os componentes do ClickHouse BYOC possam se comunicar com o plano de controle do Tailscale. O Tailscale é usado para fornecer uma rede segura de confiança zero para operações privadas de gerenciamento. O registro inicial e a configuração com o Tailscale exigem conectividade com a internet pública, que pode ser obtida diretamente ou por meio de um NAT gateway. Essa conectividade é necessária para manter a privacidade e a segurança da sua implantação BYOC.
 
     **Resolução de DNS**
     Certifique-se de que sua VPC tenha resolução de DNS funcional e não bloqueie, interfira nem sobrescreva nomes DNS padrão. O ClickHouse BYOC depende de DNS para resolver os servidores de controle do Tailscale e os endpoints de serviço do ClickHouse. Se o DNS não estiver disponível ou estiver configurado incorretamente, os serviços BYOC poderão falhar ao se conectar ou operar corretamente.
@@ -81,7 +54,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
       Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren&#39;t included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
     </Note>
 
-#### Módulo do Terraform
+    #### Módulo do Terraform
 
     Se você preferir usar Terraform em vez de CloudFormation, use o módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -105,10 +78,6 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
   </Step>
 
   <Step title="Configure a infraestrutura do BYOC" id="set-up-byoc-infrastructure">
-    <Note>
-      Quando você clicar em **Configurar infraestrutura**, o ClickHouse Cloud executará automaticamente a [validação de preflight](/pt-BR/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes do provisionamento. Se sua VPC ou conta personalizada não atender aos requisitos, a configuração será interrompida e os problemas específicos a corrigir serão exibidos.
-    </Note>
-
     No console do ClickHouse Cloud, configure o seguinte ao configurar uma nova infraestrutura:
 
     1. Em **Configuração da VPC**, selecione **Usar VPC existente**.
@@ -117,15 +86,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     4. Opcionalmente, insira os **IDs das sub-redes públicas** se sua configuração exigir balanceadores de carga voltados para a internet.
     5. Clique em **Configurar infraestrutura** para iniciar o provisionamento.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado" />
 
     <Note>
       A configuração de uma nova região pode levar até 40 minutos.
@@ -133,16 +94,9 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
   </Step>
 </Steps>
 
-### Subnets compartilhadas de outra conta (AWS RAM) {#shared-subnets-ram}
-
-Você pode executar o BYOC em uma conta spoke usando subnets compartilhadas por uma conta hub com o [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html), o que permite manter a rede centralizada. A configuração é a mesma descrita acima, com duas diferenças decorrentes do comportamento dos compartilhamentos do RAM:
-
-* **Aplique as tags a partir da conta spoke.** Recursos compartilhados via RAM têm uma visão de tags por conta, portanto as tags aplicadas na conta hub não ficam visíveis para a spoke. Aplique `clickhouse-byoc="true"` à VPC e `kubernetes.io/role/internal-elb=1` junto com `clickhouse-byoc="true"` a cada subnet compartilhada, **a partir da conta spoke**. Sem isso, a validação de pré-verificação reporta tags ausentes e o provisionamento falha.
-* **O roteamento permanece com a conta hub.** As route tables das subnets compartilhadas continuam pertencendo à conta hub, que é, portanto, responsável pelo NAT e pelo roteamento de egress, bem como pelo endpoint gateway do S3, já que esse é um recurso no nível da VPC. Confirme que as subnets compartilhadas ainda atendem ao requisito de conectividade de saída descrito acima.
-
-Todo o restante permanece igual: três private subnets distribuídas em três availability zones, um CIDR mínimo de `/25` por subnet e a configuração do `ClickHouseManagementRole` na conta spoke onde a infraestrutura BYOC é executada.
-
-## IAM roles gerenciados pelo cliente {#customer-managed-iam-roles}
+<div id="customer-managed-iam-roles">
+  ## IAM roles gerenciados pelo cliente
+</div>
 
 Para organizações com requisitos avançados de segurança ou políticas rígidas de compliance, você pode fornecer seus próprios IAM roles em vez de deixar que o ClickHouse Cloud os crie. Essa abordagem dá a você controle total sobre as permissões do IAM e permite aplicar as políticas de segurança da sua organização.
 

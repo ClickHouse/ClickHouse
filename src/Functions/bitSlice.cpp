@@ -29,43 +29,42 @@ public:
     static constexpr auto name = "bitSlice";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSlice>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
-    /// does not fit Int64, and `executeImpl` would throw for it
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return !uint64ArgumentMayHoldUnusedValues(arguments);
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        const auto & type = arguments[0].type;
+        if (type->onlyNull())
+            return type;
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).
-        return
-            "(T : NULL, NativeNumber, [NativeNumber]) -> T"
-            " OR (StringOrFixedString, NativeNumber, [NativeNumber]) -> String";
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
-
-        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
-        /// does not fit Int64 must be rejected here rather than read as a negative number.
-        checkIntegerArgumentFitsInt64(*column_start, name, "offset");
-        if (number_of_arguments == 3)
-            checkIntegerArgumentFitsInt64(*arguments[2].column, name, "length");
 
         std::optional<Int64> start_const;
         std::optional<Int64> length_const;
