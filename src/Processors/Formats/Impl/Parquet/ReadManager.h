@@ -170,7 +170,7 @@ private:
     /// Shared with the reader of the other file of the same source. Null if the reader is not created by such a source.
     InputFormatStreamMemoryPtr stream_memory;
 
-    /// Cleared by the first `read` with `column_data_prefetch_mutex` locked.
+    /// Cleared by the first `read` with `column_data_prefetch_mutex` locked, unless an exception is stored.
     std::atomic<bool> decoding_deferred {false};
     bool first_row_group_read_ahead = false;
     /// Modified with `column_data_prefetch_mutex` locked.

@@ -1146,7 +1146,7 @@ bool ReadManager::deferTasks(ReadStage stage_idx)
         return false;
     if (stage_idx == ReadStage::ColumnData)
     {
-        /// A failure can leave pages of the first row group handed out but not started, so `read` must not schedule it.
+        /// A failure can leave pages of the first row group handed out but not started, so `read` keeps the stages deferred.
         try
         {
             readAheadFirstRowGroup();
@@ -1707,16 +1707,17 @@ ReadManager::ReadResult ReadManager::read()
 {
     if (decoding_deferred.load(std::memory_order_relaxed))
     {
-        {
-            std::lock_guard lock(column_data_prefetch_mutex);
-            decoding_deferred.store(false, std::memory_order_relaxed);
-        }
         bool failed = false;
         {
-            std::lock_guard lock(delivery_mutex);
-            failed = exception != nullptr;
+            std::lock_guard lock(column_data_prefetch_mutex);
+            {
+                std::lock_guard delivery_lock(delivery_mutex);
+                failed = exception != nullptr;
+            }
+            /// After a failure the stages stay deferred, and the loop below rethrows the exception.
+            if (!failed)
+                decoding_deferred.store(false, std::memory_order_relaxed);
         }
-        /// After a failure, the loop below rethrows the exception.
         if (!failed)
         {
             MemoryUsageDiff diff(ReadStage::NotStarted);
