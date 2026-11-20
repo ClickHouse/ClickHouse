@@ -6,8 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
-#include <pcg_random.hpp>
+#include <Common/thread_local_rng.h>
 
 #include <algorithm>
 
@@ -117,8 +116,7 @@ IFileCachePriority::observeFilesystemCache(
 
     /// We ignore query_max_total_size in the sampling process because we would favor elements at the start of the default iteration order (hereby coldest)
     /// That's why we shuffle so we don't always remove same segments
-    pcg64 rng(randomSeed());
-    std::shuffle(result.infos.begin(), result.infos.end(), rng);
+    std::shuffle(result.infos.begin(), result.infos.end(), thread_local_rng);
 
     /// Keep dropping segments from the end so we respect in the end query_max_total_size
     while (result.total_size > query_max_total_size)

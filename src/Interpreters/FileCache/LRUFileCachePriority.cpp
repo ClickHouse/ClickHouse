@@ -10,6 +10,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 
 #include <optional>
 #include <random>
@@ -381,7 +382,6 @@ void LRUFileCachePriority::iterate(
         return;
 
     UInt64 next_priority_rank = result.infos.size() + 1;
-    pcg64 rng(randomSeed());
 
     /// Returns false to stop the walk on a limit
     auto add_entry = [&](const EntryPtr & entry)
@@ -428,7 +428,7 @@ void LRUFileCachePriority::iterate(
             }
 
             /// The reservoir is full: replace a random segment with the probability `query_max_elements / n`.
-            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen - 1)(rng);
+            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen - 1)(thread_local_rng);
             if (slot < query_max_elements)
             {
                 /// Keep the total size up to date, so there is no need to iterate again at the end for trimming.
