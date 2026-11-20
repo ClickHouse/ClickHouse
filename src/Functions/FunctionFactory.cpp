@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 
@@ -162,6 +163,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     if (!res)
         return nullptr;
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Functions, name_param, name);
 
     if (CurrentThread::isInitialized())
     {

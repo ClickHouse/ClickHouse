@@ -9,6 +9,7 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils.h>
@@ -166,14 +167,17 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
     /// try/catch below, so they must honor nullptr_on_error themselves: tryGet promises nullptr
     /// (not an exception) on invalid type text, e.g. an out-of-range enum value.
 
-    /// Handle specialized ASTEnumDataType directly
-    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+    /// The specialized ASTs keep their values outside of the arguments, so they cannot be passed
+    /// to a registered creator. Check the restrictions for both the requested and the created type,
+    /// because `Enum` becomes `Enum8` or `Enum16`.
+    auto create_specialized = [&](const String & name, auto && create) -> DataTypePtr
     {
+        DataTypePtr type;
         if constexpr (nullptr_on_error)
         {
             try
             {
-                return createEnumFromValues(enum_type->name, enum_type->values);
+                type = create();
             }
             catch (...) // Ok: tryGet is a try-pattern
             {
@@ -181,26 +185,17 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
             }
         }
         else
-            return createEnumFromValues(enum_type->name, enum_type->values);
-    }
+            type = create();
 
-    /// Handle specialized ASTTupleDataType directly
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DataTypes, name, type->getFamilyName());
+        return type;
+    };
+
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+        return create_specialized(enum_type->name, [&] { return createEnumFromValues(enum_type->name, enum_type->values); });
+
     if (const auto * tuple_type = ast->as<ASTTupleDataType>())
-    {
-        if constexpr (nullptr_on_error)
-        {
-            try
-            {
-                return createTupleFromAST(tuple_type);
-            }
-            catch (...) // Ok: tryGet is a try-pattern
-            {
-                return nullptr;
-            }
-        }
-        else
-            return createTupleFromAST(tuple_type);
-    }
+        return create_specialized(tuple_type->name, [&] { return createTupleFromAST(tuple_type); });
 
     if (const auto * type = ast->as<ASTDataType>())
     {
@@ -239,6 +234,9 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     String family_name = getAliasToOrName(family_name_param);
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
+    if (creator)
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DataTypes, family_name_param, family_name);
+
     DataTypePtr data_type;
     if constexpr (nullptr_on_error)
     {

@@ -6,6 +6,7 @@
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -431,6 +432,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     auto loaded_config = config_processor.loadConfig();
     getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     loaded_config_path = config_path;
+    FactoryRestrictions::instance().set(FactoryRestrictions::parse(getClientConfiguration()));
 
     /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
     /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.

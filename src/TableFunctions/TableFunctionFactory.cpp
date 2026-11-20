@@ -4,6 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/KnownObjectNames.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -83,6 +84,8 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (!res)
         return nullptr;
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::TableFunctions, name_param, name);
 
     if (CurrentThread::isInitialized())
     {

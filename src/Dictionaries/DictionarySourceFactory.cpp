@@ -1,4 +1,5 @@
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Common/FactoryRestrictions.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -119,6 +120,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const auto found = registered_sources.find(source_type);
     if (found != registered_sources.end())
     {
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DictionarySources, source_type);
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
         return create_source(name, dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
@@ -140,6 +142,7 @@ void DictionarySourceFactory::checkSourceAvailable(const std::string & source_ty
             dictionary_name,
             source_type);
     }
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DictionarySources, source_type);
 }
 
 DictionarySourceFactory & DictionarySourceFactory::instance()

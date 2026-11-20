@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
@@ -50,8 +51,25 @@ const CompressionCodecFamilyProperties & CompressionCodecFactory::getFamilyPrope
     return family_name_with_properties.at(*canonical_family_name);
 }
 
+/// Checks a codec that was created earlier, like the default one, against the current restrictions.
+static void checkCodecAllowed(const ICompressionCodec & codec, const UnorderedMapWithMemoryTracking<uint8_t, String> & family_code_to_name)
+{
+    if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(&codec))
+    {
+        for (const auto & nested : multiple->getCodecs())
+            checkCodecAllowed(*nested, family_code_to_name);
+        return;
+    }
+
+    const auto it = family_code_to_name.find(codec.getMethodByte());
+    if (it == family_code_to_name.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown codec family code: {}", toString(codec.getMethodByte()));
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, it->second);
+}
+
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
+    checkCodecAllowed(*default_codec, family_code_to_name);
     return default_codec;
 }
 
@@ -114,6 +132,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
             {
+                checkCodecAllowed(*current_default, family_code_to_name);
                 codec = current_default;
                 /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
                 if (column_type && codec->dependsOnDataType())
@@ -169,6 +188,8 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
 
     if (family_code_and_creator == family_code_with_codec.end())
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family code: {}", toString(byte_code));
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, family_code_to_name.at(byte_code));
 
     return family_code_and_creator->second({}, nullptr);
 }
@@ -275,6 +296,8 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     if (!canonical_family_name)
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
 
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, family_name, *canonical_family_name);
+
     const auto family_and_creator = family_name_with_codec.find(*canonical_family_name);
 
     return family_and_creator->second(arguments, column_type);
@@ -321,10 +344,13 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     family_name_with_properties.emplace(family_name, properties);
 
     if (byte_code)
+    {
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "CompressionCodecFactory: the codec family code '{}' is not unique",
                             std::to_string(*byte_code));
+        family_code_to_name.emplace(*byte_code, family_name);
+    }
 }
 
 void CompressionCodecFactory::registerCompressionCodec(
