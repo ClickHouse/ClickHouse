@@ -97,7 +97,7 @@ FROM (
 WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 1.3;
 
 SELECT
-    sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cache_2') < sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cache_1') / 10,
+    sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cache_2') = 0,
     sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cache_2') = sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cache_1'),
     sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cache_1') > 0
 FROM system.query_log
