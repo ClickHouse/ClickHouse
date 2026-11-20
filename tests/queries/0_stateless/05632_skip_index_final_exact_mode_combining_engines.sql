@@ -6,6 +6,9 @@ DROP TABLE IF EXISTS t_summing;
 DROP TABLE IF EXISTS t_aggregating;
 DROP TABLE IF EXISTS t_aggregating_plain;
 DROP TABLE IF EXISTS t_coalescing;
+DROP TABLE IF EXISTS t_aggregate_state;
+DROP TABLE IF EXISTS t_summing_one_part;
+DROP TABLE IF EXISTS t_replacing;
 
 CREATE TABLE t_summing (k UInt64, v UInt64, INDEX idx_k k TYPE minmax GRANULARITY 1, INDEX idx_v v TYPE minmax GRANULARITY 1)
 ENGINE = SummingMergeTree(v) ORDER BY k;
@@ -44,6 +47,35 @@ INSERT INTO t_coalescing VALUES (1, NULL, 7);
 
 SELECT 'coalescing', * FROM t_coalescing FINAL WHERE a = 5 AND b = 7;
 
+-- An index over an expression of an aggregate state
+CREATE TABLE t_aggregate_state (k UInt64, s AggregateFunction(sum, UInt64), INDEX idx_s finalizeAggregation(s) TYPE minmax GRANULARITY 1)
+ENGINE = AggregatingMergeTree ORDER BY k;
+SYSTEM STOP MERGES t_aggregate_state;
+INSERT INTO t_aggregate_state SELECT 1, initializeAggregation('sumState', toUInt64(1));
+INSERT INTO t_aggregate_state SELECT 1, initializeAggregation('sumState', toUInt64(1));
+
+SELECT 'aggregate state', k, finalizeAggregation(s) FROM t_aggregate_state FINAL WHERE finalizeAggregation(s) = 2;
+
+-- Rows of one key inside a single part
+CREATE TABLE t_summing_one_part (k UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = SummingMergeTree(v) ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_summing_one_part SETTINGS optimize_on_insert = 0 VALUES (1, 1), (1, 1);
+
+SELECT 'summing one part', * FROM t_summing_one_part FINAL WHERE v = 2;
+
+-- Engines whose FINAL row is one of the merged rows keep using the index
+CREATE TABLE t_replacing (k UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = ReplacingMergeTree ORDER BY k;
+SYSTEM STOP MERGES t_replacing;
+INSERT INTO t_replacing VALUES (1, 2);
+INSERT INTO t_replacing VALUES (1, 1);
+
+SELECT 'replacing', * FROM t_replacing FINAL WHERE v = 2 SETTINGS force_data_skipping_indices = 'idx_v';
+SELECT 'replacing', * FROM t_replacing FINAL WHERE v = 1 SETTINGS force_data_skipping_indices = 'idx_v';
+
+DROP TABLE t_aggregate_state;
+DROP TABLE t_summing_one_part;
+DROP TABLE t_replacing;
 DROP TABLE t_summing;
 DROP TABLE t_aggregating;
 DROP TABLE t_aggregating_plain;
