@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -18,7 +19,11 @@ template <Time unit>
 struct ProfileEventTimeIncrement
 {
     explicit ProfileEventTimeIncrement(ProfileEvents::Event event_)
-        : event(event_), watch(CLOCK_MONOTONIC) {}
+        : event(event_), watch(CLOCK_MONOTONIC), counters(CurrentThread::getProfileEvents())
+    {
+        counters.preallocate(event);
+        watch.restart();
+    }
 
     UInt64 elapsed()
     {
@@ -35,11 +40,15 @@ struct ProfileEventTimeIncrement
     ~ProfileEventTimeIncrement()
     {
         watch.stop();
-        ProfileEvents::increment(event, elapsed());
+        counters.incrementNonAllocating(event, elapsed());
     }
 
-    ProfileEvents::Event event;
+    const ProfileEvents::Event event;
     Stopwatch watch;
+
+private:
+    /// The scope that starts the timer must outlive it, just as for `ProfileEvents::Timer`.
+    ProfileEvents::Counters & counters;
 };
 
 }

@@ -75,9 +75,13 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     for (CPUSlotRequest & request : requests)
         request.allocation = this;
 
-    wait_thread_group = CurrentThread::getGroup();
-    if (wait_thread_group)
-        wait_counters = &wait_thread_group->performance_counters;
+    if (master_link || worker_link)
+    {
+        wait_thread_group = CurrentThread::getGroup();
+        if (wait_thread_group)
+            wait_counters = &wait_thread_group->performance_counters;
+        wait_counters->preallocate(ProfileEvents::ConcurrencyControlWaitMicroseconds);
+    }
 
     std::unique_lock lock{schedule_mutex};
     while (allocated < total_slots)
@@ -136,7 +140,7 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
 
         if (noncompeting.compare_exchange_strong(value, value - 1))
         {
-            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
             return AcquiredSlotPtr(new AcquiredCPUSlot({}, nullptr, last_slot_id.fetch_add(1, std::memory_order_relaxed)));
         }
     }
@@ -156,7 +160,7 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
             }
 
             // Make and return acquired slot
-            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             size_t index = last_acquire_index.fetch_add(1, std::memory_order_relaxed);
             return AcquiredSlotPtr(new AcquiredCPUSlot(shared_from_this(), &requests[index], last_slot_id.fetch_add(1, std::memory_order_relaxed)));
         }

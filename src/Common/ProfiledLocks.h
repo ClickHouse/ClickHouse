@@ -62,18 +62,20 @@ protected:
 
     void lockAndProfileWait()
     {
+        ProfileEvents::preallocate(wait_event);
         Stopwatch wait_watch;
         LockType::lock();
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
+        ProfileEvents::incrementNonAllocating(wait_event, wait_watch.elapsedMicroseconds());
     }
 
     template <typename Rep, typename Period>
     void tryLockAndProfileWait(std::chrono::duration<Rep, Period> timeout)
     {
+        ProfileEvents::preallocate(wait_event);
         Stopwatch watch;
         /// The outcome is observable via owns_lock, which callers check after construction.
         std::ignore = LockType::try_lock_for(timeout);
-        ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
+        ProfileEvents::incrementNonAllocating(wait_event, watch.elapsedMicroseconds());
     }
 
 public:

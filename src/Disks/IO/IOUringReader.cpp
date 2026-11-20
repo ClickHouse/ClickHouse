@@ -143,14 +143,14 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
             const auto [kv, success] = in_flight_requests.emplace(request_id, std::move(enqueued_request));
             if (!success)
             {
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 return makeFailedResult(Exception(
                     ErrorCodes::LOGICAL_ERROR, "Tried enqueuing a read request into a buffer that is already submitted"));
             }
             return (kv->second).promise.get_future();
         }
 
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
         return makeFailedResult(
             Exception(ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
     }
@@ -193,7 +193,7 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
 
 void IOUringReader::failRequest(const EnqueuedIterator & requestIt, const Exception & ex)
 {
-    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
     (requestIt->second).promise.set_exception(std::make_exception_ptr(ex));
 
     finalizeRequest(requestIt);
@@ -225,7 +225,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
         }
         else
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
             failPromise(pending_request.promise, Exception(ErrorCodes::IO_URING_SUBMIT_ERROR,
                 "Failed submitting SQE for pending request: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
         }
