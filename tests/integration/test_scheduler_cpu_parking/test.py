@@ -218,11 +218,12 @@ def test_parked_query_still_renews_cpu_slot():
         "insert into parking_set_data select number, randomPrintableASCII(100) from numbers(30000)"
     )
 
-    # Query `a` parks its CPU slot on every throttled read while it builds the set, then runs on CPU for seconds
+    # Query `a` parks its CPU slot on every throttled read while it builds the set, then runs on CPU for seconds.
+    # `read` throttles page cache hits too (`pread` skips them), so the parks do not depend on the disk speed.
     query_a = (
         "select count() from numbers(600000000) where cityHash64(number) not in (select cityHash64(s) from parking_set_data) "
         "settings workload = 'a', max_threads = 1, max_local_read_bandwidth = 1000000, "
-        "max_read_buffer_size_local_fs = 4096, min_bytes_to_use_direct_io = 1, local_filesystem_read_method = 'pread'"
+        "max_read_buffer_size_local_fs = 4096, local_filesystem_read_method = 'read'"
     )
 
     errors_a = []
