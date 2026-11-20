@@ -123,17 +123,6 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
-option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
-if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
-endif ()
-
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -268,7 +257,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+option(BUILD_STANDALONE_KEEPER "Deprecated: build keeper as a separate binary instead of a symlink to clickhouse" OFF)
+if (BUILD_STANDALONE_KEEPER)
+    message (WARNING "BUILD_STANDALONE_KEEPER is deprecated and will be removed: `clickhouse-keeper` is a symlink to the `clickhouse` binary, "
+        "which runs Keeper in the same way, and a separate binary costs another full ThinLTO link in every build.")
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -292,10 +285,15 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
 
-if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
-    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
 endif()
 
 if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
@@ -358,10 +356,6 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
-if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-endif()
-
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -377,8 +371,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -400,7 +395,10 @@ endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND (NOT WITH_COVERAGE OR FUZZER))
+    # Individual fuzzer targets intentionally link a minimal subset of ClickHouse. Keep
+    # section GC in coverage builds so unreachable code from an extracted object cannot
+    # retain references to unrelated server libraries.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -416,6 +414,17 @@ if (ARCH_AMD64 AND NOT SANITIZE)
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign return addresses, so that overwriting one on the stack cannot redirect control flow.
+    # `paciasp` and `autiasp` are no-ops on cores without `FEAT_PAuth` (before ARMv8.3), so the
+    # binary still runs there. Code must not be compiled for ARMv8.3 or later (by `-march` or a
+    # `target` attribute), because then the compiler emits `retaa`, which raises SIGILL on those
+    # cores; the compatibility check guards against it.
+    # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
+    # when they unwind, so their reports would show garbage frames.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
 endif()
 
 # Puts a canary between the locals and the return address and checks it before returning, so that an
@@ -458,6 +467,9 @@ endif ()
 # Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+#
+# Under sanitizers compiler-rt intercepts `sincos`; `__real_sincos` is bound to llvm-libc's `sincos` as well
+# (see contrib/libllvmlibc-cmake), so the bits match `sin` and `cos` in every build.
 if (USE_MUSL)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
 endif ()
@@ -598,6 +610,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # Link time optimization
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # Name each C++ module after its object file, so that units without external definitions are split for
+    # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
+    string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
@@ -666,7 +681,9 @@ option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 # Increase stack size on Musl. We need big stack for our recursive-descend parser
 # and for analyzer passes that recurse on deeply-nested join trees (e.g.
 # 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB). Our musl fork,
+# like glibc, uses a finite RLIMIT_STACK soft limit instead, so this only
+# applies when the limit is unlimited.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
@@ -699,9 +716,12 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    # The FreeBSD sysroot carries no PIC startup objects (Scrt1.o).
+    # Mach-O needs no startup objects for it, so only the linker is asked.
     if (OS_LINUX AND NOT USE_MUSL)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    elseif (OS_DARWIN)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
     endif()
 endif()
 
@@ -762,8 +782,8 @@ endif ()
 
 # Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
 # then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
-# Resolving everything at startup costs nothing here because we link dynamically only against libc
-# and we forbid dlopen (see programs/main.cpp).
+# Resolving everything at startup costs nothing here because we link statically (musl) or dynamically
+# only against libc, and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
 # The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
@@ -826,11 +846,6 @@ endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
-# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
-    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
-endif ()
-
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
     include (cmake/xray_instrumentation.cmake)
@@ -886,8 +901,6 @@ add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINT
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
-    add_subdirectory (rust)
-
     # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
@@ -938,10 +951,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 
@@ -957,9 +973,9 @@ if (FUZZER)
                 # Targets compiled with -fno-sanitize=all must never be instrumented:
                 # a later -fsanitize=fuzzer-no-link overrides it and re-enables
                 # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
-                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
-                # runs before any coverage runtime exists, so every executable would
-                # crash at startup.
+                # runtimes (musl, clang_rt_*): their startup code (rcrt1 self-relocation,
+                # __init_libc) runs before relocations are applied and before any
+                # coverage runtime exists, so every executable would crash at startup.
                 #
                 # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
                 # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
@@ -973,6 +989,12 @@ if (FUZZER)
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
                     target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
+                    # Coverage-only fuzzer builds have no sanitizer runtime in their global
+                    # link flags. Link the no-main libFuzzer runtime into ordinary executables
+                    # so instrumented host tools resolve their SanitizerCoverage callbacks.
+                    if (WITH_COVERAGE AND NOT SANITIZE AND target_type STREQUAL "EXECUTABLE" AND NOT target MATCHES ".+_fuzzer")
+                        set_property(TARGET ${target} APPEND PROPERTY LINK_LIBRARIES ch_contrib::fuzzer_no_main)
+                    endif()
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
@@ -1001,27 +1023,12 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
-    get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
-    foreach(target ${all_targets})
-        if (target IN_LIST chcache_targets)
-            continue()
-        endif()
-
-        add_dependencies(${target} cargo-build_chcache)
-    endforeach()
-endif()
-
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
 if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
@@ -1049,6 +1056,8 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
+            "-DSPLIT_DEBUG_SYMBOLS=${SPLIT_DEBUG_SYMBOLS}"
+            "-DSYMBOL_SECTIONS=${SYMBOL_SECTIONS}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

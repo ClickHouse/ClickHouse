@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Encrypted storage for SQL-created named collections, so that stateless tests cover the
+         encrypted path of BACKUP/RESTORE of named collections. The encryption is transparent to
+         the queries. The key is a fixed test value. -->
+    <named_collections_storage>
+        <type>local_encrypted</type>
+        <key_hex>5e4acb1bce2688abbc7f546d7877f04d</key_hex>
+    </named_collections_storage>
+</clickhouse>
