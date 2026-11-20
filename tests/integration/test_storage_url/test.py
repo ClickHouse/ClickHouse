@@ -1,3 +1,4 @@
+import gzip
 import pytest
 import time
 import uuid
@@ -650,11 +651,314 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_query_with_literal_double_colon():
+    literal_query_url = "http://resolver:8087/data/api?x=::1"
+    archive_query_url = "http://resolver:8087/data/simple_archive.zip?token=x::eod.csv"
+
+    literal_table_functions = [
+        f"url('{literal_query_url}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{literal_query_url}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in literal_table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 1},
+        ).strip() == "5"
+
+    archive_table_functions = [
+        f"url('{archive_query_url}', 'CSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{archive_query_url}', 'CSV', 'x UInt64')",
+    ]
+    for table_function in archive_table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 1},
+        ).strip() == "3"
+
+
+def test_url_path_with_literal_double_colon_requires_archive_syntax_off():
+    literal_url = "http://resolver:8087/data/data.zip::v1"
+    table_functions = [
+        f"url('{literal_url}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{literal_url}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 0},
+        ).strip() == "7"
+
+    # The other half of the contract: with the setting on, `data.zip::v1` is archive syntax even though
+    # the member name has no extension. The mock serves the member as `9`, the literal path as `7`.
+    for table_function in table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 1},
+        ).strip() == "9"
+
+
+def test_url_writes_to_archive_paths():
+    # The POSTed paths are served before the archive data until the server is reset, so leave none behind
+    # for the tests that run after this one, even when an assertion below fails.
+    try:
+        archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
+        for archive_path_syntax, expected_error in [
+            (1, "Write into archive is not supported"),
+            (0, "Bad URI syntax: URI contains invalid characters"),
+        ]:
+            error = node1.query_and_get_error(
+                f"INSERT INTO FUNCTION url('{archive_url}', 'CSV', 'x UInt64') VALUES (1)",
+                settings={"allow_archive_path_syntax": archive_path_syntax},
+            )
+            assert expected_error in error
+
+        targets = [
+            ("http://resolver:8087/data/simple_archive.zip::eod.csv", 1, {"allow_archive_path_syntax": 0}),
+            ("http://resolver:8087/data/file.tar", 2, {}),
+            ("http://resolver:8087/data/file.csv", 3, {}),
+        ]
+        for target_url, value, settings in targets:
+            node1.query(
+                f"INSERT INTO FUNCTION url('{target_url}', 'CSV', 'x UInt64') VALUES ({value})",
+                settings=settings,
+            )
+            assert node1.query(
+                f"SELECT sum(x) FROM url('{target_url}', 'CSV', 'x UInt64')",
+                settings=settings,
+            ).strip() == str(value)
+    finally:
+        reset_index_page_server_stats()
+
+
+def test_url_archive_member_size_is_the_one_in_the_archive():
+    # `_size` of a member is its size inside the archive: for `compressed.csv.gz` that is the gzip stream,
+    # not the four bytes it expands to.
+    assert node1.query(
+        "SELECT any(_size) FROM url("
+        "'http://resolver:8087/data/simple_archive.zip :: eod.csv', 'CSV', 'x UInt64')"
+    ).strip() == "4"
+    compressed_size = node1.query(
+        "SELECT any(_size) FROM url("
+        "'http://resolver:8087/data/simple_archive.zip :: compressed.csv.gz', 'CSV', 'x UInt64')"
+    ).strip()
+    # The gzip stream of `4\n5\n` is a fixed 24 bytes, longer than the four it expands to, so the exact value
+    # pins that `_size` is the stored size rather than the expanded one.
+    assert int(compressed_size) == len(gzip.compress(b"4\n5\n"))
+
+    # A `DEFLATE` entry stores fewer bytes than it reports: `_size` is the uncompressed size, which is what
+    # the reader has to hand out, not the size the container holds.
+    deflated = node1.query(
+        "SELECT any(_size) FROM url("
+        "'http://resolver:8087/data/deflated_archive.zip :: value.tsv', 'CSV', 'x UInt64')"
+    ).strip()
+    assert int(deflated) == 1000
+
+
+def test_url_archive_combined_expansion_limit():
+    settings = {
+        "allow_url_wildcard_from_index_pages": 0,
+        "glob_expansion_max_elements": 2,
+    }
+    two_shards_one_path = (
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1} :: value.tsv"
+    )
+    table_functions = [
+        f"url('{two_shards_one_path}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{two_shards_one_path}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(f"SELECT sum(x) FROM {table_function}", settings=settings).strip() == "303"
+
+    # One shard too many for the limit: the product of the URL shards and the literal path is bounded
+    # before anything is reserved, and no index page is listed for a literal path.
+    too_many_shards = (
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1,2} :: value.tsv"
+    )
+    queries = [
+        f"SELECT * FROM url('{too_many_shards}', 'TSV', 'x UInt64')",
+        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{too_many_shards}', 'TSV', 'x UInt64')",
+    ]
+    for query in queries:
+        reset_index_page_server_stats()
+        error = node1.query_and_get_error(query, settings=settings)
+        assert "first argument generates too many result addresses" in error
+        assert get_index_page_server_stats() == {}
+
+
+def test_url_cluster_rejects_bucket_granularity_for_archives():
+    error = node1.query_and_get_error(
+        "SELECT sum(x) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.zip :: eod.csv', "
+        "'CSV', 'x UInt64') "
+        "SETTINGS cluster_table_function_split_granularity='bucket'"
+    )
+    assert "is not supported for reading archives" in error
+    assert "cluster_table_function_split_granularity" in error
+
+
+def test_url_archive_member_glob_infers_compression_from_matched_file():
+    source = "http://resolver:8087/data/simple_archive.zip :: compressed*"
+    table_functions = [
+        f"url('{source}', 'CSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{source}', 'CSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(f"SELECT sum(x) FROM {table_function}").strip() == "9"
+
+
+def test_url_cluster_archive_processing_modes_do_not_duplicate_members():
+    source = "http://resolver:8087/data/multi_member_archive.zip :: *.tsv"
+    split_query_id = "url_cluster_archive_split_across_shards"
+    for process_on_multiple_nodes in (0, 1):
+        result = node1.query(
+            "SELECT count(), sum(x), uniqExact(_path) FROM urlCluster("
+            f"'test_cluster_two_shards', '{source}', 'TSV', 'x UInt64') "
+            f"SETTINGS cluster_function_process_archive_on_multiple_nodes={process_on_multiple_nodes}",
+            query_id=split_query_id if process_on_multiple_nodes else None,
+        )
+        assert result.strip() == "2\t3\t2"
+
+    # The tasks really reach the workers: with the archive split across the shards, each of them runs a
+    # secondary query for it. The assertion is bound to the `=1` query, because the `=0` round sends the
+    # whole archive and would satisfy a plain "some secondary query mentions the archive" check as well.
+    node1.query("SYSTEM FLUSH LOGS")
+    forwarded = int(
+        node1.query(
+            "SELECT count() FROM system.query_log WHERE is_initial_query = 0 "
+            "AND event_date >= today() - 1 AND type = 'QueryFinish' "
+            f"AND initial_query_id = '{split_query_id}'"
+        ).strip()
+    )
+    assert forwarded > 0, "no secondary query for the archive was dispatched"
+
+
+def test_url_archive_failure_modes():
+    # A member that is not in the archive and a member glob that matches nothing are both an empty read,
+    # like a glob over paths that matches nothing and like `file`/`s3` with the same source.
+    assert node1.query(
+        "SELECT count() FROM url('http://resolver:8087/data/simple_archive.zip :: missing.csv', 'CSV', 'c1 String')"
+    ).strip() == "0"
+    assert node1.query(
+        "SELECT count() FROM url('http://resolver:8087/data/simple_archive.zip :: *.none', 'CSV', 'c1 String')"
+    ).strip() == "0"
+
+    # A path that ends with an archive suffix but does not hold an archive, and a truncated one, both have
+    # to be reported as an unreadable archive rather than be read as the table format.
+
+    error = node1.query_and_get_error(
+        "SELECT * FROM url('http://resolver:8087/data/not_an_archive.zip :: value.tsv', 'CSV', 'c1 String')"
+    )
+    assert "CANNOT_UNPACK_ARCHIVE" in error, error
+    assert "not_an_archive.zip" in error, error
+
+    error = node1.query_and_get_error(
+        "SELECT * FROM url('http://resolver:8087/data/truncated_archive.zip :: value.tsv', 'CSV', 'c1 String')"
+    )
+    assert "CANNOT_UNPACK_ARCHIVE" in error, error
+    assert "truncated_archive.zip" in error, error
+
+
+def test_url_archive_without_url_wildcards():
+    for archive_name in ("simple_archive.zip", "simple_archive.tar", "simple_archive.tar.gz"):
+        archive_url = f"http://resolver:8087/data/{archive_name} :: eod.csv"
+        assert node1.query(f"SELECT sum(c1) FROM url('{archive_url}')").strip() == "3"
+
+    archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
+    assert node1.query(
+        "SELECT sum(value) FROM url("
+        "'http://resolver:8087/data/simple_archive.zip :: *.csv', "
+        "'CSV', 'value UInt64')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(id) FROM url("
+        "'http://resolver:8087/data/simple_archive.7z :: example*.csv', "
+        "'CSV', 'id UInt32, data String')"
+    ).strip() == "10"
+    # A fixed member in whole-archive mode: the initiator sends one task per archive and drops the ones that
+    # do not hold the member, so the member is read exactly once and a non-matching archive is skipped.
+    for process_on_multiple_nodes in (0, 1):
+        assert node1.query(
+            "SELECT sum(c1) FROM urlCluster("
+            "'test_cluster_two_shards', "
+            "'http://resolver:8087/data/simple_archive.zip :: eod.csv', 'CSV') "
+            f"SETTINGS cluster_function_process_archive_on_multiple_nodes={process_on_multiple_nodes}"
+        ).strip() == "3"
+
+    for process_on_multiple_nodes in (0, 1):
+        assert node1.query(
+            "SELECT sum(value) FROM urlCluster("
+            "'test_cluster_two_shards', "
+            "'http://resolver:8087/data/simple_archive.zip :: *.csv', "
+            "'CSV', 'value UInt64') "
+            f"SETTINGS cluster_function_process_archive_on_multiple_nodes={process_on_multiple_nodes}"
+        ).strip() == "3"
+
+    assert node1.query(
+        "SELECT sum(value) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.tar :: *.csv', "
+        "'CSV', 'value UInt64')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(id) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.7z :: example*.csv', "
+        "'CSV', 'id UInt32, data String')"
+    ).strip() == "10"
+    assert node1.query(
+        "SELECT sum(c1) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.zip :: eod.csv')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(value) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/header_archive.zip :: eod.csv', "
+        "'CSV', 'value UInt64', headers('X-Test-Header'='1'))"
+    ).strip() == "3"
+
+    table_name = "url_archive_empty_as"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} ORDER BY () EMPTY AS "
+            f"SELECT * FROM url('{archive_url}')"
+        )
+        assert node1.query(f"SELECT count() FROM {table_name}").strip() == "0"
+        assert node1.query(f"DESCRIBE TABLE {table_name}") == TSV([["c1", "Nullable(Int64)"]])
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_url_wildcard_archive_metadata_uses_shard_identity():
+    result = node1.query(
+        "SELECT sum(x) FROM url('"
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1} :: value.tsv', "
+        "'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "303"
+
+    result = node1.query(
+        "SELECT sum(x) FROM urlCluster('test_cluster_two_shards', '"
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1} :: value.tsv', "
+        "'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "303"
+
     result = node1.query(
         with_url_wildcard_setting(
             "SELECT sum(x) FROM url('"
             "http://resolver:8087/data/archive_identity/archive*.zip?shard={0,1} :: value.tsv', "
+            "'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "303"
+
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM urlCluster('test_cluster_two_shards', '"
+            "http://resolver:8087/data/archive_identity/archive*.zip?shard={0,1} :: value*.tsv', "
             "'TSV', 'x UInt64')"
         )
     )
@@ -799,8 +1103,18 @@ def test_url_engine_wildcard_redirect_uses_query_setting():
 
 
 def test_url_wildcard_is_experimental():
+    settings = {"allow_url_wildcard_from_index_pages": 0}
+
     error = node1.query_and_get_error(
-        "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')",
+        settings=settings,
+    )
+    assert "allow_url_wildcard_from_index_pages" in error
+
+    error = node1.query_and_get_error(
+        "SELECT sum(x) FROM urlCluster("
+        "'test_cluster_two_shards', 'http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')",
+        settings=settings,
     )
     assert "allow_url_wildcard_from_index_pages" in error
 

@@ -206,8 +206,8 @@ TEST(ArchiveUtils, SplitsRelativeWebTaskPathWithQueryOrFragment)
     EXPECT_EQ(uri_relative_scheme_member, "m");
 
     /// A `::` inside the userinfo is not the separator either: the authority ends at the first `/`.
-    const auto [userinfo_archive, userinfo_member] = getURLAndArchivePattern("http://user:pw@host/a.zip::m");
-    EXPECT_EQ(userinfo_archive, "http://user:pw@host/a.zip");
+    const auto [userinfo_archive, userinfo_member] = getURLAndArchivePattern("http://user:p::q@host/a.zip::m");
+    EXPECT_EQ(userinfo_archive, "http://user:p::q@host/a.zip");
     EXPECT_EQ(userinfo_member, "m");
 
     /// A host that ends with an archive suffix is not a path even without a query, so the `::` stays literal.
@@ -323,10 +323,23 @@ TEST(ArchiveUtils, RejectsAnEmptySideAndKeepsTheRestOfTheMemberPath)
     EXPECT_EQ(late_explicit_literal, "data::v1.zip :: m.csv");
     EXPECT_FALSE(late_explicit_no_member.has_value());
 
+    /// A comma outside a group is a literal path character, so the source names one archive, not two.
+    const auto [comma_archive, comma_member] = getURLAndArchivePattern("a.zip,b.zip::m.csv");
+    EXPECT_EQ(comma_archive, "a.zip,b.zip");
+    EXPECT_EQ(comma_member, "m.csv");
+
     /// A source without any separator is returned unchanged.
     const auto [plain_literal, plain_no_member] = getURLAndArchivePattern("data/a.csv");
     EXPECT_EQ(plain_literal, "data/a.csv");
     EXPECT_FALSE(plain_no_member.has_value());
+
+    /// The same holds when the first candidate is inside the query: a URL half that carries whitespace of
+    /// its own means the spaced separator found is inside the member name, so the first candidate wins and
+    /// the member keeps its `::`.
+    const auto [query_member_space_archive, query_member_space_member]
+        = getURLAndArchivePattern("data/a.zip?token=x::my file :: copy.csv");
+    EXPECT_EQ(query_member_space_archive, "data/a.zip?token=x");
+    EXPECT_EQ(query_member_space_member, "my file :: copy.csv");
 
     /// A `::` with whitespace inside the member name does not move the separator there: the whitespace
     /// argument holds only for the URL part, so the first candidate stays the separator and the member keeps
