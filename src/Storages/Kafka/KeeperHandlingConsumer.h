@@ -130,9 +130,7 @@ public:
     /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
     std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls, size_t retry_interval_ms);
-    /// Publishes that this replica tried and failed to take any partition this refresh round.
     void markDemandInKeeper(size_t retry_interval_ms);
-    /// Removes the published demand once this replica holds partitions again.
     void removeDemandInKeeper();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
@@ -173,11 +171,8 @@ private:
     struct ActiveReplicasInfo
     {
         UInt64 active_replica_count{0};
-        /// Active replicas currently holding no partition lock.
         std::vector<String> lockless_active_replicas;
-        /// Their published demand values (refreshed on every attempt).
         std::unordered_map<String, String> demand_of_lockless;
-        /// Lockless replicas without the demand_aware capability marker (rolling upgrade).
         std::unordered_set<String> demand_unaware_lockless;
     };
 
@@ -209,23 +204,18 @@ private:
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
 
-    /// Rounds each still-active replica has been lockless; resets when it takes locks or disappears.
     std::unordered_map<String, size_t> TSA_GUARDED_BY(topic_partition_locks_mutex) lockless_rounds_by_replica;
 
-    /// Whether this consumer currently keeps a demand node in Keeper.
     bool demand_published = false;
 
-    /// When this consumer last published a demand, to measure the actual retry interval.
     std::chrono::steady_clock::time_point last_demand_time{};
 
     struct DemandState
     {
         String last_value;
-        /// How long the reservation is held after the value last changed.
         size_t retention_ms = 1500;
         std::chrono::steady_clock::time_point last_change{};
     };
-    /// Demand state per lockless replica; refreshed whenever its value changes.
     std::unordered_map<String, DemandState> TSA_GUARDED_BY(topic_partition_locks_mutex) demand_state_by_replica;
 
     std::atomic<UInt64> last_poll_timestamp = 0;

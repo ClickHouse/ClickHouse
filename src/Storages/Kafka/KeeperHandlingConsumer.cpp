@@ -172,7 +172,6 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
 
 KeeperHandlingConsumer::~KeeperHandlingConsumer()
 {
-    /// The demand node must not outlive the consumer that published it.
     try
     {
         removeDemandInKeeper();
@@ -350,7 +349,6 @@ void KeeperHandlingConsumer::removeDemandInKeeper()
     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
     {
         demand_published = false;
-        /// The next demand opens a new episode and must not measure across the acquisition.
         last_demand_time = {};
     }
 }
@@ -478,8 +476,6 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             lockless_active_replicas.push_back(std::move(candidates[i]));
     }
 
-    /// Read the demand published by lockless replicas, and check which lack the
-    /// demand_aware marker (old-code replicas during a rolling upgrade).
     std::unordered_map<String, String> demand_of_lockless;
     std::unordered_set<String> demand_unaware_lockless;
     if (!lockless_active_replicas.empty())
@@ -588,8 +584,6 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     const std::unordered_map<String, String> & demand_of_lockless,
     const std::unordered_set<String> & demand_unaware_lockless) TSA_REQUIRES(topic_partition_locks_mutex)
 {
-    /// Track how long each still-active replica has been lockless; streaks reset when the
-    /// replica takes locks or disappears.
     for (const auto & replica : lockless_active_replicas)
         ++lockless_rounds_by_replica[replica];
     std::erase_if(lockless_rounds_by_replica, [&](const auto & entry)

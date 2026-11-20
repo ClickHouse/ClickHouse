@@ -210,7 +210,6 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    /// Capability marker, released with the active registration like `is_active`.
     zkutil::EphemeralNodeHolderPtr demand_aware_node;
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
