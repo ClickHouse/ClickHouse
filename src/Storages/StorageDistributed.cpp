@@ -2146,10 +2146,11 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         auto addresses = parseAddresses(name, *cluster);
         if (addresses_changed(node_data.addresses, addresses))
         {
-            /// Build the replacement pool from this same cluster before publishing the addresses.
-            /// `getCluster` throws if the cluster was dropped. Publishing the addresses first would
-            /// leave them on the new endpoint and the queue pool on the old one; the next refresh
-            /// would see equal addresses, record the version, and keep sending to the removed endpoint.
+            /// Build the replacement pool from the cluster copied above before publishing the addresses.
+            /// `DROP CLUSTER` while `createPool` is paused does not change that copy. Publishing the
+            /// addresses first would leave them on the new endpoint and the queue pool on the old one;
+            /// the next refresh would see equal addresses, record the version, and keep sending to the
+            /// removed endpoint.
             auto pool = DistributedAsyncInsertDirectoryQueue::createPool(addresses, *cluster, *this);
             node_data.addresses = std::move(addresses);
             node_data.connection_pool = std::move(pool);

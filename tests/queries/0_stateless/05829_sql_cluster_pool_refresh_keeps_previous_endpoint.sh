@@ -4,9 +4,9 @@
 # no-fasttest: failpoints are not built into the fast test binary.
 
 # An existing async queue is refreshed after `ALTER CLUSTER` moves the shard to another endpoint.
-# `createPool` looks the cluster up again and throws if it was dropped in between. The saved
-# addresses must stay on the old endpoint until that pool exists, otherwise the retry records the
-# new version, sees no address change, and keeps sending to the removed endpoint.
+# `getDirectoryQueue` copies that cluster before `createPool` pauses. `DROP CLUSTER` during the
+# pause removes the name from Context, while the copy still describes the new endpoint. The
+# resumed insert must be sent there, not left on the pool built for the previous endpoint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -78,7 +78,9 @@ ALTER CLUSTER ${cluster} (
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
 
-$CLICKHOUSE_CLIENT --distributed_foreground_insert 0 --prefer_localhost_replica 0 \
+# Refresh copies endpoint B, then pauses inside `createPool`. Dropping the cluster here must not
+# replace that copy or keep the queue on endpoint A.
+$CLICKHOUSE_CLIENT --distributed_foreground_insert 0 --prefer_localhost_replica 0 --log_comment '05829_refresh' \
     --query "INSERT INTO ${dist} (x) SELECT 1" >"${insert_log}" 2>&1 &
 insert_pid=$!
 
@@ -86,28 +88,13 @@ $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${failpoint} PAUSE"
 $CLICKHOUSE_CLIENT --query "DROP CLUSTER ${cluster}"
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT ${failpoint}"
 
-if wait "${insert_pid}"; then
-    echo "refresh insert succeeded"
+if ! wait "${insert_pid}"; then
+    echo "refresh insert failed"
     cat "${insert_log}"
     exit 1
 fi
 insert_pid=""
 
-if ! grep -q 'CLUSTER_DOESNT_EXIST' "${insert_log}"; then
-    echo "refresh insert failed for another reason"
-    cat "${insert_log}"
-    exit 1
-fi
-
-# Same endpoint B again. The retry must build a pool for B, not keep sending to A.
-$CLICKHOUSE_CLIENT --query "
-CREATE CLUSTER ${cluster} (
-    SHARD (host = '127.0.0.2', port = ${CLICKHOUSE_PORT_TCP}, user = '${user_b}')
-)
-"
-
-$CLICKHOUSE_CLIENT --distributed_foreground_insert 0 --prefer_localhost_replica 0 --log_comment '05829_retry' \
-    --query "INSERT INTO ${dist} (x) SELECT 1"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH DISTRIBUTED ${dist}"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
@@ -116,7 +103,7 @@ FROM system.query_log
 WHERE event_date >= yesterday()
   AND type = 'QueryFinish'
   AND has(databases, currentDatabase())
-  AND log_comment = '05829_retry'
+  AND log_comment = '05829_refresh'
   AND user IN ('${user_a}', '${user_b}')
 ORDER BY event_time_microseconds
 LIMIT 1
