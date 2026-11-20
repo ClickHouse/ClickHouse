@@ -1,4 +1,4 @@
-z-- Tags: no-fasttest
+-- Tags: no-fasttest
 -- no-fasttest: Substrait is not built in fast test
 
 SET enable_substrait = 1;

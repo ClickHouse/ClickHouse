@@ -838,6 +838,15 @@ makeConjunction(std::vector<SubstraitExpressionConverter::ConvertedExpression> c
     return makeScalarCall(SubstraitExtensionURN::boolean, "and:bool", std::move(conjuncts), type, extensions);
 }
 
+substrait::Expression makeIsNan(size_t position, const substrait::Type & type, SubstraitPlanExtensions & extensions)
+{
+    const auto signature = fmt::format("is_nan:{}", substraitTypeShortName(type, extensions));
+    const auto result_type = makeSimpleSubstraitType("bool", isSubstraitTypeNullable(type));
+    std::vector<SubstraitExpressionConverter::ConvertedExpression> argument(1);
+    argument.front().expression = makeColumnReference(position);
+    return makeScalarCall(SubstraitExtensionURN::comparison, signature, std::move(argument), result_type, extensions);
+}
+
 }
 
 #endif

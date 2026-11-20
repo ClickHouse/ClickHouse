@@ -678,10 +678,21 @@ SubstraitPlanSerializer::convertSorting(const SortingStep & sorting, NodeState &
         if (!position)
             return blocked(fmt::format("sort column {} is not present in the child schema", column.column_name));
 
+        const bool nulls_last = column.nulls_direction == column.direction;
+
+        /// Substrait leaves NaN placement to the consumer. A leading `is_nan` key puts it between the values and NULL, as in ClickHouse.
+        const auto & key_type = child.schema.columns[*position].type;
+        if (isSubstraitFloatShort(substraitTypeShortName(key_type, extensions)))
+        {
+            auto * nan_field = sort->add_sorts();
+            *nan_field->mutable_expr() = makeIsNan(*position, key_type, extensions);
+            nan_field->set_direction(
+                nulls_last ? substrait::SortField_SortDirection_SORT_DIRECTION_ASC_NULLS_LAST
+                           : substrait::SortField_SortDirection_SORT_DIRECTION_DESC_NULLS_FIRST);
+        }
+
         auto * field = sort->add_sorts();
         *field->mutable_expr() = makeColumnReference(*position);
-
-        const bool nulls_last = column.nulls_direction == column.direction;
         if (column.direction == 1)
             field->set_direction(
                 nulls_last ? substrait::SortField_SortDirection_SORT_DIRECTION_ASC_NULLS_LAST

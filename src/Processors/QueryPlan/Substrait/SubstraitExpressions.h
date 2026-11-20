@@ -79,6 +79,9 @@ private:
 substrait::Expression
 makeConjunction(std::vector<SubstraitExpressionConverter::ConvertedExpression> conjuncts, SubstraitPlanExtensions & extensions);
 
+/// `is_nan` over input column `position`, which has the float `type`.
+substrait::Expression makeIsNan(size_t position, const substrait::Type & type, SubstraitPlanExtensions & extensions);
+
 }
 
 #endif
