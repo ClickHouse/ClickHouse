@@ -448,6 +448,11 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP TABLE`
     - `DROP VIEW`
     - `DROP WORKLOAD`
+  - `HANDLER ADMIN`
+    - `ALTER HANDLER`
+    - `CREATE HANDLER`
+    - `DROP HANDLER`
+    - `SHOW HANDLERS`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
     - `addressToLine`
