@@ -215,7 +215,7 @@ SELECT
     log_comment,
     used_aggregate_functions[1] AS func,
     max(ProfileEvents['AggregationRollupSkippedInputMerges']) AS input_merges_skipped,
-    max(ProfileEvents['AggregationConvertedToTwoLevel']) > 0 AS input_was_split,
+    max(ProfileEvents['AggregationConvertedToTwoLevel']) > 0 AS converted_to_two_level,
     max(ProfileEvents['AdaptiveAggregationDrainedRecords']) > 0 AS adaptive_engaged,
     max(ProfileEvents['ExternalAggregationWritePart']) AS spilled
 FROM system.query_log
