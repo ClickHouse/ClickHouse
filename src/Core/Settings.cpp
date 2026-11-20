@@ -1246,7 +1246,7 @@ Such a condition is not ordered by cost. With the setting disabled, the conditio
 [short_circuit_function_evaluation](#short_circuit_function_evaluation) were `disable`, and the query can throw
 on the rows that a preceding condition excludes.
 )", 0, \
-        {"26.11", false, true, "New setting: automatic PREWHERE keeps a condition that can throw behind the conditions that short-circuit evaluation applies before it. `compatibility` below 26.11 restores the previous order."}) \
+        {"26.12", false, true, "New setting: automatic PREWHERE keeps a condition that can throw behind the conditions that short-circuit evaluation applies before it. `compatibility` below 26.12 restores the previous order."}) \
     DECLARE(Bool, apply_string_filters_during_scan, true, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
