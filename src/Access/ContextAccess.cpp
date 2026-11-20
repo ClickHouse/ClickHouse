@@ -907,8 +907,8 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
     struct PrecalculatedFlags
     {
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
-            | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-            | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
+            | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::ALTER_DATABASE | AccessType::DROP_DATABASE | AccessType::DROP_TABLE
+            | AccessType::DROP_VIEW | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
@@ -921,8 +921,10 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
+        /// A temporary table with an engine other than `Memory`, without the child `CREATE_TEMPORARY_TABLE` that `readonly = 2` allows.
+        const AccessFlags arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE - AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | cluster_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | cluster_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::KILL_TRANSACTION | arbitrary_temporary_table;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | cluster_ddl;
