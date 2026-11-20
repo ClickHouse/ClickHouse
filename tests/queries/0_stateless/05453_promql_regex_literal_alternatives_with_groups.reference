@@ -14,3 +14,9 @@
 -- a big group with literals around it keeps the regex, a big group alone is a list
 6
 6
+-- groups nested deeper than 32 keep the regex, and a very deep nesting does not overflow the stack
+6
+6
+[2,3]
+5
+3

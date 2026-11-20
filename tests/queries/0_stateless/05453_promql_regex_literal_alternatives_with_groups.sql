@@ -47,7 +47,7 @@ SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 32
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value');
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, concat('a_total{job=~"', repeat('(', 40), 'api-prod|api-stg', repeat(')', 40), '"}'), 1000) ORDER BY value);
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 50000), 'a_total', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value'); -- { serverError CANNOT_COMPILE_REGEXP }
-SELECT count() FROM timeSeriesSelector(rx, concat('{job=~"', repeat('(', 50000), 'api', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value'); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 50000), 'a_total', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value');
+SELECT count() FROM timeSeriesSelector(rx, concat('{job=~"', repeat('(', 50000), 'api', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value');
 
 DROP TABLE rx;
