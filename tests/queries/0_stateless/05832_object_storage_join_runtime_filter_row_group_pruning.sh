@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # - no-fasttest: requires S3
+# Random settings limits: output_format_parquet_write_page_index=(1, 1)
 
 # JOIN runtime filters prune the Parquet row groups and pages of a plain object storage read, but only by a key the
 # format returns with the values of the file.
