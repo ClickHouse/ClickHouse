@@ -2156,15 +2156,13 @@ class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     ObjectJSONNode(
-        const DataTypePtr & object_type_,
         const DataTypeObject::TypedPathsMap & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & type_of_nested_objects,
         bool source_filled_by_caller_ = false)
-        : object_type(object_type_)
-        , typed_paths_types(typed_paths_types_)
+        : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
@@ -2187,16 +2185,17 @@ public:
 
         if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
-            if (!all_typed_paths_have_trivial_defaults)
-            {
-                object_type->insertDefaultInto(column);
-                return true;
-            }
-
-            /// The defaults of the types are the zeroes of the columns.
             auto & column_object = assert_cast<ColumnObject &>(column);
-            for (auto * col : column_object.getSortedTypedPathColumns())
-                col->insertDefault();
+            if (all_typed_paths_have_trivial_defaults)
+            {
+                for (auto * col : column_object.getSortedTypedPathColumns())
+                    col->insertDefault();
+            }
+            else
+            {
+                for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            }
             for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
                 dynamic_column->insertDefault();
             column_object.getSharedDataColumn().insertDefault();
@@ -2342,6 +2341,8 @@ private:
                 /// checks (typed and dynamic) and the sorted shared-data scan below, rolling the row back.
                 for (auto [key, value] : element.getObject())
                 {
+                    if (isRootKeyReserved(column_object, current_path, key, insert_settings, is_root, error))
+                        return false;
                     size_t parent_size = pushChildKey(current_path, key, insert_settings, is_root);
                     bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1);
                     current_path.resize(parent_size);
@@ -2411,17 +2412,8 @@ private:
             /// so here we only need to skip already-processed (key, type) combinations.
             for (auto [key, value] : element.getObject())
             {
-                /// The JSON source is stored in a separate subcolumn, so its name and the paths nested in it
-                /// cannot be stored as paths. Deeper keys cannot create such a path without a top level one.
-                if (is_root && column_object.hasSource())
-                {
-                    String path = buildChildPath(current_path, key, insert_settings, is_root);
-                    if (DataTypeObject::isSourceSubcolumnPath(path))
-                    {
-                        error = fmt::format("Key '{}' is reserved for the subcolumn with JSON source in JSON types with 'with_source=1'", path);
-                        return false;
-                    }
-                }
+                if (isRootKeyReserved(column_object, current_path, key, insert_settings, is_root, error))
+                    return false;
 
                 auto value_element_type = getJSONElementType(value);
                 auto & types = key_element_types[key];
@@ -2559,6 +2551,19 @@ private:
         else
             path += key;
         return path;
+    }
+
+    /// The JSON source is stored in a separate subcolumn, so its name and the paths nested in it cannot be
+    /// stored as paths. Deeper keys cannot create such a path without a top level one, so only the root is checked.
+    [[nodiscard]] bool isRootKeyReserved(const ColumnObject & column_object, const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root, String & error) const
+    {
+        if (!is_root || !column_object.hasSource())
+            return false;
+        String path = buildChildPath(current_path, key, insert_settings, is_root);
+        if (!DataTypeObject::isSourceSubcolumnPath(path))
+            return false;
+        error = fmt::format("Key '{}' is reserved for the subcolumn with JSON source in JSON types with 'with_source=1'", path);
+        return true;
     }
 
     [[nodiscard]] bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
@@ -2971,8 +2976,6 @@ private:
         return false;
     }
 
-    /// Inserts the default rows for NULLs when the defaults of the typed paths are not trivial.
-    DataTypePtr object_type;
     DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
@@ -3218,7 +3221,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(
             {
                 case DataTypeObject::SchemaFormat::JSON:
                     return std::make_unique<ObjectJSONNode<JSONParser>>(
-                        type,
                         typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),

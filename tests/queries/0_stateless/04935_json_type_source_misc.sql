@@ -6,7 +6,7 @@ SELECT json.__source.size FROM (SELECT materialize('{"a" : 42}')::JSON(with_sour
 DROP TABLE IF EXISTS t_json_source_misc;
 -- The size of the source is a separate stream only with these settings.
 CREATE TABLE t_json_source_misc (json JSON(with_source=1)) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS string_serialization_version = 'with_size_stream', propagate_types_serialization_versions_to_nested_types = 1;
+SETTINGS string_serialization_version = 'with_size_stream', propagate_types_serialization_versions_to_nested_types = 1, serialization_info_version = 'with_types';
 INSERT INTO t_json_source_misc VALUES ('{"a" :  42}');
 
 SELECT 'the source is listed in subcolumns';
@@ -30,11 +30,20 @@ SELECT 'the text of a default row contains typed paths';
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, a UInt32)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 
-SELECT 'the text of a default row matches the defaults in its typed paths: of the types or of the columns';
+SELECT 'the text of a default row has the defaults of the types';
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'minus\' = -1, \'zero\' = 0))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
 SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, e Enum8(\'ok\' = 1))', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
-SELECT json, json.__source FROM (SELECT arrayElement(materialize(['{"e" : "minus"}'::JSON(with_source=1, e Enum8('minus' = -1, 'zero' = 0))]), 2) AS json);
 SELECT json, json.__source FROM (SELECT assumeNotNull(materialize(CAST(NULL, 'Nullable(JSON(with_source=1, e Enum8(\'minus\' = -1, \'zero\' = 0)))'))) AS json);
+
+SELECT 'hidden default rows of a typed path whose column zero is not a value of its type';
+DROP TABLE IF EXISTS t_json_source_enum_default;
+CREATE TABLE t_json_source_enum_default (id UInt64, json JSON(with_source=1, e Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_source_enum_default VALUES (1, '{"e" : "a"}');
+SELECT json, json.__source FROM t_json_source_enum_default;
+DROP TABLE t_json_source_enum_default;
+SELECT json FROM format(JSONEachRow, 'json Nullable(JSON(with_source=1, e Enum8(\'ok\' = 1)))', '{"json" : null}');
+SELECT if(number = 0, materialize('{"e" : "ok"}')::JSON(with_source=1, e Enum8('ok' = 1)), NULL) AS json FROM numbers(2);
+SELECT r.json FROM (SELECT 1 AS k) AS l LEFT JOIN (SELECT 2 AS k, '{"e" : "ok"}'::JSON(with_source=1, e Enum8('ok' = 1)) AS json) AS r USING k SETTINGS join_use_nulls = 1;
 SELECT 'the common type keeps the source only if all types have it';
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(with_source=1, b UInt32)));
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, max_dynamic_paths=8), '{}'::JSON(with_source=1, max_dynamic_paths=16)));
@@ -93,3 +102,7 @@ DROP TABLE t_json_source_skip_empty;
 SELECT 'generateRandom creates the source from the generated objects';
 SELECT count(), countIf(isValidJSON(json.__source)) FROM (SELECT * FROM generateRandom('json JSON(with_source=1)', 42, 10, 3) LIMIT 100);
 SELECT count(), countIf(arrayAll(s -> isValidJSON(s), arr.__source)) FROM (SELECT * FROM generateRandom('arr Array(JSON(with_source=1))', 42, 10, 3) LIMIT 100);
+
+SELECT 'a reserved path from a reinterpreted aggregate state is rejected';
+SELECT finalizeAggregation(CAST(unhex(h), 'AggregateFunction(groupUniqArray, JSON(with_source=1))'))
+FROM (SELECT hex(groupUniqArrayState(j)) AS h FROM (SELECT materialize('{"__source" : 42, "a" : 1}')::JSON AS j)); -- { serverError INCORRECT_DATA }

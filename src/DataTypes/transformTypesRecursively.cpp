@@ -340,7 +340,8 @@ DataTypePtr replaceNestedTypesInPairImpl(
             left_object.getPathRegexpsToSkip(),
             left_object.getMaxDynamicPaths(),
             left_object.getMaxDynamicTypes(),
-            left_object.getSharedTypedPaths());
+            left_object.getSharedTypedPaths(),
+            left_object.hasSource());
     }
 
     const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get());

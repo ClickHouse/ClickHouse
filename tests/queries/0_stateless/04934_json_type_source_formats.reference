@@ -20,3 +20,5 @@ A flattened Native block with a truncated source is rejected
 1
 A path nested in the reserved name in RowBinary input is rejected
 1
+A reserved path in the shared data of a Native block is rejected
+1

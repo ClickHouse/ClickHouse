@@ -105,6 +105,33 @@ void SerializationObject::checkPathIsNotReserved(const String & path) const
             DataTypeObject::SOURCE_SUBCOLUMN_NAME);
 }
 
+void SerializationObject::checkSharedDataPathsAreNotReserved(const ColumnObject & column_object, size_t prev_size) const
+{
+    if (!source_serialization)
+        return;
+
+    const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
+    const auto & offsets = column_object.getSharedDataOffsets();
+    for (size_t row = prev_size; row != offsets.size(); ++row)
+    {
+        /// The paths of a row are sorted, so the first path that is not smaller than the reserved name is
+        /// the only one that can be reserved.
+        size_t lo = offsets[row - 1];
+        size_t hi = offsets[row];
+        const std::string_view reserved_name = DataTypeObject::SOURCE_SUBCOLUMN_NAME;
+        while (lo != hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            if (shared_data_paths->getDataAt(mid) < reserved_name)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo != static_cast<size_t>(offsets[row]))
+            checkPathIsNotReserved(String(shared_data_paths->getDataAt(lo)));
+    }
+}
+
 bool SerializationObject::shouldSkipPath(const String & path) const
 {
     if (paths_to_skip.contains(path))
@@ -603,14 +630,19 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
 
     if (source_serialization)
     {
-        /// Paths come from the data here, so the reserved name must be rejected the same way as during parsing.
-        if (structure_state_concrete->sorted_dynamic_paths)
+        /// Reject a reserved path only in a Native block from a client. A data part is read without this
+        /// check to keep reads fast, and a part that carries a reserved path is harmless: the source is a
+        /// separate stream, so the path is only shadowed by the source subcolumn.
+        if (settings.native_format)
         {
-            for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
+            if (structure_state_concrete->sorted_dynamic_paths)
+            {
+                for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
+                    checkPathIsNotReserved(path);
+            }
+            for (const auto & path : structure_state_concrete->flattened_paths)
                 checkPathIsNotReserved(path);
         }
-        for (const auto & path : structure_state_concrete->flattened_paths)
-            checkPathIsNotReserved(path);
 
         source_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->source_state, cache);
     }
@@ -1257,6 +1289,11 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::ObjectSharedData);
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
+
+    /// A Native block can carry a reserved path in the shared data, where the prefix check cannot see it.
+    /// Data parts are read without this check to keep reads fast.
+    if (settings.native_format && source_serialization)
+        checkSharedDataPathsAreNotReserved(column_object, shared_data_previous_size);
 
     if (object_state->use_typed_shared_data)
     {

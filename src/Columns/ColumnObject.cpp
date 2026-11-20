@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -570,8 +571,8 @@ bool ColumnObject::hasOnlyTypeDefaults() const
     if (!hasSource())
         return true;
 
-    /// A column that is not stored is restored as default rows with the zeroes of the columns in the typed paths,
-    /// so any other source text, like the text of an object with skipped paths, has to be stored.
+    /// A column that is not stored is restored as default rows with the default source text, so any other text,
+    /// like the text of an object with skipped paths, has to be stored.
     const auto text = default_source_text.empty() ? createDefaultSourceText() : default_source_text;
     const auto & source_column = getSourceColumn();
     for (size_t i = 0; i != source_column.size(); ++i)
@@ -748,10 +749,18 @@ void ColumnObject::insert(const Field & x)
 
     shared_data_offsets.push_back(shared_data_paths->size());
 
-    /// Fill all remaining typed and dynamic paths with default values.
-    for (auto & [_, column] : typed_paths)
+    /// Fill all remaining typed and dynamic paths with default values. With the source the row is written as text,
+    /// so the typed paths get the defaults of their types: the zero of a column is not always a value of its type.
+    if (hasSource() && !object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
+    for (auto & [path, column] : typed_paths)
     {
-        if (column->size() == current_size)
+        if (column->size() != current_size)
+            continue;
+        if (object_type_ptr)
+            object_type_ptr->getTypedPaths().at(path)->insertDefaultInto(*column);
+        else
             column->insertDefault();
     }
 
@@ -1163,9 +1172,9 @@ String ColumnObject::createDefaultSourceText() const
         empty_typed_paths[path] = column->cloneEmpty();
 
     auto default_row = ColumnObject::create(std::move(empty_typed_paths), max_dynamic_paths, max_dynamic_types);
-    /// The zeroes of the columns, as in the rows added by `insertDefault`. The defaults of the types are handled
-    /// by `DataTypeObject::insertDefaultInto`.
-    default_row->insertDefault();
+    /// The defaults of the types, not the zeroes of the columns: a zero is not always a value of its type (an `Enum`
+    /// without such an element), so its text cannot always be created.
+    object_type->insertDefaultInto(*default_row);
 
     FormatSettings format_settings = getFormatSettings();
     format_settings.json.json_type_use_source = false;
@@ -1457,6 +1466,14 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
                 in.available());
         std::string_view path(in.position(), path_size);
         in.ignore(path_size);
+
+        /// A state deserialized from another type can carry a path reserved for the source subcolumn.
+        if (hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                path,
+                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
 
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
         size_t value_size = 0;

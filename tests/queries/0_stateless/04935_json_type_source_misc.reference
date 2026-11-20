@@ -13,11 +13,16 @@ inserting from a type without the source creates the text
 the text of a default row contains typed paths
 {"a":0}	{"a":0}
 {}	{}
-the text of a default row matches the defaults in its typed paths: of the types or of the columns
+the text of a default row has the defaults of the types
 {"e":"minus"}	{"e":"minus"}
 {"e":"ok"}	{"e":"ok"}
-{"e":"zero"}	{"e":"zero"}
 {"e":"minus"}	{"e":"minus"}
+hidden default rows of a typed path whose column zero is not a value of its type
+{"e":"a"}	{"e" : "a"}
+\N
+{"e":"ok"}
+\N
+\N
 the common type keeps the source only if all types have it
 JSON(with_source=1)
 JSON(with_source=1, max_dynamic_paths=16)
@@ -44,3 +49,4 @@ a column with only default paths is stored if its source is not the default text
 generateRandom creates the source from the generated objects
 100	100
 100	100
+a reserved path from a reinterpreted aggregate state is rejected

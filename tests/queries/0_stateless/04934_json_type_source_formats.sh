@@ -52,3 +52,10 @@ $CLICKHOUSE_LOCAL --output_format_native_use_flattened_dynamic_and_json_serializ
 echo "A path nested in the reserved name in RowBinary input is rejected"
 $CLICKHOUSE_LOCAL --output_format_binary_write_json_as_string=0 -q "SELECT '{\"__source\" : {\"a\" : 42}}'::JSON AS json FORMAT RowBinary" \
     | $CLICKHOUSE_LOCAL --input-format=RowBinary --structure="json $JSON_TYPE" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"
+
+echo "A reserved path in the shared data of a Native block is rejected"
+# Write a block whose paths include '__sourcX', over max_dynamic_paths so one goes to the shared data,
+# then rewrite the byte-equal name to the reserved '__source'.
+$CLICKHOUSE_LOCAL -q "SELECT materialize('{\"a\" : 1, \"__sourcX\" : 2}')::JSON(with_source=1, max_dynamic_paths=1) AS json FROM numbers(3) FORMAT Native" \
+    | python3 -I -c "import sys; b=sys.stdin.buffer.read(); sys.stdout.buffer.write(b.replace(b'__sourcX', b'__source'))" \
+    | $CLICKHOUSE_LOCAL --input-format=Native --structure="json JSON(with_source=1, max_dynamic_paths=1)" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"

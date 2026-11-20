@@ -176,14 +176,7 @@ void DataTypeObject::insertDefaultInto(IColumn & column) const
             dynamic_column->insertDefault();
         column_object.getSharedDataColumn().insertDefault();
         if (column_object.hasSource())
-        {
-            /// The column caches the text of a row with the zeroes of the columns, and the defaults of the types
-            /// differ from them only when the default insert is not trivial.
-            if (isDefaultInsertTrivial())
-                column_object.insertDefaultIntoSource();
-            else
-                column_object.materializeSourceForLastRow();
-        }
+            column_object.insertDefaultIntoSource();
     }
     catch (...)
     {

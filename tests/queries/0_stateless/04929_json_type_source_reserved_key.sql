@@ -7,6 +7,11 @@ SELECT json FROM format(JSONEachRow, 'json JSON(with_source=1)', '{"json" : {"a"
 SELECT '{"__source.a" : 42}'::JSON(with_source=1); -- { serverError INCORRECT_DATA }
 SELECT '{"__source" : {"a" : 42}}'::JSON(with_source=1); -- { serverError INCORRECT_DATA }
 
+-- The same holds on the fast path that skips duplicate-key detection.
+SELECT '{"__source" : 42}'::JSON(with_source=1) SETTINGS type_json_skip_duplicate_key_detection = 1; -- { serverError INCORRECT_DATA }
+SELECT '{"__source.a" : 42}'::JSON(with_source=1) SETTINGS type_json_skip_duplicate_key_detection = 1; -- { serverError INCORRECT_DATA }
+SELECT '{"__source" : {"a" : 42}}'::JSON(with_source=1) SETTINGS type_json_skip_duplicate_key_detection = 1; -- { serverError INCORRECT_DATA }
+
 -- A key that only starts with the name is an ordinary path.
 SELECT '{"__sourcex" : 42}'::JSON(with_source=1);
 

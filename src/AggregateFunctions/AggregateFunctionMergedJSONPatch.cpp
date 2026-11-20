@@ -323,6 +323,14 @@ struct AggregateFunctionMergedJSONPatchData
         {
             std::string_view path = entry.pathView();
 
+            /// A state reinterpreted as a type with a source can carry a path reserved for the source subcolumn.
+            if (result_column.hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                    path,
+                    DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
             {
                 ReadBufferFromString val_buf(entry.value_blob);

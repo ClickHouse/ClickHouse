@@ -296,9 +296,9 @@ public:
     /// Create the source of the last inserted row from the object itself. Used when the original JSON
     /// text is not available (for example when the row was restored from an aggregation key).
     void materializeSourceForLastRow();
-    /// JSON text of a default row with the zeroes of the columns in the typed paths, created once.
+    /// JSON text of a default row with the defaults of the types in the typed paths, created once.
     const String & getDefaultSourceText();
-    /// Append the JSON text of default rows with the zeroes of the columns in the typed paths.
+    /// Append the JSON text of default rows to the source column.
     void insertDefaultIntoSource(size_t length = 1);
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
