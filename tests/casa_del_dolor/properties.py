@@ -104,6 +104,10 @@ SERVER_STOP_WAIT_SECONDS = 30
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
 SERVER_START_WAIT_SECONDS = 180
 
+# A debug build checks every segment of each filesystem cache at startup, 3 minutes for 26k of
+# them, so `max_elements` is capped to keep a restart within `SERVER_START_WAIT_SECONDS`.
+MAX_CACHE_ELEMENTS = 10000
+
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
 SERVER_SETTLE_SLEEP_SECONDS = 1
@@ -991,7 +995,9 @@ cache_storage_properties = {
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": no_zero_threads_lambda,
-    "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
+    "max_elements": threshold_generator(
+        0.2, 0.2, 1000, MAX_CACHE_ELEMENTS, allow_unlimited=False
+    ),
     "max_file_segment_size": threshold_generator(
         0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024
     ),  # must be >= default boundary_alignment (4Mi)
@@ -1188,6 +1194,10 @@ def normalize_cache_properties(
     """`FileCacheSettings::validate` checks a cache without `cache_policy` with the default SLRU.
     `forced_policy` is what such a cache gets after `validate` (a distributed cache server forces
     `LRU_OVERCOMMIT`), so it only matters for the checks done later."""
+    # Also without the random settings: the server's default `max_elements` is 10 million.
+    max_elements = int(get_cache_setting(cache_element, "max_elements", "0"))
+    if not 0 < max_elements <= MAX_CACHE_ELEMENTS:
+        set_cache_setting(cache_element, "max_elements", str(MAX_CACHE_ELEMENTS))
     policy_is_set = get_cache_setting(cache_element, "cache_policy", "") != ""
     runtime_policy = get_cache_setting(
         cache_element, "cache_policy", forced_policy or "SLRU"
