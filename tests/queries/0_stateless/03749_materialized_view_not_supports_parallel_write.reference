@@ -8,7 +8,7 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_21"];
+    n6[label="ApplySquashingTransform_22"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
@@ -24,7 +24,7 @@ digraph
     n19[label="RemovingSparseTransform_16"];
     n20[label="SetOrJoinSink_17"];
     n21[label="FinalizingViewsTransform_19"];
-    n22[label="EmptySink_22"];
+    n22[label="InsertCommitSink_21"];
   }
   n0 -> n1;
   n1 -> n2;
