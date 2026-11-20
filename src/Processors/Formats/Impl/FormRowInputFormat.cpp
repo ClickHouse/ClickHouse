@@ -2,6 +2,7 @@
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -165,7 +166,9 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
         /// different grammar: it skips surrounding whitespace, looks inside single quotes, and unescapes
         /// nested strings before recognizing dates (e.g. " 42", "'2026-11-17'" or "['2026\\x2D11\\x2D17']").
         /// Keep a value as a string unless the reader of the inferred type accepts it.
-        if (type && !isString(removeNullable(type)))
+        /// Incomplete types (e.g. `Nullable(Nothing)` for `\N`) cannot be read; they are left for
+        /// schema finalization, which replaces them with `String`.
+        if (type && !isString(removeNullable(type)) && checkIfTypeIsComplete(type))
         {
             auto column = type->createColumn();
             ReadBufferFromString value_buf(decoded_value);
@@ -247,7 +250,10 @@ void registerFormSchemaReader(FormatFactory & factory)
     factory.registerAdditionalInfoForSchemaCacheGetter("Form", [](const FormatSettings & settings)
     {
         /// Raw matches the rule readRowAndGetNamesAndDataTypesForFormRow infers with.
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw);
+        /// The inferred type is also validated with the reader of the type, whose acceptance of
+        /// a value depends on `input_format_null_as_default`.
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw)
+            + fmt::format(", null_as_default={}", settings.null_as_default);
     });
 }
 
