@@ -99,6 +99,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -1063,6 +1064,39 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
             return;
         }
     }
+}
+
+/// Whether the query runs a subquery: in its expressions, in the row policy of its table, in a filter of `additional_table_filters`
+/// or `additional_result_filter`, or a scalar subquery not exempt from quotas, executed while the query was analyzed.
+bool runsSubquery(
+    const QueryTreeNodePtr & query_node,
+    const TableNode & table_node,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
+{
+    if (containsSubqueryNode(query_node))
+        return true;
+
+    const auto & storage = table_node.getStorage();
+
+    /// Built under the same condition as in `buildQueryPlanForTableExpression`.
+    if (!select_query_options.only_analyze)
+    {
+        auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+        if (row_policy_filter && astContainsSubquery(row_policy_filter->expression))
+            return true;
+    }
+
+    SelectQueryInfo additional_filter_query_info;
+    parseAdditionalFilterAstIfNeeded(storage, table_node.getOriginalAlias(), additional_filter_query_info, query_context);
+    if (astContainsSubquery(additional_filter_query_info.additional_filter_ast))
+        return true;
+
+    if (select_query_options.subquery_depth == 0 && astContainsSubquery(parseAdditionalResultFilter(query_context->getSettingsRef())))
+        return true;
+
+    auto process_list_element = query_context->getProcessListElement();
+    return process_list_element && process_list_element->hasExecutedNonExemptScalarSubquery();
 }
 
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
@@ -3838,7 +3872,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     if (is_single_table_expression)
     {
         auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuota(*table_node))
+        if (table_node && shouldIgnoreQuota(*table_node)
+            && !runsSubquery(query_node, *table_node, select_query_options, planner_context->getQueryContext()))
             select_query_options.ignore_quota = true;
     }
 

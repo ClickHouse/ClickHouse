@@ -711,6 +711,7 @@ void Planner::buildPlanForUnionNode()
     SharedHeaders query_plans_headers;
     query_plans_headers.reserve(queries_size);
 
+    bool all_branches_ignore_quota = true;
     for (const auto & query_node : union_queries_nodes)
     {
         /// Every branch of a `UNION` has its own context with its own SETTINGS clause, so branches
@@ -734,10 +735,11 @@ void Planner::buildPlanForUnionNode()
 
         /// The quota and limit exemptions of the system tables are a property of the whole query -
         /// `InterpreterSelectQueryAnalyzer` reads them back from the options after the plan is
-        /// built - so they keep propagating upwards out of the branch.
-        select_query_options.ignore_quota |= branch_select_query_options.ignore_quota;
+        /// built. The quota exemption holds only if every branch is exempt.
+        all_branches_ignore_quota = all_branches_ignore_quota && branch_select_query_options.ignore_quota;
         select_query_options.ignore_limits |= branch_select_query_options.ignore_limits;
     }
+    select_query_options.ignore_quota |= all_branches_ignore_quota;
 
     bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedSource(*plan); });
     if (has_unbounded_arm && union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
