@@ -5,6 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
@@ -12,10 +13,16 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
+#include <Common/assert_cast.h>
 
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
 {
@@ -24,6 +31,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int TYPE_MISMATCH;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -132,6 +141,137 @@ void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encod
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
+String ColumnMapper::getIcebergParentPath(const String & path) const
+{
+    if (const String * struct_path = getIcebergStructPath(path))
+        return *struct_path;
+    /// A list element, map key or map value is named `element`, `key` or `value`.
+    auto pos = path.rfind('.');
+    return pos == String::npos ? String{} : path.substr(0, pos);
+}
+
+String ColumnMapper::getIcebergFieldPath(const String & path) const
+{
+    /// A subcolumn path does not name list elements and map keys and values (`l.x` is the field `x` of the elements of `l`).
+    auto is_reached_through_structs = [&](String field)
+    {
+        for (const String * struct_path = getIcebergStructPath(field); struct_path; struct_path = getIcebergStructPath(field))
+        {
+            if (struct_path->empty())
+                return true;
+            field = *struct_path;
+        }
+        return false;
+    };
+    for (size_t end = path.size(); end != String::npos && end > 0; end = path.rfind('.', end - 1))
+    {
+        String prefix = path.substr(0, end);
+        if (storage_encoding.contains(prefix) && is_reached_through_structs(prefix))
+            return prefix;
+    }
+    return {};
+}
+
+UInt64 ColumnMapper::getIcebergInitialDefaultsHash() const
+{
+    if (iceberg_initial_defaults.empty())
+        return 0;
+    std::vector<std::pair<std::string_view, const Field *>> sorted;
+    sorted.reserve(iceberg_initial_defaults.size());
+    for (const auto & [path, initial_default] : iceberg_initial_defaults)
+        sorted.emplace_back(path, &initial_default.value);
+    std::sort(sorted.begin(), sorted.end());
+    SipHash hash;
+    hash.update(sorted.size());
+    for (const auto & [path, field] : sorted)
+    {
+        hash.update(path.size());
+        hash.update(path);
+        applyVisitor(FieldVisitorHash(hash), *field);
+    }
+    return hash.get64();
+}
+
+/// `value` of the type `from` as a value of the type `to`, whose structs can have only some of the elements of the structs of
+/// `from`, at any depth. A tuple cannot be converted to a tuple with fewer elements, so the elements are taken by name.
+static Field projectIcebergInitialDefault(const Field & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (value.isNull())
+        return convertFieldToTypeOrThrow(value, *to);
+
+    const auto from_nested = removeNullable(from);
+    const auto to_nested = removeNullable(to);
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
+    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+        && value.getType() == Field::Types::Tuple)
+    {
+        const auto & elements = value.safeGet<Tuple>();
+        Tuple result;
+        result.reserve(to_tuple->getElements().size());
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+        {
+            const auto & name = to_tuple->getNameByPosition(i + 1);
+            auto pos = from_tuple->tryGetPositionByName(name);
+            if (!pos || *pos >= elements.size())
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH, "Cannot read the Iceberg initial-default of type {} as {}: it has no element {}",
+                    from->getName(), to->getName(), name);
+            result.push_back(projectIcebergInitialDefault(elements[*pos], from_tuple->getElement(*pos), to_tuple->getElement(i)));
+        }
+        return result;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
+    if (from_array && to_array && value.getType() == Field::Types::Array)
+    {
+        const auto & elements = value.safeGet<Array>();
+        Array result;
+        result.reserve(elements.size());
+        for (const auto & element : elements)
+            result.push_back(projectIcebergInitialDefault(element, from_array->getNestedType(), to_array->getNestedType()));
+        return result;
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
+    if (from_map && to_map && value.getType() == Field::Types::Map)
+    {
+        const auto & entries = value.safeGet<Map>();
+        Map result;
+        result.reserve(entries.size());
+        for (const auto & entry : entries)
+        {
+            const auto & key_value = entry.safeGet<Tuple>();
+            result.push_back(Tuple{
+                projectIcebergInitialDefault(key_value.at(0), from_map->getKeyType(), to_map->getKeyType()),
+                projectIcebergInitialDefault(key_value.at(1), from_map->getValueType(), to_map->getValueType())});
+        }
+        return result;
+    }
+
+    return convertFieldToTypeOrThrow(value, *to);
+}
+
+std::optional<Field> ColumnMapper::getIcebergInitialDefault(const String & field, const String & path, const DataTypePtr & type) const
+{
+    auto it = iceberg_initial_defaults.find(field);
+    if (it == iceberg_initial_defaults.end())
+        return {};
+    const auto & [value, field_type] = it->second;
+    if (path == field)
+        return projectIcebergInitialDefault(value, field_type, type);
+    const String subcolumn_name = path.substr(field.size() + 1);
+    auto subcolumn_type = field_type->tryGetSubcolumnType(subcolumn_name);
+    if (!subcolumn_type)
+        return {};
+    auto column = field_type->createColumn();
+    column->insert(value);
+    auto subcolumn = field_type->getSubcolumn(subcolumn_name, std::move(column));
+    return projectIcebergInitialDefault((*subcolumn)[0], subcolumn_type, type);
+}
+
 std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
     const FieldIdToColumnName & format_encoding) const
 {
@@ -151,6 +291,54 @@ std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
         }
     }
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
+}
+
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const ColumnNameToFieldId & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id is on the inner type, under the same path.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 FormatFilterInfo::FormatFilterInfo(
@@ -224,10 +412,12 @@ Block FormatFilterInfo::buildKeyConditionInputs(
     const PrewhereInfoPtr & prewhere_info,
     const FilterDAGInfoPtr & row_level_filter)
 {
+    /// Inputs of PREWHERE and of a row-level filter are always storage columns, never subcolumns
+    /// (e.g. `v.tag` next to `v` is a separate column), so match them by exact name.
     auto add_required = [&](const ActionsDAG & dag)
     {
         for (const auto & col : dag.getRequiredColumns())
-            if (!isColumnCovered(base, col.name))
+            if (!base.has(col.name))
                 base.insert({col.type->createColumn(), col.type, col.name});
     };
     if (row_level_filter)
@@ -291,6 +481,47 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 std::rethrow_exception(copyMutableException(init_exception));
             }
         });
+}
+
+std::optional<std::shared_ptr<const KeyCondition>> FormatFilterInfo::tryGetJoinRuntimeFilterKeyCondition(const Block & keys)
+{
+    std::lock_guard lock(join_runtime_filter_mutex);
+    if (join_runtime_filter_key_condition_built)
+        return join_runtime_filter_key_condition;
+    if (!join_runtime_filter_predicate)
+        return nullptr;
+
+    auto predicate = join_runtime_filter_predicate->tryGet();
+    if (!predicate)
+        return std::nullopt;
+
+    join_runtime_filter_key_condition_built = true;
+    auto ctx = context.lock();
+    if (!*predicate || !ctx)
+        return nullptr;
+
+    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+    for (const auto & column : additional_columns)
+        columns.push_back(column);
+
+    /// The predicate reads each key as the type of the read step's output; KeyCondition would compare the statistics of
+    /// a column of another type wrongly. Renamed, the column is unknown to the predicate, which then ignores that key.
+    for (const auto & descriptor : join_runtime_filter_predicate->getDescriptors())
+    {
+        auto it = std::ranges::find(columns, descriptor.key_column_name, &ColumnWithTypeAndName::name);
+        if (it != columns.end() && !it->type->equals(*descriptor.key_column_type))
+            it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
+    }
+
+    Names names;
+    names.reserve(columns.size());
+    for (const auto & column : columns)
+        names.push_back(column.name);
+
+    ActionsDAGWithInversionPushDown inverted_dag((*predicate)->getOutputs().front(), ctx, /* boolean_context */ true);
+    join_runtime_filter_key_condition = std::make_shared<const KeyCondition>(
+        inverted_dag, ctx, names, std::make_shared<ExpressionActions>(ActionsDAG(columns)));
+    return join_runtime_filter_key_condition;
 }
 
 }

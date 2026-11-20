@@ -13,6 +13,8 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include <expected>
+#include <functional>
+#include <span>
 
 struct PreformattedMessage;
 
@@ -37,7 +39,7 @@ public:
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
       */
 
-    QueryPlanPtr read(
+    [[nodiscard]] QueryPlanPtr read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
@@ -48,7 +50,7 @@ public:
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
-    QueryPlanStepPtr readFromParts(
+    [[nodiscard]] QueryPlanStepPtr readFromParts(
         RangesInDataPartsPtr parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
@@ -73,7 +75,7 @@ public:
     /// A caller which cannot know the TopK stamp of the read - because the estimate runs before
     /// `tryOptimizeTopK` - must pass `use_query_condition_cache = false` instead, so that the estimate
     /// neither consults nor populates the cache under the plain condition hash.
-    ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
+    [[nodiscard]] ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
@@ -88,7 +90,9 @@ public:
         /// be consulted here. Projection candidate analysis is the only place a warm query consults
         /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
         /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
-        bool allow_top_k_prewhere_query_condition_cache = false) const;
+        bool allow_top_k_prewhere_query_condition_cache = false,
+        /// The caller needs only which parts may match; the returned ranges are then a coarse superset.
+        bool stop_at_first_match = false) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -101,7 +105,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     /// Maps each primary-key column position to the slot of the matching column in a part's partition
     /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
@@ -120,7 +125,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -131,7 +137,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
@@ -166,6 +173,13 @@ public:
     /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
     static bool isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings);
+
+    /// Returns whether OR-connected filters are evaluated with skip indexes during index analysis.
+    static bool useSkipIndexesForDisjunctions(
+        bool requested,
+        bool use_skip_indexes_on_data_read,
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template,
+        const Settings & settings);
 
 private:
     const MergeTreeData & data;
@@ -313,9 +327,111 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        /// an estimation-only analysis is discarded and done again by the read, it must not be counted twice
+        bool report_index_usage = true;
         bool use_primary_key = true;
+        bool stop_at_first_match = false;
         ReadFromMergeTree::AnalysisResult & result;
     };
+
+    /// Counters of one index in one analysis.
+    struct IndexAnalysisStat
+    {
+        std::atomic<size_t> total_granules = 0;
+        std::atomic<size_t> granules_dropped = 0;
+        std::atomic<size_t> total_parts = 0;
+        std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> elapsed_us = 0;
+        std::atomic<MarkRanges::SearchAlgorithm> search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
+    };
+
+    struct IndexAnalysisStats
+    {
+        IndexAnalysisStats(size_t num_skip_index_stats, size_t num_skip_indexes)
+            : skip_indexes(num_skip_index_stats), used_skip_indexes(num_skip_indexes)
+        {
+        }
+
+        IndexAnalysisStat primary_key;
+        /// By position in the part's skip index order; one block per part with `per_part_index_stats`.
+        std::vector<IndexAnalysisStat> skip_indexes;
+        std::atomic<size_t> marks_after_primary_key = 0;
+        std::atomic<size_t> parts_after_primary_key = 0;
+        std::atomic<size_t> marks_after_disjunctions = 0;
+        /// By position in `UsefulSkipIndexes::useful_indices`: the index excluded granules in a part.
+        std::vector<std::atomic<bool>> used_skip_indexes;
+    };
+
+    /// Query-level inputs of `analyzeSinglePart`, shared by all parts and threads.
+    struct SinglePartIndexAnalysisParams
+    {
+        StorageMetadataPtr metadata_snapshot;
+        ContextPtr context;
+        const Settings & settings;
+        const MergeTreeReaderSettings & reader_settings;
+        LoggerPtr log;
+
+        bool use_primary_key = true;
+        /// Count the granules excluded by the primary key in `ProfileEvents`, see `IndexAnalysisContext`.
+        bool report_index_usage = true;
+        const ConditionTemplate<KeyCondition> & key_condition;
+        const ConditionTemplate<KeyCondition> * part_offset_condition = nullptr;
+        /// Only with the real `part_starting_offset_in_query` of every part.
+        const ConditionTemplate<KeyCondition> * total_offset_condition = nullptr;
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot = nullptr;
+        bool find_exact_ranges = false;
+        /// `FINAL` exact mode.
+        bool keep_ranges_after_primary_key = false;
+        bool stop_at_first_match = false;
+
+        const UsefulSkipIndexes & skip_indexes;
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;
+        /// The result of `useSkipIndexesForDisjunctions`.
+        bool use_skip_indexes_for_disjunctions = false;
+        bool use_skip_indexes_on_data_read = false;
+        bool query_hides_lightweight_deleted_rows = true;
+        MarkCache * mark_cache = nullptr;
+        UncompressedCache * uncompressed_cache = nullptr;
+        VectorSimilarityIndexCache * vector_similarity_index_cache = nullptr;
+    };
+
+    /// Generating a condition may execute an `IN` subquery, which only the planning thread does. When the skip index
+    /// conditions need that, the parts are analyzed in two passes: the planning thread prepares the skip index conditions
+    /// in between, only for the parts the primary key keeps.
+    enum class IndexAnalysisStage : uint8_t
+    {
+        All,
+        PrimaryKey,
+        SkipIndexes,
+    };
+
+    /// References into the caller's per-part state.
+    struct PartRangesForIndexAnalysis
+    {
+        MarkRanges & ranges;
+        RangesInDataPartReadHints & read_hints;
+        MarkRanges & exact_ranges;
+        std::optional<MarkRanges> & ranges_snapshot_after_pk_analysis;
+        size_t part_starting_offset_in_query = 0;
+    };
+
+    /// Primary key and offset conditions, then the skip indexes in `skip_index_order` (declaration order when null), then the
+    /// disjunction merge. Calls `get_part_for_skip_indexes` once, only when skip indexes run, inside the
+    /// `FilteringMarksWithSecondaryKeys` metric scope; it returns the same part with its alter conversions (not null).
+    /// Per-index counters go to `skip_index_stats` (the caller's slice of
+    /// `IndexAnalysisStats::skip_indexes`, by position in the order).
+    /// Returns whether a skip index is usable for the part, applied here or deferred to the read.
+    /// The conditions are only looked up (`ConditionTemplate::getForPart`): for a filter with an `IN` subquery set, the
+    /// planning thread prepares them beforehand (`ConditionTemplate::prepareForPart`).
+    static bool analyzeSinglePart(
+        const SinglePartIndexAnalysisParams & params,
+        const IMergeTreeDataPartInfoForReader & part,
+        const std::function<MergeTreeDataPartInfoForReaderPtr()> & get_part_for_skip_indexes,
+        const VectorWithMemoryTracking<size_t> * skip_index_order,
+        PartRangesForIndexAnalysis ranges,
+        IndexAnalysisStats & stats,
+        std::span<IndexAnalysisStat> skip_index_stats,
+        IndexAnalysisStage stage = IndexAnalysisStage::All);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
@@ -381,20 +497,27 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
+    /// Orders the useful indices for one part: vector similarity first, then minmax, then coarser granularity, then smaller index files.
+    /// `index_sizes_scratch` is a buffer the caller reuses across parts.
+    static SkipIndexOrder computeSkipIndexOrder(
+        const IMergeTreeDataPartInfoForReader & part,
+        const VectorWithMemoryTracking<MergeTreeIndexWithCondition> & useful_indices,
+        std::vector<size_t> & index_sizes_scratch);
+
     /// Returns an error if the index depends on a column updated on the fly. A value update
     /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
     /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
-    /// value-preserving type change is tolerated when @part records the granules were built against the
+    /// value-preserving type change is tolerated when @index_column_types records the granules were built against the
     /// current read type. Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes` as
     /// @all_updated_columns (it also holds the names touched by a pending DROP/RENAME COLUMN).
-    /// @part is optional: some callers aggregate updated columns across parts and decide once.
+    /// @index_column_types is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns,
         const NameSet & value_updated_columns,
         const ContextPtr & context,
-        const IMergeTreeDataPart * part = nullptr);
+        const SecondaryIndexColumnTypes * index_column_types = nullptr);
 
     /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
     /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,

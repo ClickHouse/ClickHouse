@@ -179,7 +179,7 @@ namespace
 
         if (const auto type_id = column_type->getTypeId();
             type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
-            || type_id == DB::TypeIndex::Variant)
+            || type_id == DB::TypeIndex::Variant || type_id == DB::TypeIndex::Dynamic)
             return std::nullopt;
 
         if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
