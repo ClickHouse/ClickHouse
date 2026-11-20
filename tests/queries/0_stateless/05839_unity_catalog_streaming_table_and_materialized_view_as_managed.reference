@@ -1,0 +1,14 @@
+use_unity_catalog_v2 = 0
+`c` Nullable(Int32)
+ENGINE = DeltaLake('s3://bucket/st'
+`c` Nullable(Int32)
+ENGINE = Other
+table_type 'MATERIALIZED_VIEW' and Databricks does not describe it as a managed table
+s.st
+use_unity_catalog_v2 = 1
+`c` Nullable(Int32)
+ENGINE = DeltaLake('s3://bucket/st'
+`c` Nullable(Int32)
+ENGINE = Other
+table_type 'MATERIALIZED_VIEW' and Databricks does not describe it as a managed table
+s.st
