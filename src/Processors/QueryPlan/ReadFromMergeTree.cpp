@@ -1249,6 +1249,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// See `requestReadingInOrder`: every value of the first sorting key column is read by its own streams.
     VectorWithMemoryTracking<size_t> value_of_part;
     VectorWithMemoryTracking<ExpressionActionsPtr> value_filters;
+    String value_filter_column;
     if (split_by_values)
     {
         parts_with_ranges = splitPartsByFirstKeyColumnValues(parts_with_ranges, *read_in_order_split_values, value_of_part);
@@ -1472,7 +1473,13 @@ Pipe ReadFromMergeTree::readInOrder(
         if (split_by_values)
         {
             /// A granule at the border of two values is read by the streams of both, each keeps only its own rows.
-            static constexpr auto filter_column = "__read_in_order_key_value_filter";
+            if (value_filter_column.empty())
+            {
+                /// Not the name of a column of the read.
+                value_filter_column = "__read_in_order_key_value_filter";
+                while (pipe.getHeader().has(value_filter_column))
+                    value_filter_column = "_" + value_filter_column;
+            }
             const size_t value_idx = value_of_part[i];
             auto & filter = value_filters[value_idx];
             if (!filter)
@@ -1480,11 +1487,11 @@ Pipe ReadFromMergeTree::readInOrder(
                     pipe.getHeader(),
                     storage_snapshot->metadata->getSortingKey().column_names.front(),
                     (*read_in_order_split_values)[value_idx],
-                    filter_column,
+                    value_filter_column,
                     context);
             pipe.addSimpleTransform([&](const SharedHeader & header)
             {
-                return std::make_shared<FilterTransform>(header, filter, filter_column, /*remove_filter_column=*/ true);
+                return std::make_shared<FilterTransform>(header, filter, value_filter_column, /*remove_filter_column=*/ true);
             });
         }
 

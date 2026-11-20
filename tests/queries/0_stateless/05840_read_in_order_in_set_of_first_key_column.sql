@@ -58,4 +58,34 @@ SELECT
     (SELECT arraySort(groupArray((k, ts, v))) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES))
   = (SELECT arraySort(groupArray((k, ts, v))) FROM (SELECT k, ts, v FROM t_in_set_order WHERE k IN ('1', 'x', 'y') ORDER BY ts LIMIT 5 WITH TIES SETTINGS optimize_read_in_order = 0));
 
+SELECT 'filter column name';
+-- A column of the read with the name of the per-stream filter column.
+DROP TABLE IF EXISTS t_in_set_order_name;
+CREATE TABLE t_in_set_order_name (k String, ts UInt64, __read_in_order_key_value_filter String)
+ENGINE = MergeTree ORDER BY (k, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_name SELECT toString(number % 3), number, toString(number) FROM numbers(3000);
+
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT
+    (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20))
+  = (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20) SETTINGS optimize_read_in_order = 0);
+SELECT
+    (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') AND __read_in_order_key_value_filter != 'z' ORDER BY ts DESC LIMIT 20))
+  = (SELECT groupArray((k, ts, __read_in_order_key_value_filter)) FROM (SELECT k, ts, __read_in_order_key_value_filter FROM t_in_set_order_name WHERE k IN ('1', '2') AND __read_in_order_key_value_filter != 'z' ORDER BY ts DESC LIMIT 20) SETTINGS optimize_read_in_order = 0);
+
+-- The first key column with the name of the per-stream filter column.
+DROP TABLE IF EXISTS t_in_set_order_key_name;
+CREATE TABLE t_in_set_order_key_name (__read_in_order_key_value_filter String, ts UInt64)
+ENGINE = MergeTree ORDER BY (__read_in_order_key_value_filter, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_key_name SELECT toString(number % 3), number FROM numbers(3000);
+
+SELECT count() FROM (EXPLAIN actions = 1 SELECT __read_in_order_key_value_filter, ts FROM t_in_set_order_key_name WHERE __read_in_order_key_value_filter IN ('1', '2') ORDER BY ts LIMIT 20)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT
+    (SELECT groupArray((__read_in_order_key_value_filter, ts)) FROM (SELECT __read_in_order_key_value_filter, ts FROM t_in_set_order_key_name WHERE __read_in_order_key_value_filter IN ('1', '2') ORDER BY ts LIMIT 20))
+  = (SELECT groupArray((__read_in_order_key_value_filter, ts)) FROM (SELECT __read_in_order_key_value_filter, ts FROM t_in_set_order_key_name WHERE __read_in_order_key_value_filter IN ('1', '2') ORDER BY ts LIMIT 20) SETTINGS optimize_read_in_order = 0);
+
+DROP TABLE t_in_set_order_name;
+DROP TABLE t_in_set_order_key_name;
 DROP TABLE t_in_set_order;
