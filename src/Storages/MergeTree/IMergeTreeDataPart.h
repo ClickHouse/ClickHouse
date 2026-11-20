@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <string_view>
+
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -194,6 +197,11 @@ public:
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
+
+    /// The size of the streams a read of all columns touches, so a second representation of the same data, such as
+    /// the copy of the shared data of Object, is not counted; the constant granularity of merges and mutations is
+    /// sized by it.
+    ColumnSize getTotalColumnsReadSize() const { return calculateTotalColumnsReadSize(); }
 
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
@@ -537,6 +545,9 @@ public:
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
     void removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const;
 
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -606,17 +617,13 @@ public:
     /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
     /// the layout of files in packed storage.
     /// The list can be incomplete, in that case the remaining files should be written in any order.
-    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
+    virtual Strings getPreferredFileOrder() const { return getCommonMetadataFiles(); }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     /// This method ignores current tmp prefix of part and returns
     /// the name of part when it was or will be in Active state.
     String getRelativePathOfActivePart() const;
-
-    /// Identifies the part in caches of secondary index granules; uses `getRelativePathOfActivePart` so that
-    /// the key used on insertion matches the one used on eviction in `clearCaches`.
-    String getIndexCacheKeyPrefix() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -835,7 +842,8 @@ public:
     void removeIfNeeded();
 
 protected:
-    inline static const Strings COMMON_METADATA_FILES =
+    /// `constexpr` so that including this header costs no static initializer; `getCommonMetadataFiles` materializes it.
+    static constexpr std::array<std::string_view, 10> COMMON_METADATA_FILES =
     {
         "uuid.txt",
         "checksums.txt",
@@ -848,6 +856,8 @@ protected:
         "partition.dat",
         "ttl.txt",
     };
+
+    static Strings getCommonMetadataFiles() { return Strings(COMMON_METADATA_FILES.begin(), COMMON_METADATA_FILES.end()); }
 
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -903,6 +913,10 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+
+    /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
+    /// in streams of their own.
+    virtual ColumnSize calculateTotalColumnsReadSize() const { return getTotalColumnsSize(); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -1023,8 +1037,6 @@ private:
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 

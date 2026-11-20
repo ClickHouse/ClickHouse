@@ -265,7 +265,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             if constexpr (throw_exception)
             {
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i], elem_types[i].get());
                 else
                     elems[i]->deserializeTextQuoted(element_column, istr, settings);
             }
@@ -273,7 +273,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             {
                 bool ok = false;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                    ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
+                    ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i], elem_types[i].get());
                 else
                     ok = elems[i]->tryDeserializeTextQuoted(element_column, istr, settings);
 
@@ -605,19 +605,19 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
 template <typename ReturnType>
 ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto deserialize_nested = [&settings](IColumn & nested_column, ReadBuffer & buf, const SerializationPtr & nested_column_serialization) -> ReturnType
+    auto deserialize_nested = [&settings](IColumn & nested_column, ReadBuffer & buf, const SerializationPtr & nested_column_serialization, const IDataType * nested_type) -> ReturnType
     {
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization, nested_type);
             else
                 nested_column_serialization->deserializeTextJSON(nested_column, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization, nested_type);
             return nested_column_serialization->tryDeserializeTextJSON(nested_column, buf, settings);
         }
     };
@@ -629,15 +629,16 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr,
                     [&deserialize_nested, element_pos, this](IColumn & nested_column_, ReadBuffer & buf) -> ReturnType
                     {
-                        return deserialize_nested(nested_column_, buf, elems[element_pos]);
-                    });
+                        return deserialize_nested(nested_column_, buf, elems[element_pos], elem_types[element_pos].get());
+                    },
+                    elem_types[element_pos].get());
             });
     return deserializeTupleJSONImpl<ReturnType>(
         column,
         istr,
         settings,
         [&deserialize_nested, &istr, this](IColumn & nested_column, size_t element_pos) -> ReturnType
-        { return deserialize_nested(nested_column, istr, elems[element_pos]); });
+        { return deserialize_nested(nested_column, istr, elems[element_pos], elem_types[element_pos].get()); });
 }
 
 void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -700,7 +701,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 
                 auto & element_column = extractElementColumn(column, i);
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i], elem_types[i].get());
                 else
                     elems[i]->deserializeTextCSV(element_column, istr, settings);
             }
@@ -736,7 +737,7 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
                 auto & element_column = extractElementColumn(column, i);
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                 {
-                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
+                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i], elem_types[i].get()))
                     return false;
                 }
                 else
@@ -909,15 +910,19 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
     }
 
-    /// Verify that all Tuple elements have the same size.
-    size_t expected_size = column_tuple.getColumn(0).size();
+    /// Verify that all Tuple elements have the same size. Use the const overload via `std::as_const`
+    /// to avoid `chassert(use_count() == 1)` in `assumeMutableRef` — after the recursive deserialize,
+    /// the substream cache may hold references to the inner subcolumns, so non-const `getColumn(i)`
+    /// would trip the assertion.
+    const auto & const_column_tuple = std::as_const(column_tuple);
+    size_t expected_size = const_column_tuple.getColumn(0).size();
     for (size_t i = 1; i < elems.size(); ++i)
     {
-        if (column_tuple.getColumn(i).size() != expected_size)
-            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
+        if (const_column_tuple.getColumn(i).size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, const_column_tuple.getColumn(i).size(), expected_size);
     }
 
-    column_tuple.addSize(column_tuple.getColumn(0).size());
+    column_tuple.addSize(expected_size);
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
@@ -942,20 +947,17 @@ bool SerializationTuple::supportsPooling() const
     return elems_support_pooling;
 }
 
-MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationTuple::createColumnForDeserialization(const IDataType & type) const
 {
-    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
-    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
     if (elems.empty())
-        return column;
+        return tuple_type.createColumn();
 
-    MutableColumns wrapped;
-    wrapped.reserve(elems.size());
+    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization, so kinds compose.
+    MutableColumns tuple_columns(elems.size());
     for (size_t i = 0; i != elems.size(); ++i)
-        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
-
-    return ColumnTuple::create(std::move(wrapped));
+        tuple_columns[i] = elems[i]->createColumnForDeserialization(*tuple_type.getElement(i));
+    return ColumnTuple::create(std::move(tuple_columns));
 }
 
 }

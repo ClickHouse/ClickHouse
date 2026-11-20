@@ -91,7 +91,9 @@ public:
         /// be consulted here. Projection candidate analysis is the only place a warm query consults
         /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
         /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
-        bool allow_top_k_prewhere_query_condition_cache = false) const;
+        bool allow_top_k_prewhere_query_condition_cache = false,
+        /// The caller needs only which parts may match; the returned ranges are then a coarse superset.
+        bool stop_at_first_match = false) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -104,7 +106,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     /// Maps each primary-key column position to the slot of the matching column in a part's partition
     /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
@@ -123,7 +126,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -134,7 +138,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
@@ -325,7 +330,10 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        /// an estimation-only analysis is discarded and done again by the read, it must not be counted twice
+        bool report_index_usage = true;
         bool use_primary_key = true;
+        bool stop_at_first_match = false;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -342,7 +350,10 @@ public:
 
     struct IndexAnalysisStats
     {
-        explicit IndexAnalysisStats(size_t num_skip_index_stats) : skip_indexes(num_skip_index_stats) {}
+        IndexAnalysisStats(size_t num_skip_index_stats, size_t num_skip_indexes)
+            : skip_indexes(num_skip_index_stats), used_skip_indexes(num_skip_indexes)
+        {
+        }
 
         IndexAnalysisStat primary_key;
         /// By position in the part's skip index order; one block per part with `per_part_index_stats`.
@@ -350,6 +361,8 @@ public:
         std::atomic<size_t> marks_after_primary_key = 0;
         std::atomic<size_t> parts_after_primary_key = 0;
         std::atomic<size_t> marks_after_disjunctions = 0;
+        /// By position in `UsefulSkipIndexes::useful_indices`: the index excluded granules in a part.
+        std::vector<std::atomic<bool>> used_skip_indexes;
     };
 
     /// Query-level inputs of `analyzeSinglePart`, shared by all parts and threads.
@@ -362,6 +375,8 @@ public:
         LoggerPtr log;
 
         bool use_primary_key = true;
+        /// Count the granules excluded by the primary key in `ProfileEvents`, see `IndexAnalysisContext`.
+        bool report_index_usage = true;
         const ConditionTemplate<KeyCondition> & key_condition;
         const ConditionTemplate<KeyCondition> * part_offset_condition = nullptr;
         /// Only with the real `part_starting_offset_in_query` of every part.
@@ -370,6 +385,7 @@ public:
         bool find_exact_ranges = false;
         /// `FINAL` exact mode.
         bool keep_ranges_after_primary_key = false;
+        bool stop_at_first_match = false;
 
         const UsefulSkipIndexes & skip_indexes;
         const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;

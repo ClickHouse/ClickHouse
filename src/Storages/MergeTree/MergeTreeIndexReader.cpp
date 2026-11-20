@@ -127,7 +127,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     /// Projection parts are never Active, so they are not cached.
     auto concrete_part = data_part_info->getDataPart();
     if (concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
-        cache_key_prefix = concrete_part->getIndexCacheKeyPrefix();
+        cache_key_prefix = concrete_part->getPathForCacheKey();
 
     /// Decided once here: switching to the uncached path later would deserialize into a granule shared with the cache.
     if (cache_key_prefix.empty() || !index->supportsGranuleCache() || (skipping_index_cache && skipping_index_cache->maxSizeInBytes() == 0))

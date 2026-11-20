@@ -54,4 +54,6 @@ print(
     f"largest segment alignment: {alignment:#x}"
 )
 if len({base & ~(alignment - 1) for base, _ in servers}) != 1:
-    sys.exit("The servers have their executable at different addresses: both must be started with ASLR disabled")
+    # Muted until the static binary is on master: the dynamic PIE reference build is loaded at `ELF_ET_DYN_BASE`,
+    # and the static PIE at the mmap base, so the bases differ even with ASLR disabled.
+    print("WARNING: The servers have their executable at different addresses: both must be started with ASLR disabled")
