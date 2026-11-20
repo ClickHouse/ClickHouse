@@ -37,3 +37,10 @@ CREATE TABLE p (x String, `icebergTruncate(1, x)` String) ENGINE = IcebergLocal(
 INSERT INTO p VALUES ('bb', 'k'), ('ab', 'k'), ('cc', 'm');
 SELECT x, `icebergTruncate(1, x)` FROM p ORDER BY x;
 SELECT arraySort(groupArray(x)) AS xs FROM p GROUP BY _path ORDER BY xs;
+
+-- A data file merged from several sorted blocks was merged by the column instead of the key.
+CREATE TABLE s (x String, `icebergTruncate(1, x)` String) ENGINE = IcebergLocal((SELECT path || 's/' FROM iceberg_path), 'Parquet') ORDER BY icebergTruncate(1, x);
+INSERT INTO s SELECT char(97 + number % 26) || toString(number), char(122 - number % 26) FROM numbers(2400)
+SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_threads = 1, max_insert_threads = 1;
+SELECT count(), countIf(`icebergTruncate(1, x)` = char(219 - ascii(x))) FROM s;
+SELECT count(), countIf(sorted) FROM (SELECT groupArray(substring(x, 1, 1)) AS keys, keys = arraySort(keys) AS sorted FROM s GROUP BY _file) SETTINGS max_threads = 1, input_format_parquet_preserve_order = 1;
