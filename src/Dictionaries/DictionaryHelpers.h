@@ -286,14 +286,16 @@ public:
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
-    /// A dynamic path of `JSON` has a value for every row, so rows with different paths would cost rows x paths.
-    /// Without dynamic paths, all paths go to the shared data, which keeps only the paths of each row.
-    static void removeDynamicPathsOfJSON(IColumn & column)
+    /// A dynamic path of `JSON` or a dynamic type of `Dynamic` has a value for every row, so rows with different paths
+    /// or types would cost rows x paths. Without them, all values go to the shared data, which keeps only the values of each row.
+    static void removeDynamicSubcolumns(IColumn & column)
     {
         auto remove = [](IColumn & subcolumn)
         {
             if (auto * object = typeid_cast<ColumnObject *>(&subcolumn))
                 object->setMaxDynamicPaths(0);
+            else if (auto * dynamic = typeid_cast<ColumnDynamic *>(&subcolumn))
+                dynamic->setMaxDynamicPaths(0);
         };
         remove(column);
         column.forEachMutableSubcolumnRecursively(remove);
@@ -306,7 +308,7 @@ public:
             if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
             {
                 auto column = ColumnArray::create(array_type->getNestedType()->createColumn());
-                removeDynamicPathsOfJSON(*column);
+                removeDynamicSubcolumns(*column);
                 return column;
             }
 
@@ -317,7 +319,7 @@ public:
             if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
             {
                 auto column = ColumnMap::create(map_type->getNestedType()->createColumn());
-                removeDynamicPathsOfJSON(*column);
+                removeDynamicSubcolumns(*column);
                 return column;
             }
 
@@ -334,7 +336,7 @@ public:
                     typed_path_columns[path] = type->createColumn();
 
                 auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
-                removeDynamicPathsOfJSON(*column);
+                removeDynamicSubcolumns(*column);
                 return column;
             }
 

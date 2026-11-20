@@ -84,3 +84,14 @@ PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'json_nested_source')) LAYOUT(HASHED()) L
 SELECT 'nested';
 SELECT id, toString(dictGet('json_nested_hashed', 'a', id)), toString(dictGet('json_nested_hashed', 'm', id))
 FROM (SELECT number AS id FROM numbers(4));
+
+-- `JSON` values inside `Dynamic`, with a different path in every row.
+CREATE TABLE json_dynamic_source (id UInt64, a Array(Dynamic)) ENGINE = Memory;
+INSERT INTO json_dynamic_source SELECT number, [concat('{"p', toString(number), '":', toString(number), '}')::JSON::Dynamic, number::Dynamic] FROM numbers(3);
+
+CREATE DICTIONARY json_dynamic_hashed (id UInt64, a Array(Dynamic))
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'json_dynamic_source')) LAYOUT(HASHED()) LIFETIME(0);
+
+SELECT 'dynamic';
+SELECT id, toString(dictGet('json_dynamic_hashed', 'a', id)), arrayMap(x -> dynamicType(x), dictGet('json_dynamic_hashed', 'a', id))
+FROM (SELECT number AS id FROM numbers(4));
