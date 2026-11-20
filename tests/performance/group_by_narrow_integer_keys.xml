@@ -1,0 +1,17 @@
+<test>
+    <!-- GROUP BY of two or more integer keys whose values fall in a narrow range within a block -->
+    <query>SELECT EventDate, TraficSourceID, count() FROM hits_100m_single GROUP BY EventDate, TraficSourceID FORMAT Null</query>
+    <query>SELECT toHour(EventTime) AS h, OS, count() FROM hits_100m_single GROUP BY h, OS FORMAT Null</query>
+    <query>SELECT SearchEngineID, AdvEngineID, count() FROM hits_100m_single GROUP BY SearchEngineID, AdvEngineID FORMAT Null</query>
+    <query>SELECT EventDate, TraficSourceID, count(), sum(WindowClientWidth), avg(WindowClientHeight) FROM hits_100m_single GROUP BY EventDate, TraficSourceID FORMAT Null</query>
+
+    <!-- About 40 and 16 rows per distinct key of a block: either side of the number of repeats the array needs -->
+    <query>SELECT toUInt16(intHash32(number) % 50) AS a, toUInt16(intHash32(number + 1) % 32) AS b, count() FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
+    <query>SELECT toUInt16(intHash32(number) % 50) AS a, toUInt16(intHash32(number + 1) % 80) AS b, count() FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
+
+    <!-- More groups per thread than the adaptive aggregator's freeze threshold: 365 days x 500 products, every block admitted -->
+    <query>SELECT toDate('2024-01-01') + intDiv(number, 273973) AS d, toUInt16(intHash32(number) % 500) AS p, count() FROM numbers_mt(100000000) GROUP BY d, p FORMAT Null</query>
+
+    <!-- Key ranges too wide for the array -->
+    <query>SELECT number % 60000 AS a, toUInt8(number % 7) AS b, count() FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
+</test>
