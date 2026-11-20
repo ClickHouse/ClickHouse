@@ -706,6 +706,8 @@ bool tryAddJoinRuntimeFilter(
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
+    join_step->setHasRuntimeFilters();
+
     if (kept_for_small_probe && kept_for_key_path)
         kept_for_key_path->push_back({.join_step = join_step, .filter_keys = std::move(filter_keys)});
 
