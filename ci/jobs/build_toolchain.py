@@ -29,6 +29,14 @@ CH_BOLT_BUILD_DIR = f"{TEMP}/toolchain-ch-bolt"
 PROFDATA_PATH = f"{TEMP}/clang.profdata"
 BOLT_PROFILES_DIR = f"{TEMP}/bolt-profiles"
 BOLT_FDATA_PATH = f"{TEMP}/bolt.fdata"
+CH_LLD_PROFILE_BUILD_DIR = f"{TEMP}/toolchain-ch-lld-profile"
+CH_LLD_BOLT_BUILD_DIR = f"{TEMP}/toolchain-ch-lld-bolt"
+LLD_PGO_LINKER_DIR = f"{TEMP}/lld-pgo-training"
+LLD_PROFRAW_DIR = f"{TEMP}/lld-profiles"
+LLD_PROFDATA_PATH = f"{TEMP}/lld.profdata"
+LLD_BOLT_INSTRUMENTED_DIR = f"{TEMP}/lld-bolt-instrumented"
+LLD_BOLT_PROFILES_DIR = f"{TEMP}/bolt-profiles-lld"
+LLD_BOLT_FDATA_PATH = f"{TEMP}/bolt-lld.fdata"
 
 REPO_PATH = "/ClickHouse"
 
@@ -40,6 +48,17 @@ OUTPUT_DIR = f"{Utils.cwd()}/ci/tmp"
 # Four jobs for 20 minutes collected ~1600 profiles on amd64; 150 seconds at full
 # parallelism collected 755 on amd64 and 1248 on aarch64, so this collects about as many.
 BOLT_PROFILE_TIMEOUT = 300
+
+# lld is trained (PGO and BOLT) on the ThinLTO links of two small host tools of a ThinLTO ClickHouse build.
+LLD_TRAINING_TARGETS = "protoc grpc_cpp_plugin"
+# A training build takes about 5 minutes; a stalled link must not hold the job until its timeout.
+LLD_TRAINING_TIMEOUT = 1800
+
+# Flags of the BOLT optimization of clang and lld; they match upstream perf-helper.py bolt_optimize.
+BOLT_OPTIMIZE_FLAGS = (
+    "-reorder-blocks=ext-tsp -reorder-functions=cdsort -split-functions"
+    " -split-all-cold -split-eh -dyno-stats -use-gnu-stack"
+)
 
 # LLVM projects for the final toolchain (note: "all" doesn't work with cmake).
 # `bolt` is needed by the BOLT stage of this job and by the ClickHouse BOLT builds.
@@ -130,6 +149,41 @@ def clean_dirs(*dirs):
         if os.path.exists(d):
             print(f"Cleaning {d}")
             shutil.rmtree(d, ignore_errors=True)
+
+
+def lld_training(name, compiler_c, compiler_cxx, linker, build_dir, toolchain_file, ninja, env=""):
+    """Links LLD_TRAINING_TARGETS with `linker` in a ThinLTO build of ClickHouse, with `env` added to the links.
+    LLD_IN_TEST=1 makes lld return from `main` instead of calling `_Exit`, so its profile gets written."""
+    results = [
+        Result.from_commands_run(
+            name=f"{name} CMake (lld, ThinLTO)",
+            command=(
+                f"cmake"
+                f" -DCMAKE_BUILD_TYPE=None"
+                f" -DENABLE_THINLTO=1"
+                f" -DCMAKE_C_COMPILER={compiler_c}"
+                f" -DCMAKE_CXX_COMPILER={compiler_cxx}"
+                f" -DLINKER_NAME={linker}"
+                f" -DCOMPILER_CACHE=disabled"
+                f" -DENABLE_TESTS=0"
+                f" -DENABLE_UTILS=0"
+                f" -DCMAKE_TOOLCHAIN_FILE={toolchain_file}"
+                f" {REPO_PATH}"
+                f" -B {build_dir}"
+            ),
+        )
+    ]
+    if results[-1].is_ok():
+        results.append(
+            Result.from_commands_run(
+                name=f"{name} links (lld, ThinLTO)",
+                command=(
+                    f"LLD_IN_TEST=1 {env} timeout --signal=INT --kill-after=120 {LLD_TRAINING_TIMEOUT}"
+                    f" {ninja} -C {build_dir} {LLD_TRAINING_TARGETS}"
+                ),
+            )
+        )
+    return results
 
 
 def parse_args():
@@ -345,7 +399,9 @@ def main():
 
     # Stage 2: Profile collection - build ClickHouse with instrumented clang
     if res and JobStages.PROFILE_COLLECTION in stages:
-        clean_dirs(CH_PROFILE_BUILD_DIR)
+        clean_dirs(CH_PROFILE_BUILD_DIR, CH_LLD_PROFILE_BUILD_DIR, LLD_PROFRAW_DIR)
+        if os.path.exists(LLD_PROFDATA_PATH):
+            os.remove(LLD_PROFDATA_PATH)
 
         # Checkout submodules first
         results.append(
@@ -404,17 +460,56 @@ def main():
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 
+        # PGO training for lld's own work (best-effort): bitcode loading, function import and the IR verifier run
+        # only in lld, so the clang runs above give them no profile. Its profile is collected and merged on its own,
+        # and joins the merge below only if that succeeded. `--threads=1` (one ThinLTO job) avoids the multithreaded
+        # value profiling problem described above; CMake accepts no extra linker flags (PreLoad.cmake), so a wrapper
+        # named `ld.lld` adds it.
+        if res:
+            lld_wrapper = f"{LLD_PGO_LINKER_DIR}/ld.lld"
+            os.makedirs(LLD_PGO_LINKER_DIR, exist_ok=True)
+            with open(lld_wrapper, "w") as f:
+                f.write(f'#!/bin/sh\nexec {STAGE1_INSTALL_DIR}/bin/ld.lld --threads=1 "$@"\n')
+            os.chmod(lld_wrapper, 0o755)
+            lld_results = lld_training(
+                "Profile collection",
+                f"clang-{LLVM_VERSION}",
+                f"clang++-{LLVM_VERSION}",
+                lld_wrapper,
+                CH_LLD_PROFILE_BUILD_DIR,
+                toolchain_file,
+                CUSTOM_NINJA,
+                env=f"LLVM_PROFILE_FILE={LLD_PROFRAW_DIR}/lld-%p.profraw",
+            )
+            lld_ok = lld_results[-1].is_ok() and bool(glob.glob(f"{LLD_PROFRAW_DIR}/*.profraw"))
+            if lld_ok:
+                lld_results.append(
+                    Result.from_commands_run(
+                        name="Merge PGO profiles (lld)",
+                        command=f"llvm-profdata-{LLVM_VERSION} merge -output={LLD_PROFDATA_PATH} {LLD_PROFRAW_DIR}",
+                    )
+                )
+                lld_ok = lld_results[-1].is_ok()
+            if not lld_ok:
+                print("lld profile collection failed; lld gets only the profile of the clang runs")
+                for r in lld_results:
+                    r.status = Result.Status.SKIPPED
+                if os.path.exists(LLD_PROFDATA_PATH):
+                    os.remove(LLD_PROFDATA_PATH)
+            results.extend(lld_results)
+
         # Merge profraw files with the matching `llvm-profdata` (it supports the zlib-compressed
         # profile format the instrumented clang can emit)
         profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if os.path.isdir(profraw_dir) and os.listdir(profraw_dir):
+            lld_profdata = f" {LLD_PROFDATA_PATH}" if os.path.isfile(LLD_PROFDATA_PATH) else ""
             results.append(
                 Result.from_commands_run(
                     name="Merge PGO profiles",
                     command=(
                         f"llvm-profdata-{LLVM_VERSION} merge"
                         f" -output={PROFDATA_PATH}"
-                        f" {profraw_dir}"
+                        f" {profraw_dir}{lld_profdata}"
                     ),
                 )
             )
@@ -434,7 +529,7 @@ def main():
 
         # Clean up to free disk space (~80 GB)
         print("Cleaning Stage 1 build and CH profile build to free disk space")
-        clean_dirs(STAGE1_BUILD_DIR, CH_PROFILE_BUILD_DIR, STAGE1_INSTALL_DIR)
+        clean_dirs(STAGE1_BUILD_DIR, CH_PROFILE_BUILD_DIR, CH_LLD_PROFILE_BUILD_DIR, LLD_PGO_LINKER_DIR, LLD_PROFRAW_DIR, STAGE1_INSTALL_DIR)
 
     # Stage 3: Build PGO-optimized clang with all projects/targets and BOLT-ready flags
     if res and JobStages.STAGE2_BUILD in stages:
@@ -671,7 +766,6 @@ def main():
                 print("BOLT profile merge failed. Continuing with PGO-only.")
 
         # Step 6: Apply BOLT optimization
-        # Flags match upstream perf-helper.py bolt_optimize
         if bolt_ok:
             result = Result.from_commands_run(
                 name="BOLT optimize clang",
@@ -679,13 +773,7 @@ def main():
                     f"{llvm_bolt} {clang_binary}"
                     f" -o {clang_bolted}"
                     f" -data={BOLT_FDATA_PATH}"
-                    f" -reorder-blocks=ext-tsp"
-                    f" -reorder-functions=cdsort"
-                    f" -split-functions"
-                    f" -split-all-cold"
-                    f" -split-eh"
-                    f" -dyno-stats"
-                    f" -use-gnu-stack"
+                    f" {BOLT_OPTIMIZE_FLAGS}"
                 ),
             )
             bolt_results.append(result)
@@ -713,10 +801,70 @@ def main():
                 r.status = Result.Status.SKIPPED
             results.extend(bolt_results)
 
+        # BOLT for lld (best-effort, independent of the clang result above), trained on the same links as its PGO.
+        lld_binary = f"{STAGE2_INSTALL_DIR}/bin/lld"
+        # lld picks its flavor from argv[0]
+        lld_instrumented = f"{LLD_BOLT_INSTRUMENTED_DIR}/ld.lld"
+        lld_bolted = f"{lld_binary}.bolt"
+        clean_dirs(LLD_BOLT_PROFILES_DIR, LLD_BOLT_INSTRUMENTED_DIR, CH_LLD_BOLT_BUILD_DIR)
+        os.makedirs(LLD_BOLT_PROFILES_DIR, exist_ok=True)
+        os.makedirs(LLD_BOLT_INSTRUMENTED_DIR, exist_ok=True)
+        lld_results = []
+        if os.path.isfile(lld_binary):
+            lld_results.append(
+                Result.from_commands_run(
+                    name="BOLT instrument lld",
+                    command=(
+                        f"{llvm_bolt} {lld_binary}"
+                        f" -o {lld_instrumented}"
+                        f" -instrument"
+                        f" --instrumentation-file-append-pid"
+                        f" --instrumentation-file={LLD_BOLT_PROFILES_DIR}/prof"
+                    ),
+                )
+            )
+        if lld_results and lld_results[-1].is_ok():
+            lld_results += lld_training(
+                "BOLT profile collection",
+                f"{STAGE2_INSTALL_DIR}/bin/clang",
+                f"{STAGE2_INSTALL_DIR}/bin/clang++",
+                lld_instrumented,
+                CH_LLD_BOLT_BUILD_DIR,
+                toolchain_file,
+                CUSTOM_NINJA,
+            )
+        lld_ok = bool(lld_results) and lld_results[-1].is_ok() and bool(glob.glob(f"{LLD_BOLT_PROFILES_DIR}/prof.*"))
+        if lld_ok:
+            lld_results.append(
+                Result.from_commands_run(
+                    name="Merge BOLT profiles (lld)",
+                    command=f"{merge_fdata} -o {LLD_BOLT_FDATA_PATH} {LLD_BOLT_PROFILES_DIR}/prof.*",
+                )
+            )
+            lld_ok = lld_results[-1].is_ok()
+        if lld_ok:
+            lld_results.append(
+                Result.from_commands_run(
+                    name="BOLT optimize lld",
+                    command=(
+                        f"{llvm_bolt} {lld_binary} -o {lld_bolted} -data={LLD_BOLT_FDATA_PATH} {BOLT_OPTIMIZE_FLAGS}"
+                        f" && mv {lld_bolted} {lld_binary}"
+                    ),
+                )
+            )
+            lld_ok = lld_results[-1].is_ok()
+        if lld_ok:
+            print("BOLT optimization of lld applied successfully")
+        else:
+            print("Packaging the PGO-only lld (its BOLT step was skipped or failed)")
+            for r in lld_results:
+                r.status = Result.Status.SKIPPED
+        results.extend(lld_results)
+
         # Clean up BOLT intermediates
         print("Cleaning BOLT intermediate files")
-        clean_dirs(CH_BOLT_BUILD_DIR, BOLT_PROFILES_DIR)
-        for f in [clang_instrumented, clangpp_inst, BOLT_FDATA_PATH, clang_bolted]:
+        clean_dirs(CH_BOLT_BUILD_DIR, BOLT_PROFILES_DIR, CH_LLD_BOLT_BUILD_DIR, LLD_BOLT_PROFILES_DIR, LLD_BOLT_INSTRUMENTED_DIR)
+        for f in [clang_instrumented, clangpp_inst, BOLT_FDATA_PATH, clang_bolted, LLD_BOLT_FDATA_PATH, lld_bolted]:
             try:
                 if f and os.path.exists(f):
                     os.remove(f)
