@@ -1859,13 +1859,14 @@ void StorageObjectStorageQueue::alter(
             const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
             return getSettings(&table_metadata_in_keeper);
         };
-        auto settings_in_memory = getSettings(&metadata->getTableMetadata());
+        /// Shared by all tables with this `keeper_path` on this server, can differ from this table's `old_settings`.
+        auto local_shared_metadata_settings = getSettings(&metadata->getTableMetadata());
         std::optional<ObjectStorageQueueSettings> settings_in_keeper;
         auto differs_from_queue = [&](const SettingChange & setting)
         {
             if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
                 return false;
-            if (settings_in_memory.get(setting.name) != setting.value)
+            if (local_shared_metadata_settings.get(setting.name) != setting.value)
                 return true;
             if (!settings_in_keeper)
                 settings_in_keeper.emplace(read_settings_in_keeper());
