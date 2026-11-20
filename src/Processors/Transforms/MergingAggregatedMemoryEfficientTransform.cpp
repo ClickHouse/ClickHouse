@@ -1,5 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
 #include <algorithm>
 #include <limits>
 #include <set>
@@ -27,11 +25,11 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
 {
 }
 
-VectorWithMemoryTracking<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// A bucket with a smaller id can be pushed after `bucket` if either we already have its data buffered,
     /// or some of the inputs told us that it delayed that bucket and it still can arrive.
-    SetWithMemoryTracking<Int32> delayed;
+    std::set<Int32> delayed;
 
     for (const auto & [delayed_bucket, num_inputs_delayed_that_bucket] : out_of_order_buckets)
         if (delayed_bucket < bucket && num_inputs_delayed_that_bucket > 0)
@@ -476,12 +474,12 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
 {
 }
 
-VectorWithMemoryTracking<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+std::vector<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// This transform never delays a bucket on its own: it always pushes the smallest bucket it has.
     /// Hence a bucket with a smaller id can be pushed after `bucket` only if it hasn't arrived yet,
     /// and in that case the input which will deliver it has already reported it as delayed.
-    SetWithMemoryTracking<Int32> delayed;
+    std::set<Int32> delayed;
 
     for (const auto & buckets_of_input : input_out_of_order_buckets)
         for (const auto delayed_bucket : buckets_of_input)

@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Core/Field.h>
@@ -118,7 +117,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// a rename ExpressionStep with the actual filter inside the reader. We collect the chain so we can splice the
     /// shortlist ABOVE all of it: this way every filter prefilters the approximate ranking. The codes subcolumn is then
     /// propagated up through the chain (the steps would otherwise drop it as an unknown column).
-    VectorWithMemoryTracking<QueryPlan::Node *> chain_nodes; /// ordered top (just below the rescore expression) to bottom (just above read)
+    std::vector<QueryPlan::Node *> chain_nodes; /// ordered top (just below the rescore expression) to bottom (just above read)
     QueryPlan::Node * read_node = expression_node->children.front();
     ReadFromMergeTree * read_step = nullptr;
     while (true)
@@ -229,27 +228,19 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (search_column.empty() || reference_vector.empty())
         return false;
 
-    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve the
-    /// name to the exact storage column first. It is either already a storage column - including a genuinely dotted one,
-    /// such as a `Nested` component `n.vec` or even `n.values.id` - or it carries the table qualifier which the analyzer
-    /// prepends (`__table1.vec`). Peel the leading component only when it is a proven qualifier, i.e. when the full name
-    /// is not a column of this table while the remainder is. Peeling based on the codec lookup alone would turn
-    /// `n.values.id` into `values.id` and, if that column happens to carry the codec, rank the shortlist by a different
-    /// vector column instead of leaving the query exact. Same rule as in `useVectorSearch.cpp`.
-    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
-    auto is_storage_column = [&storage_columns](const String & column_name)
-    {
-        return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
-    };
-
-    if (!is_storage_column(search_column) && search_column.contains('.'))
+    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve it to
+    /// the exact storage column: try the full input name first, so a genuine dotted storage column (e.g. a `Nested`
+    /// component `n.vec`) is matched as-is rather than conflated with a different top-level column. Only if that fails do
+    /// we strip a single leading qualifier (the analyzer qualifies table columns as `table.column`) and retry. Truncating
+    /// unconditionally would turn `n.vec` into `vec` and rank the shortlist by the wrong column.
+    auto params = findQuantizeCodecParams(*read_step, search_column);
+    if (!params && search_column.contains('.'))
     {
         const String unqualified = search_column.substr(search_column.find('.') + 1);
-        if (is_storage_column(unqualified))
+        params = findQuantizeCodecParams(*read_step, unqualified);
+        if (params)
             search_column = unqualified;
     }
-
-    auto params = findQuantizeCodecParams(*read_step, search_column);
     if (!params)
         return false;
 
@@ -275,6 +266,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// column by name below would bind that physical column instead of the companion subcolumn and rank the shortlist on
     /// unrelated bytes (silently, when the widths happen to match). Leave the query exact in that case: the same
     /// fall-back-to-exact this rewrite already takes wherever it cannot apply cleanly.
+    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
     if (storage_columns.has(codes_column) || (is_pq && storage_columns.has(codebook_column)))
         return false;
 
@@ -316,7 +308,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     /// 1. Pull the codes subcolumn (and, for the trained `product` method, the per-part codebook subcolumn) into the read
     /// list.
-    VectorWithMemoryTracking<String> extra_columns{codes_column};
+    std::vector<String> extra_columns{codes_column};
     if (is_pq)
         extra_columns.push_back(codebook_column);
     for (const auto & extra_column : extra_columns)
@@ -410,7 +402,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// consumed inputs (the distance function above still references them).
     /// Exception: keep a companion subcolumn that the rescore expression still consumes - e.g. `SELECT vec.quantized
     /// ... ORDER BY distance LIMIT` selects it - otherwise the rescore above the shortlist would lose its input.
-    UnorderedSetWithMemoryTracking<std::string_view> needed_above;
+    std::unordered_set<std::string_view> needed_above;
     for (const auto * input : expression.getInputs())
         needed_above.insert(input->result_name);
     std::erase_if(approx_dag.getOutputs(), [&](const ActionsDAG::Node * node)
@@ -445,7 +437,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// column as an input is what makes them consumed, so only the columns kept as outputs survive.
     ActionsDAG discard_approx_dag;
     SharedHeader shortlist_header = inner_limit_node.step->getOutputHeader();
-    VectorWithMemoryTracking<const ActionsDAG::Node *> shortlist_inputs;
+    std::vector<const ActionsDAG::Node *> shortlist_inputs;
     shortlist_inputs.reserve(shortlist_header->columns());
     for (const auto & shortlist_column : *shortlist_header)
         shortlist_inputs.push_back(&discard_approx_dag.addInput(shortlist_column.name, shortlist_column.type));
@@ -455,6 +447,8 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     auto discard_approx_step = std::make_unique<ExpressionStep>(shortlist_header, std::move(discard_approx_dag));
     discard_approx_step->setStepDescription("quantized shortlist discard approximate distance");
+    /// Keep the discarded inputs, or a later pass strips them and re-exposes the column.
+    discard_approx_step->setPreventInputRemoval();
 
     auto & discard_approx_node = nodes.emplace_back();
     discard_approx_node.step = std::move(discard_approx_step);

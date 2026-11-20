@@ -67,7 +67,6 @@ public:
 
     bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
-    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
@@ -109,8 +108,6 @@ public:
             throw;
         }
     }
-
-    void insertManyDefaults(size_t length) override;
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -206,7 +203,6 @@ public:
     void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     bool isNullable() const override { return true; }
-    ColumnPlanes getPlanes() const override;
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
@@ -260,11 +256,8 @@ public:
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
-    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
-    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
-
-    size_t rowStoreOverflowBytes(size_t start, size_t count) const override { return nested_column->rowStoreOverflowBytes(start, count); }
-    void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const override;
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
+    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
 private:
     WrappedPtr nested_column;

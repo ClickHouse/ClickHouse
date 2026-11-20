@@ -147,12 +147,6 @@ inline std::string_view trimWhitespace(std::string_view str)
     return str;
 }
 
-/// The part of a URL before its query string or fragment, i.e. before the first '?' or '#'.
-inline std::string_view stripQueryAndFragment(std::string_view url)
-{
-    return url.substr(0, url.find_first_of("?#"));
-}
-
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
@@ -437,9 +431,6 @@ inline void trim(std::string & str, char c = ' ')
 
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
-
-/// Position of the first byte >= 0x80, or `size` if there is none.
-size_t findFirstNonASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {
