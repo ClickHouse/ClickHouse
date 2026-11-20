@@ -21,9 +21,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
 
-#include <Poco/String.h>
-#include <Poco/URI.h>
-
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -472,30 +469,14 @@ void ObjectStorageQueuePostProcessor::reportSelfMove(const StoredObject & source
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
 }
 
-#if USE_AWS_S3
-/// Whether a bucket of the same name at these two endpoints may be the same bucket. Fails closed: the endpoints are
-/// taken as different only when they are known to be, because copying an object onto itself and then removing the
-/// source loses it.
-static bool mayBeSameS3Service(std::string_view lhs_endpoint, std::string_view rhs_endpoint)
-{
-    const Poco::URI lhs{String(lhs_endpoint)};
-    const Poco::URI rhs{String(rhs_endpoint)};
-    const String lhs_host = Poco::toLower(lhs.getHost());
-    const String rhs_host = Poco::toLower(rhs.getHost());
-    /// Bucket names are global in AWS: all its (regional, dual-stack, ...) endpoints name the same bucket.
-    auto is_aws = [](const String & host) { return host.ends_with(".amazonaws.com") || host.ends_with(".amazonaws.com.cn"); };
-    if (is_aws(lhs_host) && is_aws(rhs_host))
-        return true;
-    return lhs_host == rhs_host && lhs.getPort() == rhs.getPort();
-}
-#endif
-
 #if USE_AZURE_BLOB_STORAGE
-/// Whether two blob clients may address the same blob. Fails closed, see `mayBeSameS3Service`.
+/// Whether two blob clients may address the same blob. Only the path (the container and the blob name, and the
+/// account for path-style endpoints such as Azurite) is compared: distinct hosts or ports do not prove that the
+/// services are distinct (a private endpoint, a custom domain or an IP address can name the same account), and a
+/// blob copied onto itself and then removed is lost.
 static bool mayBeSameAzureBlob(const Azure::Core::Url & lhs, const Azure::Core::Url & rhs)
 {
-    return Poco::toLower(lhs.GetHost()) == Poco::toLower(rhs.GetHost()) && lhs.GetPort() == rhs.GetPort()
-        && lhs.GetPath() == rhs.GetPath();
+    return lhs.GetPath() == rhs.GetPath();
 }
 #endif
 
@@ -948,10 +929,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             const String src_bucket = s3_storage->getObjectsNamespace();
             /// The destination can be the source bucket (e.g. a prefixless move to it with other keys). An object moved onto
             /// its own key would be copied onto itself (the buffered copy re-uploads the same bytes, keeping its `ETag`) and
-            /// then removed, so it is left in place instead.
-            const bool destination_may_be_source_bucket = dst_uri.bucket == src_bucket
-                && mayBeSameS3Service(
-                    std::string_view(src_client->getInitialEndpoint()), std::string_view(dst_client->getInitialEndpoint()));
+            /// then removed, so it is left in place instead. A bucket of the same name is taken as the source bucket whatever
+            /// the endpoints are: distinct hosts or ports do not prove that the services are distinct (a host name and its IP
+            /// address, a CNAME, regional and dual-stack AWS endpoints all name the same bucket).
+            const bool destination_may_be_source_bucket = dst_uri.bucket == src_bucket;
             for (const auto & object_from : objects)
             {
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);

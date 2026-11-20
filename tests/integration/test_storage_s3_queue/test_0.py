@@ -3255,13 +3255,15 @@ def test_external_move_writes_with_the_move_credentials(started_cluster):
     assert moved_objects(node) == moved_before
 
 
-def test_external_move_onto_the_source_itself_is_refused(started_cluster):
+@pytest.mark.parametrize("move_endpoint", ["host_name", "ip_address"])
+def test_external_move_onto_the_source_itself_is_refused(started_cluster, move_endpoint):
     """A prefixless move to the source bucket with other keys maps every object onto itself. Copying it onto itself
-    (the buffered copy keeps the `ETag` of the same bytes) and then removing the source would lose it, so it stays."""
+    (the buffered copy keeps the `ETag` of the same bytes) and then removing the source would lose it, so it stays.
+    The source bucket must be recognized also when the move names its service by another endpoint (its IP address)."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = started_cluster.minio_bucket
-    table_name = f"move_onto_itself_{token}"
+    table_name = f"move_onto_itself_{move_endpoint}_{token}"
     files_path = f"{table_name}_data"
     source_key = f"{files_path}/part.csv"
     data = b"1,2,3\n"
@@ -3282,6 +3284,16 @@ def test_external_move_onto_the_source_itself_is_refused(started_cluster):
     admin.user_add(move_access_key, move_secret_key)
     admin.attach_policy(["readwrite"], user=move_access_key)
 
+    additional_settings = {
+        "after_processing_move_access_key_id": move_access_key,
+        "after_processing_move_secret_access_key": move_secret_key,
+    }
+    if move_endpoint == "ip_address":
+        # The source is read through `minio1`; the move addresses the same MinIO by its IP address.
+        additional_settings["after_processing_move_uri"] = (
+            f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}"
+        )
+
     create_table(
         started_cluster,
         node,
@@ -3290,10 +3302,7 @@ def test_external_move_onto_the_source_itself_is_refused(started_cluster):
         files_path,
         after_processing="move",
         move_to_bucket=bucket,
-        additional_settings={
-            "after_processing_move_access_key_id": move_access_key,
-            "after_processing_move_secret_access_key": move_secret_key,
-        },
+        additional_settings=additional_settings,
     )
     create_mv(node, table_name, f"{table_name}_dst")
 
