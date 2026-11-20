@@ -1,0 +1,5 @@
+--- no grant
+--- GRANT aiRelevance
+--- REVOKE aiRelevance
+--- GRANT AI FUNCTIONS
+--- REVOKE aiRelevance from AI FUNCTIONS
