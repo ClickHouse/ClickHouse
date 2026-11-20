@@ -74,6 +74,17 @@ SELECT hit, global_hit FROM v_alias_in(a = 'vals');
 DROP VIEW v_alias_in;
 DROP TABLE vals;
 
+-- The division rewrite does not keep the automatic name of an expression with a parametrised alias, so an operand of IN with that name is a table.
+DROP TABLE IF EXISTS `divide(number, 2)`;
+DROP VIEW IF EXISTS v_alias_division;
+CREATE TABLE `divide(number, 2)` (x UInt8) ENGINE = Memory;
+INSERT INTO `divide(number, 2)` VALUES (1);
+CREATE VIEW v_alias_division AS SELECT divide(number, 2) AS {a:Identifier}, 1 IN `divide(number, 2)` AS hit FROM numbers(4) SETTINGS sql_compatible_division_for_integers = 1;
+SELECT position(create_table_query, currentDatabase() || '.`divide(number, 2)`') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'v_alias_division';
+SELECT sum(hit) FROM v_alias_division(a = 'q');
+DROP VIEW v_alias_division;
+DROP TABLE `divide(number, 2)`;
+
 DROP VIEW mv_alias;
 DROP TABLE src_alias;
 DROP VIEW v_alias_only;

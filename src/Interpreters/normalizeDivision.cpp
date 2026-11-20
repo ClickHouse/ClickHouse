@@ -75,7 +75,9 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
             for (const auto & expression : child->children)
             {
                 const auto * with_alias = dynamic_cast<const ASTWithAlias *>(expression.get());
-                const String original_name = with_alias && with_alias->alias.empty() ? expression->getColumnName() : String{};
+                const String original_name = with_alias && with_alias->alias.empty() && !with_alias->parametrised_alias
+                    ? expression->getColumnName()
+                    : String{};
                 if (normalize(*expression, exact, current_context))
                 {
                     changed = true;
