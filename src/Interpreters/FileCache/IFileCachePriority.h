@@ -512,8 +512,17 @@ protected:
     /// duplicated entries during upgrades/downgrades in the SLRU queue.
     static bool isObservable(Entry::State state)
     {
-        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving
-            || state == Entry::State::PreActive;
+        switch (state)
+        {
+            case Entry::State::Active:
+            case Entry::State::PreActive:
+            case Entry::State::Evicting:
+            case Entry::State::Moving:
+                return true;
+            case Entry::State::Invalidated:
+            case Entry::State::Removed:
+                return false;
+        }
     }
 
     /// Guard protecting this priority queue's structure (add/remove/move of entries), so
