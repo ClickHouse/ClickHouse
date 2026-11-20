@@ -1498,8 +1498,22 @@ Pipe ReadFromMergeTree::readByLayers(
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
+        /// Only the prefix of the sorting key that the merge of a layer and the range filters of the layers use
+        /// has to be computed: reading the rest of the key would read and decode columns the query does not need.
+        size_t sorting_key_prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+        if (!split_parts.borders.empty())
+            sorting_key_prefix_size = std::max(sorting_key_prefix_size, split_parts.borders.front().size());
+
+        auto sorting_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        sorting_key_prefix_ast->children.resize(sorting_key_prefix_size);
+        auto syntax_result = TreeRewriter(context).analyze(
+            sorting_key_prefix_ast,
+            storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        auto sorting_expr = std::make_shared<ExpressionActions>(
+            ExpressionAnalyzer(sorting_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+
         /// Add columns needed to calculate the sorting expression
-        for (const auto & column_name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        for (const auto & column_name : sorting_expr->getRequiredColumns())
         {
             if (column_names_set.contains(column_name))
                 continue;
@@ -1507,7 +1521,6 @@ Pipe ReadFromMergeTree::readByLayers(
             in_order_column_names_to_read.push_back(column_name);
             column_names_set.insert(column_name);
         }
-        auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 
@@ -3136,6 +3149,7 @@ ReadFromMergeTree::selectRangesToReadImpl(bool find_exact_ranges, bool allow_exa
         /// The speculative analysis for predicate elimination runs in addition to the ordinary one,
         /// which already reported the index usage.
         /*report_index_usage=*/check_row_limits,
+        /*stop_at_first_match=*/false,
         allow_exact_count_optimization);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
@@ -3149,7 +3163,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
     /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
-    return selectRangesToRead(
+    analyzed_result_for_estimation_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
         vector_search_parameters,
@@ -3171,7 +3185,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false,
         /*skip_ranges_analysis=*/false,
-        /*report_index_usage=*/false);
+        /*report_index_usage=*/false,
+        /*stop_at_first_match=*/false);
+    return analyzed_result_for_estimation_ptr;
 }
 
 bool ReadFromMergeTree::hasThrowingReadRowLimit() const
@@ -3941,6 +3957,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool check_row_limits,
     bool skip_ranges_analysis,
     bool report_index_usage,
+    bool stop_at_first_match,
     bool allow_exact_count_optimization)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
@@ -4131,6 +4148,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .has_projections = has_projections,
         .check_row_limits = check_row_limits,
         .report_index_usage = report_index_usage,
+        .stop_at_first_match = stop_at_first_match,
         .result = result,
     };
 
@@ -5018,21 +5036,24 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 /// parallel (the input is scattered by the hash of the window `PARTITION BY` columns and every stream is
 /// sorted and processed by its own window transform), so per-partition processing must provide comparable
 /// parallelism (enough partitions, no dominant partition) to make skipping the scatter worthwhile.
-void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+bool ReadFromMergeTree::canOutputEachPartitionThroughSeparatePortForWindow() const
 {
     if (isQueryWithFinal())
-        return;
+        return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With window-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
-        return;
+        return false;
 
-    if (!context->getSettingsRef()[Setting::force_window_partitions_independently]
-        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Window))
-        return;
+    return context->getSettingsRef()[Setting::force_window_partitions_independently]
+        || isPartitionIndependentProcessingProfitable(ProcessorKind::Window);
+}
 
-    output_each_partition_through_separate_port = true;
+void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+{
+    if (canOutputEachPartitionThroughSeparatePortForWindow())
+        output_each_partition_through_separate_port = true;
 }
 
 ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() const
