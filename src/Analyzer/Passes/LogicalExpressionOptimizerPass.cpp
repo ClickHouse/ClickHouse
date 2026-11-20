@@ -934,10 +934,11 @@ static AddComparisonFilterResult addComparisonFilter(
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
+    /// An `Enum` and a string in arrays order by the name, not by the converted value.
     const bool is_equality = new_filter.function == ComparisonFunction::EQUALS || new_filter.function == ComparisonFunction::NOT_EQUALS;
     const auto & constant_type = new_filter.constant_node->getResultType();
     if (is_equality ? equalityReadsStringAsEnumNumber(constant_type, expr_type, context)
-                    : comparesStringWithEnum(expr_type, constant_type))
+                    : comparesStringWithEnum(expr_type, constant_type) || mixesEnumAndStringInArray(expr_type, constant_type))
         new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.

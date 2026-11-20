@@ -492,4 +492,30 @@ bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right)
     return (isEnum(left_shape) && isStringOrFixedString(right_shape)) || (isStringOrFixedString(left_shape) && isEnum(right_shape));
 }
 
+bool mixesEnumAndStringInArray(const DataTypePtr & left, const DataTypePtr & right)
+{
+    const auto left_shape = comparedShape(left);
+    const auto right_shape = comparedShape(right);
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_shape.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_shape.get());
+    if (left_array && right_array)
+        return mixesEnumAndString(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_shape.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_shape.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (mixesEnumAndStringInArray(left_elements[i], right_elements[i]))
+                return true;
+    }
+
+    return false;
+}
+
 }

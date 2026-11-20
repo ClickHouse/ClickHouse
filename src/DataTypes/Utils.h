@@ -72,4 +72,15 @@ bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr &
   */
 bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right);
 
+/** Returns true if `mixesEnumAndString` holds for the elements of aligned arrays or maps of `left` and `right`,
+  * also in aligned elements of tuples. Such a pair compares by the name of the `Enum`.
+  *
+  * Examples:
+  * `Array(Enum8('b' = 1, 'a' = 2))` and `Array(String)` returns true.
+  * `Tuple(Array(String))` and `Tuple(Array(Enum8('b' = 1, 'a' = 2)))` returns true.
+  * `Enum8('b' = 1, 'a' = 2)` and `String` returns false.
+  * `Tuple(Enum8('b' = 1, 'a' = 2))` and `Tuple(String)` returns false.
+  */
+bool mixesEnumAndStringInArray(const DataTypePtr & left, const DataTypePtr & right);
+
 }
