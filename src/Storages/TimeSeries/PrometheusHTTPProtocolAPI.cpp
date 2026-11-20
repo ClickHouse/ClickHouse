@@ -402,7 +402,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {
             /// The whole request is converted first, so a check of the converter sees the whole range and not only one chunk.
-            PrometheusQueryToSQL::Converter{query_tree, evaluation_settings}.getSQL();
+            (void)PrometheusQueryToSQL::Converter{query_tree, evaluation_settings}.getSQL();
             executeRangeQueryInChunks(response, query_tree, evaluation_settings, split_interval, query_finish_callback);
             return;
         }
