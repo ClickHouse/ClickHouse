@@ -1,0 +1,8 @@
+--- a brace template in the archive path lists the index page
+33
+--- and without the setting it is refused
+Wildcard expansion for `url` from HTTP index pages is experimental
+--- urlCluster refuses it as well
+Wildcard expansion for `urlCluster` from HTTP index pages is experimental
+--- and reads it with the setting
+33

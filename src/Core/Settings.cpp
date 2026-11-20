@@ -5804,10 +5804,13 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
 Maximum number of allowed addresses (For external storages, table functions, etc).
 
 The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
+
+For `url` and `urlCluster` the addresses of a pattern - a `{...}` template in the host or in the query, and a path without a glob character, including one that names a member inside an archive - are all generated before the read starts, so a `LIMIT` does not reduce them.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
-Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
+Allow wildcard expansion for the `url` and `urlCluster` table functions and the `URL` table engine from HTTP index pages.
 )", EXPERIMENTAL, allow_experimental_url_wildcard_from_index_pages, \
+        {"26.11", false, false, "The `urlCluster` table function and the `URL` table engine read wildcard sources this way as well."}, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}, \
         {"26.7", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages. At the time the setting was named `allow_experimental_url_wildcard_from_index_pages`, which is now an alias of it."}) \
     DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
@@ -10504,7 +10507,10 @@ This setting defines the granularity of work distribution across the cluster:
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
+
+The `bucket` granularity is not supported for archive reads. Archive members must be processed with `file` granularity because splitting the outer archive object cannot preserve the identity of an individual member.
 )", 0, \
+        {"26.11", "file", "file", "The `bucket` granularity is rejected for archive reads."}, \
         {"25.11", "file", "file", "New setting."}) \
     DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
 This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
