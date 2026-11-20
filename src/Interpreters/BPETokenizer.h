@@ -66,7 +66,7 @@ private:
     /// The rank of a piece, or `no_rank` when the piece is not a token of the vocabulary.
     static constexpr UInt32 no_rank = std::numeric_limits<UInt32>::max();
 
-    UInt32 rankOf(std::string_view piece) const;
+    [[nodiscard]] UInt32 rankOf(std::string_view piece) const;
 
     /// Encodes one piece that is not a token of the vocabulary by merging.
     void encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const;
