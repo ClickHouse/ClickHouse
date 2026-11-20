@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UniqueLock.h>
 #include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -133,8 +134,8 @@ void ReadManager::init(
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
-    /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
-    /// The distribution is static to make sure no stage gets starved if others eat all the memory.
+    /// E.g. if the budget was shared among all stages, the stages before ColumnData could run far ahead and eat
+    /// all memory, and ColumnData would only make progress through the privileged row group (see is_privileged_task).
     double sum = 0;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
@@ -1465,9 +1466,12 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
 void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     row_subgroup.filter.clear(&diff);
-    row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
+    /// The row subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+    row_subgroup.output = decltype(row_subgroup.output)();
+    row_subgroup.columns = decltype(row_subgroup.columns)();
+    row_subgroup.block_missing_values = BlockMissingValues();
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()
@@ -1542,7 +1546,7 @@ ReadManager::ReadResult ReadManager::read()
     while (true)
     {
         {
-            std::unique_lock lock(delivery_mutex);
+            UniqueLock lock(delivery_mutex);
 
             while (true)
             {
@@ -1629,7 +1633,7 @@ ReadManager::ReadResult ReadManager::read()
                 else
                 {
                     /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
-                    delivery_cv.wait_for(lock, std::chrono::seconds(10));
+                    delivery_cv.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(10));
                 }
             }
         }
