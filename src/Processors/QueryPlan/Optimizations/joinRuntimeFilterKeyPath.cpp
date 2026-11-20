@@ -86,7 +86,7 @@ bool hasColumns(const QueryPlan::Node & node, const NameSet & columns)
 
 bool isEstimatedAbove(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
 {
-    auto rows = estimateReadRowsCount(node).estimated_rows;
+    auto rows = estimateReadRowsCount(node, RelationStatsOptions{.find_single_node_read = &settings.find_single_node_read}).estimated_rows;
     return rows && *rows > settings.join_runtime_filter_min_probe_rows;
 }
 
