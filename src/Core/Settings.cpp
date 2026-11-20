@@ -11119,6 +11119,12 @@ Enables the `ZXC` compression codec.
 )", BETA, \
         {"26.11", false, false, "The `ZXC` compression codec was moved to Beta."}, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, allow_experimental_sqs_table, false, R"(
+Allows creation of tables with the SQS table engine. Possible values:
+- 0 — the SQS table engine is disabled.
+- 1 — the SQS table engine is enabled.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to allow the experimental SQS table engine."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

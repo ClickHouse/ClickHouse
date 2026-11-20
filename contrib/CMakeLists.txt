@@ -186,6 +186,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
+add_contrib (aws-sdk-cpp-sqs)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
