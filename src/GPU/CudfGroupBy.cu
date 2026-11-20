@@ -445,6 +445,11 @@ public:
         return copies;
     }
 
+    __host__ size_t bytesOf(size_t part) const { return parts[part].bytes; }
+
+    /// EXPERIMENT: empties part `part`, freed in the order of the stream.
+    __host__ void clear(size_t part) { parts[part] = {}; }
+
     /// The groups of every part, as partial results; nothing without any. The parts are empty afterwards.
     __host__ std::unique_ptr<cudf::table> combineAll()
     {
@@ -873,6 +878,22 @@ __host__ void CudfGroupBy::absorbPart(const CudfGroupBy & other, size_t part)
     waitFor(other.state->stream, state->stream);
     for (auto & copy : copies)
         state->parts.add(std::move(copy));
+}
+
+__host__ bool CudfGroupBy::handsOffParts() const
+{
+    return !state->finalized && state->parts.size() > 1
+        && (state->reduction == State::Reduction::Runs || state->reduction == State::Reduction::HashTable);
+}
+
+__host__ size_t CudfGroupBy::partBytes(size_t part) const
+{
+    return state->parts.bytesOf(part);
+}
+
+__host__ void CudfGroupBy::clearPart(size_t part)
+{
+    state->parts.clear(part);
 }
 
 __host__ size_t CudfGroupBy::finalize()
