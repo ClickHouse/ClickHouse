@@ -28,9 +28,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
 }
 
@@ -49,26 +47,16 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
-    {
-        if (data_types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires single argument with type JSON", getName());
+    [[nodiscard]] String getSignatureString() const override { return "(JSON) -> Array(String)"; }
 
-        if (data_types[0]->getTypeId() != TypeIndex::Object)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} requires argument with type JSON, got: {}",
-                getName(), data_types[0]->getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & elem = arguments[0];
         const auto * column_object = typeid_cast<const ColumnObject *>(elem.column.get());
@@ -92,7 +80,7 @@ private:
         bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
     };
 
-    ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
+    [[nodiscard]] ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
         auto result_data_column = ColumnString::create();
         auto offsets_column = ColumnArray::ColumnOffsets::create();

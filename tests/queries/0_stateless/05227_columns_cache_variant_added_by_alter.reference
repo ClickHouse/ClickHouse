@@ -1,0 +1,35 @@
+0	0
+1	2
+2	4
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+3	6	str	str	\N
+4	8	4	\N	4
+5	10	str	str	\N
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+3	6	str	str	\N
+4	8	4	\N	4
+5	10	str	str	\N
+0	0	\N	\N	\N
+1	2	\N	\N	\N
+2	4	\N	\N	\N
+3	6	str	str	\N
+4	8	4	\N	4
+5	10	str	str	\N
+v	1
+v.String	1
+v.UInt64	1
+x	1
+y	1

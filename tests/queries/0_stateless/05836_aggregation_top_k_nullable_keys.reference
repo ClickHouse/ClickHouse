@@ -1,0 +1,27 @@
+Conversion, count, NULL inside	1	1	ran
+Conversion, count, NULL outside	1	1	ran
+Conversion, uniqExact, NULL inside	1	1	ran
+Conversion, uniqExact, NULL outside	1	1	ran
+Conversion, count with states, NULL inside	1	1	ran
+Conversion, count with states, NULL outside	1	1	ran
+Conversion, compiled aggregates	1	1	ran
+Conversion, ascending count	1	1	ran
+Conversion, String key	1	1	ran
+Conversion, LowCardinality key	1	1	ran
+Conversion, two keys	1	1	ran
+Threshold merge, max, NULL inside	1	1	ran
+Threshold merge, max, NULL outside	1	1	ran
+Threshold merge, count, NULL inside	1	1	ran
+Threshold merge, count, NULL outside	1	1	ran
+Adaptive, count, NULL inside	1	1	ran
+Adaptive, count, NULL outside	1	1	ran
+Adaptive, uniqExact, NULL inside	1	1	ran
+Adaptive, uniqExact, NULL outside	1	1	ran
+Adaptive, count first, NULL inside	1	1	ran
+Adaptive, count first, NULL outside	1	1	ran
+Adaptive, String key	1	1	ran
+Adaptive, two keys	1	1	ran
+Adaptive, ascending count	1	1	ran
+Adaptive, ascending uniqExact	1	1	ran
+Adaptive, ascending count first	1	1	ran
+Adaptive, ascending, groups of one row	1	1	ran

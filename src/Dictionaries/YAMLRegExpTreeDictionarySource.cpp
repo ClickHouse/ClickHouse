@@ -49,7 +49,7 @@
 namespace DB
 {
 
-inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
+[[clang::no_destroy]] inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
 inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
@@ -101,10 +101,8 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource(kYAMLRegExpTree, create_table_source, Documentation{
+    factory.registerSource(kYAMLRegExpTree, create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # YAMLRegExpTree dictionary source
 
 <CloudNotSupportedBadge/>
@@ -334,7 +332,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 {
     if (!node.IsSequence())
     {
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Configuration {} must be a yaml list of match rules", node.as<String>());
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Configuration must be a yaml list of match rules");
     }
 
     for (const auto & child_node : node)

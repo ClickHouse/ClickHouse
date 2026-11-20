@@ -7,8 +7,6 @@ title: 'ClickHouse와 Databricks 통합'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -53,9 +51,25 @@ ClickHouse Spark connector는 Databricks와 원활하게 연동됩니다. 이 �
    * **DBFS** 또는 **Workspace**를 선택한 다음 업로드한 JAR 파일로 이동합니다
    * **Install**을 클릭합니다
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks Libraries 탭" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="워크스페이스 볼륨에서 라이브러리 설치" />
+<Frame>
+
+![Databricks Libraries 탭](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![워크스페이스 볼륨에서 라이브러리 설치](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</Frame>
+
+</div>
 
 4. 라이브러리를 로드하려면 클러스터를 다시 시작합니다
 
@@ -90,7 +104,15 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven 라이브러리 설정" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Databricks Maven 라이브러리 설정](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</Frame>
+
+</div>
 
 3. **Install**를 클릭한 다음 라이브러리를 로드할 수 있도록 클러스터를 다시 시작하세요
 

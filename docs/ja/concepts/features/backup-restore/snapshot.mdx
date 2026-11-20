@@ -11,9 +11,7 @@ keywords: ['スナップショット', 'バックアップ', '復元', 'SharedMe
 
 この軽量方式は、[SharedMergeTree](/ja/products/cloud/features/infrastructure/shared-merge-tree)、SharedSet、SharedJoin テーブルに適用されます。Log や Memory など、それ以外のすべてのエンジンタイプでは、自動的に標準のコピー方式バックアップにフォールバックします。
 
-<div id="create-a-snapshot">
-  ## スナップショットを作成する
-</div>
+## スナップショットを作成する {#create-a-snapshot}
 
 スナップショットバックアップでは、標準の [`BACKUP`](/ja/concepts/features/backup-restore/overview#syntax) コマンドに `experimental_lightweight_snapshot = true` を指定して使用します。`id` 設定は必須で、スナップショットに名前を付けるために使われ、ロック解除コマンドやオブザーバビリティコマンドから参照する際にも使用されます。
 
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+データを含めずにテーブルの DDL をバックアップします (復元すると、正しいスキーマを持つ空のテーブルになります) :
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 同じコマンドは Azure Blob Storage でも使用できます。
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## 同じサービスに復元する
-</div>
+## 同じサービスに復元する {#restore-to-same-service}
 
 スナップショットはデータのコピーではなく、オブジェクトストレージ内のファイルへの参照を保存するため、新しい、または別の ClickHouse サービスに復元するには、元のオブジェクトストレージへのアクセスが必要です。そのため、サービス間の復元は SQL ではサポートされておらず、UI からのみ実行できます。SQL では、`snapshot_from_current_service = 1` を使用することで、外部バックアップバケットから同じサービスにスナップショットを復元できます。これにより、リモートのスナップショットリーダーを経由せず、宛先ディスク経由でオブジェクトを直接読み取ります：
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## スナップショットのロック解除
-</div>
+## スナップショットのロック解除 {#unlock-snapshot}
 
 各スナップショットは ClickHouse Keeper にロックを保持し、参照先のオブジェクトストレージ内のファイルがガベージコレクションされるのを防ぎます。復元が完了したら、またはスナップショットが不要になったら、それらのロックを解放するためにロック解除を行います。
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 ロック解除後、対応する行は`system.snapshot_locks`から消え、他のスナップショットから参照されていないパーツは`system.snapshot_parts`からも消えます。
 
-<div id="observability">
-  ## オブザーバビリティ
-</div>
+## オブザーバビリティ {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 すべてのスナップショット操作は、通常のバックアップおよびリストア操作とともに [`system.backups`](/ja/reference/system-tables/backups) に表示されます。設定した `id` (またはコマンドが返した UUID) を指定してクエリします。
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks` には、現在 Keeper に登録されているコミット済みスナップショットが表示されます。スナップショットがコミットされると、`/clickhouse/snapshot/committed/{snapshot_id}` に Keeper ノードが作成されます。data パーツ を削除する前に、server はコミット済みスナップショットがその パーツ に対するロックを保持しているかどうかを確認します。保持している場合、その削除はスキップされます。このロックは、スナップショットを明示的にロック解除するまで保持されます。
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts` は、少なくとも 1 つのスナップショットロックによって現在固定されている data パーツ を表示します。ロックされている各 data パーツ については、`/clickhouse/snapshot/{table_uuid}/{part_name}` に Keeper ノードが存在し、その data パーツ の圧縮サイズと非圧縮サイズが格納されます。このテーブルはそれらのノードを読み取り、現在削除から保護されているパーツを表示します。
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 これは、元のデータが変更または削除された後もスナップショットを保持することで発生するストレージのオーバーヘッドを把握するのに役立ちます。
 
-<div id="server-settings">
-  ## サーバー設定
-</div>
+## サーバー設定 {#server-settings}
 
 以下のサーバー設定パラメータは、スナップショットの動作を制御します。これらはSQLではなく、サーバー設定ファイルで設定します。
 

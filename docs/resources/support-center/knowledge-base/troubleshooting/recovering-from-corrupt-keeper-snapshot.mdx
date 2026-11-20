@@ -276,6 +276,17 @@ level as two lines: one with the total number of removed nodes and the roots of 
 subtrees, and one with the paths missing from the snapshot that bound the damaged region. Descendants
 below those roots are removed as well but are not listed individually.
 
+After checking the local log tail, Keeper writes the repaired tree to a new snapshot file at the same
+log index before starting Raft. Completed repairs take precedence over older copies at that index,
+so an interrupted recovery can resume without selecting the damaged snapshot. New followers receive
+the repaired snapshot, and subsequent restarts
+no longer need orphan removal enabled. The original snapshot and any same-index copies are preserved
+with an `orphaned_` filename prefix; these files are excluded from snapshot loading and automatic
+retention. Keep them for diagnosis, then remove them manually when they are no longer needed. The
+recovery restart needs additional disk space for the repaired snapshot and the backup of the original.
+If writing the repaired snapshot, synchronizing local directory changes, or preserving the originals
+fails, Keeper refuses to start. A subsequent startup finishes any interrupted archival.
+
 <Warning>
 **Repairs local state only**
 

@@ -1,0 +1,158 @@
+{
+    "format-version": 2,
+    "table-uuid": "9c64caac-ea05-410f-a48a-cedb052f2a49",
+    "location": "s3://test-partition-evolution/conflict_truncate",
+    "last-sequence-number": 2,
+    "last-updated-ms": 1763627802214,
+    "last-column-id": 1,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "a",
+                    "required": false,
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 1,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": [
+                {
+                    "name": "a_trunc",
+                    "transform": "truncate[1]",
+                    "source-id": 1,
+                    "field-id": 1000
+                }
+            ]
+        },
+        {
+            "spec-id": 1,
+            "fields": [
+                {
+                    "name": "a_trunc",
+                    "transform": "truncate[10]",
+                    "source-id": 1,
+                    "field-id": 1001
+                }
+            ]
+        }
+    ],
+    "last-partition-id": 1001,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET"
+    },
+    "current-snapshot-id": 1176079920173818583,
+    "refs": {
+        "main": {
+            "snapshot-id": 1176079920173818583,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 5198076397284604308,
+            "timestamp-ms": 1763627799985,
+            "summary": {
+                "operation": "append",
+                "trino_query_id": "20251120_083639_00009_gjr7f",
+                "trino_user": "vikash.kumar",
+                "changed-partition-count": "0",
+                "total-records": "0",
+                "total-files-size": "0",
+                "total-data-files": "0",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "engine-version": "testversion",
+                "engine-name": "trino",
+                "iceberg-version": "Apache Iceberg 1.10.0 (commit 2114bf631e49af532d66e2ce148ee49dd1dd1f1f)"
+            },
+            "manifest-list": "s3://test-partition-evolution/conflict_truncate/metadata/snap-5198076397284604308-1-1c10bc70-f2be-4948-8795-3f3db146597c.avro",
+            "schema-id": 0
+        },
+        {
+            "sequence-number": 2,
+            "snapshot-id": 1176079920173818583,
+            "parent-snapshot-id": 5198076397284604308,
+            "timestamp-ms": 1763627801142,
+            "summary": {
+                "operation": "append",
+                "trino_query_id": "20251120_083640_00013_gjr7f",
+                "trino_user": "vikash.kumar",
+                "added-data-files": "1",
+                "added-records": "1",
+                "added-files-size": "208",
+                "changed-partition-count": "1",
+                "total-records": "1",
+                "total-files-size": "208",
+                "total-data-files": "1",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "engine-version": "testversion",
+                "engine-name": "trino",
+                "iceberg-version": "Apache Iceberg 1.10.0 (commit 2114bf631e49af532d66e2ce148ee49dd1dd1f1f)"
+            },
+            "manifest-list": "s3://test-partition-evolution/conflict_truncate/metadata/snap-1176079920173818583-1-2eba51d1-a1c8-43b9-9f91-d5d6f589d17a.avro",
+            "schema-id": 0
+        }
+    ],
+    "statistics": [
+        {
+            "snapshot-id": 1176079920173818583,
+            "statistics-path": "s3://test-partition-evolution/conflict_truncate/metadata/20251120_083640_00013_gjr7f-1ebded37-babd-41d1-aee5-5bd4120a74b2.stats",
+            "file-size-in-bytes": 298,
+            "file-footer-size-in-bytes": 265,
+            "blob-metadata": [
+                {
+                    "type": "apache-datasketches-theta-v1",
+                    "snapshot-id": 1176079920173818583,
+                    "sequence-number": 2,
+                    "fields": [
+                        1
+                    ],
+                    "properties": {
+                        "ndv": "1"
+                    }
+                }
+            ]
+        }
+    ],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1763627799985,
+            "snapshot-id": 5198076397284604308
+        },
+        {
+            "timestamp-ms": 1763627801142,
+            "snapshot-id": 1176079920173818583
+        }
+    ],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1763627799985,
+            "metadata-file": "s3://test-partition-evolution/conflict_truncate/metadata/00000-2864db0c-2799-469b-b283-963afff89b09.metadata.json"
+        },
+        {
+            "timestamp-ms": 1763627801159,
+            "metadata-file": "s3://test-partition-evolution/conflict_truncate/metadata/00001-ab7783e7-c348-48f7-b8ee-3b791c04b8a5.metadata.json"
+        }
+    ]
+}

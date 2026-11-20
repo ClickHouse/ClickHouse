@@ -133,7 +133,7 @@ Emitted by the version checks for `ClickHouseCluster` and `KeeperCluster`.
 | `ClickHouseWarning` | Warning | A warning reported by the ClickHouse server itself, republished from `system.warnings`. |
 
 This last reason is distinct: it does not describe the operator's own actions. On
-each ready replica the operator periodically queries the server's
+each reachable replica the operator periodically queries the server's
 [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) table and
 republishes every row as a `Warning` event on the cluster, prefixed with the
 replica it came from. That turns ClickHouse's own configuration and runtime

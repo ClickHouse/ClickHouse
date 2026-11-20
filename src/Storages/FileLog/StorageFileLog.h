@@ -17,6 +17,11 @@
 #include <mutex>
 #include <optional>
 
+namespace re2
+{
+class RE2;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -131,11 +136,18 @@ public:
 
     void wakeUp();
 
+    /// The next read of `file_name` starts at `offset`, or at its current end if `offset` is not set;
+    /// without `file_name`, every file is read again from the beginning.
+    void resetReadPosition(const std::optional<String> & file_name, std::optional<UInt64> offset);
+
     const auto & getFileLogSettings() const { return filelog_settings; }
 
     const LoggerPtr & getLog() const { return log; }
 
     void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
+
+    /// The file name matches the globs of `path`, if any.
+    bool fileNameMatches(const String & file_name) const;
 
 private:
     friend class ReadFromStorageFileLog;
@@ -150,6 +162,9 @@ private:
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
     String metadata_base_path;
+
+    /// Set when the file name of `path` has globs.
+    std::shared_ptr<const re2::RE2> file_name_matcher;
 
     FileInfos file_infos;
 
@@ -221,12 +236,17 @@ private:
     /// and pushes the name into `file_names` exactly once.
     void onFileAppeared(const String & file_name, UInt64 inode);
 
+    /// The file is read under another name that still has it (a hard link).
+    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
+
     size_t getTableDependentCount() const;
 
     /// Used in shutdown()
     void serialize() const;
     /// Used in FileSource closeFileAndStoreMeta(file_name).
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
+    /// Writes the meta file of `file_meta` to a temporary path and returns that path.
+    String writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
     void checkOffsetIsValid(const String & filename, UInt64 offset) const;

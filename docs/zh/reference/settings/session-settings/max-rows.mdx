@@ -50,6 +50,12 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 例外情况是 `legacy_join_size_limits_trigger_spilling`：启用后，连接中已在磁盘上运行的
 部分会将此限制视为进一步的落盘触发条件，而非上限。
 
+当 `ON` 子句中无法确定任何连接键时，也就无需选择算法：该限制
+作用于由
+[块嵌套循环连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition)
+物化的右侧数据 (包括已落盘的块) ，超出限制时的处理方式由
+[`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 决定。
+
 可能的值：
 
 * 正整数。
