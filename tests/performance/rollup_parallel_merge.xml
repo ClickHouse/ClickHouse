@@ -1,0 +1,22 @@
+<test>
+    <!-- `WITH ROLLUP` re-aggregates every level from the previous one. A level with at least 100000 rows is merged on
+         `max_threads` threads, split by the hash of the level's keys; smaller levels are merged on one thread. -->
+
+    <!-- Levels of 600000, 600000 and 200000 rows (`c` is determined by `a`), then the grand total. -->
+    <query>SELECT a, b, c, sum(number), count() FROM numbers_mt(1e7) GROUP BY number % 200000 AS a, number % 3 AS b, number % 5 AS c WITH ROLLUP FORMAT Null</query>
+
+    <!-- The same with `group_by_use_nulls`, which merges the levels with the aggregator of the intermediate header. -->
+    <query>SELECT a, b, c, sum(number), count() FROM numbers_mt(1e7) GROUP BY number % 200000 AS a, number % 3 AS b, number % 5 AS c WITH ROLLUP FORMAT Null SETTINGS group_by_use_nulls = 1</query>
+
+    <!-- A `String` key and other aggregate states. -->
+    <query>SELECT a, b, c, avg(number), max(number) FROM numbers_mt(1e7) GROUP BY toString(number % 200000) AS a, number % 3 AS b, number % 5 AS c WITH ROLLUP FORMAT Null</query>
+
+    <!-- Hierarchical keys like TPC-DS Q67: levels of 1200000, 400000 and 100000 rows, then four small ones. -->
+    <query>SELECT k1, k2, k3, k4, k5, k6, sum(number) FROM numbers_mt(1e7) GROUP BY number % 10 AS k1, number % 100 AS k2, number % 1000 AS k3, number % 100000 AS k4, intDiv(number, 100000) % 4 AS k5, intDiv(number, 100000) % 12 AS k6 WITH ROLLUP FORMAT Null</query>
+
+    <!-- One key: only the grand total is merged after the first level. -->
+    <query>SELECT a, sum(number) FROM numbers_mt(1e7) GROUP BY number % 1000000 AS a WITH ROLLUP FORMAT Null</query>
+
+    <!-- Few groups: every level is below the threshold and keeps the serial merge. -->
+    <query>SELECT a, b, sum(number) FROM numbers_mt(5e7) GROUP BY number % 100 AS a, number % 7 AS b WITH ROLLUP FORMAT Null</query>
+</test>
