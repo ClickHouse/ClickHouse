@@ -1,3 +1,4 @@
+-- Random settings limits: enable_join_transitive_predicates=(1, None)
 -- Tests the `join_runtime_filter_min_probe_rows` setting: a JOIN runtime filter is not installed
 -- when the probe (left) side is estimated to produce at most this many rows.
 
@@ -90,9 +91,13 @@ FROM (EXPLAIN SELECT count() FROM key_path_b b JOIN key_path_p p ON b.x = p.x JO
 SELECT 'multi-key LEFT ANTI, keys from one input' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x LEFT ANTI JOIN key_path_s s ON p.y = s.y AND p.x = s.z);
 
--- A filter on a computed or renamed key reads the columns the key is computed from, unless computing it is not deterministic.
+-- A filter on a computed or renamed key reads the columns the key is computed from, unless computing it is not deterministic
+-- or is stateful.
 SELECT 'computed key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y + 1 = s.y);
+
+SELECT 'computed key above a join kept for its key path' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y = s.y JOIN key_path_s s2 ON p.y + 1 = s2.y);
 
 SELECT 'renamed key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS py FROM key_path_p p JOIN key_path_b b ON p.x = b.x) t JOIN key_path_s s ON t.py = s.y);
@@ -100,12 +105,22 @@ FROM (EXPLAIN SELECT count() FROM (SELECT p.y AS py FROM key_path_p p JOIN key_p
 SELECT 'non-deterministic key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON p.y + rand() = s.y);
 
+SELECT 'stateful key' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON timeSeriesStoreTags(p.y, []) = s.y);
+
 -- A filter on a key of a join below is pushed down to both of its inputs, with the key replaced by the equal key of the other input.
 SELECT 'key equal to a key of a larger input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.x = s.y);
 
 SELECT 'key of a smaller input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
 FROM (EXPLAIN SELECT count() FROM key_path_p p JOIN key_path_b b ON p.x = b.x JOIN key_path_s s ON b.z = s.z);
+
+-- A key equal to two keys of the other input is not followed, as it is not known which of them the filter is pushed down with.
+SELECT 'key equal to two keys of an input below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed
+FROM (EXPLAIN SELECT count() FROM key_path_s a
+      JOIN (SELECT p.y AS py, b.z AS bz FROM key_path_p p JOIN key_path_b b ON p.x = b.x) r ON a.y = r.py AND a.y = r.bz
+      JOIN key_path_s c ON a.y = c.y
+      SETTINGS query_plan_optimize_join_order_limit = 2);
 
 -- An outer, SEMI or ANTI join below passes the filter to the input whose rows it keeps, and a SEMI join also to the other input.
 SELECT 'LEFT SEMI JOIN below' AS label, countIf(explain LIKE '%BuildRuntimeFilter%') AS installed

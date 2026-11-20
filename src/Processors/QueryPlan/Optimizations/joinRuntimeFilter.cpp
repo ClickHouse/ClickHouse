@@ -706,7 +706,7 @@ bool tryAddJoinRuntimeFilter(
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
     if (kept_for_small_probe && kept_for_key_path)
-        kept_for_key_path->push_back({.join_node = &node, .filter_keys = std::move(filter_keys)});
+        kept_for_key_path->push_back({.join_step = join_step, .filter_keys = std::move(filter_keys)});
 
     return true;
 }

@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
@@ -44,17 +45,18 @@ namespace QueryPlanOptimizations
 namespace
 {
 
-/// The filter push-down moves only conditions that are deterministic within the query.
-bool isDeterministicInQuery(const ActionsDAG::Node & node)
+/// The filter push-down moves only conditions that are deterministic within the query and not stateful.
+bool canBePushedDown(const ActionsDAG::Node & node)
 {
-    static constexpr auto changes_within_query = [](const IFunctionBase & function) { return !function.isDeterministicInScopeOfQuery(); };
+    static constexpr auto blocks_push_down = [](const IFunctionBase & function)
+    { return !function.isDeterministicInScopeOfQuery() || function.isStateful(); };
 
     if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
         return false;
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return true;
-    return node.function_base && !changes_within_query(*node.function_base)
-        && !ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_within_query);
+    return node.function_base && !blocks_push_down(*node.function_base)
+        && !ActionsDAG::hasUnsafeHiddenLambdaBody(node, blocks_push_down);
 }
 
 /// The input columns `roots` are computed from, which a filter on `roots` reads once merged into their DAG. Nothing if such
@@ -64,7 +66,7 @@ std::optional<NameSet> getSourceColumns(const ActionsDAG::NodeRawConstPtrs & roo
     NameSet columns;
     const bool deterministic = visitReachableNodes(roots, [&](const ActionsDAG::Node * node)
     {
-        if (!isDeterministicInQuery(*node))
+        if (!canBePushedDown(*node))
             return VisitResult::Stop;
         if (node->type == ActionsDAG::ActionType::INPUT)
             columns.insert(node->result_name);
@@ -113,9 +115,18 @@ bool filterReachesJoinInputAbove(
     const std::array<bool, 2> gets_equal_keys{kind != JoinKind::Right || is_semi, can_push_to_right && (kind != JoinKind::Left || is_semi)};
 
     /// Per input, its keys mapped to the equal keys of the other input. Only same-typed column keys are followed here.
+    /// A key equal to several columns is not followed: which of them the push-down substitutes is not known here.
     std::array<NameToNameMap, 2> equal_keys;
     if (join.typeChangingSides().empty())
     {
+        std::array<NameSet, 2> ambiguous_keys;
+        auto add_equal_key = [&](size_t side, const String & key, const String & equal_key)
+        {
+            auto [it, inserted] = equal_keys[side].emplace(key, equal_key);
+            if (!inserted && it->second != equal_key)
+                ambiguous_keys[side].insert(key);
+        };
+
         for (const auto & condition : join_operator.expression)
         {
             auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
@@ -128,9 +139,13 @@ bool filterReachesJoinInputAbove(
             if (lhs.getNode()->type != ActionsDAG::ActionType::INPUT || rhs.getNode()->type != ActionsDAG::ActionType::INPUT
                 || !lhs.getType()->equals(*rhs.getType()))
                 continue;
-            equal_keys[0].emplace(lhs.getColumnName(), rhs.getColumnName());
-            equal_keys[1].emplace(rhs.getColumnName(), lhs.getColumnName());
+            add_equal_key(0, lhs.getColumnName(), rhs.getColumnName());
+            add_equal_key(1, rhs.getColumnName(), lhs.getColumnName());
         }
+
+        for (const size_t side : {0, 1})
+            for (const auto & key : ambiguous_keys[side])
+                equal_keys[side].erase(key);
     }
     const bool reads_only_equal_keys = std::ranges::all_of(columns, [&](const String & column)
     {
@@ -339,10 +354,36 @@ bool runtimeFilterReachesInputAbove(
 }
 
 void checkRuntimeFiltersKeptForKeyPath(
-    const VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> & kept, const QueryPlanOptimizationSettings & settings)
+    QueryPlan::Node & root,
+    const VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> & kept,
+    const QueryPlanOptimizationSettings & settings)
 {
-    for (const auto & [join_node, filter_keys] : kept)
+    if (kept.empty())
+        return;
+
+    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, QueryPlan::Node *> join_nodes;
     {
+        UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
+        VectorWithMemoryTracking<QueryPlan::Node *> to_visit{&root};
+        while (!to_visit.empty())
+        {
+            auto * node = to_visit.back();
+            to_visit.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (typeid_cast<const JoinStepLogical *>(node->step.get()))
+                join_nodes.emplace(node->step.get(), node);
+            to_visit.append_range(node->children);
+        }
+    }
+
+    for (const auto & [join_step, filter_keys] : kept)
+    {
+        auto join_node_it = join_nodes.find(join_step);
+        if (join_node_it == join_nodes.end())
+            continue;
+        const auto * join_node = join_node_it->second;
+
         const UnorderedSetWithMemoryTracking<String> keys(filter_keys.begin(), filter_keys.end());
         bool found = false;
         bool applied_to_larger_input = false;

@@ -22,16 +22,20 @@ bool runtimeFilterReachesInputAbove(
 /// their push-down to a larger input.
 struct RuntimeFiltersKeptForKeyPath
 {
-    QueryPlan::Node * join_node = nullptr;
+    /// The rewrites after `tryAddJoinRuntimeFilter` can move the join to another node, but keep its step.
+    const IQueryPlanStep * join_step = nullptr;
     /// The rendezvous keys of the filters.
     VectorWithMemoryTracking<String> filter_keys;
 };
 
-/// Checks, after the filter push-down, that every join of `kept` applies one of its filters below a join input, or directly
-/// above any input, estimated above `join_runtime_filter_min_probe_rows`, as `runtimeFilterReachesInputAbove` predicted.
-/// Throws LOGICAL_ERROR if not. Filters absorbed by a step, such as `ReadFromMerge`, are not found and not checked.
+/// Checks, after the filter push-down, that every join of `kept` in the plan at `root` applies one of its filters below a
+/// join input, or directly above any input, estimated above `join_runtime_filter_min_probe_rows`, as
+/// `runtimeFilterReachesInputAbove` predicted. Throws LOGICAL_ERROR if not. Filters absorbed by a step, such as
+/// `ReadFromMerge`, are not found and not checked.
 void checkRuntimeFiltersKeptForKeyPath(
-    const VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> & kept, const QueryPlanOptimizationSettings & settings);
+    QueryPlan::Node & root,
+    const VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> & kept,
+    const QueryPlanOptimizationSettings & settings);
 
 }
 

@@ -10,10 +10,13 @@ multi-key LEFT ANTI	1
 key from a larger right input below	1
 multi-key LEFT ANTI, keys from one input	2
 computed key	2
+computed key above a join kept for its key path	3
 renamed key	2
 non-deterministic key	1
+stateful key	1
 key equal to a key of a larger input below	2
 key of a smaller input below	1
+key equal to two keys of an input below	1
 LEFT SEMI JOIN below	2
 right key of a LEFT SEMI JOIN below	2
 RIGHT SEMI JOIN below	1

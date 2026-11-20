@@ -456,7 +456,7 @@ void optimizeTreeSecondPass(
             });
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        checkRuntimeFiltersKeptForKeyPath(runtime_filters_kept_for_key_path, optimization_settings);
+        checkRuntimeFiltersKeptForKeyPath(root, runtime_filters_kept_for_key_path, optimization_settings);
 #endif
 
         /// After the __applyFilter conjuncts settled, register them on the reading steps
