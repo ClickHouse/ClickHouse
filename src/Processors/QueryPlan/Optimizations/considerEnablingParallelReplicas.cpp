@@ -846,12 +846,16 @@ bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
     MapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
+    /// Shared, not detached: the single-replica plan is dropped, but its sets outlive it. The replicas
+    /// reads adopt the skip indexes of the single-replica reads (`adoptFiltersFrom`), and a `set` index
+    /// over an `IN (subquery)` evaluates the single-replica `FutureSetFromSubquery` when it is applied
+    /// during the read (`use_skip_indexes_on_data_read`).
     forEachSubquerySet(
         &single_replica_plan,
         [&](FutureSetFromSubquery & future_set)
         {
-            if (auto set = future_set.detachSetAndKey())
-                sets_map[future_set.getHash()] = std::move(set);
+            if (const auto & set = future_set.getSetAndKey())
+                sets_map[future_set.getHash()] = set;
             return true;
         });
 

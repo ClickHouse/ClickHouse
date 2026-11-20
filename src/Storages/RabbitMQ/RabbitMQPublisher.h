@@ -64,6 +64,8 @@ public:
     uint16_t getHeartbeatInterval() const { return connection.getHandler().getHeartbeatInterval(); }
 
 private:
+    friend class RabbitMQPublisherTest;
+
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(Payloads & messages, bool republishing);

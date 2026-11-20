@@ -3127,6 +3127,21 @@ def test_max_rows_per_message(rabbitmq_cluster, db, unique):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
+def test_max_rows_per_message_zero(rabbitmq_cluster, db, unique):
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_exchange_name = '{unique}_zero',
+                     rabbitmq_max_rows_per_message = 0;
+        """
+    )
+
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error(f"INSERT INTO {db}.rabbit VALUES (1, 2)", timeout=60)
+
+
 def test_row_based_formats(rabbitmq_cluster, db, unique):
     num_rows = 10
 

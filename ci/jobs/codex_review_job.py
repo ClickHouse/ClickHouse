@@ -58,6 +58,16 @@ FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
 REVIEW_HEADER = "#### AI Review"
+STATUS_PREFIX = "Status:"
+VERDICT_APPROVE = "✅ Approve"
+VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
+VERDICT_BLOCK = "❌ Block"
+# The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
+_VERDICT_PATTERNS = {
+    VERDICT_APPROVE: r"✅\s*(?i:approve)",
+    VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
+    VERDICT_BLOCK: r"❌\s*(?i:block)",
+}
 
 
 def _join_prompt(*sections):
@@ -194,7 +204,10 @@ to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SK
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
 Do NOT post the summary yourself: the job script will post it after you finish.
-A Final Verdict of `✅ Approve` makes the job submit a GitHub approval of the PR on your behalf.
+The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
+bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
+`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+makes it submit a GitHub approval of the PR on your behalf.
 """
 
 
@@ -237,17 +250,28 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 
 
 def _review_approves():
-    """True if the `Status:` line of the last `Final Verdict` section in REVIEW_FILE is `✅ Approve`,
-    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. A summary without a status line,
-    or with the template's list of all statuses, is not an approval."""
+    """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
+    a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
+    No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
     with open(REVIEW_FILE, encoding="utf-8") as f:
-        _, found, verdict = f.read().rpartition("Final Verdict")
-    status = re.search(r"Status:(.*)", verdict) if found else None
-    if not status:
-        print(f"WARNING: No Final Verdict status in {REVIEW_FILE}")
+        _, found, section = f.read().rpartition("Final Verdict")
+    if not found:
+        print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
         return False
-    status = status.group(1)
-    return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
+
+    def find_verdicts(text):
+        text = text.replace("*", "")
+        return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
+
+    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
+    verdicts = find_verdicts(status.group(1)) if status else []
+    if not verdicts:
+        verdicts = find_verdicts(section)
+    if verdicts != [VERDICT_APPROVE]:
+        print(f"Final Verdict in {REVIEW_FILE} is not an approval, found verdicts: {verdicts}")
+        return False
+    return True
 
 
 def _update_approval(info, cyber_risk_flagged):
