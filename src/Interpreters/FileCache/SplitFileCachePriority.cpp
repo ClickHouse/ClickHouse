@@ -6,6 +6,7 @@
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/SplitFileCachePriority.h>
+#include <base/EnumReflection.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
@@ -129,23 +130,25 @@ void SplitFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    QueueEntryType /* queue_entry_type */,
+    ObservedQueue observed_queue,
     FileSegmentSummaryInfos & result)
 {
+    /// The same names as in `system.filesystem_cache.segment_type`.
+    ObservedQueue observed_data = observed_queue;
+    observed_data.split_queue = magic_enum::enum_name(SegmentType::Data);
+    ObservedQueue observed_system = observed_queue;
+    observed_system.split_queue = magic_enum::enum_name(SegmentType::System);
+
     /// System is more important than Data + it is much smaller size
     if (query_order == IterationOrder::HOTTEST)
     {
-        getPriority(SegmentType::System)
-            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
-        getPriority(SegmentType::Data)
-            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
+        getPriority(SegmentType::System).iterate(query_max_elements, query_max_total_size, query_order, observed_system, result);
+        getPriority(SegmentType::Data).iterate(query_max_elements, query_max_total_size, query_order, observed_data, result);
     }
     else
     {
-        getPriority(SegmentType::Data)
-            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
-        getPriority(SegmentType::System)
-            .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
+        getPriority(SegmentType::Data).iterate(query_max_elements, query_max_total_size, query_order, observed_data, result);
+        getPriority(SegmentType::System).iterate(query_max_elements, query_max_total_size, query_order, observed_system, result);
     }
 }
 

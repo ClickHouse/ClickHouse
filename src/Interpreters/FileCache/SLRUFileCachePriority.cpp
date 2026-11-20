@@ -212,25 +212,28 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
 
-void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result)
+void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result)
 {
     auto lock = getPriorityGuard().readLock();
 
-    /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.
-    const bool protected_first = query_order == IterationOrder::HOTTEST;
-    auto & first_queue = protected_first ? protected_queue : probationary_queue;
-    auto & second_queue = protected_first ? probationary_queue : protected_queue;
-
-    /// Report the sub-queue of each segment, unless a type was passed from above (Split).
-    auto type_of = [&](QueueEntryType own_type) { return queue_entry_type == QueueEntryType::None ? own_type : queue_entry_type; };
-    const auto protected_type = type_of(QueueEntryType::SLRU_Protected);
-    const auto probationary_type = type_of(QueueEntryType::SLRU_Probationary);
+    /// Keep `split_queue` from Split above, and add the sub-queue of this SLRU.
+    ObservedQueue observed_protected = observed_queue;
+    observed_protected.slru_queue = "Protected";
+    ObservedQueue observed_probationary = observed_queue;
+    observed_probationary.slru_queue = "Probationary";
 
     /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
-    first_queue.iterate(
-        query_max_elements, query_max_total_size, query_order, protected_first ? protected_type : probationary_type, result, lock);
-    second_queue.iterate(
-        query_max_elements, query_max_total_size, query_order, protected_first ? probationary_type : protected_type, result, lock);
+    /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.
+    if (query_order == IterationOrder::HOTTEST)
+    {
+        protected_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_protected, result, lock);
+        probationary_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_probationary, result, lock);
+    }
+    else
+    {
+        probationary_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_probationary, result, lock);
+        protected_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_protected, result, lock);
+    }
 }
 
 void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)

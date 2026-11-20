@@ -126,7 +126,7 @@ With 'hottest' and 'coldest', the queue is walked from one end and the walk stop
 
 With 'random', the whole queue is walked to take a uniform sample of at most `max_elements` segments, ignoring `max_total_size`. The sample is then shuffled, and segments are dropped from its end until the total `size` is at most `max_total_size`, so the result can be smaller than what would fit.
 
-A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue: the system one, which holds the metadata needed to read the data, is more important than data one, so 'hottest' walks it first and 'coldest' last.
+A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue: the system one, which holds the metadata needed to read the data, is more important than data one, so 'hottest' walks it first and 'coldest' last. The queue of each segment is in the `slru_queue` and `split_queue` columns; a split cache with the SLRU policy fills both.
 
 Caches with the `LRU_OVERCOMMIT` and `SLRU_OVERCOMMIT` policies are not supported.
 
@@ -142,10 +142,10 @@ It requires the `SELECT` privilege on `system.filesystem_cache`.)",
                 {"max_total_size", "The maximum sum of `size` of the returned segments.", {"UInt64"}},
                 {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments, in random order.", {"String"}},
             },
-            .returned_value = {"A table with the columns `priority_rank`, `path`, `key`, `offset`, `size`, `state`, `queue` and `user_id`, one row per segment.", {}},
+            .returned_value = {"A table with the columns `priority_rank`, `path`, `key`, `offset`, `size`, `state`, `split_queue`, `slru_queue` and `user_id`, one row per segment.", {}},
             .examples = {
                 {"The paths of the hottest segments, up to 10000 of them and 10 GiB in total", "SELECT path FROM filesystemCache('s3_cache', 10000, 10737418240);", ""},
-                {"The next eviction candidates", "SELECT priority_rank, path, size, queue FROM filesystemCache('s3_cache', 100, 1073741824, 'coldest');", ""},
+                {"The next eviction candidates", "SELECT priority_rank, path, size, slru_queue FROM filesystemCache('s3_cache', 100, 1073741824, 'coldest');", ""},
                 {"A uniform sample of the cache", "SELECT path FROM filesystemCache('s3_cache', 1000, 10737418240, 'random');", ""},
             },
             .introduced_in = {26, 11},

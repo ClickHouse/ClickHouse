@@ -3,7 +3,6 @@
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
-#include <base/EnumReflection.h>
 #include <base/types.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
@@ -305,7 +304,7 @@ namespace
 /// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
 /// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
 std::optional<FileSegmentSummaryInfo>
-tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, IFileCachePriority::QueueEntryType queue_entry_type)
+tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, IFileCachePriority::ObservedQueue observed_queue)
 {
     auto key_metadata = entry.key_metadata.lock();
     if (!key_metadata)
@@ -346,7 +345,8 @@ tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::E
         .offset = entry.offset,
         .size = size,
         .state = FileSegment::stateToString(file_segment->state()),
-        .queue_entry_type = String(magic_enum::enum_name(queue_entry_type)),
+        .split_queue = observed_queue.split_queue.transform([](std::string_view name) { return String(name); }),
+        .slru_queue = observed_queue.slru_queue.transform([](std::string_view name) { return String(name); }),
         .user_id = key_metadata->origin->user_id,
     };
 }
@@ -357,20 +357,18 @@ void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    QueueEntryType queue_entry_type,
+    ObservedQueue observed_queue,
     FileSegmentSummaryInfos & result)
 {
     auto lock = getPriorityGuard().readLock();
-    if (queue_entry_type == QueueEntryType::None)
-        queue_entry_type = QueueEntryType::LRU;
-    iterate(query_max_elements, query_max_total_size, query_order, queue_entry_type, result, lock);
+    iterate(query_max_elements, query_max_total_size, query_order, observed_queue, result, lock);
 }
 
 void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    QueueEntryType queue_entry_type,
+    ObservedQueue observed_queue,
     FileSegmentSummaryInfos & result,
     const CachePriorityGuard::ReadLock &)
 {
@@ -402,7 +400,7 @@ void LRUFileCachePriority::iterate(
         /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
         /// without checking it, and a draw inside would drop it, which biases the sample towards the
         /// segments seen earlier.
-        auto info = tryGetSummaryInfo(*entry, entry_state, queue_entry_type);
+        auto info = tryGetSummaryInfo(*entry, entry_state, observed_queue);
         if (!info)
             return true;
 

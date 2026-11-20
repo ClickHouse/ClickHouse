@@ -104,7 +104,7 @@ IFileCachePriority::observeFilesystemCache(
 
     FileSegmentSummaryInfos result;
     result.cancellation_flag = cancellation_flag;
-    iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::None, result);
+    iterate(query_max_elements, query_max_total_size, query_order, ObservedQueue{}, result);
     if (result.isCancelled())
         return {};
 

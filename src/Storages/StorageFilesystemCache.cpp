@@ -1,6 +1,7 @@
 #include <Storages/StorageFilesystemCache.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -86,8 +87,10 @@ protected:
                 fill([](const FileSegmentSummaryInfo & info) { return info.size; });
             else if (name == "state")
                 fill([](const FileSegmentSummaryInfo & info) { return info.state; });
-            else if (name == "queue")
-                fill([](const FileSegmentSummaryInfo & info) { return info.queue_entry_type; });
+            else if (name == "split_queue")
+                fill([](const FileSegmentSummaryInfo & info) { return info.split_queue ? Field(*info.split_queue) : Field(); });
+            else if (name == "slru_queue")
+                fill([](const FileSegmentSummaryInfo & info) { return info.slru_queue ? Field(*info.slru_queue) : Field(); });
             else if (name == "user_id")
                 fill([](const FileSegmentSummaryInfo & info) { return info.user_id; });
             else
@@ -140,8 +143,11 @@ ColumnsDescription StorageFilesystemCache::getColumnsDescription()
         {"offset", std::make_shared<DataTypeUInt64>(), "Offset of the segment in the source file."},
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the segment as accounted by the cache."},
         {"state", std::make_shared<DataTypeString>(), "Download state of the segment, e.g. `DOWNLOADED`."},
-        {"queue", std::make_shared<DataTypeString>(),
-         "The queue of the segment: `LRU`, `SLRU_Protected`, `SLRU_Probationary`, `SplitCache_Data` or `SplitCache_System`."},
+        {"split_queue", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+         "The queue of the segment in a cache with `use_split_cache`: `Data` or `System`, the same as `system.filesystem_cache.segment_type`. "
+         "`NULL` if the cache is not split."},
+        {"slru_queue", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+         "The queue of the segment in a cache with the SLRU policy: `Protected` or `Probationary`. `NULL` if the policy is not SLRU."},
         {"user_id", std::make_shared<DataTypeString>(), "Owner of the key."},
     };
 }

@@ -1,11 +1,12 @@
 #pragma once
 #include <atomic>
 #include <cctype>
+#include <optional>
 #include <unordered_set>
 #include <vector>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 
 namespace DB
@@ -86,7 +87,7 @@ namespace DB
     {
         /// 1-based position of the segment. For 'hottest' and 'coldest': its position in the output, i.e. the priority order.
         /// For 'random': its position among the returnable segments of the queues walked coldest first
-        /// (SLRU: probationary, then protected; split cache: data, then system), the same rank it would get with 'coldest'.
+        /// (SLRU: probationary, then protected; split cache: system, then data).
         /// Segments skipped by the walk (removed from the cache, or empty) are not counted.
         UInt64 priority_rank{0};
         /// Real on-disk file, including the _<size> suffix of downloaded segments
@@ -98,7 +99,9 @@ namespace DB
         /// Segment size as accounted by the cache
         UInt64 size;
         String state;
-        String queue_entry_type;
+        /// See `IFileCachePriority::ObservedQueue`.
+        std::optional<String> split_queue;
+        std::optional<String> slru_queue;
         String user_id;
     };
 

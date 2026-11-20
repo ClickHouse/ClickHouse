@@ -10,6 +10,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -271,6 +273,17 @@ public:
         COLDEST,
         /// A uniformly random sample of entries in random order
         RANDOM,
+    };
+
+    /// The sub-queue which `iterate` walks, reported for its segments in the `split_queue` and `slru_queue`
+    /// columns of `filesystemCache`. Each wrapper sets its own field for the sub-queue it walks, so they combine,
+    /// e.g. a split cache with the SLRU policy reports both.
+    struct ObservedQueue
+    {
+        /// `Data` or `System`, the same as `system.filesystem_cache.segment_type`; empty if the cache is not split.
+        std::optional<std::string_view> split_queue;
+        /// `Protected` or `Probationary`; empty if the policy is not SLRU.
+        std::optional<std::string_view> slru_queue;
     };
 
     /// Returns the file segments of the queue, selected by their priority.
@@ -544,12 +557,12 @@ private:
     /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues
     /// (SLRU's probationary one, Split's data one): the limits apply to all of them and the ranks continue.
     /// For `RANDOM`, `result.infos` is a reservoir which all sub-queues share.
-    /// If `queue_entry_type` is not `None`, it is reported for every segment instead of the type of the segment's own queue entry.
+    /// `observed_queue` holds the sub-queues chosen by the wrappers above this queue.
     virtual void iterate(
         UInt64 query_max_elements,
         UInt64 query_max_total_size,
         IterationOrder query_order,
-        QueueEntryType queue_entry_type,
+        ObservedQueue observed_queue,
         FileSegmentSummaryInfos & result)
         = 0;
 };

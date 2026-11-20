@@ -62,7 +62,6 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -4573,7 +4572,6 @@ try
     auto query_scope_holder = DB::QueryScope::create(query_context);
 
     using Order = IFileCachePriority::IterationOrder;
-    using QueueEntryType = IFileCachePriority::QueueEntryType;
     const size_t file_size = -1; /// the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
     const auto & user = FileCache::getCommonOrigin();
@@ -4614,10 +4612,10 @@ try
     {
         FileCacheKey key;
         Range range;
-        /// Not checked if not set.
-        std::optional<QueueEntryType> queue = std::nullopt;
-        /// A directory which the path must contain, if not empty.
-        String path_part = {};
+        /// `Data` or `System` in a split cache, which is also the directory of the segment there.
+        std::optional<String> split_queue = std::nullopt;
+        /// `Protected` or `Probationary` with the SLRU policy.
+        std::optional<String> slru_queue = std::nullopt;
     };
 
     auto assert_observed = [&](const FileSegmentSummaryInfoList & infos, const std::vector<ExpectedSegment> & expected)
@@ -4633,11 +4631,11 @@ try
             ASSERT_EQ(info.size, segment.range.size());
             ASSERT_EQ(info.state, "DOWNLOADED");
             ASSERT_EQ(info.user_id, user.user_id);
-            if (segment.queue)
-                ASSERT_EQ(info.queue_entry_type, String(magic_enum::enum_name(*segment.queue)));
+            ASSERT_EQ(info.split_queue, segment.split_queue);
+            ASSERT_EQ(info.slru_queue, segment.slru_queue);
             ASSERT_TRUE(info.path.ends_with(fmt::format("/{}_{}", segment.range.left, segment.range.size())));
-            /// For the split cache, checks that the segment is in the directory of its queue (`Data` or `System`).
-            ASSERT_TRUE(segment.path_part.empty() || info.path.contains(segment.path_part));
+            /// For the split cache, checks that the segment is in the directory of its queue.
+            ASSERT_TRUE(!segment.split_queue || info.path.contains(fmt::format("/{}/", *segment.split_queue)));
             ASSERT_TRUE(fs::exists(info.path));
         }
     };
@@ -4668,8 +4666,8 @@ try
             ASSERT_EQ(info.key, segment.key.toString());
             ASSERT_EQ(info.offset, segment.range.left);
             ASSERT_EQ(info.size, segment.range.size());
-            if (segment.queue)
-                ASSERT_EQ(info.queue_entry_type, String(magic_enum::enum_name(*segment.queue)));
+            ASSERT_EQ(info.split_queue, segment.split_queue);
+            ASSERT_EQ(info.slru_queue, segment.slru_queue);
             total_size += info.size;
         }
         ASSERT_LE(total_size, query_max_total_size);
@@ -4705,9 +4703,9 @@ try
         hit_range(cache, key, user, 0, 10);
         assertEqual(cache.dumpQueue(), {Range(10, 14), Range(15, 19), Range(0, 9)});
 
-        const ExpectedSegment first{key, Range(10, 14), QueueEntryType::LRU};
-        const ExpectedSegment second{key, Range(15, 19), QueueEntryType::LRU};
-        const ExpectedSegment third{key, Range(0, 9), QueueEntryType::LRU};
+        const ExpectedSegment first{key, Range(10, 14)};
+        const ExpectedSegment second{key, Range(15, 19)};
+        const ExpectedSegment third{key, Range(0, 9)};
 
         assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {first, second, third});
         assert_observed(cache.observeFilesystemCache(10, 100, Order::HOTTEST), {third, second, first});
@@ -4762,10 +4760,10 @@ try
         assertProbationary(cache.dumpQueue(), {Range(15, 19), Range(20, 24)});
         assertProtected(cache.dumpQueue(), {Range(0, 9), Range(10, 14)});
 
-        const ExpectedSegment probationary_head{key, Range(15, 19), QueueEntryType::SLRU_Probationary};
-        const ExpectedSegment probationary_tail{key, Range(20, 24), QueueEntryType::SLRU_Probationary};
-        const ExpectedSegment protected_head{key, Range(0, 9), QueueEntryType::SLRU_Protected};
-        const ExpectedSegment protected_tail{key, Range(10, 14), QueueEntryType::SLRU_Protected};
+        const ExpectedSegment probationary_head{key, Range(15, 19), std::nullopt, "Probationary"};
+        const ExpectedSegment probationary_tail{key, Range(20, 24), std::nullopt, "Probationary"};
+        const ExpectedSegment protected_head{key, Range(0, 9), std::nullopt, "Protected"};
+        const ExpectedSegment protected_tail{key, Range(10, 14), std::nullopt, "Protected"};
 
         /// The probationary queue is colder than the protected one.
         assert_observed(
@@ -4817,10 +4815,10 @@ try
         add_range(cache, system_key, system_origin, 5, 5);
         hit_range(cache, data_key, data_origin, 0, 10);
 
-        const ExpectedSegment data_head{data_key, Range(10, 19), QueueEntryType::SplitCache_Data, "/Data/"};
-        const ExpectedSegment data_tail{data_key, Range(0, 9), QueueEntryType::SplitCache_Data, "/Data/"};
-        const ExpectedSegment system_head{system_key, Range(0, 4), QueueEntryType::SplitCache_System, "/System/"};
-        const ExpectedSegment system_tail{system_key, Range(5, 9), QueueEntryType::SplitCache_System, "/System/"};
+        const ExpectedSegment data_head{data_key, Range(10, 19), "Data"};
+        const ExpectedSegment data_tail{data_key, Range(0, 9), "Data"};
+        const ExpectedSegment system_head{system_key, Range(0, 4), "System"};
+        const ExpectedSegment system_tail{system_key, Range(5, 9), "System"};
 
         /// The system queue is more important one: 'hottest' walks it first, 'coldest' last, so one order is the reverse of the other.
         assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_head, data_tail, system_head, system_tail});
@@ -4854,6 +4852,30 @@ try
         assert_uniform(cache, 1, coldest);
         assert_uniform(cache, 2, coldest);
         assert_uniform(cache, 3, coldest);
+    }
+
+    /// SplitFileCachePriority with SLRU sub-queues: both the split and the SLRU queue are reported.
+    {
+        auto cache = DB::FileCache(std::to_string(++file_cache_name), make_settings("observe_split_slru", FileCachePolicy::SLRU, true));
+        cache.initialize();
+        const auto data_key = FileCacheKey::fromPath("observe_split_slru_data_key");
+        const auto system_key = FileCacheKey::fromPath("observe_split_slru_system_key");
+        const auto data_origin = cache.getCommonOriginWithSegmentKeyType(FileSegmentKeyType::Data);
+        const auto system_origin = cache.getCommonOriginWithSegmentKeyType(FileSegmentKeyType::System);
+
+        add_range(cache, data_key, data_origin, 0, 5);
+        add_range(cache, data_key, data_origin, 5, 5);
+        add_range(cache, system_key, system_origin, 0, 5);
+        hit_range(cache, data_key, data_origin, 0, 5);
+
+        const ExpectedSegment data_probationary{data_key, Range(5, 9), "Data", "Probationary"};
+        const ExpectedSegment data_protected{data_key, Range(0, 4), "Data", "Protected"};
+        const ExpectedSegment system_probationary{system_key, Range(0, 4), "System", "Probationary"};
+
+        assert_observed(
+            cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_probationary, data_protected, system_probationary});
+        assert_observed(
+            cache.observeFilesystemCache(10, 100, Order::HOTTEST), {system_probationary, data_protected, data_probationary});
     }
 }
 catch (...)
