@@ -5,7 +5,7 @@
 # states) now check the types against the input header. The steps merging the states read the keys and then the
 # states by position, so their input must have them in the order of the plan, without duplicates.
 # The well-formed plans are accepted, so the refusals are specific.
-# The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh.
+# The raw protocol client is the one of 05790_filling_step_repeated_interpolate_output.sh.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +21,7 @@ USER, PASSWORD = E("CLICKHOUSE_USER", "default"), E("CLICKHOUSE_PASSWORD", "")
 DATABASE = E("CLICKHOUSE_DATABASE", "default")
 CLIENT = "aggregating step argument types"
 REVISION = 54482   # pinned, so the revision-gated fields of the handshake are fixed
-VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
+VERSION = 19       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
 U64, STR = b"\x04", b"\x15"   # BinaryTypeIndex
 NUL = b"\x00"   # a zero flags byte
 
