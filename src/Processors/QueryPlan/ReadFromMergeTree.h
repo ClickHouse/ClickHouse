@@ -730,6 +730,8 @@ public:
         bool added_part_offset = false;
     };
     PartOffsetColumns addStartingPartOffsetAndPartOffset();
+    /// Whether the query does not read `_part_offset`, and the read has it only for the row index it was added for.
+    bool readsPartOffsetOnlyForRowIndex() const { return part_offset_only_for_row_index; }
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
@@ -990,6 +992,7 @@ private:
     /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
     LazyMaterializingRowsPtr lazy_read_rows;
     Names columns_read_lazily;
+    bool part_offset_only_for_row_index = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 

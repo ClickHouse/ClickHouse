@@ -509,6 +509,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
+            /// The row index of a lazy read can address the rows of the projection parts, see `can_serve_lazy_read`.
+            if (col == "_part_offset" && reading->readsPartOffsetOnlyForRowIndex())
+                continue;
+
             if (!projection->canProvideParentColumn(col))
                 return false;
         }

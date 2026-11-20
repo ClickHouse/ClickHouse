@@ -5443,6 +5443,9 @@ ReadFromMergeTree::PartOffsetColumns ReadFromMergeTree::addStartingPartOffsetAnd
         return true;
     };
 
+    if (std::ranges::find(all_column_names, "_part_offset") == all_column_names.end())
+        part_offset_only_for_row_index = true;
+
     result.added_part_starting_offset = expose_in_output("_part_starting_offset");
     result.added_part_offset = expose_in_output("_part_offset");
 

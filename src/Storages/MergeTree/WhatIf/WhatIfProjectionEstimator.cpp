@@ -1404,6 +1404,9 @@ WhatIfCandidateResult evaluateProjection(
     /// the optimization of aggregate projections matches the aggregation of the query, not the columns that the query reads
     for (const auto & column_name : aggregate ? Names{} : read_step->getAllColumnNames())
     {
+        if (column_name == "_part_offset" && read_step->readsPartOffsetOnlyForRowIndex())
+            continue;
+
         if (!projection->canProvideParentColumn(column_name))
         {
             result.not_applicable_reason = fmt::format(

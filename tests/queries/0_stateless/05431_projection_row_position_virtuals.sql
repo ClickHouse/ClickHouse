@@ -49,6 +49,21 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO t_proj_offset_stored SELECT number, 1000 - number FROM numbers(64);
 SELECT _part_offset FROM t_proj_offset_stored WHERE val = 997 SETTINGS force_optimize_projection = 1;
 
+-- a lazy read over a join can read the projection parts by their own offsets, but the query must get the parent's
+DROP TABLE IF EXISTS t_proj_lazy;
+DROP TABLE IF EXISTS t_proj_lazy_right;
+CREATE TABLE t_proj_lazy (k UInt64, id String, payload String, PROJECTION p (SELECT * ORDER BY id))
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
+CREATE TABLE t_proj_lazy_right (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_proj_lazy SELECT number, concat('id', toString(number % 1000)), concat('payload', toString(number)) FROM numbers(10000);
+OPTIMIZE TABLE t_proj_lazy FINAL;
+INSERT INTO t_proj_lazy_right SELECT number FROM numbers(10000);
+SELECT t.k, t.payload, t._part_offset FROM t_proj_lazy AS t JOIN t_proj_lazy_right AS r ON t.k = r.k
+WHERE t.id IN ('id5', 'id7') ORDER BY t.k DESC LIMIT 2
+SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_lazy_materialization_for_join = 1,
+    query_plan_max_limit_for_lazy_materialization = 1000, optimize_move_to_prewhere = 0, query_plan_join_swap_table = 0,
+    query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0;
+
 -- the row selection of a lightweight update reads `_block_number`, `_block_offset` (and `_part_offset` for v1 patches)
 DROP TABLE IF EXISTS t_proj_lwu_v1;
 DROP TABLE IF EXISTS t_proj_lwu_v2;
@@ -103,6 +118,8 @@ SELECT arraySort(groupArray(k)) FROM t_proj_lwu_delete;
 DROP TABLE t_proj_offset;
 DROP TABLE t_proj_offset_merged;
 DROP TABLE t_proj_offset_stored;
+DROP TABLE t_proj_lazy;
+DROP TABLE t_proj_lazy_right;
 DROP TABLE t_proj_lwu_v1;
 DROP TABLE t_proj_lwu_v2;
 DROP TABLE t_proj_lwu_rmt;
