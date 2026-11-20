@@ -24,6 +24,8 @@ SELECT a FROM t_05837_buf ORDER BY a;
 SELECT 'materialized view';
 SELECT a FROM t_05837_mv ORDER BY a;
 SELECT m.a, count() FROM t_05837_mv AS m GROUP BY m.a ORDER BY m.a;
+SELECT m.a, l.a FROM t_05837_mv AS m INNER JOIN t_05837_local AS l ON m.a = l.a ORDER BY m.a;
+SELECT count() FROM t_05837_local WHERE a IN (SELECT a FROM t_05837_mv);
 SELECT 'alias';
 SELECT a FROM t_05837_alias ORDER BY a;
 SELECT 'buffer over buffer';
