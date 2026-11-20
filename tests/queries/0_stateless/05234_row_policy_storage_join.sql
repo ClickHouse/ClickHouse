@@ -18,6 +18,7 @@ SELECT '-- with a policy';
 SELECT key, value FROM join_rls ORDER BY key;
 SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls AS j ON j.key = p.key ORDER BY p.key; -- { serverError ACCESS_DENIED }
 SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls AS j ON j.key = p.key ORDER BY p.key SETTINGS join_algorithm = 'hash'; -- { serverError ACCESS_DENIED }
+SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls AS j ON j.key = p.key ORDER BY p.key SETTINGS query_plan_use_logical_join_step = 0; -- { serverError ACCESS_DENIED }
 SELECT joinGet(join_rls, 'value', toUInt64(2)); -- { serverError ACCESS_DENIED }
 SELECT joinGetOrNull(join_rls, 'value', toUInt64(2)); -- { serverError ACCESS_DENIED }
 

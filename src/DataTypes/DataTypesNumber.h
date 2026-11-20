@@ -21,24 +21,26 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
 public:
     DataTypeNumber() = default;
 
-    [[nodiscard]] bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
-    [[nodiscard]] bool canBeUsedAsVersion() const override { return true; }
-    [[nodiscard]] bool isSummable() const override { return true; }
-    [[nodiscard]] bool canBeUsedInBitOperations() const override { return true; }
-    [[nodiscard]] bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
-    [[nodiscard]] bool canBeInsideNullable() const override { return true; }
+    bool canBeUsedAsVersion() const override { return true; }
+    /// Custom data types with numeric representations are not necessarily summable.
+    /// For example, the `Bool` type isn't.
+    bool isSummable() const override { return !this->hasCustomName(); }
+    bool canBeUsedInBitOperations() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
+    bool canBeInsideNullable() const override { return true; }
 
-    [[nodiscard]] bool canBePromoted() const override { return true; }
-    [[nodiscard]] DataTypePtr promoteNumericType() const override
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override
     {
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
     }
 
-    [[nodiscard]] SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
-        return SerializationNumber<T>::create();
+        return std::make_shared<SerializationNumber<T>>();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.
@@ -50,7 +52,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeNumber constructor with bool argument should not be used with signed integers");
     }
 
-    [[nodiscard]] bool canUnsignedBeSigned() const { return unsigned_can_be_signed; }
+    bool canUnsignedBeSigned() const { return unsigned_can_be_signed; }
 
 private:
     bool unsigned_can_be_signed = false;

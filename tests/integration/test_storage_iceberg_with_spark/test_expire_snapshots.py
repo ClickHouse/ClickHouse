@@ -14,7 +14,7 @@ from helpers.iceberg_utils import (
 )
 
 
-ICEBERG_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1}
+ICEBERG_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1}
 FAR_FUTURE = "2099-12-31 23:59:59"
 AGGRESSIVE_RETENTION = {
     "history.expire.max-snapshot-age-ms": "1",
@@ -189,7 +189,7 @@ def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type
 
     result = expire_snapshots(instance, TABLE_NAME, expire_timestamp)
     counts = parse_expire_result(result)
-    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
+    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 
@@ -216,7 +216,7 @@ def test_expire_snapshots_positional_timestamp(started_cluster_iceberg_with_spar
         settings=ICEBERG_SETTINGS,
     )
     counts = parse_expire_result(result)
-    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
+    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 
@@ -293,8 +293,8 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
 
     spark_alter_table(
         started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
-        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
-        "'history.expire.min-snapshots-to-keep' = '1')",
+        f"SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        f"'history.expire.min-snapshots-to-keep' = '1')",
     )
 
     meta_before = read_iceberg_metadata(instance, TABLE_NAME)
@@ -734,7 +734,7 @@ def test_expire_snapshots_branch_min_keep_override(started_cluster_iceberg_with_
     # feature: min-keep=2 → snap3, snap2
     expected = {current_id, branch_head_id, snap_ids[1]}
     assert get_retained_ids(instance, TABLE_NAME) == expected, \
-        "Expected main(1) + feature(2)"
+        f"Expected main(1) + feature(2)"
     assert_data_intact(instance, TABLE_NAME, 5)
 
 
@@ -980,7 +980,7 @@ def test_expire_snapshots_snapshot_ids_with_fuse(started_cluster_iceberg_with_sp
     # Attempt to expire both S1 and S2 explicitly, with fuse protecting S2
     # S1 timestamp_s < fuse_s  → should be expired
     # S2 timestamp_s >= fuse_s → is_protected_by_fuse = true → should be retained
-    expire_snapshots(
+    result = expire_snapshots(
         instance,
         TABLE_NAME,
         args=[f"snapshot_ids = [{s1_id}, {s2_id}]", f"expire_before = '{fuse_str}'"],
@@ -995,7 +995,7 @@ def test_expire_snapshots_snapshot_ids_with_fuse(started_cluster_iceberg_with_sp
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_with_spark, storage_type):
-    """expire_snapshots raises SUPPORT_IS_DISABLED when allow_expire_snapshots=0.
+    """expire_snapshots raises SUPPORT_IS_DISABLED when allow_experimental_expire_snapshots=0.
 
     Exercises the feature gate at IcebergMetadata.cpp:605-611.
     """
@@ -1007,13 +1007,13 @@ def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_
     )
 
     # Without the experimental flag, expire_snapshots must be blocked
-    settings_no_flag = {"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 0}
+    settings_no_flag = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 0}
     error = instance.query_and_get_error(
         f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
         settings=settings_no_flag,
     )
     assert "SUPPORT_IS_DISABLED" in error, f"Expected SUPPORT_IS_DISABLED, got: {error}"
-    assert "allow_expire_snapshots" in error, \
+    assert "allow_experimental_expire_snapshots" in error, \
         f"Error should mention the setting name, got: {error}"
 
     # With the flag enabled it should succeed

@@ -9,26 +9,26 @@ namespace DB
 {
 namespace
 {
-    class FunctionTid final : public IFunction
+    class FunctionTid : public IFunction
     {
     public:
         static constexpr auto name = "tid";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTid>(); }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+        size_t getNumberOfArguments() const override { return 0; }
 
-        [[nodiscard]] String getSignatureString() const override { return "() -> UInt64"; }
+        DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeUInt64>();
         }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();
             return DataTypeUInt64().createColumnConst(input_rows_count, current_tid);
@@ -40,7 +40,7 @@ namespace
 REGISTER_FUNCTION(Tid)
 {
     FunctionDocumentation::Description description = R"(
-Returns id of the thread, in which the current [Block](/resources/develop-contribute/introduction/architecture#block) is processed.
+Returns id of the thread, in which the current [Block](/development/architecture/#block) is processed.
     )";
     FunctionDocumentation::Syntax syntax = "tid()";
     FunctionDocumentation::Arguments arguments = {};

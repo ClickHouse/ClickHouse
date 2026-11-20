@@ -36,25 +36,25 @@ class ColumnNode final : public IQueryTreeNode
 {
 public:
     /// Construct column node with column name, type, column expression and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, TableExpressionNodeWeakPtr column_source_);
+    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
 
     /// Construct column node with column name, type and column source weak pointer
-    ColumnNode(NameAndTypePair column_, TableExpressionNodeWeakPtr column_source_);
+    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
 
     /// Get column
-    [[nodiscard]] const NameAndTypePair & getColumn() const
+    const NameAndTypePair & getColumn() const
     {
         return column;
     }
 
     /// Get column name
-    [[nodiscard]] const String & getColumnName() const
+    const String & getColumnName() const
     {
         return column.name;
     }
 
     /// Get column type
-    [[nodiscard]] const DataTypePtr & getColumnType() const
+    const DataTypePtr & getColumnType() const
     {
         return column.type;
     }
@@ -66,13 +66,13 @@ public:
     }
 
     /// Returns true if column node has expression, false otherwise
-    [[nodiscard]] bool hasExpression() const
+    bool hasExpression() const
     {
         return children[expression_child_index] != nullptr;
     }
 
     /// Get column node expression node
-    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -101,72 +101,62 @@ public:
     /** Get column source.
       * If column source is not valid logical exception is thrown.
       */
-    [[nodiscard]] TableExpressionNodePtr getColumnSource() const;
+    QueryTreeNodePtr getColumnSource() const;
 
     /** Get column source.
       * If column source is not valid null is returned.
-      * Only columns for which `mayHaveNoSource` holds are allowed to return null here,
-      * every other null source means a broken query tree.
       */
-    [[nodiscard]] TableExpressionNodePtr getColumnSourceOrNull() const;
+    QueryTreeNodePtr getColumnSourceOrNull() const;
 
-    /** Name of the virtual column that `GroupingFunctionsResolvePass` prepends to the arguments of the
-      * specialized `GROUPING` functions (`groupingForRollup`, `groupingForCube`, `groupingForGroupingSets`).
-      * It does not come from any table expression, it is materialized by the aggregation step itself.
-      */
-    static constexpr std::string_view GROUPING_SET_COLUMN_NAME = "__grouping_set";
-
-    /** The query tree invariant is that every column node has a source, with exactly one exception:
-      * the virtual `__grouping_set` column is deliberately constructed with an empty source
-      * (see `GroupingFunctionsResolvePass`), because it has no originating table expression.
-      *
-      * So a null source is legal if and only if this predicate holds; the invariant is checked after
-      * every pass by `ValidationChecker` in `QueryTreePassManager`, and asserted by the code that
-      * tolerates a null source.
-      */
-    [[nodiscard]] bool mayHaveNoSource() const
+    void setColumnSource(const QueryTreeNodePtr & source)
     {
-        return column.name == GROUPING_SET_COLUMN_NAME;
+        getSourceWeakPointer() = source;
     }
 
-    void setColumnSource(const TableExpressionNodePtr & source_)
-    {
-        source = source_;
-    }
-
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
     }
 
-    [[nodiscard]] DataTypePtr getResultType() const override
+    DataTypePtr getResultType() const override
     {
         return column.type;
     }
 
     void convertToNullable() override
     {
-        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
+        column.type = makeNullableSafe(column.type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
+    const QueryTreeNodeWeakPtr & getSourceWeakPointer() const
+    {
+        return weak_pointers[source_weak_pointer_index];
+    }
+
+    QueryTreeNodeWeakPtr & getSourceWeakPointer()
+    {
+        return weak_pointers[source_weak_pointer_index];
+    }
 
     NameAndTypePair column;
-    TableExpressionNodeWeakPtr source;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
+
+    static constexpr size_t source_weak_pointer_index = 0;
+    static constexpr size_t weak_pointers_size = source_weak_pointer_index + 1;
 };
 
 }

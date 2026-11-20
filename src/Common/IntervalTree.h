@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <base/sort.h>
 
+#include <cassert>
 #include <utility>
 #include <vector>
 
@@ -23,7 +24,7 @@ struct Interval
 
     Interval(IntervalStorageType left_, IntervalStorageType right_) : left(left_), right(right_) { }
 
-    [[nodiscard]] bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
+    bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
 };
 
 template <typename IntervalStorageType>
@@ -109,7 +110,7 @@ public:
     requires std::is_same_v<Value, IntervalTreeVoidValue>
     ALWAYS_INLINE bool emplace(Interval interval)
     {
-        chassert(!tree_is_built);
+        assert(!tree_is_built);
         if (unlikely(interval.left > interval.right))
             return false;
 
@@ -123,7 +124,7 @@ public:
     requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
-        chassert(!tree_is_built);
+        assert(!tree_is_built);
         if (unlikely(interval.left > interval.right))
             return false;
 
@@ -158,7 +159,7 @@ public:
     /// Build tree, after that intervals cannot be inserted, and only search or iteration can be performed.
     void build()
     {
-        chassert(!tree_is_built);
+        assert(!tree_is_built);
         nodes.clear();
         nodes.reserve(sorted_intervals.size());
         buildTree();
@@ -205,7 +206,7 @@ public:
     }
 
     /// Check if there is an interval intersecting point
-    [[nodiscard]] bool has(IntervalStorageType point) const
+    bool has(IntervalStorageType point) const
     {
         bool has_intervals = false;
 
@@ -250,13 +251,13 @@ public:
         return Iterator(end_index, last_interval_index, this);
     }
 
-    [[nodiscard]] const_iterator begin() const
+    const_iterator begin() const
     {
         size_t start_index = findFirstIteratorNodeIndex();
         return Iterator(start_index, 0, this);
     }
 
-    [[nodiscard]] const_iterator end() const
+    const_iterator end() const
     {
         size_t end_index = findLastIteratorNodeIndex();
         size_t last_interval_index = 0;
@@ -267,13 +268,13 @@ public:
         return Iterator(end_index, last_interval_index, this);
     }
 
-    [[nodiscard]] const_iterator cbegin() const { return begin(); }
+    const_iterator cbegin() const { return begin(); }
 
-    [[nodiscard]] const_iterator cend() const { return end(); }
+    const_iterator cend() const { return end(); }
 
-    [[nodiscard]] size_t getIntervalsSize() const { return intervals_size; }
+    size_t getIntervalsSize() const { return intervals_size; }
 
-    [[nodiscard]] size_t getSizeInBytes() const
+    size_t getSizeInBytes() const
     {
         size_t nodes_size_in_bytes = nodes.size() * sizeof(Node);
         size_t intervals_size_in_bytes = sorted_intervals.size() * sizeof(IntervalWithValue);
@@ -290,7 +291,7 @@ private:
 
         IntervalStorageType middle_element;
 
-        [[nodiscard]] bool hasValue() const { return sorted_intervals_range_size != 0; }
+        bool hasValue() const { return sorted_intervals_range_size != 0; }
     };
 
     using IntervalWithEmptyValue = Interval;
@@ -400,7 +401,7 @@ public:
             }
         }
 
-        [[nodiscard]] const IntervalWithValue & getCurrentValue() const
+        const IntervalWithValue & getCurrentValue() const
         {
             auto & current_node = tree->nodes[node_index];
             size_t interval_index = current_node.sorted_intervals_range_start_index + current_interval_index;
@@ -490,7 +491,7 @@ private:
         }
     }
 
-    [[nodiscard]] size_t findFirstIteratorNodeIndex() const
+    size_t findFirstIteratorNodeIndex() const
     {
         size_t nodes_size = nodes.size();
         size_t result_index = 0;
@@ -507,7 +508,7 @@ private:
         return result_index;
     }
 
-    [[nodiscard]] size_t findLastIteratorNodeIndex() const
+    size_t findLastIteratorNodeIndex() const
     {
         if (unlikely(nodes.empty()))
             return 0;

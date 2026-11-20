@@ -39,7 +39,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const XMLString DOMSerializer::CDATA = toXMLString("CDATA");
+const XMLString DOMSerializer::CDATA = toXMLString("CDATA");
 
 
 DOMSerializer::DOMSerializer():

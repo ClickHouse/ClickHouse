@@ -137,11 +137,11 @@ bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & column
     return wrapped;
 }
 
-[[clang::no_destroy]] const std::unordered_set<String> comparison_functions = {
+const std::unordered_set<String> comparison_functions = {
     "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
 };
 
-[[clang::no_destroy]] const std::unordered_set<String> in_functions = {
+const std::unordered_set<String> in_functions = {
     "in", "notIn", "globalIn", "globalNotIn",
 };
 
