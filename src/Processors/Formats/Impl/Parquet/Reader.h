@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -29,48 +30,29 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
-//  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
-//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
-//  * look at issues in 00900_long_parquet_load.sh
+//  * test on files from https://www.timestored.com/data/sample/parquet
 //  * check fields for false sharing, add cacheline padding as needed
-//  * make sure userspace page cache read buffer supports readBigAt
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
-//  * make writer write PageEncodingStats
 //  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
-//  * support or deprecate the preserve-order setting
 //  * add comments everywhere
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
-//  * cache FileMetaData in something like SchemaCache
 //  * TSA
-//  * test with tsan
-//  * use dictionary page instead of bloom filter when possible
-//  * test performance with prewhere i%2=0, to have lots of range skips
 //  * check if prewhere works with datalakes
 //  * remember to test these:
 //     - expression appearing both in prewhere and in select list (presumably remove_prewhere_column = false)
-//     - prewhere with all 3 storages (maybe have the main big test pick random storage)
-//     - prewhere and where together
 //     - reading tuple element without reading the whole tuple
 //     - `select t, t.x`, `select t.x.x, t.x`, `select t.x.dyn_col`, `select t.`1``
 //        -- somehow assert that only the expected subcolumns are read
 //        -- also tuples inside arrays:
 //           insert into function file('p4.parquet') select [((number*100 + 10,number*100+11),number*100+20)::Tuple(x Tuple(x Int64, y String), y Int64)] as a from numbers(3)
 //     - prewhere with tuple element access (prepareReadingFromFormat looks like it won't work)
-//     - prewhere with expression string equal to some (weird) column name in the file
-//     - prewhere with expression that's just a (UInt8) column name, present or not present in select
 //     - prewhere condition that uses no columns (e.g. rand()%2=0)
-//     - prewhere condition that uses all columns (e.g. select x prewhere x%2=0)
-//     - no columns to read outside prewhere
-//     - no columns to read, but not trivial count either
-//     - ROW POLICY, with and without prewhere, with old and new reader
 //     - prewhere and other skipping with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
 //     - prewhere on virtual columns (do they end up in additional_columns?)
-//     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
-//     - prewhere involving arrays and tuples
-//     - prewhere with url() and s3()
+//     - prewhere with const UInt8 filter
 //     - tuple elements with url() and s3()
 //     - IN with subqueries with and without prewhere
 //     - compare performance to MergeTree (full scan, prewhere, skipping granules)
@@ -78,7 +60,6 @@ namespace DB::Parquet
 //     - array touching >2 pages
 //     - bf and page filtering on prewhere-only columns
 //     - all types of filtering by IS NULL / IS NOT NULL
-//     - Bool type
 //     - looking for NaN using min/max indices; try it with merge tree too
 //     - input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, make a file by hacking PrepareForWrite.cpp to use garbage physical type for some data type (~/t/invalid_type.parquet has column `invalid` that's FixedString(5) but has type=42 instead of type=FIXED_LEN_BYTE_ARRAY)
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
@@ -87,8 +68,6 @@ namespace DB::Parquet
 //    choosing the column with least <row group idx, subgroup idx> among runnable ones, with one total
 //    memory budget; but also think about memory locality - is it worse than for simple solution?
 //    is there a way to make it better or to support simple solution as special case?
-//  * lazy materialization (not feasible because of unaligned pages?)
-//  * add prewhere check next to addNumRowsToCache calls, in addition to key condition check
 //  * make sure ~all reader and writer settings are randomized in tests
 
 /// Components of this parquet reader implementation:
@@ -123,7 +102,7 @@ struct SharedFileColumnChunks
     /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
     /// taken before `mutex`.
     std::mutex bloom_filter_bounds_mutex;
-    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds;
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds TSA_GUARDED_BY(bloom_filter_bounds_mutex);
 };
 using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
 
@@ -210,6 +189,10 @@ struct Reader
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
+
         bool use_bloom_filter = false;
 
         /// A single-column `KeyCondition` used for page-level pruning through the column index.
@@ -223,6 +206,9 @@ struct Reader
             /// only under the same four-column zero-nulls guarantee the row-group path requires
             /// (see `spatialBboxStatsHaveNoNulls`).
             size_t spatial_key_condition_idx = SIZE_MAX;
+
+            /// The condition is a conjunct of `join_runtime_filter_key_condition`.
+            bool from_join_runtime_filter = false;
         };
 
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
@@ -275,6 +261,10 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// If set, the value of the missing column (the data lake default of a field absent from the file).
+        std::optional<Field> missing_column_default;
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
+        bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
@@ -664,6 +654,10 @@ struct Reader
     /// See FormatFilterInfo::join_runtime_filter_predicate.
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
     size_t row_groups_pruned_by_join_runtime_filter = 0;
+    /// Per-column conditions extracted from `join_runtime_filter_key_condition`, referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> join_runtime_filter_column_conditions;
+    std::atomic<size_t> pages_pruned_by_join_runtime_filter {0};
 
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).

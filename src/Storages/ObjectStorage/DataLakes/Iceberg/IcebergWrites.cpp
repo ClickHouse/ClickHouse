@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_max_data_files_in_upload;
 }
 
 namespace DataLakeStorageSetting
@@ -1286,6 +1287,8 @@ IcebergStorageSink::IcebergStorageSink(
     const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
+    , data_file_uploads(object_storage_->supportParallelWrite()
+        ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
@@ -1298,7 +1301,7 @@ IcebergStorageSink::IcebergStorageSink(
     /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
     /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
     /// rather than let the first commit build on a file the table never committed.
-    auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_id.getTableName(),
@@ -1310,6 +1313,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
+    base_catalog_metadata_location = std::move(catalog_metadata_location);
 
     metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
@@ -1412,6 +1416,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 current_schema->getArray(Iceberg::f_fields),
                 filename_generator,
+                data_file_uploads,
                 persistent_table_components.path_resolver,
                 object_storage,
                 context,
@@ -1499,6 +1504,8 @@ void IcebergStorageSink::finalizeBuffers()
         total_chunks_size += writer.getResultBytes();
     }
 
+    data_file_uploads.finalize();
+
     if (writer_per_partition_key.empty())
         return;
 
@@ -1539,6 +1546,7 @@ void IcebergStorageSink::cancelBuffers()
     {
         writer.cancel();
     }
+    data_file_uploads.cancel();
 }
 
 void IcebergStorageSink::removeDataFilesAndManifests()
@@ -1631,7 +1639,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+            auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
                 catalog,
                 table_id.getTableName(),
@@ -1643,6 +1651,7 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
                 /* ignore_metadata_pointer_overrides */ true);
+            base_catalog_metadata_location = std::move(catalog_metadata_location);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1848,8 +1857,10 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
                 {
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                     cleanup(true);
                     return false;
                 }
