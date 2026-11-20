@@ -1,0 +1,8 @@
+CREATE TABLE dst ENGINE = MergeTree ORDER BY x AS src SETTINGS max_partitions_to_read = 1
+CREATE TABLE dst ENGINE = MergeTree ORDER BY x EMPTY AS src SETTINGS max_threads = 1
+CREATE TABLE dst ENGINE = MergeTree ORDER BY x CLONE AS src SETTINGS max_threads = 1
+CREATE TABLE dst ENGINE = TimeSeries SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) AS src SETTINGS max_threads = 1
+CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY x
+CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY x COMMENT \'c\' SETTINGS max_threads = 1
+CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128 SETTINGS max_threads = 1
+CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY x FORMAT `Null` SETTINGS max_threads = 1
