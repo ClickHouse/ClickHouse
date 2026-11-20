@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database, no-async-insert, no-fasttest
+-- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-parallel-replicas
+-- Parallel replicas cannot serialize a distributed plan for UNIQUE KEY tables.
 -- `CLEAR COLUMN IF EXISTS` of a Nested parent that has only an alias child is a no-op on UNIQUE KEY.
 
 SET enable_unique_key = 1;

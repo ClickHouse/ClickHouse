@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- This test deliberately mixes mutation and schema commands, which Replicated databases reject.
 -- A recreated column's default reads a subcolumn of another column recreated in the same ALTER.
 DROP TABLE IF EXISTS t_memory_tuple_subcolumn;
 CREATE TABLE t_memory_tuple_subcolumn (id UInt8, a Tuple(v UInt64), x UInt64) ENGINE = Memory;

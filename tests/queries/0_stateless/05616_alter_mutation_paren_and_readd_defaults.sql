@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- This test deliberately mixes mutation and schema commands, which Replicated databases reject.
 -- A quoted parenthesis must not glue the next persisted mutation command onto this one.
 DROP TABLE IF EXISTS t_mutation_paren;
 CREATE TABLE t_mutation_paren (id UInt8, x String, y UInt8) ENGINE = MergeTree ORDER BY id;

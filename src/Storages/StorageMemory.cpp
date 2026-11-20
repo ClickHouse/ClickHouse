@@ -696,6 +696,7 @@ static Block logicalDefaultInputs(
         walker.consider(column.name);
 
     Block logical;
+    NamesAndTypesList to_convert_before_extract;
     NamesAndTypesList to_convert;
     for (const auto & name : walker.inputs)
     {
@@ -715,8 +716,8 @@ static Block logicalDefaultInputs(
         else if (rows > 0)
         {
             ColumnPtr filled;
-            const auto * sibling = findNestedSizesSource(stored, name);
-            if (!sibling)
+            const auto * sibling = isArray(physical->type) ? findNestedSizesSource(stored, name) : nullptr;
+            if (isArray(physical->type) && !sibling)
                 sibling = findNestedSizesSource(logical, name);
 
             if (sibling)
@@ -750,8 +751,16 @@ static Block logicalDefaultInputs(
         if (old_parent.type->equals(*current_parent->type))
             continue;
 
-        const auto subcolumn_type = current_parent->type->tryGetSubcolumnType(name.substr(parent.size() + 1));
-        to_convert.emplace_back(name, subcolumn_type);
+        const auto subcolumn_name = name.substr(parent.size() + 1);
+        if (!old_parent.type->tryGetSubcolumnType(subcolumn_name))
+        {
+            /// The old parent cannot provide this subcolumn. Convert it first, as normal reads do
+            /// when a previous lazy type change introduced the subcolumn.
+            to_convert_before_extract.emplace_back(parent, current_parent->type);
+            continue;
+        }
+
+        to_convert.emplace_back(name, current_parent->type->tryGetSubcolumnType(subcolumn_name));
     }
 
     /// With no physical inputs, `logical.rows()` is 0. Establish the saved row count before alias evaluation.
@@ -766,6 +775,9 @@ static Block logicalDefaultInputs(
             std::make_shared<DataTypeUInt8>(),
             placeholder});
     }
+
+    if (!to_convert_before_extract.empty())
+        performRequiredConversions(logical, to_convert_before_extract, context, columns.getDefaults());
 
     /// Extract a subcolumn only once its parent is already in the block. A parent this statement
     /// is still materializing is extracted later, after that parent has a row for every stored row.

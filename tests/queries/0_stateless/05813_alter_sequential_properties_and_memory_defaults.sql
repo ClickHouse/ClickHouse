@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- Some sequential property commands mix replicated and non-replicated ALTER types.
 -- A column added after the insert reads as the type default. The replacement default uses that value.
 DROP TABLE IF EXISTS t_mem_added_default;
 CREATE TABLE t_mem_added_default (id UInt8, x UInt64) ENGINE = Memory;

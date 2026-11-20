@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- Mixed replicated and non-replicated ALTER command types are rejected by Replicated databases.
 -- #117824: `ADD COLUMN IF NOT EXISTS` sees a name freed earlier in the same `ALTER`.
 
 DROP TABLE IF EXISTS t_readd_after_drop;
