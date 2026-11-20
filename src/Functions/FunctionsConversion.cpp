@@ -5,8 +5,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
 #include <Common/re2.h>
-#include <cmath>
-
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/castColumn.h>
@@ -2065,7 +2063,7 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
         if (!nested_result)
             return std::nullopt;
 
-        auto new_array_col = ColumnArray::create(nested_result->first->assumeMutable(), col_array.getOffsetsPtr());
+        auto new_array_col = ColumnArray::create(nested_result->first, col_array.getOffsetsPtr());
         auto new_array_type = std::make_shared<DataTypeArray>(nested_result->second);
         return std::make_pair(std::move(new_array_col), std::move(new_array_type));
     }
@@ -2490,9 +2488,7 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
 
     /// From String → any simple non-nested type. Both paths go through text parsing, and the CAST
     /// is built with date_time_input_format (see castColumnWithSettings), so semantics match.
-    /// Date/Date32 are excluded: a CAST reads the date out of a longer date-time string, while the
-    /// parser requires the whole string to be a date, so they stay on the format+parse route.
-    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner) && !isDateOrDate32(*to_inner))
+    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
         return true;
 
     /// Any simple non-nested → String.
@@ -2538,71 +2534,6 @@ bool isLosslessNumericWidening(const IDataType & from, const IDataType & to)
 /// the two agree only on values that convert exactly; checking that per value keeps ordinary numbers on the
 /// CAST, and a DateTime outside the destination range goes to the parser, which saturates it. A number or a
 /// date parsed from the text of a date and time or an address, or an array from a non-array, never matches.
-/// A negative zero copies through the direct cast unchanged, but the JSON round trip writes it as "-0",
-/// which reads back as +0.0 (a bare integer, no sign). A float column that holds one must therefore go
-/// through the parser so the direct route matches format+parse and the shared-data route.
-bool floatColumnHasNegativeZero(const IColumn & column)
-{
-    if (const auto * col = typeid_cast<const ColumnFloat64 *>(&column))
-    {
-        for (Float64 value : col->getData())
-            if (value == 0.0 && std::signbit(value))
-                return true;
-        return false;
-    }
-    if (const auto * col32 = typeid_cast<const ColumnFloat32 *>(&column))
-    {
-        for (Float32 value : col32->getData())
-            if (value == 0.0F && std::signbit(value))
-                return true;
-        return false;
-    }
-    if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(&column))
-        return floatColumnHasNegativeZero(col_nullable->getNestedColumn());
-    if (const auto * col_array = typeid_cast<const ColumnArray *>(&column))
-        return floatColumnHasNegativeZero(col_array->getData());
-    if (const auto * col_map = typeid_cast<const ColumnMap *>(&column))
-        return floatColumnHasNegativeZero(col_map->getNestedColumn());
-    if (const auto * col_lc = typeid_cast<const ColumnLowCardinality *>(&column))
-        return floatColumnHasNegativeZero(*col_lc->getDictionary().getNestedColumn());
-    if (const auto * col_tuple = typeid_cast<const ColumnTuple *>(&column))
-    {
-        for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
-            if (floatColumnHasNegativeZero(col_tuple->getColumn(i)))
-                return true;
-        return false;
-    }
-    if (const auto * col_variant = typeid_cast<const ColumnVariant *>(&column))
-    {
-        for (size_t i = 0; i < col_variant->getNumVariants(); ++i)
-            if (floatColumnHasNegativeZero(col_variant->getVariantByLocalDiscriminator(i)))
-                return true;
-        return false;
-    }
-    if (const auto * col_dynamic = typeid_cast<const ColumnDynamic *>(&column))
-    {
-        /// Shared-variant values are serialized to a String and cannot be scanned cheaply, so treat a
-        /// non-empty shared variant as possibly holding a negative zero and normalize conservatively.
-        if (!col_dynamic->getSharedVariant().empty())
-            return true;
-        return floatColumnHasNegativeZero(col_dynamic->getVariantColumn());
-    }
-    if (const auto * col_object = typeid_cast<const ColumnObject *>(&column))
-    {
-        for (const auto & [path, path_column] : col_object->getTypedPaths())
-            if (floatColumnHasNegativeZero(*path_column))
-                return true;
-        for (const auto & [path, path_column] : col_object->getDynamicPaths())
-            if (floatColumnHasNegativeZero(*path_column))
-                return true;
-        /// Shared-data values are serialized and not scannable cheaply; normalize conservatively if present.
-        if (!col_object->getSharedDataNestedColumn().getData().empty())
-            return true;
-        return false;
-    }
-    return false;
-}
-
 bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
 {
     if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from.get()))
@@ -2630,21 +2561,6 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (isFixedString(*to_inner))
         return isStringOrFixedString(*from);
 
-    /// A CAST from FixedString to String strips trailing zero bytes, while the parser keeps them.
-    if (isFixedString(*from) && isString(*to_inner))
-        return false;
-
-    /// A CAST to a Nullable destination turns a text-parse failure into NULL, while the parser rejects
-    /// malformed input, so a String source to a Nullable destination goes through the parser.
-    if (isStringOrFixedString(*from) && removeLowCardinality(to)->isNullable())
-        return false;
-
-    /// Bool is UInt8, but a CAST normalizes any nonzero to 1 while the parser builds it through UInt8
-    /// (truncating), so only a Boolean source matches; a number goes through the parser. The wrapper
-    /// SimpleAggregateFunction(any, Bool) is a Boolean too (its serializer writes true/false).
-    if (isBool(to_inner) || isSimpleAggregateFunctionOfBool(*to_inner))
-        return isBool(from) || isSimpleAggregateFunctionOfBool(*from);
-
     /// An enum-to-enum CAST copies the numeric values of members not named in both definitions, and a
     /// numeric-to-enum CAST can skip membership validation (check_conversion_from_numbers_to_enum), so a
     /// stored value may be absent from the destination enum. Only an identical enum matches; otherwise the
@@ -2666,16 +2582,6 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
         return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
     }
 
-    /// A negative zero in the source survives the direct cast (as -0.0, or "-0" to String), but the JSON
-    /// round trip collapses it (to +0.0, or "0"), so route such a column through the parser.
-    if (isFloat(*from) && floatColumnHasNegativeZero(*column))
-        return false;
-
-    /// A CAST reads the date out of a longer date-time string, while the parser requires the whole string
-    /// to be a date, so a String source to Date/Date32 goes through the parser.
-    if (isStringOrFixedString(*from) && isDateOrDate32(*to_inner))
-        return false;
-
     /// A reduced-precision float widened by a CAST keeps its exact bits, while the parser reads its shortest
     /// text (e.g. Float32 0.1 widens to 0.10000000149..., the parser gives 0.1), so only an identical float
     /// type matches.
@@ -2687,10 +2593,9 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (isDecimal(*from) || isDecimal(*to_inner))
         return from->equals(*to_inner);
 
-    /// A CAST into a date/time type interprets the source's internal value (a number as whole seconds, a Time
-    /// as 1970-01-01 plus the time), while the parser reads the text (ticks, the current date), so only an
-    /// identical type matches. DateTime sources are handled above.
-    if (isDateOrDate32(*to_inner) || isTimeOrTime64(*to_inner) || isDateTimeOrDateTime64(*to_inner))
+    /// A CAST reads a number into Time/Time64 as whole seconds and a Time into a DateTime as 1970-01-01 plus
+    /// the time, while the parser reads the text (ticks, the current date), so only an identical type matches.
+    if (isTimeOrTime64(*from) || isTimeOrTime64(*to_inner))
         return from->equals(*to_inner);
 
     /// A CAST writes an Array/Tuple/Map/Variant/Object source in ClickHouse text, not the JSON text the
@@ -3340,6 +3245,35 @@ ColumnPtr castColumnWithSettings(
     return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
 }
 
+/// A CAST from a string to Nullable(T) returns NULL for a value it cannot parse, while the parser rejects it.
+/// Casting a non-Nullable source to T and wrapping the result in Nullable keeps the rejection. Returns nullptr
+/// for a Nullable string source to a Nullable destination: the rows under its NULLs hold an empty string,
+/// which a strict CAST would reject, so that case has to go through the parser.
+ColumnPtr castColumnRejectingInvalid(
+    const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to, const FunctionConvertSettingsPtr & convert_settings)
+{
+    const bool from_nullable = from->isNullable() || from->isLowCardinalityNullable();
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get()); to_nullable && !from_nullable)
+    {
+        auto nested = castColumnRejectingInvalid(column, from, to_nullable->getNestedType(), convert_settings);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        const auto & col_array = assert_cast<const ColumnArray &>(*column);
+        auto nested = castColumnRejectingInvalid(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType(), convert_settings);
+        return nested ? ColumnArray::create(nested, col_array.getOffsetsPtr()) : nullptr;
+    }
+
+    if (from_nullable && isStringOrFixedString(*removeNullable(removeLowCardinality(from))) && removeLowCardinality(to)->isNullable())
+        return nullptr;
+
+    return castColumnWithSettings({column, from, ""}, to, convert_settings, CastType::nonAccurate);
+}
+
 /// Main optimized Object-to-Object conversion.
 ColumnPtr convertObjectColumns(
     const ColumnPtr & src_col_ptr,
@@ -3447,14 +3381,7 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            const auto & type = dst_typed_path_types.at(path);
-            /// Reusing the column is valid only when format+parse gives the same bytes. A negative zero
-            /// survives the reuse, but its text round trip collapses it to +0.0, so normalize that path
-            /// (floatColumnHasNegativeZero descends every carrier, including Variant and nested JSON).
-            if (floatColumnHasNegativeZero(*it->second))
-                dst_typed_columns[path] = convertTypedColumnToTyped(it->second, type, type, rows, format_settings, /*skip_on_failure=*/false);
-            else
-                dst_typed_columns[path] = it->second;
+            dst_typed_columns[path] = it->second;
         }
     }
 
@@ -3471,12 +3398,6 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-
-            /// The extract-tree FixedString node handles a too-long or zero-padded string differently from the
-            /// serialization the format+parse path uses (it can insert a null into a Nullable where the latter
-            /// rejects), so a FixedString destination takes the whole-block fallback to match it exactly.
-            if (anyInTypeTree(*to_tp, [](const IDataType & t) { return isFixedString(t); }))
-                return {};
 
             /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
             /// destination default: nothing but the Nullable wrapper may differ (else the converted source
@@ -3521,11 +3442,13 @@ ColumnPtr convertObjectColumns(
                     }
                 }
 
+                ColumnPtr cast_result;
                 if (castMatchesParse(src_col, src_type, to_tp))
-                    dst_typed_columns[path]
-                        = castColumnWithSettings({src_col, src_type, ""}, to_tp, convert_settings, CastType::nonAccurate);
-                else
-                    dst_typed_columns[path] = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
+                    cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
+
+                dst_typed_columns[path] = cast_result
+                    ? cast_result
+                    : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
             }
         }
     }

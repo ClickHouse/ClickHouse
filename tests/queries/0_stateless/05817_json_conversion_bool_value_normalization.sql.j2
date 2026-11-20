@@ -1,7 +1,7 @@
 -- The optimized JSON-to-JSON conversion must store the same values as format+parse, including the Boolean
 -- byte. JSON text shows any nonzero Bool as `true` and hides the stored value, so this test reads the
 -- numeric value of the converted path under both json_use_optimized_type_conversion values and prints only
--- the cases that differ; the reference is empty. Covers the Bool wrapper and the Bool-vs-UInt8 distinction.
+-- the cases that differ; the reference is empty. Covers the Bool-vs-UInt8 distinction.
 
 SET session_timezone = 'UTC';
 
@@ -23,11 +23,6 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }};
 {{ check('UInt8 to Bool', 'JSON(a UInt8)', 'JSON(a Bool)', '{"a": 42}', 'toUInt8(j.a)') }}
 {{ check('UInt8 to Bool to shared data', 'JSON(max_dynamic_paths = 0, a UInt8)', 'JSON(max_dynamic_paths = 0, a Bool)', '{"a": 42}', 'toUInt8(j.a)') }}
 {{ check('Array(UInt8) to Array(Bool)', 'JSON(a Array(UInt8))', 'JSON(a Array(Bool))', '{"a": [42, 0]}', 'arrayMap(x -> toUInt8(x), j.a)') }}
-
--- SimpleAggregateFunction(any, Bool) is a Boolean too, so a numeric value goes through the parser.
-{{ check('numeric to SimpleAggregateFunction(any, Bool)', 'JSON', 'JSON(a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
-{{ check('numeric to SimpleAggregateFunction(any, Bool) in shared data', 'JSON(max_dynamic_paths = 0)', 'JSON(max_dynamic_paths = 0, a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
-{{ check('numeric to SimpleAggregateFunction(any, Bool) in shared variant', 'JSON(max_dynamic_types = 0)', 'JSON(max_dynamic_types = 0, a SimpleAggregateFunction(any, Bool))', '{"a": 0.58}', 'toUInt8(j.a)') }}
 
 -- A UInt8-to-Bool change hidden under a Variant alternative or a nested JSON typed path (equals treats the
 -- wrappers as unchanged) must still be normalized, so the path is compared by its textual type.

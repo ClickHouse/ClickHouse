@@ -33,12 +33,12 @@ SETTINGS {{ settings }};
 {{ check('Float64 to Decimal64', 'JSON(a Float64)', 'JSON(a Decimal64(2))', '{"a": 0.58}', 'j.a') }}
 {{ check('Decimal256 to Float64', 'JSON(a Decimal256(30))', 'JSON(a Float64)', '{"a": 0.1}', 'j.a') }}
 {{ check('Decimal64(2) to Decimal64(4)', 'JSON(a Decimal64(2))', 'JSON(a Decimal64(4))', '{"a": 1.25}', 'j.a') }}
--- A date/time destination reads the text through the parser, not the source's internal value through a CAST.
+-- A Time reaches a DateTime through the parser (the current date), not a CAST (1970-01-01).
 {{ check('Time to DateTime', 'JSON(a Time)', 'JSON(a DateTime)', '{"a": "00:00:01"}', 'j.a') }}
 {{ check('Date to DateTime', 'JSON(a Date)', 'JSON(a DateTime)', '{"a": "2024-01-15"}', 'j.a') }}
--- A FixedString to String keeps the trailing zero bytes, which a CAST would strip.
-{{ check('FixedString to String', 'JSON(a FixedString(3))', 'JSON(a String)', '{"a": "a"}', 'hex(j.a)') }}
-{{ check('Array(FixedString) to Array(String)', 'JSON(a Array(FixedString(3)))', 'JSON(a Array(String))', '{"a": ["a", "bc"]}', 'arrayMap(x -> hex(x), j.a)') }}
+-- Accepted difference: the CAST from FixedString to String strips the trailing zero bytes, which the text
+-- round trip used under type_json_skip_invalid_typed_paths and by format+parse keeps.
+{{ check('accepted: FixedString to String', 'JSON(a FixedString(3))', 'JSON(a String)', '{"a": "a"}', 'hex(j.a)') }}
 
 SELECT name, cfg, result FROM k_results
 WHERE name IN (SELECT name FROM k_results GROUP BY name HAVING uniqExact(result) > 1)

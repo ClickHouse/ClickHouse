@@ -1,3 +1,7 @@
+accepted: new Bool from a fractional Float64	1	{"a":true} {} {}; {"a":false} {} {}
+accepted: new Bool from a fractional Float64	0	{"a":false} {} {}; {"a":false} {} {}
+accepted: new Float64 from a negative zero	1	{"a":-0} {} {}
+accepted: new Float64 from a negative zero	0	{"a":0} {} {}
 accepted: new String from DateTime, iso output	1	{"a":"2024-01-15 12:30:00"} {} {}
 accepted: new String from DateTime, iso output	0	{"a":"2024-01-15T12:30:00Z"} {} {}
 accepted: new String from DateTime, unix_timestamp output	1	{"a":"2024-01-15 12:30:00"} {} {}

@@ -71,6 +71,14 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 -- Dropping an unused enum member keeps a value that is still in the destination.
 {{ check('changed enum drops unused member', "JSON(a Enum8('x' = 1, 'y' = 2))", "JSON(a Enum8('x' = 1))", ['{"a": "x"}']) }}
 
+-- A valid string reaches a Nullable typed path through a CAST to the nested type, wrapped in Nullable.
+{{ check('changed String to Nullable(UUID)', 'JSON(a String)', 'JSON(a Nullable(UUID))', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}']) }}
+{{ check('changed Nullable(String) to Nullable(UUID)', 'JSON(a Nullable(String))', 'JSON(a Nullable(UUID))', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}', '{"a": null}']) }}
+{{ check('changed Array(String) to Array(Nullable(Int64))', 'JSON(a Array(String))', 'JSON(a Array(Nullable(Int64)))', ['{"a": ["1", "2"]}']) }}
+
+-- Dropping the Nullable of array elements that hold no NULL reuses the source elements, which stay shared.
+{{ check('changed Array(Nullable(Int64)) without NULLs to Array(Int64)', 'JSON(a Array(Nullable(Int64)))', 'JSON(a Array(Int64))', ['{"a": [1, 2]}', '{"a": [3]}']) }}
+
 SELECT name, optimized, result FROM results
 WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
 ORDER BY name, optimized DESC;
