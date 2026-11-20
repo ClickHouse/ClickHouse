@@ -120,7 +120,7 @@ public:
     {
     }
 
-    Ptr clone() const override { return std::make_shared<BufferedShardByHashChunkInfo>(*this); }
+    [[nodiscard]] Ptr clone() const override { return std::make_shared<BufferedShardByHashChunkInfo>(*this); }
 
 private:
     std::shared_ptr<State> state;
