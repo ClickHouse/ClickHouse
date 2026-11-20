@@ -2086,6 +2086,45 @@ def test_cluster_mutations(started_cluster):
         )
 
 
+def test_cluster_truncate(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_cluster_truncate_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node1, root_namespace, table_name, "(x String)"
+    )
+
+    parallel_replicas_settings = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        **parallel_replicas_settings,
+    }
+
+    node1.query(f"INSERT INTO {table_ref} VALUES ('a'), ('b')", settings=settings)
+    node1.query(f"TRUNCATE TABLE {table_ref}", settings=settings)
+
+    for replica in [node1, node2]:
+        for read_settings in [None, parallel_replicas_settings]:
+            assert (
+                replica.query(f"SELECT count() FROM {table_ref}", settings=read_settings)
+                == "0\n"
+            )
+
+    node1.query(f"INSERT INTO {table_ref} VALUES ('c')", settings=settings)
+    assert node2.query(f"SELECT x FROM {table_ref}") == "c\n"
+
+
 def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
