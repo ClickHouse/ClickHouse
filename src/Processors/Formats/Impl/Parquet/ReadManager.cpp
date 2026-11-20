@@ -843,6 +843,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         size_t i = first_incomplete_row_group.load();
         if (row_group_idx != i)
             return false;
+        /// Stages before `ColumnData` handle the whole row group at once. The first incomplete row group
+        /// must be able to pass them even when a later row group holds the stage's memory, otherwise
+        /// it waits for that memory while the later row group waits for it to be delivered.
+        if (stage_idx < ReadStage::ColumnData)
+            return true;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
         /// Must check stage first so that read_ptr is meaningful (we start advancing it in finishRowSubgroupStage).
         /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
@@ -1461,9 +1466,12 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
 void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     row_subgroup.filter.clear(&diff);
-    row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
+    /// The row subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+    row_subgroup.output = decltype(row_subgroup.output)();
+    row_subgroup.columns = decltype(row_subgroup.columns)();
+    row_subgroup.block_missing_values = BlockMissingValues();
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()
