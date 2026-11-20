@@ -875,6 +875,19 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     /// `Int32` so the ordinary Int -> Decimal cast finishes the conversion.
     if (WhichDataType(from_no_null).isDate32() && isDecimal(to_leaf))
         return {col, with_source_nullability(std::make_shared<DataTypeInt32>())};
+    /// The same for the values of a dictionary, which are registered without the post-decode rewrite when the
+    /// field is decoded for several requested columns (see `DictionaryUse::keep_raw_bytes`). The values of a
+    /// `LowCardinality(Date32)` are physically `Int32` too, so only the declared type changes.
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_no_null.get()))
+    {
+        const DataTypePtr & dictionary_type = low_cardinality_type->getDictionaryType();
+        if (WhichDataType(removeNullable(dictionary_type)).isDate32() && isDecimal(to_leaf))
+        {
+            const DataTypePtr int_type = std::make_shared<DataTypeInt32>();
+            return {col, with_source_nullability(std::make_shared<DataTypeLowCardinality>(
+                dictionary_type->isNullable() ? makeNullable(int_type) : int_type))};
+        }
+    }
 
     /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
     /// exempt from the width sniff and decode as defaults.
@@ -945,6 +958,58 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     if (nullable)
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
     return {std::move(result), with_source_nullability(to_leaf)};
+}
+
+/// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
+/// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `key_1.s`) and `subcolumn_type` is
+/// its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
+/// A key lookup synthesizes a default for every row without the key, and that default has the type of the
+/// decoded values: when they keep their raw bytes (see `RecordBatchDecoder::rawByteTarget`), it is an empty
+/// string, which cannot be reinterpreted after the extraction. So the values are converted before it, and
+/// the defaults are then created in the requested type, as when the values are converted while decoding.
+DataTypePtr keyLookupSourceHint(const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type, bool case_insensitive)
+{
+    const DataTypePtr stripped = removeNullable(type);
+    const size_t dot = subcolumn.find('.');
+    const std::string_view component = subcolumn.substr(0, dot);
+    const std::string_view rest = dot == std::string_view::npos ? std::string_view{} : subcolumn.substr(dot + 1);
+    if (component.empty())
+        return nullptr;
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+    {
+        if (!tuple->hasExplicitNames() || rest.empty())
+            return nullptr;
+        const auto position = tuple->tryGetPositionByName(String(component), case_insensitive);
+        if (!position)
+            return nullptr;
+        DataTypePtr element_hint = keyLookupSourceHint(tuple->getElement(*position), rest, subcolumn_type, case_insensitive);
+        if (!element_hint)
+            return nullptr;
+        /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as decoded.
+        return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{tuple->getElementNames()[*position]});
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+    {
+        if (!component.starts_with("key_"))
+            return nullptr;
+        DataTypePtr value_hint = subcolumn_type;
+        if (!rest.empty())
+        {
+            /// A subcolumn of the looked-up value (`key_1.s`): the struct the value is.
+            const auto * value_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(map->getValueType()).get());
+            if (!value_tuple || !value_tuple->hasExplicitNames() || rest.find('.') != std::string_view::npos)
+                return nullptr;
+            const auto position = value_tuple->tryGetPositionByName(String(rest), case_insensitive);
+            if (!position)
+                return nullptr;
+            value_hint = std::make_shared<DataTypeTuple>(DataTypes{subcolumn_type}, Strings{value_tuple->getElementNames()[*position]});
+        }
+        return std::make_shared<DataTypeMap>(map->getKeyType(), value_hint);
+    }
+
+    return nullptr;
 }
 
 }
@@ -1052,7 +1117,29 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 boost::to_lower(search_nested);
 
             auto nested_it = name_to_index.find(search_nested);
-            if (nested_it != name_to_index.end())
+            DataTypePtr key_lookup_hint;
+            if (nested_it != name_to_index.end() && header_column.name.size() > nested_table_name.size() + 1)
+                key_lookup_hint = keyLookupSourceHint(
+                    decoded[nested_it->second].type, std::string_view(header_column.name).substr(nested_table_name.size() + 1),
+                    header_column.type, case_insensitive);
+            if (key_lookup_hint)
+            {
+                /// Convert the map values for this column before the key lookup (see `keyLookupSourceHint`).
+                /// The conversion is specific to this column, so the extractor is not cached.
+                const auto & source = decoded[nested_it->second];
+                ColumnWithTypeAndName source_column(source.column, source.type, nested_table_name);
+                reinterpretRawByteColumns(source_column, key_lookup_hint, /*field=*/nullptr);
+                const Block block({std::move(source_column)});
+                NestedColumnExtractHelper helper(block, case_insensitive);
+                if (auto nested_column = helper.extractColumn(header_column.name))
+                {
+                    column = *nested_column;
+                    if (case_insensitive)
+                        column.name = header_column.name;
+                    read_from_nested = true;
+                }
+            }
+            else if (nested_it != name_to_index.end())
             {
                 auto extractor_it = nested_extractors.find(search_nested);
                 if (extractor_it == nested_extractors.end())

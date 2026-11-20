@@ -151,4 +151,14 @@ $CLICKHOUSE_LOCAL -q "SELECT CAST(map(1, if(number = 1, NULL, tuple('abcdefghijk
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.values\` Array(Tuple(s IPv6))') SETTINGS enable_nullable_tuple_type = 0"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.key_1\` Tuple(s IPv6)') SETTINGS enable_nullable_tuple_type = 0"
 
+echo "map row without the requested key"
+$CLICKHOUSE_LOCAL -q "SELECT map(toUInt8(number + 1), 'abcdefghijklmnop') AS t FROM numbers(2) FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, IPv6), \`t.key_1\` IPv6')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.key_1\` IPv6, t Map(UInt8, IPv6)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.key_1\` IPv6')"
+
+echo "case-insensitive names with a dictionary of dates read as decimals"
+$CLICKHOUSE_LOCAL -q "SELECT toLowCardinality(toDate32('2024-01-02')) AS t FORMAT ArrowStream SETTINGS output_format_arrow_low_cardinality_as_dictionary = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Decimal64(0), t Decimal32(0)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
 rm -f "$file"
