@@ -258,8 +258,8 @@ public:
             static constexpr size_t max_k = 100000;
 
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
-            std::vector<int> directions;            /// per-column ORDER BY directions
-            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            VectorWithMemoryTracking<int> directions;       /// per-column ORDER BY directions
+            VectorWithMemoryTracking<int> nulls_directions; /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
