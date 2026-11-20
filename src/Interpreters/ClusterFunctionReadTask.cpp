@@ -32,7 +32,15 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
 
     if (object->data_lake_metadata.has_value())
+    {
         data_lake_metadata = object->data_lake_metadata.value();
+        /// These fields are not sent to replicas, so the objects that have them must be read locally.
+        if (data_lake_metadata.selected_rows || data_lake_metadata.additional_file_columns)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Object {} has selected rows or additional file columns, which cannot be sent to a replica",
+                object->getPath());
+    }
 
 #if USE_AVRO
     if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
