@@ -5733,7 +5733,7 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
 
     /// Every range is installed as it is, so it must lie within its part. A part this replica does not have
     /// is reported where the marks are matched to the local parts.
-    std::unordered_map<String, size_t> marks_count_by_part;
+    UnorderedMapWithMemoryTracking<String, size_t> marks_count_by_part;
     if (prepared_parts)
         for (const auto & part : *prepared_parts)
             marks_count_by_part.emplace(part.data_part->info.getPartNameV1(), part.data_part->index_granularity->getMarksCountWithoutFinal());
@@ -5777,7 +5777,7 @@ bool ReadFromMergeTree::pinPartsToReceivedMarks()
     /// one part several times, and the primary-key-range layers can share a boundary granule, so the
     /// ranges of a part are merged. `MarkRange::operator<` rejects intersecting ranges, so they are
     /// sorted by their beginning.
-    std::unordered_map<String, MarkRanges> received_ranges;
+    UnorderedMapWithMemoryTracking<String, MarkRanges> received_ranges;
     for (const auto & bucket : distributed_read_task_buckets)
         for (const auto & part_desc : bucket.marks)
         {
