@@ -25,8 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int VIOLATED_CONSTRAINT;
-    extern const int TYPE_MISMATCH;
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 namespace
@@ -162,25 +160,33 @@ const auto & getArguments(const FunctionNode * function)
     return function->getArguments().getNodes();
 }
 
+/// `accurateLess` and `accurateEquals` compare a `Field` with a `Field` of the same type, and two numbers of any types.
+/// A query also compares other pairs, like an `IPv4` and an `IPv6`, after a conversion that the graph does not do.
+bool canCompare(const Field & lhs, const Field & rhs)
+{
+    auto is_number = [](Field::Types::Which type)
+    {
+        switch (type)
+        {
+            case Field::Types::Bool:
+            case Field::Types::UInt64:
+            case Field::Types::Int64:
+            case Field::Types::Float64:
+            case Field::Types::UInt128:
+            case Field::Types::Int128:
+            case Field::Types::UInt256:
+            case Field::Types::Int256:
+                return true;
+            default:
+                return Field::isDecimal(type);
+        }
+    };
+    return lhs.getType() == rhs.getType() || (is_number(lhs.getType()) && is_number(rhs.getType()));
+}
+
 bool less(const Field & lhs, const Field & rhs)
 {
-    try
-    {
-        return accurateLess(lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
+    return accurateLess(lhs, rhs);
 }
 
 bool greater(const Field & lhs, const Field & rhs)
@@ -190,23 +196,7 @@ bool greater(const Field & lhs, const Field & rhs)
 
 bool equals(const Field & lhs, const Field & rhs)
 {
-    try
-    {
-        return accurateEquals(lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
+    return accurateEquals(lhs, rhs);
 }
 
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
@@ -451,7 +441,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
             const auto left_bound = getConstLowerBound(left);
             const auto right_bound = getConstUpperBound(right);
 
-            if (left_bound && right_bound)
+            if (left_bound && right_bound && canCompare(left_bound->first, right_bound->first))
             {
                 if (greater(left_bound->first, right_bound->first))
                     result = ComparisonGraphCompareResult::GREATER;
@@ -464,7 +454,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
             const auto left_bound = getConstUpperBound(left);
             const auto right_bound = getConstLowerBound(right);
 
-            if (left_bound && right_bound)
+            if (left_bound && right_bound && canCompare(left_bound->first, right_bound->first))
             {
                 if (less(left_bound->first, right_bound->first))
                     result = ComparisonGraphCompareResult::LESS;
@@ -848,7 +838,7 @@ typename ComparisonGraph<Node>::Graph ComparisonGraph<Node>::buildGraphFromNodes
                 const auto right = getConstantValue(result.vertices[u].getConstant());
 
                 /// Only GREATER. Equal constant fields = equal literals so it was already considered above.
-                if (greater(left, right))
+                if (canCompare(left, right) && greater(left, right))
                     result.edges[v].push_back({Graph::Edge::GREATER, u});
             }
         }
@@ -908,17 +898,20 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph<Node>::bui
 
         if (graph.vertices[to].hasConstant())
         {
+            /// Each bound holds, so a bound that cannot be compared with the current one does not replace it.
             if (lower[from] == -1
-                || greater(get_value(to), get_value(lower[from]))
-                || (equals(get_value(to), get_value(lower[from])) && path == Path::GREATER))
+                || (canCompare(get_value(to), get_value(lower[from]))
+                    && (greater(get_value(to), get_value(lower[from]))
+                        || (equals(get_value(to), get_value(lower[from])) && path == Path::GREATER))))
                 lower[from] = to;
         }
 
         if (graph.vertices[from].hasConstant())
         {
             if (upper[to] == -1
-                || less(get_value(from), get_value(upper[to]))
-                || (equals(get_value(from), get_value(upper[to])) && path == Path::GREATER))
+                || (canCompare(get_value(from), get_value(upper[to]))
+                    && (less(get_value(from), get_value(upper[to]))
+                        || (equals(get_value(from), get_value(upper[to])) && path == Path::GREATER))))
                 upper[to] = from;
         }
     }
