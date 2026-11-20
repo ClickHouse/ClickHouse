@@ -12,6 +12,7 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <memory>
@@ -101,6 +102,9 @@ public:
     /// Breaks every connection with `ABORTED` and joins the thread; `open` throws afterwards.
     void shutdown();
 
+    /// Exposed for tests.
+    [[nodiscard]] UInt64 getTurnCount() const { return turn; }
+
     /// The state of a connection, shared by the loop and its `WorkerControlConnection`.
     class Connection;
     using ConnectionPtr = std::shared_ptr<Connection>;
@@ -151,7 +155,7 @@ private:
     Epoll epoll{EpollNesting::Leaf};
     std::unordered_map<int, ConnectionPtr> connections;
     /// Counts the turns, each of which gives every connection a budget of bytes to read and to write.
-    UInt64 turn = 0;
+    std::atomic<UInt64> turn = 0;
 };
 
 /// The owner's handle of a control connection. The requests are serialized on the calling thread, a stage plan of a

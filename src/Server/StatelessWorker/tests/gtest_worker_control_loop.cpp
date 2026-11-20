@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 
 namespace ProfileEvents
 {
@@ -261,6 +262,9 @@ public:
     bool closedByInitiator() { return in.eof(); }
 
     void setReceiveTimeout(std::chrono::seconds timeout) { socket.setReceiveTimeout(Poco::Timespan(timeout.count(), 0)); }
+
+    /// Sends one byte of TCP urgent data.
+    void sendUrgent(char byte) { socket.sendUrgent(static_cast<unsigned char>(byte)); }
 
     void close()
     {
@@ -588,6 +592,26 @@ TEST(WorkerControlLoop, ErrorForAPingStaysInTheLoop)
     EXPECT_EQ(peer->receiveSkippingPings<CancelTasks>().request_id, request_id);
     peer->send(CancelTasksReply{.request_id = request_id});
     EXPECT_EQ(handler.expect(Event::Kind::CancelTasksReply).request_id, request_id);
+}
+
+TEST(WorkerControlLoop, UrgentDataBreaksTheConnection)
+{
+    FakeWorker fake_worker;
+    WorkerControlLoop loop(withoutPings());
+    RecordingHandler handler;
+    auto connection = loop.open(makeParams(fake_worker.port(), "q1"), handler);
+    auto peer = fake_worker.accept();
+    peer->acceptHello();
+    handler.expect(Event::Kind::HelloAccepted);
+
+    const UInt64 turns_before = loop.getTurnCount();
+    peer->sendUrgent('u');
+    /// An idle loop turns at its 100 ms tick.
+    std::this_thread::sleep_for(1s);
+    EXPECT_LT(loop.getTurnCount() - turns_before, 100u);
+    const Event broken = handler.expect(Event::Kind::Broken, 100ms);
+    EXPECT_EQ(broken.code, ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+    EXPECT_TRUE(broken.message.contains("urgent data")) << broken.message;
 }
 
 TEST(WorkerControlLoop, LargeStartTasksIsWrittenWhileRepliesAreRead)

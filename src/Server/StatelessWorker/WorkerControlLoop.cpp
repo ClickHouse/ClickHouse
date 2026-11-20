@@ -509,6 +509,9 @@ void WorkerControlLoop::handleEvents(const ConnectionPtr & connection, uint32_t 
     ThreadGroupSwitcher switcher(connection->params.thread_group, ThreadName::WORKER_CONTROL_LOOP);
     try
     {
+        /// `Epoll` registers `EPOLLPRI`, which stays raised until the urgent byte is read; a worker sends none.
+        if (events & EPOLLPRI)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "the worker sent TCP urgent data");
         refreshBudgets(*connection, turn);
         if (connection->state == State::Connecting)
             completeConnect(*connection, events);
