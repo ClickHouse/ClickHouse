@@ -24,7 +24,7 @@ struct GenerateRandomOptions
     bool fuzzy = false;
 
     /// `null_ratio` expressed as a threshold out of 65536, the resolution of a null decision.
-    UInt32 nullThreshold() const;
+    [[nodiscard]] UInt32 nullThreshold() const;
 };
 
 ColumnPtr fillColumnWithRandomData(
@@ -58,6 +58,7 @@ public:
         size_t num_streams) override;
 
     bool supportsTransactions() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// `JSON`, `Dynamic` and every type containing them are generated as well.
     bool supportsColumnsWithDynamicStructure() const override { return true; }

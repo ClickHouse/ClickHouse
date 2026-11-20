@@ -7,10 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
 
-/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
-#if defined(__x86_64__) || defined(__i386__)
-#include <immintrin.h>
-#endif
 #include <usearch/index_dense.hpp>
 
 namespace DB
@@ -61,7 +57,7 @@ public:
 
         std::vector<USearchIndex::stats_t> level_stats; /// for debugging, excluded from getStatistics()
 
-        String toString() const;
+        [[nodiscard]] String toString() const;
     };
 
     Statistics getStatistics() const;
@@ -92,9 +88,9 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !index || index->size() == 0; }
+    [[nodiscard]] bool empty() const override { return !index || index->size() == 0; }
 
-    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
+    [[nodiscard]] size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
 
     const String index_name;
     const unum::usearch::metric_kind_t metric_kind;
@@ -125,7 +121,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 
     ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
-    bool empty() const override { return !index || index->size() == 0; }
+    [[nodiscard]] bool empty() const override { return !index || index->size() == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
@@ -150,10 +146,10 @@ public:
 
     ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
-    bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
-    std::string getDescription() const override { return ""; }
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    [[nodiscard]] std::string getDescription() const override { return ""; }
 
 private:
     std::optional<VectorSearchParameters> parameters;
@@ -179,11 +175,11 @@ public:
 
     ~MergeTreeIndexVectorSimilarity() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
-    bool isVectorSimilarityIndex() const override { return true; }
+    [[nodiscard]] bool isVectorSimilarityIndex() const override { return true; }
 
 private:
     const UInt64 dimensions;

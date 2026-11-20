@@ -127,7 +127,7 @@ void TimerDescriptor::drain() const
 
     /// Due to a bug in Linux Kernel, reading from timerfd in non-blocking mode can be still blocking.
     /// Avoid it with polling.
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     epoll.add(timer_fd);
     epoll_event event{};
     event.data.fd = -1;

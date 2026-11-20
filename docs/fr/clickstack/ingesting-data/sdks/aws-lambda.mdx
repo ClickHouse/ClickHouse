@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observabilité', 'aws-lambda', 'lambda-layers']
 ---
 
-**Ce guide intègre :**
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✅ Métriques</td>
-      <td className="pe-2">✅ Traces</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## Installer les couches Lambda OpenTelemetry
-</div>
+## Installer les couches Lambda OpenTelemetry {#installing-the-otel-lambda-layers}
 
 Le projet OpenTelemetry fournit des couches Lambda distinctes pour :
 
 1. Instrumenter automatiquement le code de votre fonction Lambda avec l’auto-instrumentation OpenTelemetry.
 2. Transférer les logs, métriques et traces collectés vers ClickStack.
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### Ajout de la couche d’auto-instrumentation spécifique au langage
-</div>
+### Ajout de la couche d’auto-instrumentation spécifique au langage {#adding-language-specific-auto-instrumentation}
 
 Les couches Lambda d’auto-instrumentation spécifiques au langage instrumentent automatiquement le code de votre fonction Lambda avec le paquet d’auto-instrumentation OpenTelemetry adapté au langage concerné.
 
@@ -110,16 +98,14 @@ Si votre fonction Lambda est déjà instrumentée avec un SDK OpenTelemetry, vou
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### Installation de la couche Lambda du collector OpenTelemetry
-</div>
+### Installation de la couche Lambda du collector OpenTelemetry {#installing-the-otel-collector-layer}
 
 La couche Lambda du collector vous permet d’acheminer les logs, les métriques et les traces de votre fonction Lambda vers ClickStack sans allonger les temps de réponse à cause de la latence de l’exporter.
 
-**Pour installer la couche du collector** :
+**Pour installer la couche du collector** :
 
 1. Dans la section Layers, cliquez sur &quot;Add a layer&quot;
-2. Sélectionnez &quot;specify an ARN&quot; et choisissez l’ARN approprié selon l’architecture, en veillant à remplacer `<region>` par votre région (par ex. `us-east-2`) :
+2. Sélectionnez &quot;specify an ARN&quot; et choisissez l’ARN approprié selon l’architecture, en veillant à remplacer `<region>` par votre région (par ex. `us-east-2`) :
 
 <Tabs>
   <Tab title="x86_64">
@@ -135,7 +121,7 @@ La couche Lambda du collector vous permet d’acheminer les logs, les métriques
   </Tab>
 </Tabs>
 
-3. Ajoutez le fichier `collector.yaml` suivant à votre projet pour configurer le collector afin d’envoyer les données à ClickStack :
+3. Ajoutez le fichier `collector.yaml` suivant à votre projet pour configurer le collector afin d’envoyer les données à ClickStack :
 
 <Tabs>
   <Tab title="Managed ClickStack">
@@ -155,7 +141,7 @@ La couche Lambda du collector vous permet d’acheminer les logs, les métriques
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ La couche Lambda du collector vous permet d’acheminer les logs, les métriques
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -215,15 +201,13 @@ La couche Lambda du collector vous permet d’acheminer les logs, les métriques
   </Tab>
 </Tabs>
 
-4. Ajoutez la variable d’environnement suivante :
+4. Ajoutez la variable d’environnement suivante :
 
 ```shell
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## Vérification de l’installation
-</div>
+## Vérification de l’installation {#checking-the-installation}
 
 Après avoir déployé les couches, vous devriez maintenant voir dans HyperDX les traces automatiquement
 collectées depuis votre fonction Lambda. Les processeurs `decouple` et `batching`
@@ -231,28 +215,20 @@ peuvent introduire un délai dans la collecte de la télémétrie ; l’affichag
 retardé. Pour émettre des logs ou des métriques personnalisés, vous devrez instrumenter votre code à l’aide des
 OpenTelemetry SDKs spécifiques à votre langage.
 
-<div id="troubleshoting">
-  ## Dépannage
-</div>
+## Dépannage {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### L’instrumentation personnalisée n’envoie pas de données
-</div>
+### L’instrumentation personnalisée n’envoie pas de données {#custom-instrumentation-not-sending}
 
 Si vous ne voyez pas les traces que vous avez définies manuellement ni d’autres données de télémétrie, il se peut que vous
 utilisiez une version incompatible du paquet de l’API OpenTelemetry. Assurez-vous que la
 version de votre paquet de l’API OpenTelemetry est identique ou inférieure à celle
 incluse dans AWS Lambda.
 
-<div id="enabling-sdk-debug-logs">
-  ### Activer les logs de débogage du SDK
-</div>
+### Activer les logs de débogage du SDK {#enabling-sdk-debug-logs}
 
 Définissez la variable d’environnement `OTEL_LOG_LEVEL` sur `DEBUG` pour activer les logs de débogage du SDK OpenTelemetry. Cela permet de vérifier que la couche d’auto-instrumentation instrumente correctement votre application.
 
-<div id="enabling-collector-debug-logs">
-  ### Activer les logs de débogage du collector
-</div>
+### Activer les logs de débogage du collector {#enabling-collector-debug-logs}
 
 Pour résoudre les problèmes du collector, vous pouvez activer les logs de débogage en modifiant votre fichier de configuration du collector
 afin d’ajouter l’exporter `logging` et de définir le niveau de log de la télémétrie
@@ -274,7 +250,7 @@ sur `debug` pour activer une journalisation plus détaillée depuis la couche La
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -312,7 +288,7 @@ sur `debug` pour activer une journalisation plus détaillée depuis la couche La
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

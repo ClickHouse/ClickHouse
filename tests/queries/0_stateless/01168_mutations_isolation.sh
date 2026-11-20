@@ -58,7 +58,7 @@ tx 7 "begin transaction"
 tx 7 "select 7, n from mt order by n"
 tx 8                                            "begin transaction"
 tx_async 8                                      "alter table mt update n = 0 where 1" >/dev/null
-$CLICKHOUSE_CLIENT -q "kill mutation where database=currentDatabase() and mutation_id='mutation_15.txt' format Null" 2>&1| grep -Fv "probably it finished"
+$CLICKHOUSE_CLIENT -q "kill mutation where database=currentDatabase() and mutation_id='mutation_15.txt' format Null SETTINGS kill_throw_if_noop = false" 2>&1| grep -Fv "probably it finished"
 tx_sync 8                                            "rollback"
 tx 7 "optimize table mt final"
 tx 7 "select 8, n from mt order by n"

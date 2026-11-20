@@ -32,34 +32,39 @@ public:
         return std::make_shared<FunctionIdentityBase>(name, is_identity);
     }
 
-    String getName() const override { return function_name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// The argument is returned as it is.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override { return "(T) -> T"; }
 
     /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
     /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
     /// the declared result type while the passthrough column keeps it, yielding a type/column mismatch
     /// that later aborts during serialization (e.g. `WITH TOTALS` const key). Keep the type identical
-    /// to the column.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// to the column; this override stays authoritative on the type path, so the signature above is
+    /// documentation-only.
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
     /// such as `Geometry`, which would no longer match the passed-through column.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         return arguments.front().column;
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
     {
         return is_identity && canBeNativeType(result_type);
     }
@@ -86,10 +91,10 @@ public:
     FunctionIdentity() : FunctionIdentityBase("identity", true) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
 
-    /// Only used as the internal impl of mapKeys/mapValues (FunctionMapToArrayAdapter), whose
-    /// array-subcolumn convention deliberately strips nested LowCardinality. Restore the default
+    /// Used as the internal impl of passthrough map functions (FunctionMapToArrayAdapter), whose
+    /// array-returning convention deliberately strips nested LowCardinality. Restore the default
     /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 };
 
 
@@ -98,15 +103,23 @@ class FunctionActionName final : public FunctionIdentityBase
 public:
     FunctionActionName() : FunctionIdentityBase("__actionName", false) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
     /// Do not allow any argument to have type other than String
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Override the inherited signature: `__actionName` takes two String
+    /// arguments, not one. The base `(T) -> T` is wrong here (wrong arity),
+    /// and existing tests annotate non-String rejection as `BAD_ARGUMENTS`,
+    /// which the legacy `getReturnTypeImpl` below preserves. Returning an
+    /// empty string disables the declarative-signature framework, so the
+    /// manual override is fully authoritative.
+    [[nodiscard]] String getSignatureString() const override { return ""; }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (const auto & arg : arguments)
         {
@@ -115,7 +128,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase::getReturnTypeImpl(arguments);
+        return arguments.front();
     }
 };
 

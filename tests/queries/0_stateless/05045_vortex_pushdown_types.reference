@@ -1,0 +1,151 @@
+=== Date32 ===
+d = string literal:
+5
+5
+d != typed literal:
+995
+995
+d < / <= / > / >=:
+155	155	235	240
+155	155	235	240
+d range with min/max:
+155	2020-03-01	2020-03-31
+155	2020-03-01	2020-03-31
+=== DateTime64 ===
+dt0 (UTC, scale 0) range:
+700
+700
+dt0 equality:
+1
+1
+dt3 (Asia/Istanbul, scale 3) range:
+101
+101
+dt3 equality on a string literal:
+1
+1
+=== Bool ===
+b = true:
+500
+500
+b = false:
+500
+500
+b != true:
+500
+500
+bare b:
+500
+500
+NOT b:
+500
+500
+Bool header over a U8 file column (not pushed, values above 1 clamp):
+4
+4
+=== Signed and unsigned integers ===
+negative Int32 bound:
+10	-500	-491
+10	-500	-491
+UInt64 against a negative bound (never matches):
+0
+0
+UInt32 header over a U64 file column (not pushed):
+1
+1
+=== Nullable ===
+nb = value:
+1
+1
+nb != value:
+665
+665
+nb IS NULL:
+334
+334
+nb IS NOT NULL:
+666
+666
+=== IN ===
+IN:
+3
+3
+NOT IN:
+997
+997
+IN with a NULL element:
+1
+1
+NOT IN with a NULL element:
+665
+665
+IN over the pushdown size cap (not pushed):
+65
+65
+collapsing tuple NOT IN (must keep every row):
+1000
+1000
+tuple IN (not pushed):
+1
+1
+=== Strings ===
+LIKE with a perfect prefix:
+11
+11
+LIKE without wildcards (an equality):
+1
+1
+LIKE with an imperfect prefix:
+11
+11
+NOT LIKE with a perfect prefix:
+889
+889
+LIKE by suffix (not pushed):
+10
+10
+startsWith:
+11
+11
+LowCardinality equality:
+143
+143
+=== Floats ===
+Float64 range:
+2
+2
+Float32 with a non-representable bound (not pushed):
+875
+875
+NaN rows against a range:
+32
+32
+NaN rows against not-equals:
+999
+999
+=== Structural ===
+subcolumn predicate (not pushed):
+1
+1
+predicate on a column missing in the file:
+1000
+1000
+OR across types:
+510
+510
+AND with an untranslatable conjunct:
+45
+45
+NOT over an untranslatable subtree:
+500
+500
+always-false condition:
+0
+0
+=== Date over a U16 file column ===
+Date header, range:
+705
+705
+Date header, equality on a string literal:
+5
+5

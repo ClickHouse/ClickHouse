@@ -27,12 +27,15 @@ MATERIALIZED a + 3
 0
 -- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurse into the name hints
 1
--- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)
+-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)
+1
+-- a CREATE that would complete a chain of Remote databases referring to itself is rejected (prints 1 if the expected error is raised)
 1
 1
--- a chain of Remote databases that refers to itself terminates instead of recursing
+0
+-- an explicit ATTACH DATABASE is a user query and cannot bypass the cycle rejection (prints 1 if the expected error is raised)
 1
-1
+0
 -- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE
 1
 0

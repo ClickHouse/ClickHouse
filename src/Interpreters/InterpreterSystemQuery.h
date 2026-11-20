@@ -49,7 +49,7 @@ public:
 
     static bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
 
-    inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
+    [[clang::no_destroy]] inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
 
 private:
     ASTPtr query_ptr;
@@ -95,6 +95,7 @@ private:
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
     void flushObjectStorageQueue(ASTSystemQuery & query);
+    void resetFileLog(ASTSystemQuery & query);
     DatabasePtr
     restoreDatabaseFromKeeperPath(const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name);
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
@@ -104,11 +105,12 @@ private:
     std::vector<StoragePtr> getAccessibleStreamingStorages();
     void controlBackgroundActivity(const ASTSystemQuery & query);
 
-    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
 
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
+    void clearTimeSeriesCaches();
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

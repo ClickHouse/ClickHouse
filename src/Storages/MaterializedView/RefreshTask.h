@@ -101,10 +101,9 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
-        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
-        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to compensate, but this is easier.)
-        Int64 randomness = 0;
+        /// Not used by this version. Replicas running older versions read it as the shared
+        /// RANDOMIZE FOR offset, so it has to keep carrying a random value.
+        Int64 randomness_obsolete = 0;
 
         /// Whether any replica is executing a refresh right now.
         /// May be inaccurate if the replica that's executing refresh lost zookeeper connection for
@@ -113,7 +112,8 @@ public:
 
         std::chrono::sys_time<std::chrono::nanoseconds> last_success_end_time {};
 
-        /// State of views that this view DEPENDS ON, as of the start of last successful refresh.
+        /// State of views that this view DEPENDS ON, as of the start of last successful refresh,
+        /// or of the last attempt that used up all `refresh_retries`.
         /// Used for triggering dependent refresh: if the last_success_end_time stored here is less than
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
@@ -125,9 +125,7 @@ public:
         /// Znode version. Not serialized.
         int32_t version = -1;
 
-        void randomize(); // assigns `randomness`
-
-        String toString() const;
+        [[nodiscard]] String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
     };
 
@@ -241,7 +239,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; a pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; the number of pending `SYSTEM REFRESH VIEW`s made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -283,6 +281,9 @@ private:
         /// true so it never silently degrades into an uncoordinated local refresh (which would corrupt
         /// the replicated target table of a non-APPEND view in a Replicated database).
         bool unavailable = false;
+
+        /// ATTACH could not reach Keeper; `doScheduling` creates the missing znodes before its first read.
+        bool znodes_setup_pending = false;
 
         bool read_only = false;
         String path;
@@ -338,6 +339,12 @@ private:
         bool stop_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
+
+        /// This replica's RANDOMIZE FOR offset, and what it was drawn for.
+        /// Redrawn when last_completed_timeslot changes.
+        std::chrono::sys_seconds randomness_drawn_for_timeslot {};
+        Int64 randomness = 0;
+
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
         /// View Y: REFRESH AFTER 20 SECOND DEPENDS ON X.
@@ -443,6 +450,8 @@ private:
     ///    e.g. on SYSTEM REFRESH VIEW.
     std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, CoordinationZnode>
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
+    /// Whether the attempt recorded in `znode` used up the last of `refresh_retries`.
+    bool retriesExhausted(const CoordinationZnode & znode) const;
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
@@ -458,6 +467,9 @@ private:
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
+
+    /// Creates the coordination znodes of this replica unless its replica znode exists.
+    void createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const;
 
     /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
     static constexpr std::string_view request_znode_prefix = "requested-";

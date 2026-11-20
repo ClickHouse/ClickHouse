@@ -1,0 +1,10 @@
+<clickhouse>
+    <named_collections>
+        <es_simple>
+            <url>http://elasticsearch1:9200</url>
+            <index>simple</index>
+            <user>elastic</user>
+            <password>ClickHouse_Elasticsearch_P@ssw0rd</password>
+        </es_simple>
+    </named_collections>
+</clickhouse>

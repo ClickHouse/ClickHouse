@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IInputFormat.h>
 
 
@@ -40,10 +41,19 @@ public:
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        underlying->setMapColumnsReadByOneSide(by_keys, by_values);
+    }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
+    VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
+    bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override { return underlying->isJoinRuntimeFilterApplied(); }
+    bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
+    void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
