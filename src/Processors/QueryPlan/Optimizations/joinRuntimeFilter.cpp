@@ -3,8 +3,10 @@
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -215,6 +217,50 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
+/// A cast that keeps every value, or converts an integer to another integer type, which wraps around instead of throwing.
+static bool isCastThatCannotThrow(const ActionsDAG::Node & node)
+{
+    const auto & name = node.function_base->getName();
+    if ((name != "_CAST" && name != "CAST") || node.children.empty())
+        return false;
+
+    const auto & from = node.children.front()->result_type;
+    const auto & to = node.result_type;
+    if (canBeSafelyCast(from, to))
+        return true;
+
+    /// A NULL cannot be converted to a type that is not `Nullable`.
+    if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
+        return false;
+
+    return isInteger(removeNullable(removeLowCardinality(from))) && isInteger(removeNullable(removeLowCardinality(to)));
+}
+
+/// Whether the key can be computed on any row without throwing. Its runtime filter computes it below the steps that
+/// remove rows before the join, while the join computes it only on the rows it receives.
+static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
+{
+    return allReachableNodes({key}, [](const ActionsDAG::Node * node)
+    {
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        /// A function with a known constant result is not executed.
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
+            return true;
+
+        /// `IFunctionBase::canThrow` assumes that every cast and `tuple` can throw.
+        if (node->function_base->getName() == "tuple" || isCastThatCannotThrow(*node))
+            return true;
+
+        DataTypesWithConstInfo arguments;
+        arguments.reserve(node->children.size());
+        for (const auto * child : node->children)
+            arguments.push_back({child->result_type, child->column != nullptr, typeid_cast<const ColumnConst *>(child->column.get())});
+        return !node->function_base->canThrow(arguments);
+    });
+}
+
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
 /// identical across the two Auto-PR plan builds (single-replica and parallel-replicas), so their
 /// plans hash equally with no special-casing.
@@ -395,6 +441,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
+    /// For each key pair, whether its probe key can throw, in the order `preCalculateKeys` returns the keys. It is checked
+    /// as the query wrote it: the normalization that `preCalculateKeys` adds (`trimRight` of zero bytes, a cast to the
+    /// common type) cannot throw.
+    VectorWithMemoryTracking<bool> probe_key_can_throw;
+
     /// The runtime filter is built on the build (right) side and is addressed by name
     /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
     /// KEY column name occurs more than once in the build input header (e.g. a correlated subquery
@@ -419,9 +470,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// duplicated NON-key build column guarded by such a filter would needlessly disable the
             /// filter (which is only ever built on the real key).
             if (lhs.fromLeft() && rhs.fromRight())
+            {
                 build_key_names.insert(rhs.getColumnName());
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(lhs.getNode()));
+            }
             else if (lhs.fromRight() && rhs.fromLeft())
+            {
                 build_key_names.insert(lhs.getColumnName());
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(rhs.getNode()));
+            }
         }
 
         const auto & build_header = *build_filter_node->step->getOutputHeader();
@@ -471,6 +528,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    /// A key that can throw gets no runtime filter, see `canComputeKeyOnAnyRow`. The other keys still get theirs, the
+    /// filter is an over-approximation, but not for LEFT ANTI JOIN, whose `NOT IN` filter has to cover every key.
+    if (std::ranges::all_of(probe_key_can_throw, std::identity{})
+        || (check_left_does_not_contain && std::ranges::any_of(probe_key_can_throw, std::identity{})))
+        return false;
+
     /// Save original number of expression before extracting key DAGs
     const auto total_join_on_predicates_count = join_operator.expression.size();
 
@@ -479,9 +542,19 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         auto key_dags = join_step->preCalculateKeys(apply_filter_node->step->getOutputHeader(), build_filter_node->step->getOutputHeader());
         if (key_dags)
         {
-            auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
-            join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
-            join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
+            const auto & probe_keys = key_dags->first.keys;
+            const auto & build_keys = key_dags->second.keys;
+            if (probe_keys.size() != probe_key_can_throw.size() || build_keys.size() != probe_keys.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} join key pairs, got {} probe keys and {} build keys",
+                    probe_key_can_throw.size(), probe_keys.size(), build_keys.size());
+
+            for (size_t i = 0; i < probe_keys.size(); ++i)
+            {
+                if (probe_key_can_throw[i])
+                    continue;
+                join_keys_probe_side.emplace_back(probe_keys[i]->result_type, probe_keys[i]->result_name);
+                join_keys_build_side.emplace_back(build_keys[i]->result_type, build_keys[i]->result_name);
+            }
             if (!isPassthroughActions(key_dags->first.actions_dag))
                 makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
             if (!isPassthroughActions(key_dags->second.actions_dag))
