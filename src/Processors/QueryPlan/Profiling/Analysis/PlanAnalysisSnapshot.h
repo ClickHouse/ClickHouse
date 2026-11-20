@@ -1,7 +1,7 @@
 #pragma once
 
-#include <unordered_map>
-#include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <base/types.h>
@@ -21,13 +21,13 @@ struct PlanAnalysisSnapshot
 
     /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`. Each one carries
     /// the ids below it, so this is the shape of the plan as well as the means to analyse it.
-    std::unordered_map<String, StepAnalyzer> analyzers;
+    UnorderedMapWithMemoryTracking<String, StepAnalyzer> analyzers;
 
     static PlanAnalysisSnapshot capture(const PlanWalk & walk);
 
     /// Children before parents, so that a pass accumulating over a step's subtree -- the cost of a
     /// join's branch, the time of one -- finds its children already retired when it reaches it.
-    [[nodiscard]] std::vector<const StepAnalyzer *> stepsInPostOrder() const;
+    [[nodiscard]] VectorWithMemoryTracking<const StepAnalyzer *> stepsInPostOrder() const;
 
     [[nodiscard]] const StepAnalyzer * find(const String & step_id) const;
 };
