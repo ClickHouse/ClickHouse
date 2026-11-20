@@ -28,3 +28,19 @@ SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker
 SELECT countIf(explain ILIKE '%concatAssumeInjective%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nothing_key GROUP BY concatAssumeInjective(fs, 'x'));
 SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT fs FROM t_nothing_key GROUP BY fs ORDER BY concatAssumeInjective(fs, 'x'), fs DESC);
 DROP TABLE t_nothing_key;
+-- A typed NULL constant or a `Nullable` column keeps the result type, but every row where that
+-- argument is NULL still maps onto one NULL key, so the key must not be unwrapped either.
+DROP TABLE IF EXISTS t_nullable_arg_key;
+CREATE TABLE t_nullable_arg_key (a UInt8, n Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_nullable_arg_key VALUES (1, NULL), (1, NULL), (2, NULL), (3, NULL), (3, 7);
+SELECT concatAssumeInjective(a, NULL::Nullable(String)) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
+SELECT count() FROM (SELECT concatAssumeInjective(a, NULL::Nullable(String)) AS k FROM t_nullable_arg_key LIMIT 1 BY k);
+SELECT a FROM t_nullable_arg_key GROUP BY a ORDER BY concatAssumeInjective(a, NULL::Nullable(String)), a DESC;
+SELECT concatAssumeInjective(a, n) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
+SELECT concatAssumeInjective(a, toLowCardinality(n)) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
+SELECT count() FROM (SELECT concatAssumeInjective(a, n) AS k FROM t_nullable_arg_key LIMIT 1 BY k);
+SELECT partitionId(a, n) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
+-- A non-NULL `Nullable` constant or a lone `Nullable` argument cannot merge rows, so these keys are still unwrapped.
+SELECT countIf(explain ILIKE '%concatAssumeInjective%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY concatAssumeInjective(a, 'x'::Nullable(String)));
+SELECT countIf(explain ILIKE '%function_name: toString%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY toString(n));
+DROP TABLE t_nullable_arg_key;

@@ -34,6 +34,24 @@ bool FunctionToFunctionBaseAdaptor::isInjective(const ColumnsWithTypeAndName & s
                 return false;
     }
 
+    /// The default implementation for NULLs maps every value of the other arguments onto NULL
+    /// wherever one argument is NULL, so that argument must not sit next to one that varies.
+    if (function->useDefaultImplementationForNulls())
+    {
+        size_t non_constant_arguments = 0;
+        for (const auto & argument : sample_columns)
+            if (!argument.column || !isColumnConst(*argument.column))
+                ++non_constant_arguments;
+
+        for (const auto & argument : sample_columns)
+        {
+            bool is_constant = argument.column && isColumnConst(*argument.column);
+            bool can_be_null = is_constant ? argument.column->onlyNull() : isNullableOrLowCardinalityNullable(argument.type);
+            if (can_be_null && non_constant_arguments > (is_constant ? 0 : 1))
+                return false;
+        }
+    }
+
     return function->isInjective(sample_columns);
 }
 
