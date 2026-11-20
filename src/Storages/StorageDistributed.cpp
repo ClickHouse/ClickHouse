@@ -1146,15 +1146,27 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 /// At `Complete` a shard names its result columns by the projection names the query is written with, so a query that keeps
 /// its names before a column alias list is read under them; the planner renames the read's columns by position.
+/// The shard's result is matched by name, so the names are not used if two different columns share one.
 void useProjectionNamesBeforeOverride(const QueryTreeNodePtr & query_tree)
 {
     auto * query_node = query_tree->as<QueryNode>();
     if (!query_node || !query_node->hasProjectionNamesBeforeOverride())
         return;
 
+    const auto & projection_nodes = query_node->getProjection().getNodes();
+    std::unordered_map<std::string_view, size_t> name_to_first_position;
+    bool use_names = true;
+    for (size_t i = 0; use_names && i < projection_nodes.size(); ++i)
+    {
+        auto [it, inserted] = name_to_first_position.emplace(query_node->getProjectionNameBeforeOverride(i), i);
+        use_names = inserted
+            || projection_nodes[it->second]->isEqual(*projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
+    }
+
     auto projection_columns = query_node->getProjectionColumns();
-    for (size_t i = 0; i < projection_columns.size(); ++i)
-        projection_columns[i].name = query_node->getProjectionNameBeforeOverride(i);
+    if (use_names)
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+            projection_columns[i].name = query_node->getProjectionNameBeforeOverride(i);
 
     query_node->setProjectionAliasesToOverride({});
     query_node->resolveProjectionColumns(std::move(projection_columns));
