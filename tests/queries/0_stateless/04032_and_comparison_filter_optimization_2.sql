@@ -403,4 +403,14 @@ SETTINGS optimize_redundant_comparisons = 1;
 SELECT count() FROM numbers(10) WHERE number <= 3 AND number >= 1 AND number != 3 SETTINGS optimize_redundant_comparisons = 0;
 SELECT count() FROM numbers(10) WHERE number <= 3 AND number >= 1 AND number != 3 SETTINGS optimize_redundant_comparisons = 1;
 
+-- =====================================================================
+-- Section 23: derivation from a conjunct nested two levels deep
+-- =====================================================================
+
+-- `x < 3` is derived at the top level from the depth-2 `x < y` and the top-level `y < 3`.
+SELECT 'derived_from_depth_two';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT number AS x, number * 2 AS y, number * 3 AS z FROM numbers(10)) WHERE ((x < y AND z > 0) AND z < 5) AND y < 3 SETTINGS optimize_and_compare_chain = 1) WHERE explain ILIKE '%function_name: indexHint%';
+SELECT count() FROM (SELECT number AS x, number * 2 AS y, number * 3 AS z FROM numbers(10)) WHERE ((x < y AND z > 0) AND z < 5) AND y < 3 SETTINGS optimize_and_compare_chain = 0;
+SELECT count() FROM (SELECT number AS x, number * 2 AS y, number * 3 AS z FROM numbers(10)) WHERE ((x < y AND z > 0) AND z < 5) AND y < 3 SETTINGS optimize_and_compare_chain = 1;
+
 DROP TABLE IF EXISTS 04032_t;
