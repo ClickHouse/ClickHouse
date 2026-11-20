@@ -38,6 +38,14 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05816_json.jsonl', 'JSONEachRow
 CREATE TABLE t_dynamic_subcolumn (j JSON, renamed String) AS file(currentDatabase() || '_05816_json.jsonl', 'JSONEachRow');
 SELECT j.a FROM t_dynamic_subcolumn;
 
+SELECT '--- fewer given columns than a format that cannot read a subset of its columns has';
+CREATE TABLE t_fewer (id UInt32) AS file(currentDatabase() || '_05816.csv', 'CSV');
+SELECT _row_number, _file LIKE '%_05816.csv' FROM t_fewer ORDER BY _row_number SETTINGS optimize_count_from_files = 0;
+
+SELECT '--- fewer given columns than a format that can read a subset of its columns has';
+CREATE TABLE t_fewer_subset (renamed String) AS file(currentDatabase() || '_05816.jsonl', 'JSONEachRow');
+SELECT renamed = '', _row_number FROM t_fewer_subset;
+
 SELECT '--- url';
 CREATE TABLE t_url (x UInt8, y String) AS url('http://127.0.0.1:8123/?query=SELECT+1,%27a%27+FORMAT+CSV', 'CSV');
 SELECT * FROM t_url;
@@ -52,4 +60,6 @@ DROP TABLE t_partial;
 DROP TABLE t_materialized;
 DROP TABLE t_subcolumn;
 DROP TABLE t_dynamic_subcolumn;
+DROP TABLE t_fewer;
+DROP TABLE t_fewer_subset;
 DROP TABLE t_url;

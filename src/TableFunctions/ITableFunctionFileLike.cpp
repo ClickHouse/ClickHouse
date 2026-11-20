@@ -101,10 +101,13 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     /// reach none of the inferred columns, as for `id` and `s` of `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
     /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
     /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
-    /// storage does not support the other kinds of columns. A table that can read some of the inferred columns keeps reading them
-    /// by name: a query names an ordinary or a `MATERIALIZED` stored column or a subcolumn of one, also a dynamic one, and the
-    /// storage has that name as a column or a subcolumn, such as `nested.value` of `nested Tuple(value UInt32)` or `j.a` of
-    /// `j JSON` for a `JSONEachRow` file with the key `nested.value` or `j.a`.
+    /// storage does not support the other kinds of columns. It is created so only when it can parse the data with them: the
+    /// format can read a subset of its columns, or there are as many of them as inferred columns. Otherwise, as for
+    /// `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the data
+    /// with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
+    /// inferred columns keeps reading them by name: a query names an ordinary or a `MATERIALIZED` stored column or a
+    /// subcolumn of one, also a dynamic one, and the storage has that name as a column or a subcolumn, such as `nested.value`
+    /// of `nested Tuple(value UInt32)` or `j.a` of `j JSON` for a `JSONEachRow` file with the key `nested.value` or `j.a`.
     if (columns.empty() && !cached_columns.empty())
     {
         const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
@@ -138,7 +141,13 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
             stored_columns.add(column);
         }
 
-        if (has_other_column && !has_inferred_column)
+        const auto can_parse_data_with_stored_columns = [&]
+        {
+            if (stored_columns.size() == metadata->columns.getOrdinary().size())
+                return true;
+            return format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
+        };
+        if (has_other_column && !has_inferred_column && can_parse_data_with_stored_columns())
             storage = getStorage(filename, format, stored_columns, context, table_name, compression_method, is_insert_query);
     }
 

@@ -21,6 +21,11 @@ world	2
 42
 --- a dynamic subcolumn among the inferred columns
 7
+--- fewer given columns than a format that cannot read a subset of its columns has
+0	1
+1	1
+--- fewer given columns than a format that can read a subset of its columns has
+1	0
 --- url
 1	a
 1	a
