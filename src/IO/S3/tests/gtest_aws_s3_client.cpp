@@ -21,6 +21,9 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
@@ -28,6 +31,7 @@
 #include <silk/fibers/future.h>
 #endif
 
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -41,6 +45,7 @@
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
+#include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <aws/core/http/URI.h>
 #include <aws/core/internal/AWSHttpResourceClient.h>
 
@@ -2562,54 +2567,95 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
     EXPECT_EQ(requests_without_token, 0);
 }
 
+namespace
+{
+
+void writeProfileCredentials(const std::filesystem::path & file, std::string_view access_key)
+{
+    std::ofstream out(file);
+    out << "[default]\naws_access_key_id = " << access_key << "\naws_secret_access_key = profile_secret_key\n";
+}
+
+/// Leaves a profile file in a temporary directory the only source of credentials of `S3CredentialsProviderChain`.
+class ProfileFileOnlyEnvironment
+{
+public:
+    ProfileFileOnlyEnvironment()
+    {
+        std::filesystem::remove_all(directory);
+        std::filesystem::create_directories(directory);
+        /// The SDK caches the config and credentials files once per process, so they are read again from the files of
+        /// this environment here, and from the original ones when the variables are restored.
+        reloadCachedProfileFiles();
+    }
+
+    ~ProfileFileOnlyEnvironment() { std::filesystem::remove_all(directory); }
+
+    std::unique_ptr<DB::S3::S3CredentialsProviderChain> createChain() const
+    {
+        return std::make_unique<DB::S3::S3CredentialsProviderChain>(
+            client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+    }
+
+    const std::filesystem::path directory = std::filesystem::temp_directory_path()
+        / fmt::format("clickhouse_profile_credentials_for_gtest_{}", ::getpid());
+    const std::filesystem::path credentials_file = directory / "credentials";
+
+private:
+    static void reloadCachedProfileFiles()
+    {
+        Aws::Config::ReloadCachedConfigFile();
+        Aws::Config::ReloadCachedCredentialsFile();
+    }
+
+    /// Declared before the variables, so it runs after they are restored.
+    struct ReloadOnDestruction
+    {
+        ~ReloadOnDestruction() { reloadCachedProfileFiles(); }
+    } reload_on_destruction;
+
+    ScopedEnvVarForAwsS3ClientTests credentials_file_env{"AWS_SHARED_CREDENTIALS_FILE", credentials_file.string()};
+    ScopedEnvVarForAwsS3ClientTests config_file_env{"AWS_CONFIG_FILE", (directory / "config").string()};
+    ScopedEnvVarForAwsS3ClientTests imds_disabled_env{"AWS_EC2_METADATA_DISABLED", "true"};
+    ScopedEnvVarForAwsS3ClientTests access_key_env{"AWS_ACCESS_KEY_ID", ""};
+    ScopedEnvVarForAwsS3ClientTests secret_key_env{"AWS_SECRET_ACCESS_KEY", ""};
+    ScopedEnvVarForAwsS3ClientTests profile_env{"AWS_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests default_profile_env{"AWS_DEFAULT_PROFILE", ""};
+    ScopedEnvVarForAwsS3ClientTests role_env{"AWS_ROLE_ARN", ""};
+    ScopedEnvVarForAwsS3ClientTests token_file_env{"AWS_WEB_IDENTITY_TOKEN_FILE", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env{"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", ""};
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env{"AWS_CONTAINER_CREDENTIALS_FULL_URI", ""};
+
+    const DB::S3::PocoHTTPClientConfiguration client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const DB::S3::CredentialsConfiguration credentials_configuration{
+        .use_environment_credentials = true,
+        .use_insecure_imds_request = false,
+        .forbid_implicit_credentials = false,
+    };
+};
+
+}
+
 /// The local copy of the SDK profile file provider, as `S3CredentialsProviderChain` uses it, on a thread and in a fiber:
 /// a missing file gives no credentials, and a file created later is read after an invalidation, not before the refresh
 /// interval of the SDK has passed. SSO refresh is not covered: it needs an SSO portal.
 TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
 {
     initializeFiberSchedulerForTests();
-
-    const std::filesystem::path directory = std::filesystem::temp_directory_path() / "clickhouse_profile_credentials_for_gtest";
-    std::filesystem::remove_all(directory);
-    std::filesystem::create_directories(directory);
-    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
-    const std::filesystem::path credentials_file = directory / "credentials";
-
-    /// Only the profile file can provide credentials to the chain.
-    ScopedEnvVarForAwsS3ClientTests credentials_file_env("AWS_SHARED_CREDENTIALS_FILE", credentials_file.string());
-    ScopedEnvVarForAwsS3ClientTests config_file_env("AWS_CONFIG_FILE", (directory / "config").string());
-    ScopedEnvVarForAwsS3ClientTests imds_disabled_env("AWS_EC2_METADATA_DISABLED", "true");
-    ScopedEnvVarForAwsS3ClientTests access_key_env("AWS_ACCESS_KEY_ID", "");
-    ScopedEnvVarForAwsS3ClientTests secret_key_env("AWS_SECRET_ACCESS_KEY", "");
-    ScopedEnvVarForAwsS3ClientTests profile_env("AWS_PROFILE", "");
-    ScopedEnvVarForAwsS3ClientTests default_profile_env("AWS_DEFAULT_PROFILE", "");
-    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "");
-    ScopedEnvVarForAwsS3ClientTests token_file_env("AWS_WEB_IDENTITY_TOKEN_FILE", "");
-    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "");
-    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", "");
-
-    const auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
-    const DB::S3::CredentialsConfiguration credentials_configuration{
-        .use_environment_credentials = true,
-        .use_insecure_imds_request = false,
-        .forbid_implicit_credentials = false,
-    };
+    const ProfileFileOnlyEnvironment environment;
 
     const auto check_profile_file_credentials = [&](std::string_view access_key)
     {
-        std::filesystem::remove(credentials_file);
-        DB::S3::S3CredentialsProviderChain chain(client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
-        EXPECT_TRUE(chain.GetAWSCredentials().IsEmpty());
+        std::filesystem::remove(environment.credentials_file);
+        auto chain = environment.createChain();
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
 
-        {
-            std::ofstream out(credentials_file);
-            out << "[default]\naws_access_key_id = " << access_key << "\naws_secret_access_key = profile_secret_key\n";
-        }
+        writeProfileCredentials(environment.credentials_file, access_key);
         /// The missing file was loaded just now, so the next load waits for the refresh interval.
-        EXPECT_TRUE(chain.GetAWSCredentials().IsEmpty());
+        EXPECT_TRUE(chain->GetAWSCredentials().IsEmpty());
 
-        chain.SetNeedRefresh();
-        const auto credentials = chain.GetAWSCredentials();
+        chain->SetNeedRefresh();
+        const auto credentials = chain->GetAWSCredentials();
         EXPECT_EQ(credentials.GetAWSAccessKeyId(), access_key);
         EXPECT_EQ(credentials.GetAWSSecretKey(), "profile_secret_key");
     };
@@ -2624,6 +2670,57 @@ TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
         return 0;
     }), 0);
     EXPECT_TRUE(inside_fiber);
+}
+
+/// An invalidation that starts while the profile file provider reads the file is not cleared when that read completes:
+/// `SetNeedRefresh` waits for the refresh, so the next lookup reads the file again. The file is a FIFO, so the refresh
+/// stays in the read until the test writes the credentials.
+TEST(IOTestAwsS3Client, ProfileFileInvalidationDuringRefreshIsKept)
+{
+    initializeFiberSchedulerForTests();
+    const ProfileFileOnlyEnvironment environment;
+    const auto & credentials_file = environment.credentials_file;
+
+    writeProfileCredentials(credentials_file, "first_profile_access_key");
+    auto chain = environment.createChain();
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "first_profile_access_key");
+
+    std::filesystem::remove(credentials_file);
+    ASSERT_EQ(::mkfifo(credentials_file.c_str(), 0600), 0) << errnoToString();
+    chain->SetNeedRefresh();
+    {
+        Poco::Event invalidation_started(/* autoReset = */ false);
+        std::array<silk::FiberFuture, 2> fibers;
+        size_t spawned = 0;
+        /// The fibers use the locals of this scope, so they finish before it ends. The writer below is destroyed first,
+        /// which ends the read of the refresh.
+        SCOPE_EXIT({
+            for (size_t i = 0; i < spawned; ++i)
+                EXPECT_EQ(fibers[i].wait(), 0);
+        });
+
+        ASSERT_EQ(Silk::spawn([&] { chain->GetAWSCredentials(); return 0; }, fibers[spawned]), 0);
+        ++spawned;
+        /// Opening a FIFO for writing waits for its reader, so the refresh is in the read once this returns.
+        std::ofstream writer(credentials_file);
+
+        ASSERT_EQ(Silk::spawn([&]
+        {
+            invalidation_started.set();
+            chain->SetNeedRefresh();
+            return 0;
+        }, fibers[spawned]), 0);
+        ++spawned;
+        /// As in `AssumeRoleInvalidationDuringRefreshIsKept`, this can pass without the wait in `SetNeedRefresh` only if
+        /// that fiber is suspended for longer than the read takes; it cannot fail with it.
+        ASSERT_TRUE(invalidation_started.tryWait(60'000)) << "The invalidation did not start within 60 seconds";
+
+        writer << "[default]\naws_access_key_id = second_profile_access_key\naws_secret_access_key = profile_secret_key\n";
+    }
+
+    std::filesystem::remove(credentials_file);
+    writeProfileCredentials(credentials_file, "third_profile_access_key");
+    EXPECT_EQ(chain->GetAWSCredentials().GetAWSAccessKeyId(), "third_profile_access_key");
 }
 
 /// A failed IMDS load in a fiber gives no credentials instead of an error, because IMDS is a member of the credentials
