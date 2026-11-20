@@ -4710,7 +4710,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     expanded_keys.reserve(key_list.size());
     for (auto const & key : key_list)
     {
-        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        const auto * function = key->as<FunctionNode>();
+        /// a `tuple` that the query does not write is folded into a constant when its arguments are constants
+        if (const auto * constant = key->as<ConstantNode>(); constant && constant->hasSourceExpression() && !constant->getSourceExpression()->hasOriginalAST())
+            function = constant->getSourceExpression()->as<FunctionNode>();
+
+        if (function != nullptr && function->getFunctionName() == "tuple")
         {
             std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
         }
