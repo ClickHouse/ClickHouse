@@ -1144,6 +1144,27 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
+/// At `Complete` a shard names its result columns by the projection aliases of the query it receives, and a query that
+/// keeps its projection names before a column alias list is written with those names, so send it as a subquery with the list.
+QueryTreeNodePtr wrapQueryWithColumnAliasList(QueryTreeNodePtr query_tree)
+{
+    auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasProjectionNamesBeforeOverride())
+        return query_tree;
+
+    query_node->setIsSubquery(true);
+    if (!query_tree->hasAlias())
+        query_tree->setAlias("__subquery_with_column_aliases");
+
+    auto projection_columns = query_node->getProjectionColumns();
+    auto wrapper = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
+    for (const auto & column : projection_columns)
+        wrapper->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, std::static_pointer_cast<ITableExpressionNode>(query_tree)));
+    wrapper->getJoinTreeNode() = std::move(query_tree);
+    wrapper->resolveProjectionColumns(std::move(projection_columns));
+    return wrapper;
+}
+
 }
 
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
@@ -1184,6 +1205,8 @@ void StorageDistributed::read(
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
+        if (processed_stage == QueryProcessingStage::Complete)
+            query_tree_distributed = wrapQueryWithColumnAliasList(std::move(query_tree_distributed));
         Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
