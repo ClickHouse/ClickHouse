@@ -7,8 +7,6 @@ keywords: ['分区键']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   **一种数据管理技术**
 
@@ -34,7 +32,15 @@ PARTITION BY toStartOfMonth(date)
 
 每当向表中插入一组行时，ClickHouse 不会像[这里](/zh/concepts/core-concepts/parts)描述的那样，创建 (至少 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)) 包含所有已插入行的单个数据分区片段，而是会针对这些插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
-<Image img="/images/bestpractices/partitions.webp" size="lg" alt="分区" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![分区](/images/bestpractices/partitions.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中示意的 4 行示例插入数据拆分开来。然后，对于识别出的每个分区，这些行都会像[往常一样](/zh/concepts/core-concepts/parts)经过若干连续步骤进行处理 (① 排序，② 拆分为列，③ 压缩，④ 写入磁盘) 。
 
@@ -42,7 +48,15 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 
 启用分区后，ClickHouse 只会在分区内[合并](/zh/concepts/core-concepts/merges)数据分区片段，而不会跨分区合并。下图以上述示例表对此进行了说明：
 
-<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="分区" />
+<div className="ch-image-md">
+
+<Frame>
+
+![分区](/images/bestpractices/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <div id="applications-of-partitioning">
   ## 分区的应用
