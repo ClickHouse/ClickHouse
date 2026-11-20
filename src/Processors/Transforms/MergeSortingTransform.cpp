@@ -122,7 +122,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
+        && sum_bytes_in_blocks - bytes_kept_by_remerge > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
     {
         remerge();
     }
@@ -246,6 +246,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
 
     sum_bytes_in_blocks = 0;
     sum_rows_in_blocks = 0;
+    bytes_kept_by_remerge = 0;
     return sink;
 }
 
@@ -360,6 +361,7 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+    bytes_kept_by_remerge = new_sum_bytes_in_blocks;
 
     /// Publish the updated TopK value if optimization is ON
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)

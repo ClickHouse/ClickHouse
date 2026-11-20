@@ -80,6 +80,7 @@ private:
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
+    size_t bytes_kept_by_remerge = 0;
 
     LoggerPtr log = getLogger("MergeSortingTransform");
 
