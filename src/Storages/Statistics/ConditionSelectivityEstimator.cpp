@@ -20,6 +20,7 @@
 #include <Interpreters/Set.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/StatisticsJSONPaths.h>
 #include <Formats/ParseError.h>
 #include <Functions/IFunction.h>
 
@@ -746,8 +747,12 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
     /// The statistics of the paths of a `JSON` column estimate the conditions on its path subcolumns.
     std::vector<std::pair<String, ColumnStatisticsPtr>> path_estimators;
     for (const auto & [column_name, column_estimator] : estimator->column_estimators)
-        for (const auto & [path, path_stats] : column_estimator.stats->getPathStatistics())
-            path_estimators.emplace_back(column_name + "." + path, path_stats);
+    {
+        const auto & stats = column_estimator.stats->getStats();
+        if (auto it = stats.find(StatisticsType::JSONPaths); it != stats.end())
+            for (const auto & [path, path_stats] : assert_cast<const StatisticsJSONPaths &>(*it->second).getPathStatistics())
+                path_estimators.emplace_back(column_name + "." + path, path_stats);
+    }
     for (auto & [name, stats] : path_estimators)
         estimator->column_estimators.emplace(std::move(name), ConditionSelectivityEstimator::ColumnEstimator{std::move(stats)});
 

@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/Statistics/StatisticsJSONPaths.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <base/getThreadId.h>
@@ -1432,10 +1433,14 @@ static ColumnStatisticsPtr keepRequiredPaths(
     const NameSet & required_columns,
     const std::unordered_map<String, NameSet> & required_paths)
 {
-    if (required_columns.empty() || !stats->hasPathStatistics())
+    if (required_columns.empty())
         return stats;
-    auto it = required_paths.find(column_name);
-    return stats->cloneWithPaths(it == required_paths.end() ? NameSet{} : it->second);
+    auto it = stats->getStats().find(StatisticsType::JSONPaths);
+    if (it == stats->getStats().end())
+        return stats;
+    auto paths_it = required_paths.find(column_name);
+    const auto & path_stats = assert_cast<const StatisticsJSONPaths &>(*it->second);
+    return stats->cloneWith(StatisticsType::JSONPaths, path_stats.cloneWithPaths(paths_it == required_paths.end() ? NameSet{} : paths_it->second));
 }
 
 std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(

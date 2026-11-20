@@ -34,7 +34,6 @@ enum class StatisticsFileVersion : UInt16
 
 class Field;
 class Block;
-class ColumnObject;
 
 struct StatisticsUtils
 {
@@ -170,6 +169,8 @@ public:
         const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
 
     void build(const ColumnPtr & column);
+    /// Counts `count` more rows, all NULL.
+    void addNullRows(UInt64 count);
     void merge(const ColumnStatisticsPtr & other);
 
     [[nodiscard]] UInt64 getNumRows() const { return rows; }
@@ -215,34 +216,16 @@ public:
     [[nodiscard]] const StatsMap & getStats() const { return stats; }
     [[nodiscard]] bool structureEquals(const ColumnStatistics & other) const;
     [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneEmpty() const;
-
-    /// The statistics of each path of a `JSON` column built or merged in memory (statistics read from disk keep them
-    /// serialized, see `cloneWithPaths`). Each describes all rows of the column, a row without the path counting as NULL.
-    using PathStatistics = std::map<String, ColumnStatisticsPtr>;
-    [[nodiscard]] const PathStatistics & getPathStatistics() const { return path_statistics; }
-    [[nodiscard]] bool hasPathStatistics() const { return !path_types.empty(); }
-    /// A copy with the statistics of `paths` only, deserialized. It shares the statistics objects built in memory with
-    /// this one.
-    [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneWithPaths(const NameSet & paths) const;
+    /// A copy that shares the statistics objects of this one, except the one of `type`, which is `statistics`.
+    [[nodiscard]] std::shared_ptr<ColumnStatistics> cloneWith(StatisticsType type, StatisticsPtr statistics) const;
 
 private:
     friend class MergeTreeStatisticsFactory;
-
-    void buildPaths(const ColumnObject & column);
-    void addNullRows(UInt64 count);
-    [[nodiscard]] ColumnStatisticsPtr createPathStatistics(const DataTypePtr & path_type) const;
-    [[nodiscard]] ColumnStatisticsPtr deserializePathStatistics(const String & path, const String & data) const;
-
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
     /// A number of distinct values set by `setCardinality`.
     std::optional<UInt64> external_cardinality;
-    /// The statistics built for every path of a `JSON` column; empty if none are.
-    ColumnStatisticsDescription::StatisticsTypeDescMap path_types;
-    PathStatistics path_statistics;
-    /// The statistics of the paths read from disk, serialized: a path is deserialized when it is used.
-    std::map<String, String> serialized_path_statistics;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
