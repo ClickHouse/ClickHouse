@@ -272,6 +272,10 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
         Block block;
         while (executor.pull(block))
         {
+            /// Materialize special representations of the keys (e.g. `Sparse` or automatic `LowCardinality`)
+            /// like `getColumns` does, so that the keys extractor sees columns matching their data types.
+            removeSpecialColumnRepresentations(block);
+
             /// Split into keys columns and attribute columns
             for (size_t i = 0; i < dictionary_keys_size; ++i)
                 block_key_columns.emplace_back(block.safeGetByPosition(i).column);

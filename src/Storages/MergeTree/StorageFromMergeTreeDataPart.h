@@ -60,6 +60,29 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    {
+        return storage.tryGetSerializationHints();
+    }
+
+    bool hasAutomaticLowCardinalitySerialization(const String & /*column_name*/, const StorageSnapshotPtr & /*storage_snapshot*/) const override
+    {
+        /// Unlike other wrappers, this storage reads a fixed set of parts, so it can answer from them instead of
+        /// delegating with its own snapshot, which `MergeTreeData` would refuse. A part may still have pending
+        /// alter conversions (e.g. a `RENAME COLUMN`), so its serialization infos can be keyed by other names
+        /// than the ones in the query: answer `true` if any column of any of the parts is encoded.
+        const auto & parts_to_read = analysis_result_ptr ? analysis_result_ptr->parts_with_ranges : parts;
+        for (const auto & part : parts_to_read)
+        {
+            for (const auto & [_, info] : part.data_part->getSerializationInfos())
+            {
+                if (info && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+                    return true;
+            }
+        }
+        return false;
+    }
+
     String getPartitionId() const
     {
         return partition_id;

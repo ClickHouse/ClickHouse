@@ -25,7 +25,12 @@ using ExecutorPtr = std::shared_ptr<IExecutor>;
 class PullingPipelineExecutor
 {
 public:
-    explicit PullingPipelineExecutor(QueryPipeline & pipeline_);
+    /// Columns stored with automatic `LowCardinality` serialization are read as non-native `ColumnLowCardinality`
+    /// columns of a `String` or `FixedString` type. The executor materializes them in everything it returns,
+    /// because most consumers expect a column to match its data type. A consumer that handles the encoded
+    /// representation (sends it over the native protocol, or writes it to parts) passes
+    /// `keep_automatic_low_cardinality_ = true`. Other special representations (e.g. `Sparse`) are returned as is.
+    explicit PullingPipelineExecutor(QueryPipeline & pipeline_, bool keep_automatic_low_cardinality_ = false);
     ~PullingPipelineExecutor();
 
     /// Get structure of returned block or chunk.

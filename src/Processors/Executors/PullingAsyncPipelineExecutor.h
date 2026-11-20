@@ -21,7 +21,10 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
+    /// Same as in `PullingPipelineExecutor`: non-native `ColumnLowCardinality` columns (automatic `LowCardinality`
+    /// serialization) are materialized in everything the executor returns, unless the consumer handles the
+    /// encoded representation and passes `keep_automatic_low_cardinality_ = true`.
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool keep_automatic_low_cardinality_ = false);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.

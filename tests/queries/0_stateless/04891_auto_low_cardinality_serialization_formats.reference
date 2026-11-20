@@ -1,0 +1,12 @@
+{
+	"value": ["encoded", "plain"]
+}
+{
+	"value": ["encoded", "plain"]
+}
+1	encoded
+2	plain
+1	encoded
+2	plain
+{"id":1,"value":"encoded"}
+{"id":2,"value":"plain"}

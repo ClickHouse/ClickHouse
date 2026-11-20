@@ -31,6 +31,8 @@ public:
 
     void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
+    void checkKindStackForType(const IDataType & type) const override;
+    void checkKindStacks() const override;
 
     [[nodiscard]] const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     [[nodiscard]] ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }

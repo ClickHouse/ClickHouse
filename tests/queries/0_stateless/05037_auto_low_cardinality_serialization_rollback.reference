@@ -1,0 +1,10 @@
+merge: kind with the feature enabled
+LowCardinality
+merge: kind after the feature is disabled, correctness
+Default
+4000	18
+rewrite: kind with the feature enabled
+LowCardinality
+rewrite: kind after the feature is disabled, correctness
+Default
+2000	10

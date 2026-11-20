@@ -1,5 +1,6 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/sortBlock.h>
@@ -237,6 +238,12 @@ void PartialSortingTransform::transform(Chunk & chunk)
     chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+    /// The threshold columns are kept from a previous chunk and compared against the current one, and
+    /// parts of the same table can be stored with and without automatic LowCardinality serialization,
+    /// so the two can have different in-memory representations. Materialize to keep them comparable.
+    for (auto & column : block)
+        column.column = recursiveRemoveNonNativeLowCardinality(column.column);
 
     /// Materialize sort key columns that are ColumnReplicated to avoid index indirection during comparison and sorting.
     for (const auto & col_desc : description)

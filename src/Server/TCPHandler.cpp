@@ -1793,7 +1793,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     state.send_result_while_receiving_data_for_input = state.need_receive_data_for_input && !state.received_all_data_for_input;
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        /// `NativeWriter` sends the automatic `LowCardinality` encoding to peers that know it and materializes it otherwise.
+        PullingAsyncPipelineExecutor executor(pipeline, /*keep_automatic_low_cardinality_=*/ true);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 

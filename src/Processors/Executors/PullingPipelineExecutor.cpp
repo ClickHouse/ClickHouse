@@ -15,12 +15,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_, bool keep_automatic_low_cardinality_)
+    : pipeline(pipeline_)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingPipelineExecutor must be pulling");
 
-    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getSharedHeader(), has_data_flag);
+    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getSharedHeader(), has_data_flag, keep_automatic_low_cardinality_);
     pipeline.complete(pulling_format);
 }
 

@@ -12,15 +12,19 @@ namespace ErrorCodes
 
 NullWriteBuffer PullingOutputFormat::out;
 
-PullingOutputFormat::PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_)
+PullingOutputFormat::PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_, bool keep_automatic_low_cardinality_)
     : IOutputFormat(header, out)
     , has_data_flag(consume_data_flag_)
+    , keep_automatic_low_cardinality(keep_automatic_low_cardinality_)
 {}
 
 void PullingOutputFormat::consume(Chunk chunk)
 {
     if (data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PullingOutputFormat cannot consume chunk because it already has data");
+
+    if (!keep_automatic_low_cardinality)
+        convertToFullIfNonNativeLowCardinality(chunk);
 
     if (chunk)
         info.update(chunk.getNumRows(), chunk.allocatedBytes());
@@ -34,6 +38,20 @@ Chunk PullingOutputFormat::getChunk()
     auto chunk = std::move(data);
     has_data_flag = false;
     return chunk;
+}
+
+void PullingOutputFormat::consumeTotals(Chunk chunk)
+{
+    if (!keep_automatic_low_cardinality)
+        convertToFullIfNonNativeLowCardinality(chunk);
+    totals = std::move(chunk);
+}
+
+void PullingOutputFormat::consumeExtremes(Chunk chunk)
+{
+    if (!keep_automatic_low_cardinality)
+        convertToFullIfNonNativeLowCardinality(chunk);
+    extremes = std::move(chunk);
 }
 
 Chunk PullingOutputFormat::getTotals() { return std::move(totals); }

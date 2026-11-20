@@ -1,11 +1,12 @@
 #include <Dictionaries/readInvalidateQuery.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <DataTypes/IDataType.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
@@ -48,7 +49,10 @@ std::string readInvalidateQueryImpl(Pull && pull)
 
     WriteBufferFromOwnString out;
     auto & column_type = block.getByPosition(0);
-    column_type.type->getDefaultSerialization()->serializeTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
+    /// The default serialization of the declared type requires a column matching that type, so special
+    /// representations (e.g. `Sparse` or automatic `LowCardinality` of a `MergeTree` column) are materialized.
+    auto column = removeSpecialRepresentations(column_type.column->convertToFullColumnIfConst());
+    column_type.type->getDefaultSerialization()->serializeTextQuoted(*column, 0, out, FormatSettings());
 
     while (pull(block))
         if (block.rows() > 0)
@@ -61,7 +65,8 @@ std::string readInvalidateQueryImpl(Pull && pull)
 
 std::string readInvalidateQuery(QueryPipeline & pipeline)
 {
-    PullingPipelineExecutor executor(pipeline);
+    /// The same executor as for dictionary loads, so that invalidation results pass the same normalization boundary.
+    DictionaryPipelineExecutor executor(pipeline, /* async */ false);
     return readInvalidateQueryImpl([&](Block & block) { return executor.pull(block); });
 }
 
