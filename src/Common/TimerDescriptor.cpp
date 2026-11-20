@@ -1,6 +1,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/TimerDescriptor.h>
+#include <Common/KernelFileDescriptor.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 
@@ -166,7 +167,7 @@ void TimerDescriptor::drain() const
 
                 static constexpr ssize_t max_link_path_length = 256;
                 char link_path[max_link_path_length];
-                ssize_t link_path_length = readlink(fmt::format("/proc/self/fd/{}", timer_fd).c_str(), link_path, max_link_path_length);
+                ssize_t link_path_length = readlink(fmt::format("/proc/self/fd/{}", toKernelFileDescriptor(timer_fd)).c_str(), link_path, max_link_path_length);
                 if (-1 == link_path_length)
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot readlink for a timer_fd {}", timer_fd);
 

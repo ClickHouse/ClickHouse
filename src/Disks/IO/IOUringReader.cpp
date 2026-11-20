@@ -1,5 +1,6 @@
 #include <Disks/IO/IOUringReader.h>
 #include <Common/ErrnoException.h>
+#include <Common/KernelFileDescriptor.h>
 
 #if USE_LIBURING
 
@@ -168,7 +169,9 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
 
     auto request = enqueued.request;
     auto request_id = reinterpret_cast<UInt64>(request.buf);
-    int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
+    /// The kernel reads the descriptor from the submission entry: it must be the kernel one.
+    /// If the descriptor is not open, it is -1, and the request fails with EBADF.
+    int fd = toKernelFileDescriptor(assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd);
 
     io_uring_sqe_set_data64(sqe, request_id);
     io_uring_prep_read(sqe, fd, request.buf, static_cast<unsigned>(request.size - enqueued.bytes_read), request.offset + enqueued.bytes_read);

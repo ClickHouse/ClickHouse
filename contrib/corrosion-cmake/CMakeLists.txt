@@ -220,7 +220,11 @@ endif()
 # Note: "no sanitizer" must be tested with CMake truthiness, not `STREQUAL ""`: in build
 # directories configured before SANITIZE became a STRING cache variable, the cache holds
 # the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
-if (SANITIZE)
+#
+# With the bundled musl, the libc backend is required in every build: musl translates file
+# descriptors (see `contrib/musl/src/internal/fdmap.h`), so descriptors created by raw syscalls
+# (e.g. `memfd_create` for wasmtime memory images) would not be usable through `std`, and vice versa.
+if (SANITIZE OR USE_MUSL)
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
 endif()
 

@@ -1,4 +1,5 @@
 #include <Common/FilesystemIsolation.h>
+#include <Common/KernelFileDescriptor.h>
 #include <Common/Exception.h>
 
 #include <atomic>
@@ -323,7 +324,8 @@ void checkNoOpenDirectories()
     {
         if (entry->d_name[0] == '.')
             continue;
-        const int fd = std::stoi(entry->d_name);
+        /// The names are kernel descriptors, see KernelFileDescriptor.h.
+        const int fd = fromKernelFileDescriptor(std::stoi(entry->d_name));
         if (fd == own_fd)
             continue;
         struct stat st{};
@@ -528,7 +530,7 @@ std::optional<uint64_t> getMountIdOfPath(const std::string & path)
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open {}", path);
     }
     SCOPE_EXIT(closeDescriptor(fd));
-    const std::string fd_info = readFile(fmt::format("/proc/self/fdinfo/{}", fd));
+    const std::string fd_info = readFile(fmt::format("/proc/self/fdinfo/{}", toKernelFileDescriptor(fd)));
     constexpr std::string_view key = "mnt_id:";
     for (size_t line_begin = 0; line_begin < fd_info.size();)
     {
