@@ -47,7 +47,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const StorageMetadataPtr & metadata,
     const ActionsDAG::Node * filter,
     const ActionsDAG::Node * prewhere,
-    const NameSet * filtered_columns) const
+    bool record_row_subset) const
 {
     if (filter == nullptr && prewhere == nullptr)
         return estimateRelationProfile(metadata);
@@ -71,7 +71,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
         last_rpn.function = RPNElement::FUNCTION_AND;
         rpn.push_back(last_rpn);
     }
-    return estimateRelationProfileImpl(rpn, metadata, filtered_columns);
+    return estimateRelationProfileImpl(rpn, metadata, record_row_subset);
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
@@ -165,7 +165,7 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(
-    std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, const NameSet * filtered_columns) const
+    std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, bool record_row_subset) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
@@ -269,10 +269,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(
         const UInt64 estimated_cardinality = estimator.estimateCardinality();
         UInt64 cardinality = std::min(result.rows, estimated_cardinality);
         auto column_stats = makeColumnStats(cardinality, estimator.stats, described_rows);
-        /// Without `filtered_columns` the predicates are not attributed to the columns they read, so they may have
-        /// read any column.
-        const bool is_filtered = !filtered_columns || filtered_columns->contains(column_name);
-        column_stats.addTransformation(is_filtered ? RowSubset : FilterOnOtherColumns);
+        if (record_row_subset)
+            column_stats.addTransformation(RowSubset);
         if (result.rows < estimated_cardinality)
             column_stats.ndv_provenance.add(EstimatedRowCountClamp);
         result.column_stats.emplace(column_name, std::move(column_stats));

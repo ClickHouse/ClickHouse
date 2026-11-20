@@ -706,7 +706,9 @@ estimateDirectRelationStats(QueryPlan::Node & node, FilterAbove filter, Relation
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(
-                    reading->getStorageMetadata(), plan_time_filter, prewhere_node, coverage.attributedFilteredColumns());
+                    reading->getStorageMetadata(), plan_time_filter, prewhere_node, /*record_row_subset=*/false);
+                /// `recordIn` records the rows the predicates drop instead: with predicates the read may always drop rows.
+                chassert((!plan_time_filter && !prewhere_node) || coverage.mayDropRows(relation_profile.rows));
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,

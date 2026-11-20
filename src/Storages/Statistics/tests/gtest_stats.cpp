@@ -369,7 +369,7 @@ TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
     EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
 }
 
-TEST(Statistics, RelationProfileAttributesRowsDroppedToFilteredColumns)
+TEST(Statistics, RelationProfileRecordsRowSubsetUnlessTheCallerDoes)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
@@ -389,60 +389,50 @@ TEST(Statistics, RelationProfileAttributesRowsDroppedToFilteredColumns)
     ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
     const auto * predicate = &dag.findInOutputs(ast->getColumnName());
 
-    auto expect_row_subset = [](const ColumnStats & column, bool row_subset, bool filter_on_other_columns)
+    auto expect_row_subset = [](const ColumnStats & column, bool row_subset)
     {
         SCOPED_TRACE(column.range_provenance.toString());
-        for (const auto & provenance : {column.ndv_provenance, column.range_provenance})
-        {
-            EXPECT_EQ(provenance.has(RowSubset), row_subset);
-            EXPECT_EQ(provenance.has(FilterOnOtherColumns), filter_on_other_columns);
-        }
+        EXPECT_EQ(column.ndv_provenance.has(RowSubset), row_subset);
+        EXPECT_EQ(column.range_provenance.has(RowSubset), row_subset);
     };
 
-    /// The overloads that take a single node or `RPNBuilderTreeNode`s do not attribute the predicates to columns:
-    /// every column records `RowSubset`.
+    /// The overloads that take a single node or `RPNBuilderTreeNode`s record `RowSubset` on every column.
     for (const auto & profile :
          {estimator->estimateRelationProfile(nullptr, predicate),
           estimator->estimateRelationProfile(nullptr, std::vector<RPNBuilderTreeNode>{RPNBuilderTreeNode(predicate, context)})})
     {
-        expect_row_subset(profile.column_stats.at("k"), /*row_subset=*/true, /*filter_on_other_columns=*/false);
-        expect_row_subset(profile.column_stats.at("j"), /*row_subset=*/true, /*filter_on_other_columns=*/false);
+        expect_row_subset(profile.column_stats.at("k"), /*row_subset=*/true);
+        expect_row_subset(profile.column_stats.at("j"), /*row_subset=*/true);
         EXPECT_FALSE(profile.column_stats.at("j").valueRange(ValueRangeGuarantee::Representative));
     }
 
-    /// Neither does the overload for a filter and a PREWHERE by default. A caller that knows the predicates read only `k`
-    /// passes it: the other columns then record `FilterOnOtherColumns`. The row count does not depend on it.
-    const NameSet filtered_columns{"k"};
+    /// So does the overload for a filter and a PREWHERE by default. A caller that records the dropped rows itself turns it
+    /// off; the row count and the clamp of the distinct count to it do not depend on it.
     using FilterAndPrewhere = std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>;
     for (const auto & [filter, prewhere] : {FilterAndPrewhere{predicate, nullptr}, {nullptr, predicate}, {predicate, predicate}})
     {
         SCOPED_TRACE(fmt::format("filter: {}, prewhere: {}", filter != nullptr, prewhere != nullptr));
-        const auto unattributed = estimator->estimateRelationProfile(nullptr, filter, prewhere);
-        EXPECT_GT(unattributed.rows, 0);
-        EXPECT_LT(unattributed.rows, 100);
-        expect_row_subset(unattributed.column_stats.at("k"), /*row_subset=*/true, /*filter_on_other_columns=*/false);
-        expect_row_subset(unattributed.column_stats.at("j"), /*row_subset=*/true, /*filter_on_other_columns=*/false);
+        const auto recorded = estimator->estimateRelationProfile(nullptr, filter, prewhere);
+        EXPECT_GT(recorded.rows, 0);
+        EXPECT_LT(recorded.rows, 100);
+        expect_row_subset(recorded.column_stats.at("k"), /*row_subset=*/true);
+        expect_row_subset(recorded.column_stats.at("j"), /*row_subset=*/true);
 
-        const auto attributed = estimator->estimateRelationProfile(nullptr, filter, prewhere, &filtered_columns);
-        EXPECT_EQ(attributed.rows, unattributed.rows);
-        const auto & k = attributed.column_stats.at("k");
-        const auto & j = attributed.column_stats.at("j");
-        expect_row_subset(k, /*row_subset=*/true, /*filter_on_other_columns=*/false);
-        expect_row_subset(j, /*row_subset=*/false, /*filter_on_other_columns=*/true);
-        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Representative));
-        const auto j_range = j.valueRange(ValueRangeGuarantee::Representative);
-        ASSERT_TRUE(j_range);
-        EXPECT_EQ(j_range->min, Field(Int64(0)));
-        EXPECT_EQ(j_range->max, Field(Int64(99)));
-        /// The distinct count is clamped to the estimated rows, the range is not.
-        EXPECT_TRUE(j.ndv_provenance.has(EstimatedRowCountClamp));
-        EXPECT_FALSE(j.distinctCount(DistinctCountGuarantee::UpperBound));
+        const auto not_recorded = estimator->estimateRelationProfile(nullptr, filter, prewhere, /*record_row_subset=*/false);
+        EXPECT_EQ(not_recorded.rows, recorded.rows);
+        for (const auto & column_name : {"k", "j"})
+        {
+            const auto & column = not_recorded.column_stats.at(column_name);
+            expect_row_subset(column, /*row_subset=*/false);
+            EXPECT_EQ(column.num_distinct_values, recorded.column_stats.at(column_name).num_distinct_values);
+            EXPECT_TRUE(column.ndv_provenance.has(EstimatedRowCountClamp));
+        }
     }
 
     /// Without predicates no rows are dropped, so there is nothing to record.
-    const auto unfiltered = estimator->estimateRelationProfile(nullptr, nullptr, nullptr, &filtered_columns);
+    const auto unfiltered = estimator->estimateRelationProfile(nullptr, nullptr, nullptr);
     EXPECT_EQ(unfiltered.rows, 100);
-    expect_row_subset(unfiltered.column_stats.at("j"), /*row_subset=*/false, /*filter_on_other_columns=*/false);
+    expect_row_subset(unfiltered.column_stats.at("j"), /*row_subset=*/false);
 }
 
 TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
