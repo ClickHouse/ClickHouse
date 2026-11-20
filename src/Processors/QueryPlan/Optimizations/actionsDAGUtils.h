@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <limits>
@@ -174,19 +175,6 @@ struct HeaderColumnsToInputs
 };
 
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
-
-/// All nodes reachable from `roots`, including the roots themselves. `roots` may hold duplicates.
-/// A node for which `is_barrier` returns true is included, but the walk does not descend into its
-/// children.
-///
-/// Used to answer what `removeUnusedActions` would keep without modifying the DAG: pass the nodes it
-/// treats as roots - the kept outputs, every ARRAY_JOIN (it never drops them, they change the number
-/// of rows), and every input when inputs may not be removed - and, when it may fold constants, a
-/// barrier for the nodes it would fold, because folding clears their children before it collects the
-/// nodes to keep.
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier = {});
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 

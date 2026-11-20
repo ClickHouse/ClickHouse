@@ -38,6 +38,7 @@
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
@@ -91,38 +92,18 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
         addImpliedIndexHintInputs(inner, res);
 }
 
-static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node, NameSet & implied_index_hint_inputs)
 {
     NameSet res;
-
-    /// We treat all INPUT as identifier
-    if (node->type == ActionsDAG::ActionType::INPUT)
+    visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
     {
-        res.emplace(node->result_name);
-        return res;
-    }
-
-    std::queue<const ActionsDAG::Node *> queue;
-    queue.push(node);
-
-    while (!queue.empty())
-    {
-        const auto * top = queue.front();
-        addImpliedIndexHintInputs(*top, res);
-        for (const auto * child : top->children)
-        {
-            if (child->type == ActionsDAG::ActionType::INPUT)
-            {
-                res.emplace(child->result_name);
-            }
-            else
-            {
-                /// Only push non INPUT child into the queue
-                queue.push(child);
-            }
-        }
-        queue.pop();
-    }
+        /// We treat all INPUT as identifier
+        if (cur->type == ActionsDAG::ActionType::INPUT)
+            res.emplace(cur->result_name);
+        else
+            addImpliedIndexHintInputs(*cur, implied_index_hint_inputs);
+        return VisitResult::Continue;
+    });
     return res;
 }
 
@@ -1213,27 +1194,16 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
             stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
 
-    stack.push_back(conjunct);
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    while (!stack.empty())
+    return anyReachableNode({conjunct}, [](const ActionsDAG::Node * node)
     {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (!visited.emplace(node).second)
-            continue;
-
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
             if (name == "equals" || name == "isNotDistinctFrom")
                 return true;
         }
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-
-    return false;
+        return false;
+    });
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -1259,6 +1229,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (aggregating || merging_aggregated)
     {
+        auto index_hints = ActionsDAG::PushDownIndexHints::Implied;
+
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
         bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
@@ -1271,11 +1243,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions.findInOutputs(filter->getFilterColumnName());
 
-            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+            NameSet index_hint_inputs;
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node, index_hint_inputs);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
+
+            /// A hint reading a column that some set lacks would prune rows that set aggregates.
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, index_hint_inputs))
+                index_hints = ActionsDAG::PushDownIndexHints::None;
         }
 
         const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
@@ -1290,7 +1267,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, index_hints))
             return updated_steps;
     }
 

@@ -62,7 +62,7 @@ public:
         return std::make_shared<FunctionAiEmbed>(context);
     }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfNotAllowed(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

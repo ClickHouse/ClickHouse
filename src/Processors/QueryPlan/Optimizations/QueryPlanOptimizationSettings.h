@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <memory>
 
 namespace DB
 {
@@ -27,8 +28,14 @@ class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
 
+struct TableOccurrences;
+
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
+/// `FindSingleNodeRead` before the builder of the plan with parallel replicas binds it the tables of both query trees,
+/// the single-node one first (`collectTableOccurrences`).
+using FindSingleNodeReadByOccurrence = std::function<const ReadFromMergeTree *(
+    const std::shared_ptr<const TableOccurrences> &, const std::shared_ptr<const TableOccurrences> &, const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -46,10 +53,14 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
+    /// which tell apart the reads of a table read more than once.
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences = nullptr;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences = nullptr;
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeReadByOccurrence &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -139,6 +150,8 @@ struct QueryPlanOptimizationSettings
     /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
     /// and complete.
     JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
+    /// DPsub chooses between hash and sort-merge joins using the sort order of the inputs.
+    bool query_plan_join_order_use_interesting_orders = true;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only
@@ -249,6 +262,8 @@ struct QueryPlanOptimizationSettings
     bool use_top_k_dynamic_filtering;
     bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
+    /// `use_skip_indexes_on_data_read` of the query as it runs: `EXPLAIN` turns the setting off for its own planning.
+    bool use_skip_indexes_on_data_read_at_execution;
     size_t max_limit_for_top_k_optimization = 0;
 
     /// Setting needed for Sets (JOIN -> IN optimization)

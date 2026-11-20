@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
@@ -69,9 +70,6 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
 
-    if (reading->hasLazilyReadColumns())
-        return std::unexpected("some columns of the read are read lazily by their part offsets");
-
     if (reading->isQueryWithSampling())
         return std::unexpected("the query uses SAMPLE");
 
@@ -99,6 +97,10 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     /// because we need to apply them on original data.
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
+
+    /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
+    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
+        return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
 
     return {};
 }
@@ -419,8 +421,14 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjection * hypothetical_projection)
+    const HypotheticalProjection * hypothetical_projection,
+    const Names & lazily_read_column_names)
 {
+    /// The columns a projection part has to have to serve its part: the ones of the read, and the ones a lazy read reads
+    /// from it. A part can lack a column its projection has now, e.g. after an `ALIAS` the projection selects changed.
+    Names part_column_names = required_column_names;
+    part_column_names.insert(part_column_names.end(), lazily_read_column_names.begin(), lazily_read_column_names.end());
+
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
     for (const auto & part_with_ranges : parent_reading_select_result.parts_with_ranges)
@@ -434,9 +442,9 @@ bool analyzeProjectionCandidate(
         if (projection_part
             && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
-                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
+                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, part_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 projection_part,
