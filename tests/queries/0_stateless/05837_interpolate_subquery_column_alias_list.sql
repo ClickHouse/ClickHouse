@@ -19,3 +19,5 @@ SELECT q FROM (SELECT max(a) AS w, sum(a) AS x, mb FROM (SELECT number AS a, int
 SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.1', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y;
 SELECT * FROM (SELECT sum(number) AS x, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.{1,2}', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y, z) ORDER BY z, y SETTINGS distributed_group_by_no_merge = 1;
 SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.{1,2}', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y;
+SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.1', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb WITH TOTALS ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y SETTINGS prefer_localhost_replica = 0;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS y, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, y AS y + 1000)) AS s(y, x, z) ORDER BY z;
