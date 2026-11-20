@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
+# no-parallel-replicas: a table created `AS` a data lake table function fails in `UNION ALL` with parallel replicas in
+# the server profile, https://github.com/ClickHouse/ClickHouse/issues/132278
 
 # Two `SELECT`s of one query that pick different snapshots of the same data lake table, which is a lazy stand-in
 # in a database with `lazy_load_tables`, must each read their own snapshot.

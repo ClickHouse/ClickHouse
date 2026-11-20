@@ -1,4 +1,4 @@
-engine before the read	TableProxy
+engine before the read	MergeTree	0
 reader started: 1
 the statement waited for the rename: 1
 tables after the rename	tab_renamed
