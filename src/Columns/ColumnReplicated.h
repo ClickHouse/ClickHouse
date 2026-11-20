@@ -2,8 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
-
-#include <memory>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 class Collator;
 
@@ -22,32 +21,19 @@ private:
     explicit ColumnReplicated(MutableColumnPtr && nested_column_);
     ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_);
     ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_);
-    ColumnReplicated(const ColumnReplicated & other);
+    ColumnReplicated(const ColumnReplicated &) = default;
 
 public:
     using Base = COWHelper<IColumnHelper<ColumnReplicated>, ColumnReplicated>;
 
-    ~ColumnReplicated() override;
-
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & indexes_)
     {
-        /// The underlying columns may be shared with the caller (the nested
-        /// column is in particular intentionally shared with the source block
-        /// during lazy join replication). `assumeMutable` here would
-        /// `chassert(use_count() == 1)` and abort. Bypass via `const_cast` +
-        /// `getPtr` — equivalent to the old `assumeMutable` fast path. The
-        /// result is returned as `Ptr` (immutable), and any mutation must go
-        /// through `IColumn::mutate`, which deep-clones shared sub-columns at
-        /// the proper time.
-        return Base::create(
-            const_cast<IColumn *>(nested_column_.get())->getPtr(),
-            const_cast<IColumn *>(indexes_.get())->getPtr());
+        return Base::create(nested_column_->assumeMutable(), indexes_->assumeMutable());
     }
 
     static Ptr create(const ColumnPtr & nested_column_)
     {
-        /// Same rationale as the two-argument overload above.
-        return Base::create(const_cast<IColumn *>(nested_column_.get())->getPtr());
+        return Base::create(nested_column_->assumeMutable());
     }
 
     static MutablePtr create(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
@@ -67,9 +53,7 @@ public:
 
     static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
-        /// The nested column may be shared with the caller; same rationale as the
-        /// `create(const ColumnPtr &, const ColumnPtr &)` overload above.
-        return Base::create(const_cast<IColumn *>(nested_column_.get())->getPtr(), std::move(indexes_));
+        return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
 
     bool isReplicated() const override { return true; }
@@ -91,7 +75,6 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
@@ -100,6 +83,7 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -213,17 +197,7 @@ public:
     const ColumnPtr & getNestedColumn() const { return nested_column; }
     WrappedPtr & getNestedColumn() { return nested_column; }
 
-    /// Frees the insertion cache once no more inserts from other ColumnReplicated are expected.
-    void dropInsertionCache();
-
 private:
-    struct InsertionCache;
-
-    InsertionCache & getInsertionCache();
-    /// Returns the row of `nested_column` holding row `src_row` of the nested column of `src`,
-    /// copying the value on the first request.
-    size_t getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row);
-
     WrappedPtr nested_column;
     ColumnIndex indexes;
 
@@ -235,8 +209,9 @@ private:
     /// of insertFrom/insertRangeFrom/insertManyFrom.
     /// It helps to reduce memory usage during sorting/merge-sorting of replicated columns where
     /// we create empty ColumnReplicated and do insertFrom/insertRangeFrom/insertManyFrom from
-    /// source columns. Created on the first such insert.
-    std::unique_ptr<InsertionCache> insertion_cache;
+    /// source columns.
+    /// Mapping is the following: id -> (source_index -> inserted_index).
+    UnorderedMapWithMemoryTracking<UInt64, UnorderedMapWithMemoryTracking<size_t, size_t>> insertion_cache;
 
     /// Global counter used to create a unique id for each ColumnReplicated instance.
     static std::atomic<UInt64> global_id_counter;
@@ -265,7 +240,4 @@ ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bo
 /// 1. Materializes columns where replication provides no benefit.
 /// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
 void compactReplicatedColumns(Columns & columns);
-/// For a column a merge has finished filling: drops the insertion cache and, when the indexes are
-/// 0, 1, ..., size - 1 (nothing was deduplicated), replaces it with its nested column at no copy cost.
-void finishMergedReplicatedColumn(MutableColumnPtr & column);
 }

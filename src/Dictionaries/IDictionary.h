@@ -103,12 +103,7 @@ public:
     std::string getDatabaseOrNoDatabaseTag() const
     {
         std::lock_guard lock{mutex};
-        return getDatabaseOrNoDatabaseTag(dictionary_id);
-    }
 
-    /// The database name used for access checks of the dictionary with the given ID.
-    static std::string getDatabaseOrNoDatabaseTag(const StorageID & dictionary_id)
-    {
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 
@@ -330,9 +325,6 @@ public:
     }
 
     virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
-
-    /// False if the rows returned by `read` are not keys with their attributes, so `dictGetKeys` cannot scan them.
-    virtual bool supportsReverseLookup() const { return true; }
 
     bool supportUpdates() const override { return true; }
 

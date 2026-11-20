@@ -3,7 +3,6 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -194,7 +193,7 @@ namespace
         /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            (void)backup_info.getNamedCollection(context);
+            backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -359,7 +358,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }

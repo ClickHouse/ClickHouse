@@ -5,6 +5,8 @@
 -- multi-block posting lists were not getting their reading streams initialized,
 -- resulting in incorrectly empty posting lists and false filtering of all rows.
 
+SET enable_analyzer = 1;
+
 -- Force the direct read from the text index. CI may inject these as False, in which case
 -- the query would just scan 's' and the comparison below would pass without exercising the
 -- index reader at all. The multi-block reading bug under test only manifests on the direct
@@ -13,8 +15,6 @@ SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
--- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
-SET use_text_index_postings_cache = 0;
 
 DROP TABLE IF EXISTS t_text_index_like_large;
 

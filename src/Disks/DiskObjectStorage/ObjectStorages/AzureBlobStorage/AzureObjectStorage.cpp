@@ -12,7 +12,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/getRandomASCIIString.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
@@ -28,9 +27,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
-#include <Common/RemoteHostFilter.h>
-
-#include <Poco/URI.h>
 
 
 namespace CurrentMetrics
@@ -65,16 +61,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// An account with a hierarchical namespace lists each directory as an empty blob with
-/// `hdi_isfolder=true` metadata (the marker `DataLakePathClient::GetProperties` reads).
-bool isDirectoryEntry(const Azure::Storage::Blobs::Models::BlobItem & blob)
-{
-    if (blob.BlobSize != 0)
-        return false;
-    auto it = blob.Details.Metadata.find("hdi_isfolder");
-    return it != blob.Details.Metadata.end() && it->second == "true";
-}
-
 class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -91,7 +77,6 @@ public:
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
-        options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     }
 
     ~AzureIteratorAsync() override
@@ -114,8 +99,6 @@ private:
 
         for (const auto & blob : blobs_list)
         {
-            if (isDirectoryEntry(blob))
-                continue;
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -145,6 +128,7 @@ private:
 
 AzureObjectStorage::AzureObjectStorage(
     const String & name_,
+    AzureBlobStorage::AuthMethod auth_method_,
     ClientPtr && client_,
     SettingsPtr && settings_,
     const AzureBlobStorage::ConnectionParams & connection_params_,
@@ -152,34 +136,15 @@ AzureObjectStorage::AzureObjectStorage(
     const String & description_,
     const String & common_key_prefix_)
     : name(name_)
+    , auth_method(std::move(auth_method_))
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
     , common_key_prefix(common_key_prefix_)
-    , connection_params(std::make_unique<AzureBlobStorage::ConnectionParams>(connection_params_))
+    , connection_params(connection_params_)
     , log(getLogger("AzureObjectStorage"))
 {
-}
-
-ObjectStoragePtr AzureObjectStorage::cloneImpl() const
-{
-    /// `ContainerClient` is a thin copyable wrapper around the Azure SDK client, so the copy
-    /// can later replace its client without affecting this storage.
-    auto copy = std::make_shared<AzureObjectStorage>(
-        name,
-        std::make_unique<AzureBlobStorage::ContainerClient>(*client.get()),
-        std::make_unique<AzureBlobStorage::RequestSettings>(*settings.get()),
-        *connection_params.get(),
-        object_namespace,
-        description,
-        common_key_prefix);
-
-    std::lock_guard lock(client_inputs_mutex);
-    /// The copy is not shared with anyone yet; its mutex is taken to satisfy the thread safety analysis.
-    std::lock_guard copy_lock(copy->client_inputs_mutex);
-    copy->client_inputs = client_inputs;
-    return copy;
 }
 
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
@@ -228,7 +193,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
-    options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     if (max_keys)
         options.PageSizeHint = max_keys;
     else
@@ -246,8 +210,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         for (const auto & blob : blob_list_response.Blobs)
         {
-            if (isDirectoryEntry(blob))
-                continue;
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -318,7 +280,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /* read_until_position */ known_size,
         std::move(blob_storage_log),
-        connection_params.get()->getContainer(),
+        connection_params.getContainer(),
         /// The size is only a correct bound for the generation of the object it was recorded for,
         /// so the read is pinned to that generation when the caller has recorded its `ETag`, and
         /// a replaced object is rejected instead of being truncated to the stale size.
@@ -358,46 +320,14 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
-bool AzureObjectStorage::supportsAtomicWrite() const
-{
-    return !isAdlsGen2Endpoint(connection_params.get()->endpoint);
-}
-
-std::vector<Poco::URI> AzureObjectStorage::getURIsForRemoteHostFilter(const AzureBlobStorage::ConnectionParams & params)
-{
-    std::vector<String> urls{params.getConnectionURL()};
-    /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
-    if (isAdlsGen2Endpoint(params.endpoint))
-        urls.push_back(getAdlsGen2Url(params.endpoint, params.auth_method));
-
-    std::vector<Poco::URI> uris;
-    uris.reserve(urls.size());
-    for (const auto & url : urls)
-    {
-        Poco::URI uri(url);
-        /// The query can carry a SAS token, which an error must not quote.
-        uri.setPathEtc("");
-        uris.push_back(std::move(uri));
-    }
-    return uris;
-}
-
-void AzureObjectStorage::checkRemoteHostFilter(const RemoteHostFilter & filter) const
-{
-    for (const auto & uri : getURIsForRemoteHostFilter(*connection_params.get()))
-        filter.checkURL(uri);
-}
-
 std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
 AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
 {
-    auto params = connection_params.get();
     return std::make_unique<Azure::Storage::Files::DataLake::DataLakeFileClient>(
         makeAdlsGen2FileClient(
-            params->endpoint,
-            params->auth_method,
-            params->checkOrDropServerManagedCredentials(),
-            params->client_options,
+            connection_params.endpoint,
+            auth_method,
+            connection_params.client_options,
             blob_path));
 }
 
@@ -421,14 +351,12 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (write_settings.azure_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
-    auto params = connection_params.get();
-    if (isAdlsGen2Endpoint(params->endpoint))
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
-            params->endpoint,
-            params->auth_method,
-            params->checkOrDropServerManagedCredentials(),
-            params->client_options,
+            connection_params.endpoint,
+            auth_method,
+            connection_params.client_options,
             object.remote_path,
             /// The adaptive initial size must not exceed buf_size (the maximum); this writer
             /// forwards the value straight to the allocator, so an out-of-range adaptive
@@ -436,7 +364,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
             write_settings.use_adaptive_write_buffer ? std::min(write_settings.adaptive_write_buffer_initial_size, buf_size) : buf_size,
             patchSettings(write_settings),
             settings.get(),
-            params->getContainer(),
+            connection_params.getContainer(),
             std::move(blob_storage_log));
     }
 
@@ -446,7 +374,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
         patchSettings(write_settings),
         settings.get(),
-        params->getContainer(),
+        connection_params.getContainer(),
         std::move(blob_storage_log),
         std::move(scheduler));
 }
@@ -455,8 +383,7 @@ void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
     bool if_exists,
-    BlobStorageLogWriterPtr blob_storage_log,
-    StoredObjects * successful_objects)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
     if (client_ptr->IsClientForDisk())
@@ -465,16 +392,13 @@ void AzureObjectStorage::removeObjectImpl(
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
 
-    auto params = connection_params.get();
-
-    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch watch;
     Int32 error_code = 0;
     String error_message;
     bool success = false;
     try
     {
-        if (isAdlsGen2Endpoint(params->endpoint))
+        if (isAdlsGen2Endpoint(connection_params.endpoint))
         {
             buildDataLakeFileClient(path)->Delete();
             success = true;
@@ -499,7 +423,7 @@ void AzureObjectStorage::removeObjectImpl(
             if (blob_storage_log)
                 blob_storage_log->addEvent(
                     BlobStorageLogElement::EventType::Delete,
-                    /* bucket */ params->getContainer(),
+                    /* bucket */ connection_params.getContainer(),
                     /* remote_path */ path,
                     object.local_path,
                     object.bytes_size,
@@ -516,33 +440,25 @@ void AzureObjectStorage::removeObjectImpl(
             if (blob_storage_log)
                 blob_storage_log->addEvent(
                     BlobStorageLogElement::EventType::Delete,
-                    /* bucket */ params->getContainer(),
+                    /* bucket */ connection_params.getContainer(),
                     /* remote_path */ path,
                     object.local_path,
                     object.bytes_size,
                     elapsed,
                     error_code,
                     error_message);
-
-            if (successful_objects)
-                successful_objects->emplace_back(object);
-
             return;
         }
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
-
-    if (successful_objects)
-        successful_objects->emplace_back(object);
-
     auto elapsed = watch.elapsedMicroseconds();
 
     if (blob_storage_log)
         blob_storage_log->addEvent(
             BlobStorageLogElement::EventType::Delete,
-            /* bucket */ params->getContainer(),
+            /* bucket */ connection_params.getContainer(),
             /* remote_path */ path,
             object.local_path,
             object.bytes_size,
@@ -560,13 +476,12 @@ void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 void AzureObjectStorage::removeObjectsBatchIfExists(
     const StoredObjects & objects,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    BlobStorageLogWriterPtr blob_storage_log,
-    StoredObjects * successful_objects)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
     static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
 
-    const String container = connection_params.get()->getContainer();
+    const String & container = connection_params.getContainer();
     const bool is_disk = client_ptr->IsClientForDisk();
     const auto add_log_entry = [&](const StoredObject & object, size_t elapsed_mu, int32_t error_code = 0, const std::string & error_message = "")
     {
@@ -592,7 +507,6 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
         SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
 
-        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch watch;
         AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
         std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
@@ -635,18 +549,12 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             {
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
-
-                if (successful_objects)
-                    successful_objects->emplace_back(object);
             }
             catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
                     add_log_entry(object, avg_elapsed_us);
-
-                    if (successful_objects)
-                        successful_objects->emplace_back(object);
                 }
                 else
                 {
@@ -665,9 +573,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     }
 }
 
-void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     if (objects.empty())
         return;
@@ -675,57 +581,46 @@ void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
 
-    if (isAdlsGen2Endpoint(connection_params.get()->endpoint))
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         for (const auto & object : objects)
-            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log, successful_objects);
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
         return;
     }
 
-    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log, successful_objects);
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
 
 static void setAzureBlobTag(
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    const StoredObjects & objects,
+    const Strings & blob_names,
     const String & tag_key,
-    const String & tag_value,
-    StoredObjects * successful_objects)
+    const String & tag_value)
 {
     auto log = getLogger("setAzureBlobTag");
-    for (const StoredObject & object : objects)
+    for (const auto & blob_name : blob_names)
     {
-        const String & blob_name = object.remote_path;
-
         auto blob_client = client_ptr->GetBlobClient(blob_name);
         auto get_response = blob_client.GetTags();
         auto & tags = get_response.Value;
         const auto tag_iter = tags.find(tag_key);
-
         if (tag_iter != tags.end() && tag_iter->second == tag_value)
         {
             LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
-        }
-        else
-        {
-            tags[tag_key] = tag_value;
-            blob_client.SetTags(tags);
-            LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+            continue;
         }
 
-        if (successful_objects)
-            successful_objects->emplace_back(object);
+        tags[tag_key] = tag_value;
+        blob_client.SetTags(tags);
+        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
     }
 }
 
-void AzureObjectStorage::tagObjects( /// NOLINT
-    const StoredObjects & objects,
-    const std::string & tag_key,
-    const std::string & tag_value,
-    StoredObjects * successful_objects)
+void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
 {
     auto client_ptr = client.get();
-    setAzureBlobTag(client_ptr, objects, tag_key, tag_value, successful_objects);
+    Strings blob_names = collectRemotePaths(objects);
+    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
 }
 
 ObjectMetadata AzureObjectStorage::getObjectMetadataOfListedGeneration(const StoredObject & object) const
@@ -797,24 +692,18 @@ void AzureObjectStorage::copyObject( /// NOLINT
 
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
 
-    auto blob_storage_log = BlobStorageLogWriter::create(name);
-    if (blob_storage_log)
-        blob_storage_log->local_path = object_to.local_path;
-
-    const String container = connection_params.get()->getContainer();
     copyAzureBlobStorageFile(
         client_ptr,
         client_ptr,
-        container,
+        connection_params.getContainer(),
         object_from.remote_path,
         object_metadata.size_bytes,
-        container,
+        connection_params.getContainer(),
         object_to.remote_path,
         settings_ptr,
         read_settings,
         object_to_attributes,
-        scheduler,
-        blob_storage_log);
+        scheduler);
 }
 
 void AzureObjectStorage::applyNewSettings(
@@ -824,67 +713,20 @@ void AzureObjectStorage::applyNewSettings(
     const ApplyNewSettingsOptions & options)
 {
     auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
-    ClientInputs new_inputs{
-        .sdk_max_retries = new_settings->sdk_max_retries,
-        .sdk_retry_initial_backoff_ms = new_settings->sdk_retry_initial_backoff_ms,
-        .sdk_retry_max_backoff_ms = new_settings->sdk_retry_max_backoff_ms,
-    };
     settings.set(std::move(new_settings));
-
-    /// The storage of a table is built from the query, not from a config section. The client is shared by all sessions
-    /// and a query uses it after this call, so, as in `S3ObjectStorage::applyNewSettings`, a session never switches it to
-    /// the server's own identity: a concurrent restricted query that already passed here would use it. A restricted
-    /// session is refused if the client uses that identity. Only a forced rebuild by the server follows the context.
-    /// A disk, or a table on a disk, keeps its configuration from the server and goes on below.
-    if (const auto params_snapshot = connection_params.get();
-        params_snapshot->follows_session_restriction && params_snapshot->usesServerManagedCredentials())
-    {
-        const bool restrict_now = context->shouldRestrictUserQueryS3Credentials();
-        params_snapshot->checkSessionMayUseServerIdentity(restrict_now);
-        if (!options.force_client_rebuild)
-            return;
-
-        std::lock_guard lock(client_inputs_mutex);
-        /// A restricted context fails with `ACCESS_DENIED`; only loading a table falls back to no credentials.
-        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*connection_params.get());
-        params->forbid_implicit_credentials = restrict_now;
-        params->anonymous_fallback_for_server_credentials = false;
-        client.set(AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true));
-        connection_params.set(std::move(params));
-        return;
-    }
 
     if (!options.allow_client_change)
         return;
 
-    new_inputs.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
-    new_inputs.auth_config = AzureBlobStorage::readAuthConfig(config, config_prefix);
-
-    /// This method may run on every query of a table working on a copy of a disk's object storage (see
-    /// `StorageObjectStorageConfiguration::update`), so the client is rebuilt only when something it is built
-    /// from changed. The request throttlers are built from the session settings of the query that created the
-    /// client and are deliberately not compared: the client of a disk must not follow user sessions. The config
-    /// reload of a server disk forces the rebuild (see `DiskObjectStorage::applyNewSettings`).
-    std::lock_guard lock(client_inputs_mutex);
-    if (!options.force_client_rebuild && client_inputs == new_inputs)
-        return;
-
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
-    auto params = std::make_unique<AzureBlobStorage::ConnectionParams>();
-    params->endpoint = new_inputs.endpoint;
-    params->auth_method = AzureBlobStorage::getAuthMethod(new_inputs.auth_config);
-    params->client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
-    /// Endpoint and credentials come from the server configuration here, not from user SQL.
-    params->forbid_implicit_credentials = false;
+    AzureBlobStorage::ConnectionParams params;
+    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
+    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
+    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
 
-    auto new_client = AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true);
+    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));
-    /// Publish the parameters the new client was built from: the ADLS write/delete paths and
-    /// `buildDataLakeFileClient` construct their clients from `connection_params` per request,
-    /// so they must follow the rotated credentials and endpoint together with the blob client.
-    connection_params.set(std::move(params));
-    client_inputs = std::move(new_inputs);
 }
 
 }

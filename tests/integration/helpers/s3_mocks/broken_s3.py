@@ -43,9 +43,7 @@ class MockControl:
     def reset(self):
         self._apply(f"http://localhost:{self._port}/mock_settings/reset")
 
-    def setup_action(
-        self, when, count=None, after=None, action=None, action_args=None, key=None
-    ):
+    def setup_action(self, when, count=None, after=None, action=None, action_args=None):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
         if count is not None:
@@ -61,10 +59,6 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        # Only `at_object_get` reads it: the rule then applies to the requests for that object key.
-        if key is not None:
-            url += f"&key={urllib.parse.quote(key, safe='')}"
-
         self._apply(url)
 
     def setup_at_object_upload(self, **kwargs):
@@ -76,17 +70,8 @@ class MockControl:
     def setup_at_listing(self, **kwargs):
         self.setup_action("at_listing", **kwargs)
 
-    def setup_at_object_get(self, **kwargs):
-        self.setup_action("at_object_get", **kwargs)
-
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
-
-    def setup_at_complete_multi_part_upload(self, **kwargs):
-        self.setup_action("at_complete_multi_part_upload", **kwargs)
-
-    def setup_at_abort_multi_part_upload(self, **kwargs):
-        self.setup_action("at_abort_multi_part_upload", **kwargs)
 
     def setup_fake_puts(self, part_length):
         self._apply(
@@ -248,10 +233,7 @@ class _ServerRuntime:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
         def __init__(self, early=None):
-            # `1`: answer before reading the body, then reset the connection, like MinIO.
-            # `lingering`: answer before reading the body, then read and drop a part of it before
-            # the connection is reset, like AWS S3, which keeps reading for a while after its answer.
-            self.early = early
+            self.early = early == "1"
 
         def inject_error(self, request_handler):
             data = (
@@ -263,29 +245,15 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            if self.early in ("1", "lingering"):
+            if self.early:
                 request_handler.send_response(404)
                 request_handler.send_header("Content-Type", "text/xml")
                 request_handler.send_header("Content-Length", str(len(data)))
                 request_handler.send_header("Connection", "close")
                 request_handler.end_headers()
                 request_handler.wfile.write(bytes(data, "UTF-8"))
+                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
                 request_handler.connection.shutdown(socket.SHUT_WR)
-                if self.early == "lingering":
-                    # like AWS S3: keep reading and dropping the body after the answer, but less than
-                    # a large part, so that a client that does not watch the connection is still sending
-                    connection = request_handler.connection
-                    connection.settimeout(1)
-                    to_drop = 8 * 1024 * 1024
-                    while to_drop > 0:
-                        try:
-                            data = connection.recv(min(to_drop, 65536))
-                        except OSError:
-                            break
-                        if not data:
-                            break
-                        to_drop -= len(data)
-                # stop reading, wait, then close with the body unread, which resets the connection
                 time.sleep(0.5)
                 request_handler.connection.close()
             else:
@@ -380,7 +348,6 @@ class _ServerRuntime:
                 request_handler.wfile.write(bytes(self.partial_data, "UTF-8"))
 
             time.sleep(1)
-            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -389,10 +356,9 @@ class _ServerRuntime:
     class BrokenPipeAction:
         def inject_error(self, request_handler):
             # partial read
-            request_handler.rfile.read(50)
+            self.rfile.read(50)
 
             time.sleep(1)
-            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -415,7 +381,6 @@ class _ServerRuntime:
             request_handler.log_message("timeout action: sleep")
             time.sleep(10)
             request_handler.log_message("timeout action: close connection")
-            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -503,10 +468,6 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
-        self.at_object_get = None
-        self.at_object_get_by_key = {}
-        self.at_complete_multi_part_upload = None
-        self.at_abort_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -528,11 +489,7 @@ class _ServerRuntime:
             self.slow_get = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
-            self.at_complete_multi_part_upload = None
-            self.at_abort_multi_part_upload = None
             self.at_listing = None
-            self.at_object_get = None
-            self.at_object_get_by_key = {}
 
 
 _runtime = _ServerRuntime()
@@ -546,33 +503,13 @@ def get_random_string(length):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
-    # Speak HTTP/1.1 with keep-alive, like real S3. With the default HTTP/1.0
-    # every response closes the connection, so a client that works at full
-    # speed opens a new connection per request and the resulting connection
-    # storm causes sporadic connect timeouts and resets, which the tests
-    # then observe as extra `S3WriteRequestsErrors` on top of the injected
-    # ones. Keep-alive lets the client reuse connections and keeps the error
-    # counters deterministic. Every response must carry `Content-Length`
-    # (or close the connection deliberately, as the error actions do).
-    protocol_version = "HTTP/1.1"
-
     throttler = _runtime.throttler
-
-    def write_body(self, data):
-        # A response to HEAD carries the headers of the equivalent GET, but never its body.
-        # Writing one leaves unread bytes on a keep-alive connection, and the client then reads
-        # them as the status line of the next response ("Invalid HTTP version string") or blocks
-        # waiting for the rest of it.
-        if self.command == "HEAD":
-            return
-        self.wfile.write(data)
 
     def _ok(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", "2")
         self.end_headers()
-        self.write_body(b"OK")
+        self.wfile.write(b"OK")
 
     def _ping(self):
         self._ok()
@@ -599,9 +536,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         url = f"http://{host}:{port}{self.path}"
         self.log_message("redirect to %s", url)
         self.send_header("Location", url)
-        self.send_header("Content-Length", "10")
         self.end_headers()
-        self.write_body(b"Redirected")
+        self.wfile.write(b"Redirected")
 
     def write_error(self, http_code, data, content_length=None):
         if content_length is None:
@@ -613,7 +549,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(content_length))
         self.end_headers()
         if data:
-            self.write_body(bytes(data, "UTF-8"))
+            self.wfile.write(bytes(data, "UTF-8"))
 
     def _fake_put_ok(self):
         self.log_message("fake put")
@@ -646,7 +582,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.write_body(bytes(data, "UTF-8"))
+        self.wfile.write(bytes(data, "UTF-8"))
 
     def _fake_post_ok(self, path):
         self.read_all_input()
@@ -670,7 +606,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.write_body(bytes(data, "UTF-8"))
+        self.wfile.write(bytes(data, "UTF-8"))
 
     def _mock_settings(self):
         parts = urllib.parse.urlsplit(self.path)
@@ -741,45 +677,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
-        if path[1] == "at_complete_multi_part_upload":
-            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_complete_multi_part_upload = (
-                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
-            )
-            self.log_message(
-                "set at_complete_multi_part_upload %s",
-                _runtime.at_complete_multi_part_upload,
-            )
-            return self._ok()
-
-        if path[1] == "at_abort_multi_part_upload":
-            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_abort_multi_part_upload = (
-                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
-            )
-            self.log_message(
-                "set at_abort_multi_part_upload %s",
-                _runtime.at_abort_multi_part_upload,
-            )
-            return self._ok()
-
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
                 _runtime.lock, params
             )
             self.log_message("set at_listing %s", _runtime.at_listing)
-            return self._ok()
-
-        if path[1] == "at_object_get":
-            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
-            key = params.get("key", [None])[0]
-            if key is None:
-                _runtime.at_object_get = rule
-            else:
-                _runtime.at_object_get_by_key[key] = rule
-            self.log_message("set at_object_get %s for key %s", rule, key)
             return self._ok()
 
         if path[1] == "reset":
@@ -803,18 +706,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if is_listing and _runtime.at_listing is not None:
             if _runtime.at_listing.has_effect():
                 return _runtime.at_listing.inject_error(self)
-
-        if not is_listing:
-            # `has_effect` takes `_runtime.lock` itself, so the lock must not be held here.
-            for key, rule in list(_runtime.at_object_get_by_key.items()):
-                if key in parts.path and rule.has_effect():
-                    self.log_message("get at_object_get %s for key %s", rule, key)
-                    return rule.inject_error(self)
-
-        if not is_listing and _runtime.at_object_get is not None:
-            if _runtime.at_object_get.has_effect():
-                self.log_message("get at_object_get %s", _runtime.at_object_get)
-                return _runtime.at_object_get.inject_error(self)
 
         if not is_listing and _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
@@ -892,11 +783,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 return self._fake_uploads(parts.path, upload_id)
 
         upload_id = params.get("uploadId", [None])[0]
-        if upload_id is not None:
-            if _runtime.at_complete_multi_part_upload is not None:
-                if _runtime.at_complete_multi_part_upload.has_effect():
-                    return _runtime.at_complete_multi_part_upload.inject_error(self)
-
         if _runtime.is_fake_upload(upload_id, parts.path):
             return self._fake_post_ok(parts.path)
 
@@ -911,34 +797,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
-        parts = urllib.parse.urlsplit(self.path)
-        params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-        upload_id = params.get("uploadId", [None])[0]
-        if upload_id is not None and _runtime.at_abort_multi_part_upload is not None:
-            if _runtime.at_abort_multi_part_upload.has_effect():
-                self.log_message(
-                    "delete at_abort_multi_part_upload %s, %s, %s",
-                    _runtime.at_abort_multi_part_upload,
-                    upload_id,
-                    parts,
-                )
-                return _runtime.at_abort_multi_part_upload.inject_error(self)
-
         self.redirect()
 
 
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
-
-    # With keep-alive a thread lives as long as its connection: do not let
-    # idle connections block the server shutdown.
-    daemon_threads = True
-
-    # A client uploading many parts concurrently opens its connections all at
-    # once; the default listen backlog of 5 drops the excess connection
-    # attempts, and they surface as connect timeouts counted on top of the
-    # injected errors.
-    request_queue_size = 128
 
     def set_upstream(self, upstream_host, upstream_port):
         self.upstream_host = upstream_host

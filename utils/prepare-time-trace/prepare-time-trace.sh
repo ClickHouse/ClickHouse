@@ -60,7 +60,7 @@ OUTPUT_DIR=$2
 
 # A build that was a complete compiler-cache hit compiles nothing and emits no
 # raw trace file at all - that is legitimate, unlike a failing extraction.
-TRACE_FILES=$(find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | { grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace(\.json)?$' || true; })
+TRACE_FILES=$(find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | { grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' || true; })
 
 if [[ -n "$TRACE_FILES" ]]
 then
@@ -68,7 +68,7 @@ then
     set -e
     set -o pipefail
 
-    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.time-trace(\.json)?\$!!; s!\.json\$!!; s!/CMakeFiles/[^/]+\.dir!!')
+    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.(json|time-trace)\$!!; s!/CMakeFiles/[^/]+\.dir!!')
     LIBRARY_NAME=\$(echo '{}' | sed -r -e 's!^.*/CMakeFiles/([^/]+)\.dir/.*\$!\1!')
     START_TIME=\$(jq '.beginningOfTime' '{}')
 

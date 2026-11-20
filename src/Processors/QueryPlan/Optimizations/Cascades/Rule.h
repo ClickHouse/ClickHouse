@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <memory>
@@ -15,25 +14,24 @@ class IOptimizationRule
 {
 public:
     virtual ~IOptimizationRule() = default;
-    [[nodiscard]] virtual String getName() const = 0;
-    [[nodiscard]] virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
-    [[nodiscard]] virtual Promise getPromise() const = 0;
-    [[nodiscard]] virtual bool isTransformation() const = 0;
+    virtual String getName() const = 0;
+    virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
+    virtual Promise getPromise() const = 0;
+    virtual bool isTransformation() const = 0;
 
-    GroupExpressions apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
+    std::vector<GroupExpressionPtr> apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
 protected:
-    virtual GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const = 0;
+    virtual std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const = 0;
 
     /// Inserts a rule-produced physical expression into its group and appends it to `result` when
     /// it was actually inserted (a structural duplicate is dropped). Marks the expression with
-    /// this rule so it is not re-applied to its own product. When the duplicate is an enforcer,
-    /// the equal enforcer of the group gets the required properties that the new one was made for.
+    /// this rule so it is not re-applied to its own product.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
-        Memo & memo, GroupExpressions & result) const;
+        Memo & memo, std::vector<GroupExpressionPtr> & result) const;
 
     /// Same, for a rule that produces one expression: returns the result list directly.
-    GroupExpressions addPhysicalToMemo(
+    std::vector<GroupExpressionPtr> addPhysicalToMemo(
         GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
     /// Registers a two-stage split of `source_expression`: the partial expression becomes its own
@@ -51,17 +49,13 @@ using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
-OptimizationRulePtr createDistinctImplementation();
 OptimizationRulePtr createTwoStageAggregationTransformation();
-OptimizationRulePtr createMergingAggregationImplementation();
-OptimizationRulePtr createAggregationPushdown();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();
 OptimizationRulePtr createReplicatedSubplanImplementation();
 OptimizationRulePtr createTopNImplementation();
 OptimizationRulePtr createTwoStageTopN();
-OptimizationRulePtr createWindowImplementation();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionEnforcer();

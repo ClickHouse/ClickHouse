@@ -26,15 +26,10 @@ public:
         LOG_TRACE(getLogger("PasteJoin"), "Will use paste join");
     }
 
-    [[nodiscard]] std::string getName() const override { return "PasteJoin"; }
+    std::string getName() const override { return "PasteJoin"; }
+    const TableJoin & getTableJoin() const override { return *table_join; }
 
-    [[nodiscard]] std::string getAlgorithm() const override { return "PASTE"; }
-    [[nodiscard]] const TableJoin & getTableJoin() const override { return *table_join; }
-
-    /// The left and right blocks are concatenated side by side by row position.
-    [[nodiscard]] bool preservesLeftBlockOrder() const override { return true; }
-
-    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, JoinBuildContext /* context */) override
+    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::addBlockToJoin should not be called");
     }
@@ -68,30 +63,30 @@ public:
     }
 
     void setTotals(const Block & block) override { totals = block; }
-    [[nodiscard]] const Block & getTotals() const override { return totals; }
+    const Block & getTotals() const override { return totals; }
 
-    [[nodiscard]] size_t getTotalRowCount() const override
+    size_t getTotalRowCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getTotalRowCount should not be called");
     }
 
-    [[nodiscard]] size_t getTotalByteCount() const override
+    size_t getTotalByteCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getTotalByteCount should not be called");
     }
 
-    [[nodiscard]] bool alwaysReturnsEmptySet() const override { return false; }
+    bool alwaysReturnsEmptySet() const override { return false; }
 
-    [[nodiscard]] StepAnalysisReport getAnalysisReport() const override { return {}; }
+    StepAnalysisReport getAnalysisReport() const override { return {}; }
 
-    [[nodiscard]] IBlocksStreamPtr
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getNonJoinedBlocks should not be called");
     }
 
     /// Left and right streams have the same priority and are processed simultaneously
-    [[nodiscard]] JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
+    JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
     std::shared_ptr<TableJoin> table_join;
