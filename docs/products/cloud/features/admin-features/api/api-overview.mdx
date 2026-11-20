@@ -33,10 +33,18 @@ This will affect the objects returned by the `POST`, `GET`, and `PATCH` service 
 
 ## Rate limits {#rate-limits}
 
-Developers are limited to 100 API keys per organization. Each API key has a 
-limit of 10 requests over a 10-second window. If you'd like to increase the 
-number of API keys or requests per 10-second window for your organization, 
-please contact support@clickhouse.com
+Developers are limited to 100 API keys per organization. Each API key has these
+limits over a 10-second window:
+
+- 40 read requests (`GET`)
+- 20 write requests (all other methods, for example `POST`, `PATCH` and `DELETE`)
+
+When a request goes over a limit, the API returns status `429 Too Many Requests`
+with a `Retry-After` header. The header value is the number of seconds to wait
+before you send the request again.
+
+If you'd like to increase the number of API keys or requests per 10-second window
+for your organization, please contact support@clickhouse.com
 
 ## Terraform provider {#terraform-provider}
 
