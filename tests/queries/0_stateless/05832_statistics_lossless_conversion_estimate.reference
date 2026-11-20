@@ -1,0 +1,15 @@
+-- estimated rows of tab: the same as for the bare column, and the estimate
+1	20000
+1	9899
+1	15000
+1	20000
+1	20000
+1	20000
+1	400
+1	5000
+1	202
+-- a conversion that can change a value keeps the default
+6600
+-- PREWHERE runs the selective condition first: toFloat64(x) > 0 rejects no row
+1
+0
