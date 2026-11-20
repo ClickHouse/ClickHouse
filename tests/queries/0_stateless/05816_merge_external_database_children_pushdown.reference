@@ -27,6 +27,9 @@ Serialized query plan, strict mode of the remote user:
 1
 Serialized query plan, strict mode of the remote user, no filter:
 1
+Serialized query plan, strict mode, a materialized view with SQL SECURITY DEFINER or NONE:
+1
+1
 Serialized query plan through two servers, strict mode of the last user:
 1
 Serialized query plan through two servers, strict mode of the first user:

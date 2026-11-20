@@ -84,6 +84,9 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO strict_${CLICKHOUSE_DATABASE};
 CREATE TABLE r_s (id Nullable(Int64), v Nullable(String))
     AS remote('127.0.0.2', currentDatabase(), t_s, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass');
 CREATE TABLE r_d (id Nullable(Int64), v Nullable(String)) AS remote('127.0.0.2', currentDatabase(), t_s);
+CREATE TABLE mv_src (id Nullable(Int64), v Nullable(String)) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv_definer TO t_s DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id, v FROM mv_src;
+CREATE MATERIALIZED VIEW mv_none TO t_s SQL SECURITY NONE AS SELECT id, v FROM mv_src;
 "
 
 echo 'MergeTree and MySQL:'
@@ -129,6 +132,14 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
 SELECT id, v FROM remote('127.0.0.2', currentDatabase(), m_s, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass') ORDER BY id
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
+
+echo 'Serialized query plan, strict mode, a materialized view with SQL SECURITY DEFINER or NONE:'
+for t in mv_definer mv_none; do
+    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+    SELECT id, v FROM remote('127.0.0.2', currentDatabase(), $t) WHERE v LIKE 's%'
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
+    " 2>&1 | grep -c 'INCORRECT_QUERY'
+done
 
 echo 'Serialized query plan through two servers, strict mode of the last user:'
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
