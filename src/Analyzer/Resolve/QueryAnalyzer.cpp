@@ -5784,6 +5784,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     table_qualifiers.push_back({table_storage_id.table_name});
                     table_qualifiers.push_back({table_storage_id.database_name, table_storage_id.table_name});
                 }
+                else if (const auto * other_table_function_node = join_table_expression->as<TableFunctionNode>(); other_table_function_node
+                    && !TableFunctionFactory::instance().isTableFunctionName(other_table_function_node->getTableFunctionName()))
+                {
+                    auto [view_database_name, view_table_name]
+                        = extractDatabaseAndTableNameForParameterizedView(other_table_function_node->getTableFunctionName(), scope_context);
+                    table_qualifiers.push_back({view_table_name});
+                    table_qualifiers.push_back({view_database_name, view_table_name});
+                }
                 else if (const auto * query_node = join_table_expression->as<QueryNode>(); query_node && query_node->isCTE())
                     table_qualifiers.push_back({query_node->getCTEName()});
                 else if (const auto * union_node = join_table_expression->as<UnionNode>(); union_node && union_node->isCTE())

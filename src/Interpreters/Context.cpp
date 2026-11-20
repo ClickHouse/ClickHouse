@@ -3651,6 +3651,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 for (const auto * other_table_expression : getTableExpressions(*select_query_hint))
                 {
                     DatabaseAndTableWithAlias other_table(*other_table_expression, getCurrentDatabase());
+                    if (const auto * other_table_function
+                        = other_table_expression->table_function ? other_table_expression->table_function->as<ASTFunction>() : nullptr;
+                        other_table_function && !TableFunctionFactory::instance().isTableFunctionName(other_table_function->name))
+                        std::tie(other_table.database, other_table.table)
+                            = extractDatabaseAndTableNameForParameterizedView(other_table_function->name, shared_from_this());
                     if (!other_table.alias.empty())
                         table_qualifiers.push_back({other_table.alias});
                     if (!other_table.table.empty())

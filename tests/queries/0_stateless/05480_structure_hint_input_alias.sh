@@ -36,11 +36,16 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_structure_hint_input_joined (v UInt
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_joined VALUES (97)"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d "INSERT INTO t_structure_hint_input_join SELECT i.id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM input() AS i CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined FORMAT JSONEachRow {\"id\":3,\"v\":30}"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join WITH g AS (SELECT 96 AS v) SELECT i.id, g.v FROM input() AS i CROSS JOIN g FORMAT JSONEachRow {"id":4,"v":40}'
+${CLICKHOUSE_CLIENT} --query "DROP VIEW IF EXISTS t_structure_hint_input_pv"
+${CLICKHOUSE_CLIENT} --query "CREATE VIEW t_structure_hint_input_pv AS SELECT {value:UInt32} AS v"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join SELECT i.id, t_structure_hint_input_pv.v FROM input() AS i CROSS JOIN t_structure_hint_input_pv(value=95) FORMAT JSONEachRow {"id":5,"v":50}'
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_structure_hint_input_join ORDER BY ALL"
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE t_structure_hint_input_join"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_join SELECT id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined LIMIT 1"
-${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_structure_hint_input_join"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_join SELECT id, t_structure_hint_input_pv.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN t_structure_hint_input_pv(value=94) LIMIT 1"
+${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_structure_hint_input_join ORDER BY v"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_join"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_joined"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW t_structure_hint_input_pv"
