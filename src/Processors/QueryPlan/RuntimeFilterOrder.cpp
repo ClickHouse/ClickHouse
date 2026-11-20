@@ -213,7 +213,7 @@ ReorderableRuntimeFilterSteps findReorderableSteps(size_t size, const std::funct
 }
 
 /// Selectivities multiply as if independent; a block one filter rejects whole the step rejects whole.
-RuntimeFilterStepMeasurement measureRuntimeFilterStep(const std::vector<RuntimeFilterConstPtr> & filters)
+RuntimeFilterStepMeasurement measureRuntimeFilterStep(const VectorWithMemoryTracking<RuntimeFilterConstPtr> & filters)
 {
     RuntimeFilterStepMeasurement step{.selectivity = 1.0, .probe_nanoseconds_per_row = 0.0, .cheap_to_probe = true};
     for (const auto & filter : filters)
@@ -236,7 +236,7 @@ RuntimeFilterStepMeasurement measureRuntimeFilterStep(const std::vector<RuntimeF
     return step;
 }
 
-PrewhereStepOrder orderRuntimeFilterSteps(const std::vector<RuntimeFilterStepMeasurement> & steps)
+PrewhereStepOrder orderRuntimeFilterSteps(const VectorWithMemoryTracking<RuntimeFilterStepMeasurement> & steps)
 {
     PrewhereStepOrder order(steps.size());
     std::iota(order.begin(), order.end(), 0);
@@ -259,13 +259,13 @@ PrewhereStepOrder orderRuntimeFilterSteps(const std::vector<RuntimeFilterStepMea
 }
 
 PrewhereStepOrder
-orderRuntimeFilterStepsByMeasurement(const IRuntimeFilterLookup & lookup, const std::vector<Names> & filter_ids_per_step)
+orderRuntimeFilterStepsByMeasurement(const IRuntimeFilterLookup & lookup, const VectorWithMemoryTracking<Names> & filter_ids_per_step)
 {
-    std::vector<RuntimeFilterStepMeasurement> measurements;
+    VectorWithMemoryTracking<RuntimeFilterStepMeasurement> measurements;
     measurements.reserve(filter_ids_per_step.size());
     for (const auto & filter_ids : filter_ids_per_step)
     {
-        std::vector<RuntimeFilterConstPtr> filters;
+        VectorWithMemoryTracking<RuntimeFilterConstPtr> filters;
         for (const auto & filter_id : filter_ids)
             filters.push_back(lookup.find(filter_id));
         measurements.push_back(measureRuntimeFilterStep(filters));

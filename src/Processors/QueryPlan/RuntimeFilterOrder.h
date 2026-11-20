@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <base/types.h>
 
 #include <memory>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -62,9 +62,9 @@ struct ReorderableRuntimeFilterSteps
 {
     size_t first_step = 0;
     /// The ids of each step's filters, so the measurements can be looked up per task; empty if there are no such steps.
-    std::vector<Names> filter_ids_per_step;
+    VectorWithMemoryTracking<Names> filter_ids_per_step;
     /// The columns each step looks up, all it may read.
-    std::vector<NameSet> key_columns_per_step;
+    VectorWithMemoryTracking<NameSet> key_columns_per_step;
 };
 
 /// The filter ids of one step or conjunct and the columns their keys look up; no ids if it is not only such lookups.
@@ -88,14 +88,14 @@ struct RuntimeFilterStepMeasurement
 };
 
 /// Measures one step from its filters; a null filter (not registered yet) leaves the step unmeasured.
-RuntimeFilterStepMeasurement measureRuntimeFilterStep(const std::vector<RuntimeFilterConstPtr> & filters);
+RuntimeFilterStepMeasurement measureRuntimeFilterStep(const VectorWithMemoryTracking<RuntimeFilterConstPtr> & filters);
 
 /// The order in which to run adjacent PREWHERE steps of runtime filters, as indices into `steps`, planned order first.
-PrewhereStepOrder orderRuntimeFilterSteps(const std::vector<RuntimeFilterStepMeasurement> & steps);
+PrewhereStepOrder orderRuntimeFilterSteps(const VectorWithMemoryTracking<RuntimeFilterStepMeasurement> & steps);
 
 /// `orderRuntimeFilterSteps` of the steps whose filters `lookup` holds under `filter_ids_per_step`; empty if it is the planned order.
 PrewhereStepOrder
-orderRuntimeFilterStepsByMeasurement(const IRuntimeFilterLookup & lookup, const std::vector<Names> & filter_ids_per_step);
+orderRuntimeFilterStepsByMeasurement(const IRuntimeFilterLookup & lookup, const VectorWithMemoryTracking<Names> & filter_ids_per_step);
 
 /// A copy of the PREWHERE DAG whose `ReorderableRuntimeFilterSteps` of conjuncts run in the order `orderRuntimeFilterSteps` picks
 /// from the filters' measurements; nullopt if the order stays.
