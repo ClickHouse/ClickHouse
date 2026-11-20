@@ -79,7 +79,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
-        optimization_settings.use_top_k_dynamic_filtering_for_single_string_sort_column,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
@@ -118,8 +117,6 @@ static String describeProjectionRejections(const std::unordered_map<String, Stri
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
-
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -320,7 +317,8 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
+        processAndOptimizeTextIndexFunctions(
+            stack, nodes, optimization_settings.direct_read_from_text_index, optimization_settings.find_single_node_read, extra_settings);
 
         auto & frame = stack.back();
 
@@ -396,11 +394,6 @@ void optimizeTreeSecondPass(
             if (add_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
-
-    /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
-    /// reads the columns the key was computed from. Prune them, or the join carries them as payload.
-    if (join_runtime_filters_were_added && optimization_settings.remove_unused_columns)
-        removeUnusedColumns(root, RemoveUnusedColumnsMode::Global);
 
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
     /// before; a copied predicate alone is no reason to run a rewrite the user turned off
@@ -557,9 +550,6 @@ void optimizeTreeSecondPass(
         [&](auto &) {},
         [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
 
-    /// the conversion makes the pre-join expressions, also without plan optimizations
-    lowerArrayJoinFunctions(root, nodes, extra_settings);
-
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the
     /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
@@ -623,7 +613,7 @@ void optimizeTreeSecondPass(
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.
                 if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
-                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings, /*before_projections=*/true);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.
@@ -668,10 +658,6 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            /// After the normal projections are chosen, except for parallel replicas (see `optimizeAggregationInOrder`).
-            if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
-                optimizeAggregationInOrder(frame_node, nodes, optimization_settings, /*before_projections=*/false);
-
             if (optimization_settings.aggregate_partitions_independently)
                 optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
 
@@ -1029,19 +1015,7 @@ void optimizeTreeSecondPass(
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
-    /// After every pass that converts a full sorting or gives it partitions.
-    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
-
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
-
-    /// After every optimization that can replace the reading step: the aggregation relies on the layers of the read.
-    if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { optimizeUniqExactInOrderLayers(frame_node); });
-
-    /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
-    /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
-    if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
 
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
@@ -1057,9 +1031,6 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
-
-    /// Last: it reads the final consumers of every remote read.
-    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(
@@ -1072,9 +1043,6 @@ void addStepsToBuildSets(
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
-
-        if (frame.next_child == 0)
-            removeSetsOfAlwaysFalseScope(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())

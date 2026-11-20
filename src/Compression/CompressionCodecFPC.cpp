@@ -96,14 +96,9 @@ UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 namespace
 {
 
-bool isApplicableToType(const IDataType & column_type)
-{
-    return WhichDataType(column_type).isNativeFloat();
-}
-
 UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!isApplicableToType(column_type))
+    if (!WhichDataType(column_type).isNativeFloat())
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
@@ -154,7 +149,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
 }
 
 namespace

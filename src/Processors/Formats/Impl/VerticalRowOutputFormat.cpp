@@ -26,7 +26,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
-    using Widths = VectorWithMemoryTracking<size_t>;
+    using Widths = std::vector<size_t>;
     Widths name_widths(columns);
     size_t max_name_width = 0;
 

@@ -20,7 +20,6 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    std::optional<UInt64> getSerializedSize() const override;
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }

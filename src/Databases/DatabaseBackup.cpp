@@ -14,7 +14,6 @@
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadHelpers.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -38,7 +37,6 @@
 #include <Interpreters/SecretArgumentsRegistry.h>
 
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
-#include <Common/maskURIPassword.h>
 
 #include <Access/ContextAccess.h>
 
@@ -648,12 +646,9 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
     /// positionals independently of named overrides.
     size_t total_positionals = 0;
-    bool has_headers = false;
     for (size_t i = 0; i < nested_args.size(); ++i)
     {
         const auto f = nested_args.at(i)->getFunction();
-        if (f && boost::iequals(f->name(), "headers"))
-            has_headers = true;
         if (f && (f->name() == "extra_credentials"
                   || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
             continue;
@@ -664,8 +659,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
     /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
     /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
-    /// A `headers(...)` map makes it invalid as well: the engine accepts only `extra_credentials(...)`.
-    const size_t first_hidden_slot = (is_named_collection || (total_positionals == 3 && !has_headers)) ? 2 : 1;
+    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
 
     std::string replacement = "S3(";
     bool has_secret = false;
@@ -696,7 +690,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskURICredentials(value);
+                    has_secret |= maskS3URICredentials(value);
                     replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
@@ -783,7 +777,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskURICredentials(arg_value);
+            has_secret |= maskS3URICredentials(arg_value);
             replacement += quoteString(arg_value);
         }
         else
