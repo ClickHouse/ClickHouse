@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <AggregateFunctions/SketchDataUtils.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesSketchData.h>
@@ -95,7 +95,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedQuantiles(
     {
         /// Validate the literal explicitly: `safeGet<bool>` aliases to UInt64 in `Field`
         /// and would silently accept any positive integer as `true`.
-        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        UInt64 v = getSketchIntegerParameter(params[0], name, "base64_encoded");
         if (v != 0 && v != 1)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Parameter base64_encoded for aggregate function {} must be 0 or 1, got {}", name, v);

@@ -6,13 +6,28 @@
 #include <utility>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Core/Field.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+}
+
+/// Read a discrete parameter (such as `lg_k` or the `base64_encoded` flag) of a sketch aggregate function.
+/// Only a non-negative integer literal is accepted. Converting through `FieldVisitorConvertToNumber<UInt64>`
+/// would truncate fractional `Float64` and `Decimal` literals (so that `0.5` reads as `0` and `10.9` as `10`)
+/// and wrap negative ones around, silently changing the requested configuration.
+inline UInt64 getSketchIntegerParameter(const Field & field, std::string_view function_name, std::string_view parameter_name)
+{
+    if (field.getType() != Field::Types::UInt64)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Parameter {} for aggregate function {} must be a non-negative integer literal, got {}",
+            parameter_name, function_name, field.dump());
+    return field.safeGet<UInt64>();
 }
 
 /// Deserialize an Apache DataSketches sketch, translating the library's own std exceptions

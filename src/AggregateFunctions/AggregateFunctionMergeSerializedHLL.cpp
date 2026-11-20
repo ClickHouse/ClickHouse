@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <AggregateFunctions/SketchDataUtils.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/HLLSketchData.h>
@@ -141,7 +141,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 
     auto parseBase64 = [&](const Field & field)
     {
-        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
+        UInt64 v = getSketchIntegerParameter(field, name, "base64_encoded");
         if (v != 0 && v != 1)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Parameter base64_encoded for aggregate function {} must be 0 or 1, got {}", name, v);
@@ -150,7 +150,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 
     auto parseLgK = [&](const Field & field)
     {
-        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
+        UInt64 v = getSketchIntegerParameter(field, name, "lg_k");
         if (v < 4 || v > 21)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, v);
@@ -162,7 +162,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     if (params.size() == 1)
     {
         /// [base64_encoded] where base64_encoded is 0/1 OR [lg_k] where lg_k in [4..21]
-        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        UInt64 v = getSketchIntegerParameter(params[0], name, "base64_encoded or lg_k");
         if (v == 0 || v == 1)
             base64_encoded = (v != 0);
         else

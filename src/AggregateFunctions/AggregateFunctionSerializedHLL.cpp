@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <AggregateFunctions/SketchDataUtils.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/HLLSketchData.h>
@@ -114,7 +114,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 
     if (!params.empty())
     {
-        UInt64 lg_k_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        UInt64 lg_k_param = getSketchIntegerParameter(params[0], name, "lg_k");
         if (lg_k_param < 4 || lg_k_param > 21)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, lg_k_param);
