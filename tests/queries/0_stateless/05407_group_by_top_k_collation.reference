@@ -83,7 +83,11 @@ a0	0	5
 a0	1	5
 á0	0	5
 á0	1	5
-1
+0
+a0	0	10
+a0	1	10
+á0	0	10
+á0	1	10
 ties under collation
 61	100
 62	100
@@ -419,11 +423,12 @@ engaged
 05407_adaptive_repeats	1	1	1
 05407_composite_later	1	1	1
 05407_dynamic_filter	1	1	1
-05407_forced_repeats	1	1	1
+05407_forced_repeats	0	1	1
 05407_keys	1	1	1
 05407_plain	1	1	1
 05407_remote_plan	1	1	1
 05407_remote_plan_nullable	1	1	1
+05407_remote_prefix	0	1	1
 05407_remote_text	1	1	1
 05407_repeats	1	1	1
 05407_repeats_then_unique	1	1	1

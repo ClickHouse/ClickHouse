@@ -470,7 +470,10 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
-            if (!canTopKRankSortKey(sort_description[i], *aggregating_step->getInputHeaders().front()->getByName(params.keys[i]).type))
+            if (!canTopKRankSortKey(
+                    sort_description[i],
+                    *aggregating_step->getInputHeaders().front()->getByName(params.keys[i]).type,
+                    num_key_columns == params.keys.size()))
                 return 0;
 
             directions.push_back(sort_description[i].direction);

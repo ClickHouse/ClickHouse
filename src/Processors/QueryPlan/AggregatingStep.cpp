@@ -178,9 +178,9 @@ bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
 }
 
-bool canTopKRankSortKey(const SortColumnDescription & description, const IDataType & key_type)
+bool canTopKRankSortKey(const SortColumnDescription & description, const IDataType & key_type, bool ranks_all_keys)
 {
-    return !description.collator || key_type.createColumn()->isCollationSupported();
+    return !description.collator || (ranks_all_keys && key_type.createColumn()->isCollationSupported());
 }
 
 Block appendGroupingSetColumn(Block header)

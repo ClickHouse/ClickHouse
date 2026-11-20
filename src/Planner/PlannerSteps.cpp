@@ -632,7 +632,10 @@ void applyTopKPushdownToPartialAggregation(
         if (sort_description[i].with_fill)
             return;
 
-        if (!canTopKRankSortKey(sort_description[i], *aggregating_step.getInputHeaders().front()->getByName(params.keys[i]).type))
+        if (!canTopKRankSortKey(
+                sort_description[i],
+                *aggregating_step.getInputHeaders().front()->getByName(params.keys[i]).type,
+                sort_description.size() == params.keys.size()))
             return;
 
         directions.push_back(sort_description[i].direction);

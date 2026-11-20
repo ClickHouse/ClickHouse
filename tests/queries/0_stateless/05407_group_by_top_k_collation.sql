@@ -73,15 +73,19 @@ SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimiza
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_composite_later';
 
--- ORDER BY shorter than GROUP BY: the heap ranks `s` only and skips rows without evicting groups.
--- LIMIT 4 takes both `b` of the two best `s`, so the selected set has no ties.
+-- ORDER BY shorter than GROUP BY: a heap of `s` alone cannot tell whether the groups it skips repeat, so a `COLLATE`
+-- there is not ranked, locally or on the shards. LIMIT 4 takes both `b` of the two best `s`, so the selected set has no ties.
 SELECT 'key prefix';
 SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
-SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
     SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4);
+SELECT * FROM (SELECT s, b, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407)
+    GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
+SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1,
+    log_comment = '05407_remote_prefix';
 
 -- Precomposed 'é' (C3A9) and 'e' + U+0301 (65CC81) are two groups that are equal under 'en'. After the 32800 fillers,
 -- each cycle brings f5, f6, a, b, c, both forms of é and new f5<number> keys, one per row, so the heap trims with the
@@ -378,8 +382,7 @@ SETTINGS max_threads = 2, max_block_size = 1024, group_by_two_level_threshold = 
     group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_run_adaptive_new_best';
 
--- Every key comes twice and keys descend, so the prefix heap evicts on every new key; `observation_rows = 0` never
--- freezes it.
+-- A key prefix with `observation_rows = 0`, which would never freeze the heap, is not ranked under a `COLLATE` either.
 SELECT 'forced heap';
 SELECT s, b, count() FROM (SELECT concat('l', leftPad(toString(99999 - intDiv(number, 2)), 5, '0')) AS s,
     intDiv(number, 2) % 2 AS b FROM numbers_mt(160000))
@@ -437,8 +440,8 @@ SETTINGS max_threads = 1, max_block_size = 5000000, enable_group_by_top_k_optimi
 
 SYSTEM FLUSH LOGS query_log;
 
--- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the heap trimmed in the
--- tie and other-aggregate cases.
+-- Whether the heap pruned (on the shards for the remote queries; never for the key prefixes), the aggregation spilled,
+-- and the heap trimmed in the tie and other-aggregate cases.
 SELECT 'engaged';
 SELECT
     i.log_comment,
@@ -453,7 +456,7 @@ INNER JOIN
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_adaptive_repeats', '05407_composite_later', '05407_dynamic_filter',
             '05407_forced_repeats', '05407_keys', '05407_plain', '05407_remote_plan', '05407_remote_plan_nullable',
-            '05407_remote_text', '05407_repeats', '05407_repeats_then_unique', '05407_run_adaptive',
+            '05407_remote_prefix', '05407_remote_text', '05407_repeats', '05407_repeats_then_unique', '05407_run_adaptive',
             '05407_run_adaptive_new_best', '05407_run_adaptive_new_keys', '05407_run_never_fills',
             '05407_run_new_best', '05407_run_new_keys', '05407_run_one_key', '05407_run_repeats', '05407_serialized',
             '05407_small', '05407_spill', '05407_states', '05407_threads', '05407_threads_adaptive', '05407_ties_asc',
