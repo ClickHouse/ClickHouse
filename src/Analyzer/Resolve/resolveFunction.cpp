@@ -2145,6 +2145,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
+                /// Re-resolve from the names before an earlier column alias list renamed them: INTERPOLATE refers to those.
+                for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+                    subquery_projection_columns[i].name = subquery_node->as<QueryNode>()->getProjectionNameBeforeOverride(i);
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
                 if (subquery_projection_columns.size() == 1)
                 {
