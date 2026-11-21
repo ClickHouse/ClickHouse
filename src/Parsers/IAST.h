@@ -369,6 +369,8 @@ public:
         bool enforce_strict_identifier_format;
         /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
         bool collapse_identical_nodes_to_aliases;
+        /// Align type declarations in CREATE TABLE column lists so all type tokens start at the same column.
+        bool align_column_types;
         /// Do not print the redundant parentheses that the user has written around an expression
         /// (the `parenthesized` flag), so that `(a)` and `a` produce the same text. Used to store
         /// and to compare table definition expressions - see `formatIgnoringRedundantParentheses`.
@@ -382,7 +384,8 @@ public:
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
             bool enforce_strict_identifier_format_ = false,
-            bool collapse_identical_nodes_to_aliases_ = false)
+            bool collapse_identical_nodes_to_aliases_ = false,
+            bool align_column_types_ = false)
             : one_line(one_line_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -392,6 +395,7 @@ public:
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
             , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
+            , align_column_types(align_column_types_)
         {
         }
 
@@ -427,6 +431,10 @@ public:
         /// This keeps the format-parse-format round-trip stable: `(expr) AS alias` re-parses with
         /// `parenthesized=true` on the aliased node, which formats back to `(expr) AS alias`.
         bool parenthesize_alias_inner_only = false;
+        /// Set by ASTColumns::formatImpl when align_column_types is enabled.
+        /// Holds the maximum quoted column-name width across all columns in the current CREATE TABLE,
+        /// so ASTColumnDeclaration can pad the gap between name and type to align all types.
+        size_t column_name_max_width = 0;
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const;
