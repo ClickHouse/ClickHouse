@@ -1,0 +1,35 @@
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/image.gif
+https://clickhouse.com/image.gif
+https://example.com/image.gif
+ftp://example.com/image.gif
+HTTPS://EXAMPLE.COM/image.gif
+https://clickhouse.com/image.gif
+https://clickhouse.com/image.gif
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/blog/post?a=1
+https://clickhouse.com/blog/post?b=2#bottom
+https://clickhouse.com/blog/post?a=1
+https://clickhouse.com/blog/post#bottom
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/image.gif
+https://clickhouse.com/../image.gif
+https://clickhouse.com/blog/2024/
+https://clickhouse.com/blog/
+https://clickhouse.com/blog/a/../image.gif
+https://clickhouse.com/../image.gif
+clickhouse.com/blog/image.gif
+clickhouse.com/image.gif
+//example.com/image.gif
+https://clickhouse.com/blog/
+image.gif
+
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/blog/image.gif
+https://clickhouse.com/blog/image.gif
+../image.gif	https://clickhouse.com/blog/image.gif
+//example.com/image.gif	https://example.com/image.gif
+/image.gif	https://clickhouse.com/image.gif
+ftp://example.com/image.gif	ftp://example.com/image.gif
+image.gif	https://clickhouse.com/blog/image.gif
