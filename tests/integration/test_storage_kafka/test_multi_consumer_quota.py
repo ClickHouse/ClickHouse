@@ -492,9 +492,9 @@ def test_temporary_lock_quota_is_retained_across_rounds(kafka_cluster):
     converges to 1 here. The run length is what separates the two behaviours.
 
     11 partitions over 4 replicas: node_quota = max(11/4, 1) = 2 pins 8 partitions and
-    leaves 3 for temporary locks. Every replica holds permanent locks, which keeps
-    `has_replica_without_locks` false -- otherwise the quota is forced to 0 before the
-    adjustment runs.
+    leaves 3 for temporary locks. Every replica holds permanent locks; historically this
+    also kept `has_replica_without_locks` false, which used to force the quota to 0 before
+    the adjustment ran.
     """
     admin = k.get_admin_client(kafka_cluster)
     topic_name = "tmp_quota_11p_4r"

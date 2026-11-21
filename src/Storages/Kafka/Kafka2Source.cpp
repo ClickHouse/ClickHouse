@@ -65,7 +65,9 @@ Chunk Kafka2Source::generateImpl()
         if (consumer->needsNewKeeper())
             consumer->setKeeper(storage.getZooKeeperAndAssertActive());
 
-        if (const auto cannot_poll_reason = consumer->prepareToPoll(storage.getLocksRefreshPolls()); cannot_poll_reason.has_value())
+        const auto locks_refresh_polls = storage.getLocksRefreshPolls();
+        const auto reschedule_ms = storage.getConsumerRescheduleMs();
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(locks_refresh_polls, reschedule_ms); cannot_poll_reason.has_value())
         {
             LOG_DEBUG(log, "Cannot poll consumer for direct read");
             return {};

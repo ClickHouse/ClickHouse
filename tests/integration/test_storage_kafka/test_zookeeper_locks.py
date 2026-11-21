@@ -148,7 +148,11 @@ def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
         expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             start = time.time()
-            timeout, interval = 30.0, 1.0
+            # The last partition is taken as a temporary lock, which the holders reserve
+            # for the slowest replica until it starts consuming and publishes demand;
+            # a cold librdkafka start (broker, metadata, group join) takes over a minute
+            # on loaded CI builders, so the budget must cover the whole startup.
+            timeout, interval = 180.0, 1.0
             while time.time() - start < timeout:
                 children = set(zk.ls(base))
                 if children == expected_locks:
@@ -235,8 +239,9 @@ def test_inactive_replica_not_counted(kafka_cluster):
 
         # The ghost replica must not be counted as active. If it were, the node quota would be
         # `num_partitions / 2`, so `r1` would hold only half of the partitions as permanent locks
-        # (plus at most one temporary lock, because `has_replica_without_locks` keeps the temporary
-        # quota at zero every other round) and would never own the whole lock set.
+        # (and before the quota-freeze invariant was removed, `has_replica_without_locks` would
+        # have kept the temporary quota at zero every other round) and would never own the
+        # whole lock set.
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
 
         instance.query_with_retry(

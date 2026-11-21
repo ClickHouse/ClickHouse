@@ -210,6 +210,7 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+    zkutil::EphemeralNodeHolderPtr demand_aware_node;
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
@@ -235,6 +236,7 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
     UInt64 getLocksRefreshPolls() const;
+    size_t getConsumerRescheduleMs() const;
     size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t

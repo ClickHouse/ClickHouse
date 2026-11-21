@@ -1,7 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
@@ -84,6 +88,8 @@ public:
     using MessageSinkFunction
         = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/, bool /*replaying_intent*/)>;
 
+    ~KeeperHandlingConsumer();
+
     KeeperHandlingConsumer(
         const KafkaConsumer2Ptr & kafka_consumer_,
         const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
@@ -123,7 +129,9 @@ public:
     /// rather than captured in the constructor because consumers are built once in
     /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
-    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
+    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls, size_t retry_interval_ms);
+    void markDemandInKeeper(size_t retry_interval_ms);
+    void removeDemandInKeeper();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.
@@ -163,7 +171,9 @@ private:
     struct ActiveReplicasInfo
     {
         UInt64 active_replica_count{0};
-        bool has_replica_without_locks{false};
+        std::vector<String> lockless_active_replicas;
+        std::unordered_map<String, String> demand_of_lockless;
+        std::unordered_set<String> demand_unaware_lockless;
     };
 
     std::filesystem::path keeper_path;
@@ -194,6 +204,20 @@ private:
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
 
+    std::unordered_map<String, size_t> TSA_GUARDED_BY(topic_partition_locks_mutex) lockless_rounds_by_replica;
+
+    bool demand_published = false;
+
+    std::chrono::steady_clock::time_point last_demand_time{};
+
+    struct DemandState
+    {
+        String last_value;
+        size_t retention_ms = 1500;
+        std::chrono::steady_clock::time_point last_change{};
+    };
+    std::unordered_map<String, DemandState> TSA_GUARDED_BY(topic_partition_locks_mutex) demand_state_by_replica;
+
     std::atomic<UInt64> last_poll_timestamp = 0;
     std::atomic<UInt64> last_commit_timestamp = 0;
     std::atomic<UInt64> num_commits = 0;
@@ -212,7 +236,7 @@ private:
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas, const std::unordered_map<String, String> & demand_of_lockless, const std::unordered_set<String> & demand_unaware_lockless) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.

@@ -1,5 +1,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
+#include <algorithm>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/join.hpp>
@@ -23,6 +24,31 @@ namespace
 const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
+/// Rounds to keep free partitions reserved (up to a lockless replica's permanent quota)
+/// for a possibly restarting replica; past this window a published demand keeps them reserved.
+constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
+
+size_t parseDemandRetentionMs(const String & value)
+{
+    /// Retention = a few of the retry intervals the demand value declares; an unchanged
+    /// demand past it means nobody is requesting the partitions anymore.
+    constexpr size_t demand_retention_factor = 3;
+    constexpr size_t default_retention_ms = 1500;
+    constexpr size_t max_retention_ms = 1800000;
+
+    const auto sep = value.find(':');
+    if (sep == String::npos || sep == 0 || sep + 1 == value.size())
+        return default_retention_ms;
+    try
+    {
+        const UInt64 declared = std::max<UInt64>(parse<UInt64>(value.substr(0, sep)), 1) * demand_retention_factor;
+        return std::min(static_cast<size_t>(declared), max_retention_ms);
+    }
+    catch (...) /// Ok: a malformed declared interval falls back to the default retention
+    {
+        return default_retention_ms;
+    }
+}
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -144,6 +170,18 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperHandlingConsumer requires a valid ZooKeeper instance");
 }
 
+KeeperHandlingConsumer::~KeeperHandlingConsumer()
+{
+    try
+    {
+        removeDemandInKeeper();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to remove the demand node");
+    }
+}
+
 bool KeeperHandlingConsumer::needsNewKeeper() const
 {
     return keeper->expired();
@@ -157,15 +195,20 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
+        lockless_rounds_by_replica.clear();
+        demand_state_by_replica.clear();
     }
     keeper = keeper_;
     tmp_locks_quota = 0;
+    demand_published = false;
+    last_demand_time = {};
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
     poll_count = 0;
 }
 
-std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
+std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(
+    UInt64 locks_refresh_polls, size_t retry_interval_ms)
 {
     chassert(isInUse());
     LOG_TRACE(log, "Polling consumer {} for events", idx);
@@ -232,8 +275,9 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         {
             std::lock_guard lock(topic_partition_locks_mutex);
             // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
+            const size_t node_quota = std::max<size_t>(all_topic_partitions.size() / active_replicas_info.active_replica_count, 1);
             updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
+            lockTemporaryLocksLocked(available_topic_partitions, node_quota, active_replicas_info.lockless_active_replicas, active_replicas_info.demand_of_lockless, active_replicas_info.demand_unaware_lockless);
             poll_count = 0;
 
             assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
@@ -255,10 +299,58 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 
     if (assigned_topic_partitions.empty())
     {
+        /// Only demand when this consumer could use the reserved partitions (a consumer
+        /// with a zero sub-quota cannot take permanent locks, so a reservation is wasted).
+        const size_t node_quota = std::max<size_t>(all_topic_partitions.size() / active_replicas_info.active_replica_count, 1);
+        if (computeConsumerQuota(node_quota) > 0)
+            markDemandInKeeper(retry_interval_ms);
         LOG_TRACE(log, "Consumer {} has no partitions", idx);
         return CannotPollReason::NoPartitions;
     }
+    removeDemandInKeeper();
     return std::nullopt;
+}
+
+void KeeperHandlingConsumer::markDemandInKeeper(size_t retry_interval_ms)
+{
+    static std::atomic<UInt64> demand_counter{0};
+    const auto now = std::chrono::steady_clock::now();
+
+    /// Declare the measured retry interval (attempts include metadata fetches and event
+    /// polling beyond the scheduling delay); the first attempt falls back to the setting.
+    size_t declared_interval_ms = retry_interval_ms;
+    if (last_demand_time != std::chrono::steady_clock::time_point{})
+    {
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_demand_time).count();
+        /// Only consecutive retries measure the cadence; a longer gap is a new consumption
+        /// episode (a finished query, a paused stream) and falls back to the setting.
+        const size_t max_measured_gap_ms = std::max<size_t>(10 * retry_interval_ms, 30'000);
+        if (elapsed_ms >= 0 && static_cast<size_t>(elapsed_ms) <= max_measured_gap_ms)
+            declared_interval_ms = std::max<size_t>(retry_interval_ms, elapsed_ms);
+    }
+    last_demand_time = now;
+
+    const auto demand_path = fs::path(keeper_path) / "replicas" / replica_name / "demand";
+    const auto value = fmt::format("{}:{}", declared_interval_ms, demand_counter.fetch_add(1) + 1);
+    const auto code = keeper->tryCreate(demand_path, value, zkutil::CreateMode::Ephemeral);
+    if (code == Coordination::Error::ZNODEEXISTS)
+        keeper->set(demand_path, value);
+    else if (code != Coordination::Error::ZOK)
+        throw Coordination::Exception::fromPath(code, demand_path);
+    demand_published = true;
+}
+
+void KeeperHandlingConsumer::removeDemandInKeeper()
+{
+    if (!demand_published)
+        return;
+    const auto demand_path = fs::path(keeper_path) / "replicas" / replica_name / "demand";
+    const auto code = keeper->tryRemove(demand_path);
+    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+    {
+        demand_published = false;
+        last_demand_time = {};
+    }
 }
 
 KeeperHandlingConsumer::LockedTopicPartitionInfo &
@@ -296,8 +388,8 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
 
     /// Locks are released and re-acquired as replicas rebalance. A lock listed by
     /// getChildren() may already be gone by the time we read it; such a lock is held
-    /// by no one, so skip it instead of failing the whole polling round. Batched tryGet
-    /// also replaces N sequential synchronous gets with a single round-trip.
+    /// by no one, so skip it instead of failing the whole polling round. The read data
+    /// (owning replica) feeds the lockless-replica detection in getActiveReplicasInfo.
     auto lock_responses = keeper->tryGet(lock_paths);
 
     for (size_t i = 0; i < lock_nodes.size(); ++i)
@@ -370,24 +462,57 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     auto is_active_responses = keeper->exists(is_active_paths);
 
     size_t active_replica_count = 0;
-    size_t active_replicas_with_lock = 0;
+    std::vector<String> lockless_active_replicas;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (is_active_responses[i].error != Coordination::Error::ZOK)
+        const auto & response = is_active_responses[i];
+        if (response.error == Coordination::Error::ZNONODE)
             continue;
+        if (response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(response.error, is_active_paths[i]);
 
         ++active_replica_count;
-        if (replicas_with_lock.contains(candidates[i]))
-            ++active_replicas_with_lock;
+        if (!replicas_with_lock.contains(candidates[i]))
+            lockless_active_replicas.push_back(std::move(candidates[i]));
+    }
+
+    std::unordered_map<String, String> demand_of_lockless;
+    std::unordered_set<String> demand_unaware_lockless;
+    if (!lockless_active_replicas.empty())
+    {
+        Strings demand_paths;
+        Strings awareness_paths;
+        demand_paths.reserve(lockless_active_replicas.size());
+        awareness_paths.reserve(lockless_active_replicas.size());
+        for (const auto & replica : lockless_active_replicas)
+        {
+            demand_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand");
+            awareness_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand_aware");
+        }
+
+        auto demand_responses = keeper->tryGet(demand_paths);
+        auto awareness_responses = keeper->exists(awareness_paths);
+        for (size_t i = 0; i < lockless_active_replicas.size(); ++i)
+        {
+            const auto & demand_response = demand_responses[i];
+            if (demand_response.error == Coordination::Error::ZOK)
+                demand_of_lockless.emplace(lockless_active_replicas[i], demand_response.data);
+            else if (demand_response.error != Coordination::Error::ZNONODE)
+                throw Coordination::Exception::fromPath(demand_response.error, demand_paths[i]);
+
+            if (awareness_responses[i].error == Coordination::Error::ZNONODE)
+                demand_unaware_lockless.insert(lockless_active_replicas[i]);
+            else if (awareness_responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(awareness_responses[i].error, awareness_paths[i]);
+        }
     }
 
     /// Clamp to 1: our own is_active may be transiently missing, and 0 would divide by zero in
     /// updatePermanentLocksLocked (its chassert is a no-op in the release build).
     active_replica_count = std::max<size_t>(active_replica_count, 1);
-    LOG_TEST(log, "There are {} active replicas with lock, {} active replicas out of {} total replicas (shard_count={})",
-             active_replicas_with_lock, active_replica_count, replica_names.size(), shard_count);
-    const auto has_replica_without_locks = active_replicas_with_lock < active_replica_count;
-    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks};
+    LOG_TEST(log, "There are {} active replicas, {} of them without locks, out of {} total replicas (shard_count={})",
+             active_replica_count, lockless_active_replicas.size(), replica_names.size(), shard_count);
+    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas), std::move(demand_of_lockless), std::move(demand_unaware_lockless)};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
@@ -453,19 +578,55 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
 }
 
 void KeeperHandlingConsumer::lockTemporaryLocksLocked(
-    const TopicPartitions & available_topic_partitions, const bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex)
+    const TopicPartitions & available_topic_partitions,
+    size_t node_quota,
+    const std::vector<String> & lockless_active_replicas,
+    const std::unordered_map<String, String> & demand_of_lockless,
+    const std::unordered_set<String> & demand_unaware_lockless) TSA_REQUIRES(topic_partition_locks_mutex)
 {
+    for (const auto & replica : lockless_active_replicas)
+        ++lockless_rounds_by_replica[replica];
+    std::erase_if(lockless_rounds_by_replica, [&](const auto & entry)
+    {
+        return std::find(lockless_active_replicas.begin(), lockless_active_replicas.end(), entry.first)
+            == lockless_active_replicas.end();
+    });
+
+    /// Reserve free partitions for the lockless replicas: those in their initial rounds, and
+    /// those whose demand changed within its declared retention (a still-trying replica).
+    const auto now = std::chrono::steady_clock::now();
+    size_t lockless_replicas_to_reserve_for = 0;
+    for (const auto & entry : lockless_rounds_by_replica)
+    {
+        const bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA
+            || demand_unaware_lockless.contains(entry.first);
+        bool demanding = false;
+        if (const auto demand_it = demand_of_lockless.find(entry.first); demand_it != demand_of_lockless.end())
+        {
+            auto & state = demand_state_by_replica[entry.first];
+            if (state.last_value != demand_it->second)
+            {
+                state.last_value = demand_it->second;
+                state.retention_ms = parseDemandRetentionMs(demand_it->second);
+                state.last_change = now;
+            }
+            demanding = now - state.last_change < std::chrono::milliseconds(state.retention_ms);
+        }
+        if (initial_window || demanding)
+            ++lockless_replicas_to_reserve_for;
+    }
+    std::erase_if(demand_state_by_replica, [&](const auto & entry)
+    {
+        return !demand_of_lockless.contains(entry.first);
+    });
+    const size_t reserved_for_lockless = lockless_replicas_to_reserve_for
+        ? std::min(available_topic_partitions.size(), lockless_replicas_to_reserve_for * node_quota)
+        : 0;
+
     /// There are no available topic partitions, so drop the quota to 0
     if (available_topic_partitions.empty())
     {
         LOG_TRACE(log, "There are no available topic partitions to lock");
-        tmp_locks_quota = 0;
-    }
-    /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give
-    /// the other replica a chance to lock some partitions
-    else if (tmp_locks_quota > 0 && has_replica_without_locks)
-    {
-        LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks this round");
         tmp_locks_quota = 0;
     }
     /// We have some temporary lock quota, but it is greater than the number of available topic partitions, so we will
@@ -479,6 +640,11 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
+    /// The reservation limits only this round's take; the accumulated quota survives it.
+    const size_t locks_to_take = std::min(tmp_locks_quota, available_topic_partitions.size() - reserved_for_lockless);
+    if (reserved_for_lockless)
+        LOG_TRACE(log, "Reserving {} free partitions for lockless replicas", reserved_for_lockless);
+
     /// Logged for every round, including the ones that reset the quota, so the sequence of quotas can be followed
     LOG_INFO(
         log,
@@ -487,21 +653,31 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
         available_topic_partitions.size(),
         idx);
 
-    if (tmp_locks_quota == 0)
+    if (locks_to_take == 0)
         return;
 
     auto available_topic_partitions_copy = available_topic_partitions;
+    /// Sort deterministically so that every holder skips the same reserved partitions;
+    /// only the takeable prefix is shuffled for load distribution.
+    std::sort(
+        available_topic_partitions_copy.begin(),
+        available_topic_partitions_copy.end(),
+        [](const TopicPartition & a, const TopicPartition & b)
+        { return std::tie(a.topic, a.partition_id) < std::tie(b.topic, b.partition_id); });
+    const size_t takeable_count = available_topic_partitions_copy.size() > reserved_for_lockless
+        ? available_topic_partitions_copy.size() - reserved_for_lockless
+        : 0;
     pcg64 generator(randomSeed());
-    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
+    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.begin() + takeable_count, generator);
 
-    for (const auto & tp : available_topic_partitions_copy)
+    for (size_t i = 0; i < takeable_count; ++i)
     {
-        if (tmp_locks.size() >= tmp_locks_quota)
+        if (tmp_locks.size() >= locks_to_take)
             break;
-        auto maybe_lock = createLocksInfoIfFree(tp);
+        auto maybe_lock = createLocksInfoIfFree(available_topic_partitions_copy[i]);
         if (!maybe_lock.has_value())
             continue;
-        tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
+        tmp_locks.emplace(TopicPartition(available_topic_partitions_copy[i]), std::move(*maybe_lock));
     }
 }
 
