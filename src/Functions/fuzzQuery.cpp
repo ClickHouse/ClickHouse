@@ -2,6 +2,7 @@
 #include <Common/QueryFuzzer.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -86,8 +87,13 @@ public:
             ParserQuery parser(end, false, implicit_select);
             ASTPtr ast = parseQuery(parser, begin, end, "fuzzQuery", max_query_size, max_parser_depth, max_parser_backtracks);
 
+            const std::function<void()> check_cancellation = makeCancellationCheck(name);
+            CancellationBudget budget(check_cancellation);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                /// Each row fuzzes and formats the whole parsed query.
+                budget.chargeParsedBytes(data.size());
+
                 ASTPtr fuzzed_ast = ast->clone();
                 {
                     auto [fuzzer, lock] = getGlobalASTFuzzer();
@@ -112,9 +118,13 @@ private:
         ColumnString & col_res,
         size_t input_rows_count) const
     {
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            budget.chargeParsedBytes(offsets[i] - prev_offset);
+
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = reinterpret_cast<const char *>(&data[offsets[i]]);
 

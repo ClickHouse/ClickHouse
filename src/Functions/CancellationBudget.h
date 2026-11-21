@@ -26,6 +26,9 @@ struct CancellationBudget
     /// One iteration of an unbounded loop, plus the bytes of data that iteration touched.
     void charge(size_t bytes = 0) { chargeUnits(1 + bytes / bytes_per_unit); }
 
+    /// Parsing or formatting SQL text, where each byte costs about a whole unit.
+    void chargeParsedBytes(size_t bytes) { chargeUnits(1 + bytes); }
+
     /// Work that is not proportional to the amount of data, e.g. constructing a matcher from a pattern.
     void chargeUnits(size_t units)
     {

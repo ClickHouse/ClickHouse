@@ -1,6 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
@@ -295,10 +296,15 @@ public:
 
         const auto * json_col = arguments[0].column.get();
         const auto * orig_col = arguments.size() > 1 ? arguments[1].column.get() : nullptr;
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto json = String(json_col->getDataAt(i));
+
+            /// Both arguments are parsed for each row.
+            budget.chargeParsedBytes(json.size() + (orig_col ? orig_col->getDataAt(i).size() : 0));
 
             /// Enforce `max_query_size` on the raw JSON before handing it to `Poco::JSON::Parser`,
             /// mirroring the `clickhouse_json` client/server entry points: a shallow document with a
