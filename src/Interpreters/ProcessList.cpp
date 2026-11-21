@@ -316,7 +316,8 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (user_process_list != user_to_queries.end())
             {
-                if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
+                /// A query of the DDL queue runs an entry of an already counted query, which may be waiting for it on this host.
+                if (!is_unlimited_query && !query_context->isDDLOrOnClusterInternal() && settings[Setting::max_concurrent_queries_for_user]
                     && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
