@@ -338,6 +338,16 @@ std::string normalizeQuotes(const std::string & input)
 
 }
 
+void checkNameIsNotReserved(std::string_view name)
+{
+    if (name.starts_with(reserved_name_prefix))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The field name '{}' starts with '{}', which is reserved for the names the translation of a Mongo query generates",
+            name,
+            reserved_name_prefix);
+}
+
 namespace
 {
 
@@ -348,6 +358,8 @@ namespace
   * The name of a field must not contain a zero byte: BSON stores a name as a NUL-terminated string,
   * so no Mongo document has such a field, and the translation passes names on as C strings, which
   * would end at the zero byte. `{"x\u0000ignored": 1}` would then filter - or delete - by `x`.
+  *
+  * Nor may it start with the prefix of the generated names, see `reserved_name_prefix`.
   */
 void checkDocument(const rapidjson::Value & value, size_t depth, size_t max_depth)
 {
@@ -367,6 +379,7 @@ void checkDocument(const rapidjson::Value & value, size_t depth, size_t max_dept
                     ErrorCodes::BAD_ARGUMENTS,
                     "The name of a field that starts with '{}' contains a zero byte, which a Mongo field name cannot contain",
                     name.substr(0, zero));
+            checkNameIsNotReserved(name);
             checkDocument(member.value, depth + 1, max_depth);
         }
     }

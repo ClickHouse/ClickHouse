@@ -2582,6 +2582,21 @@ def test_read_commands_apply_max_time_ms(started_cluster):
     with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
         database.command({"create": "max_time_ms_created", "maxTimeMS": 1})
     assert "max_time_ms_created" not in database.list_collection_names()
+    # And the DDL of `createIndexes`, `drop` and `dropDatabase`: a rejected request changes nothing.
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command(
+            {"createIndexes": "max_time_ms", "indexes": [{"key": {"id": 1}, "name": "id_1"}], "maxTimeMS": 1}
+        )
+    assert "INDEX" not in node.query("SHOW CREATE TABLE db.max_time_ms", password="123")
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command({"drop": "max_time_ms", "maxTimeMS": 1})
+    assert collection.count_documents({}) == 2
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command({"dropDatabase": 1, "maxTimeMS": 1})
+    assert collection.count_documents({}) == 2
+    # A zero deadline means no deadline, so the command runs.
+    database.command({"createIndexes": "max_time_ms", "indexes": [{"key": {"id": 1}, "name": "id_1"}], "maxTimeMS": 0})
+    assert "INDEX" in node.query("SHOW CREATE TABLE db.max_time_ms", password="123")
 
     # A non-boolean `preserveNullAndEmptyArrays` is an error rather than an inner unwind.
     with pytest.raises(pymongo.errors.OperationFailure, match="preserveNullAndEmptyArrays"):
@@ -3527,3 +3542,50 @@ def test_wire_strings_batches_and_query_construction_settings(started_cluster):
     assert node.query("SELECT x FROM db.construction_settings", password="123") == "1\n"
     node.query("DROP TABLE db.construction_settings", password="123")
     node.query("DROP USER mongo_construction", password="123")
+
+
+def test_bson_regex_with_options_and_reserved_names(started_cluster):
+    """The `$options` next to a `$regex` that holds a BSON regular expression are applied, a
+    non-numeric `$size` is rejected, and a field cannot have the prefix of the names the
+    translation generates. A rejected mutation changes nothing."""
+    node = cluster.instances["node"]
+    collection = make_client()["db"]["bson_regex_options"]
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "Alpha", "tags": [7]}, {"id": 2, "name": "beta", "tags": [7, 8]}])
+
+    def ids(filter):
+        return sorted(document["id"] for document in collection.find(filter, {"_id": 0, "id": 1}))
+
+    case_sensitive = bson.regex.Regex("^a", "")
+    assert ids({"name": {"$regex": case_sensitive}}) == []
+    assert ids({"name": {"$regex": case_sensitive, "$options": "i"}}) == [1]
+    assert ids({"name": {"$regex": bson.regex.Regex("^a", "i")}}) == [1]
+    assert ids({"name": {"$not": {"$regex": case_sensitive, "$options": "i"}}}) == [2]
+    # Two sets of options are an error, as in Mongo, and nothing is deleted.
+    with pytest.raises(pymongo.errors.PyMongoError, match="both"):
+        collection.delete_many({"name": {"$not": {"$regex": bson.regex.Regex("^a", "i"), "$options": "m"}}})
+    assert collection.count_documents({}) == 2
+
+    # `$size` takes a number: `true` must not be read as the size one.
+    assert ids({"tags": {"$size": 1}}) == [1]
+    assert ids({"tags": {"$size": bson.int64.Int64(2)}}) == [2]
+    for operand in [True, "1", None]:
+        with pytest.raises(pymongo.errors.PyMongoError, match="size"):
+            collection.delete_many({"tags": {"$size": operand}})
+    assert collection.count_documents({}) == 2
+
+    # The negated case-insensitive match keeps the document that matches.
+    assert collection.delete_many({"name": {"$not": {"$regex": case_sensitive, "$options": "i"}}}).deleted_count == 1
+    assert ids({}) == [1]
+
+    # A field with the prefix of the generated names could be captured by a generated lambda.
+    with pytest.raises(pymongo.errors.PyMongoError, match="reserved"):
+        collection.insert_one({"id": 3, "__mongo_value_1": 4})
+    with pytest.raises(pymongo.errors.PyMongoError, match="reserved"):
+        list(collection.aggregate([{"$project": {"r": {"$divide": [{"$add": [1, 1]}, "$__mongo_value_1"]}}}]))
+    with pytest.raises(pymongo.errors.PyMongoError, match="reserved"):
+        collection.delete_many({"__mongo_value_1": 4})
+    assert ids({}) == [1]
+    assert "__mongo_value_1" not in node.query("SHOW CREATE TABLE db.bson_regex_options", password="123")
+
+    collection.drop()

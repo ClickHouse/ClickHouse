@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <tuple>
 #include <vector>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -173,6 +174,26 @@ ASTPtr tryParseMongoConstant(const rapidjson::Value & value)
     return nullptr;
 }
 
+namespace
+{
+
+/// The pattern and the options of the Extended JSON form of a BSON regular expression, the value
+/// of a `$regularExpression` member.
+std::pair<std::string_view, std::string_view> readExtendedJSONRegularExpression(const rapidjson::Value & value)
+{
+    if (!value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$regularExpression' must be a document");
+    auto pattern_it = value.FindMember("pattern");
+    if (pattern_it == value.MemberEnd() || !pattern_it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$regularExpression' must have a string 'pattern'");
+    std::string_view options;
+    if (auto options_it = value.FindMember("options"); options_it != value.MemberEnd() && options_it->value.IsString())
+        options = stringView(options_it->value);
+    return {stringView(pattern_it->value), options};
+}
+
+}
+
 std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value & value)
 {
     if (!value.IsObject())
@@ -183,25 +204,50 @@ std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value
 
     if (auto it = value.FindMember("$regularExpression"); it != value.MemberEnd())
     {
-        if (!it->value.IsObject())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$regularExpression' must be a document");
-        auto pattern_it = it->value.FindMember("pattern");
-        if (pattern_it == it->value.MemberEnd() || !pattern_it->value.IsString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$regularExpression' must have a string 'pattern'");
-        pattern = stringView(pattern_it->value);
-        if (auto options_it = it->value.FindMember("options"); options_it != it->value.MemberEnd() && options_it->value.IsString())
-            options = stringView(options_it->value);
+        std::tie(pattern, options) = readExtendedJSONRegularExpression(it->value);
     }
     else if (auto regex_it = value.FindMember("$regex"); regex_it != value.MemberEnd())
     {
-        /// The driver may nest the Extended JSON form under `$regex`.
         if (regex_it->value.IsObject())
-            return tryParseMongoRegularExpression(regex_it->value);
-        if (!regex_it->value.IsString())
+        {
+            /// The driver sends a BSON regular expression under `$regex`, which reaches here as its
+            /// Extended JSON form: `{"$regularExpression": {"pattern": ..., "options": ...}}`, or
+            /// `{"$regex": <pattern>, "$options": <options>}` in the legacy one.
+            const auto & nested = regex_it->value;
+            if (auto nested_it = nested.FindMember("$regularExpression"); nested_it != nested.MemberEnd())
+            {
+                std::tie(pattern, options) = readExtendedJSONRegularExpression(nested_it->value);
+            }
+            else if (auto legacy_it = nested.FindMember("$regex"); legacy_it != nested.MemberEnd() && legacy_it->value.IsString())
+            {
+                pattern = stringView(legacy_it->value);
+                if (auto options_it = nested.FindMember("$options"); options_it != nested.MemberEnd())
+                {
+                    if (!options_it->value.IsString())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$options' must be a string");
+                    options = stringView(options_it->value);
+                }
+            }
+            else
+                return std::nullopt;
+        }
+        else if (regex_it->value.IsString())
+            pattern = stringView(regex_it->value);
+        else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$regex' must be a string");
-        pattern = stringView(regex_it->value);
-        if (auto options_it = value.FindMember("$options"); options_it != value.MemberEnd() && options_it->value.IsString())
+
+        /// The `$options` next to `$regex` apply to a BSON regular expression as well as to a string
+        /// pattern. As in Mongo, a regular expression that carries its own options cannot be combined
+        /// with `$options`: there would be two sets of flags to choose from.
+        if (auto options_it = value.FindMember("$options"); options_it != value.MemberEnd())
+        {
+            if (!options_it->value.IsString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$options' must be a string");
+            if (!options.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "The options of a regular expression are set in both '$regex' and '$options'");
             options = stringView(options_it->value);
+        }
     }
     else
         return std::nullopt;

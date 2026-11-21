@@ -153,6 +153,20 @@ ASTPtr withFoldedCheck(ASTPtr value, ASTPtr failed, const String & message);
   */
 static constexpr size_t max_folded_operands = 1000;
 
+/** The translation of a Mongo query generates identifiers of its own: the parameters of the lambdas
+  * of `$map` and `$filter` (`$$x` becomes `__mongo_variable_x`), of an operand that is evaluated
+  * once (`__mongo_value_1`), of an array element (`__mongo_element`), and the columns of `$unwind`.
+  * A lambda parameter hides a column of the same name, so a field of such a name, referred to
+  * inside the lambda, would silently read the parameter instead of the document. The prefix is
+  * therefore reserved: a query cannot name a field that starts with it, so the generated names
+  * are disjoint from every field a query refers to. A user variable only ever becomes
+  * `__mongo_variable_<name>`, which no other generated name starts with.
+  */
+static constexpr std::string_view reserved_name_prefix = "__mongo_";
+
+/// Throws when `name`, the name of a field or a field path, starts with `reserved_name_prefix`.
+void checkNameIsNotReserved(std::string_view name);
+
 /** Parses the JSON text of a query. A nesting deeper than `max_depth` - the `max_parser_depth` of
   * the query, zero for no limit - is rejected before anything recursive walks the value.
   */

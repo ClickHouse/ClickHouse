@@ -38,6 +38,10 @@ std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> &
     auto collection = getCollectionRef(sections[0].documents[0], "createIndexes");
 
     auto doc = sections[0].documents[0].getRapidJSONRepresentation();
+
+    /// The command runs DDL, which `max_execution_time` does not bound end to end, so a deadline
+    /// could not be honoured: a request with one must not run without it.
+    rejectMaxTime(doc, "createIndexes");
     auto indexes_it = doc.FindMember("indexes");
     if (indexes_it == doc.MemberEnd() || !indexes_it->value.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'createIndexes' command does not contain the 'indexes' array");

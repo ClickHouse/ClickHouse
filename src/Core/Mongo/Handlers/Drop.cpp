@@ -12,6 +12,10 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     auto collection = getCollectionRef(documents[0].documents[0], "drop");
     String namespace_name = collection.database + "." + collection.collection;
 
+    /// The command runs DDL, which `max_execution_time` does not bound end to end, so a deadline
+    /// could not be honoured: a request with one must not wait for a lock past it and then drop.
+    rejectMaxTime(documents[0].documents[0].getRapidJSONRepresentation(), "drop");
+
     BsonPtr bson_doc_owner(bson_new());
     bson_t * bson_doc = bson_doc_owner.get();
 

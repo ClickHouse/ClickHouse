@@ -2059,6 +2059,8 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
             auto field = text.substr(1);
             if (field.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$' by itself is not a valid field path");
+            /// Otherwise `$__mongo_variable_x` would be the variable `$$x`, see `reserved_name_prefix`.
+            checkNameIsNotReserved(field);
             return make_intrusive<ASTIdentifier>(String(field));
         }
         return makeLiteral(Field(String(text)));

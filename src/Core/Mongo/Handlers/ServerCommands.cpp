@@ -154,6 +154,10 @@ std::vector<Document> DropDatabaseHandler::handle(const std::vector<OpMessageSec
 {
     auto database = databaseName(documents[0].documents[0], "dropDatabase");
 
+    /// The command runs DDL, which `max_execution_time` does not bound end to end, so a deadline
+    /// could not be honoured: a request with one must not wait for a lock past it and then drop.
+    rejectMaxTime(documents[0].documents[0].getRapidJSONRepresentation(), "dropDatabase");
+
     /// Mongo answers a `dropDatabase` of a database that does not exist with success, so the drop
     /// has to tolerate it rather than report an error the client does not expect.
     executor->execute(fmt::format("DROP DATABASE IF EXISTS {}", backQuoteIfNeed(database)));

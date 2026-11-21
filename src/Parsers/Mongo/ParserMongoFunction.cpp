@@ -42,6 +42,19 @@ std::string_view stringView(const rapidjson::Value & value)
     return {value.GetString(), value.GetStringLength()};
 }
 
+/// True for a JSON number and for the Extended JSON wrapper of one. `tryParseMongoConstant` also
+/// reads booleans, strings, dates and so on, which an operator that takes a number must not accept:
+/// `{"$size": true}` would otherwise compare the length with `true`, that is, with one.
+bool isNumericConstant(const rapidjson::Value & value)
+{
+    if (value.IsNumber())
+        return true;
+    if (!value.IsObject() || value.MemberCount() != 1)
+        return false;
+    auto wrapper = stringView(value.MemberBegin()->name);
+    return wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal";
+}
+
 /// True when every member of the document belongs to a regular expression, so that translating it
 /// into a single match does not drop a sibling operator.
 bool isOnlyRegularExpression(const rapidjson::Value & value)
@@ -285,7 +298,7 @@ ASTPtr parseFieldOperator(
 
     if (name == "$size")
     {
-        auto size = tryParseMongoConstant(argument);
+        auto size = isNumericConstant(argument) ? tryParseMongoConstant(argument) : nullptr;
         if (!size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$size' must be a number");
         /** `$size` is defined on arrays only. A string also has a `length`, but to Mongo a

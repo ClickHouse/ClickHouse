@@ -188,6 +188,8 @@ void flattenDocument(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not contain '.', got '{}'", name);
 
         String full_name = prefix.empty() ? name : prefix + "." + name;
+        /// No query could refer to such a column, see `reserved_name_prefix`.
+        Mongo::checkNameIsNotReserved(full_name);
 
         if (isMongoExtendedJSONWrapper(it->value))
         {

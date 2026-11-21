@@ -981,6 +981,8 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     path = path.substr(1);
     if (index_name.starts_with("$"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'includeArrayIndex' of '$unwind' must not start with '$'");
+    checkNameIsNotReserved(path);
+    checkNameIsNotReserved(index_name);
     /// The index replaces the field of its name, which cannot be the unwound one or around it.
     if (!index_name.empty() && (isInFieldSubtree(path, index_name) || isInFieldSubtree(index_name, path)))
         throw Exception(
