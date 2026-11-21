@@ -1,0 +1,4 @@
+source stays active	1
+target before source recovery	[1,2]
+remaining GET_PART	0
+original parts fetched	1
