@@ -1321,7 +1321,6 @@ void Aggregator::mergeOnBlockSmall(
 namespace
 {
 
-/// The methods of `Aggregator::executeDirectIndexBlock`: two or more keys packed into a fixed-size key.
 template <typename Method>
 constexpr bool isDirectIndexMethod
     = std::is_same_v<Method, decltype(AggregatedDataVariants::keys32)::element_type>
@@ -1331,7 +1330,6 @@ constexpr bool isDirectIndexMethod
     || std::is_same_v<Method, decltype(AggregatedDataVariants::keys64_two_level)::element_type>
     || std::is_same_v<Method, decltype(AggregatedDataVariants::keys128_two_level)::element_type>;
 
-/// Calls `f.template operator()<T>()` with the integer type of the key.
 template <typename F>
 void dispatchDirectIndexKey(size_t size, bool is_signed, F && f)
 {
@@ -1348,8 +1346,7 @@ void dispatchDirectIndexKey(size_t size, bool is_signed, F && f)
 /// Rows per chunk of the passes over the keys, so that a block is given up after the chunk that decides it.
 constexpr size_t direct_index_chunk_rows = 4096;
 
-/// The smallest key of `data[begin, end)` and the number of values from it to the largest, unless that number exceeds
-/// `max_range`. Checked after every chunk, so that a block of wide keys is given up early.
+/// The smallest key of `data[begin, end)` and the number of values from it to the largest; false if that exceeds `max_range`.
 template <typename T>
 bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UInt64 max_range, UInt64 & min_out, UInt64 & range_out)
 {
@@ -1372,7 +1369,6 @@ bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UI
     return true;
 }
 
-/// Adds to the cell of each row the offset of its key from `min_value`, times `stride`.
 template <typename T>
 void addDirectIndexKey(const T * __restrict data, size_t rows, UInt64 min_value, UInt32 stride, UInt32 * __restrict row_cells, bool first)
 {
@@ -1445,8 +1441,7 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
         stride *= static_cast<UInt32>(ranges[j]);
     }
 
-    /// The cell of each row, the rows of each cell, the first of them, and the cells that the block uses, in the order of
-    /// their first rows.
+    /// `used_cells` holds the cells that the block uses, in the order of their first rows.
     PaddedPODArray<UInt32> row_cells_array(rows);
     PaddedPODArray<UInt32> counts_array;
     counts_array.resize_fill(cells, 0);

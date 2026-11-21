@@ -979,9 +979,8 @@ private:
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
-    /// Aggregates the rows through an array indexed by each row's combination of key values within the ranges the keys span
-    /// in these rows, looking each distinct key up in the table once. Returns false, leaving the table untouched, when the rows
-    /// are few, span more than `max_cells` combinations or repeat too rarely.
+    /// Aggregates the rows through an array indexed by each row's combination of key values, looking each distinct key up once.
+    /// Returns false, leaving the table untouched, if the rows are few, span over `max_cells` combinations or repeat too rarely.
     template <typename Method>
     bool executeDirectIndexBlock(
         Method & method,
