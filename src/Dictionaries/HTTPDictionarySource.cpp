@@ -62,7 +62,7 @@ static bool maskQuotedURLCredentials(String & literal)
     return true;
 }
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
     "endpoint",
     "user",

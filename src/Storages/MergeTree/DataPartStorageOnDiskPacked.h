@@ -17,7 +17,7 @@ public:
     static constexpr auto DATA_FILE_EXTENSION = PackedFilesIO::ARCHIVE_EXTENSION;
     inline static const String DATA_FILE_NAME = String("data") + DATA_FILE_EXTENSION;
 
-    inline static const std::unordered_set<String> files_written_separately =
+    [[clang::no_destroy]] inline static const std::unordered_set<String> files_written_separately =
     {
         "delete-on-destroy.txt",
         "txn_version.txt",
