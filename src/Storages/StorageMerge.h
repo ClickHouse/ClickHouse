@@ -402,7 +402,7 @@ private:
         QueryProcessingStage::Enum processed_stage) const;
 
     /// Whether the Merge produces this virtual column itself instead of reading it from a child.
-    bool producedByMerge(const std::string & column_name) const
+    [[nodiscard]] bool producedByMerge(const std::string & column_name) const
     {
         return (has_database_virtual_column && column_name == "_database")
             || (has_table_virtual_column && column_name == "_table");
