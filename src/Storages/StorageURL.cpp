@@ -623,6 +623,7 @@ StorageURLSource::StorageURLSource(
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
+    , hive_partition_columns_read_by_defaults(info.hive_partition_columns_read_by_defaults)
     , allow_query_condition_cache((http_method.empty() || http_method == Poco::Net::HTTPRequest::HTTP_GET) && !callback && params.empty())
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -812,9 +813,12 @@ StorageURLSource::StorageURLSource(
 
             if (columns_description.hasDefaults())
             {
+                auto hive_columns = HivePartitioningUtils::makePartitionColumnsForDefaults(
+                    hive_partition_columns_read_by_defaults, curr_uri.getPath(), format_settings, getContext());
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        cur_header, columns_description, *input_format, getContext(), hive_partition_columns_read_by_defaults, hive_columns);
                 });
             }
         }

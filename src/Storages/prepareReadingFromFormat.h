@@ -48,6 +48,8 @@ namespace DB
         /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
         NameSet map_columns_read_by_keys;
         NameSet map_columns_read_by_values;
+        /// Hive partition columns read by a `DEFAULT` of `columns_description`, given to `AddingDefaultsTransform`. Not serialized.
+        NamesAndTypesList hive_partition_columns_read_by_defaults;
 
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);

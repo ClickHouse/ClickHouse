@@ -1786,6 +1786,7 @@ StorageFileSource::StorageFileSource(
     , map_columns_read_by_keys(info.map_columns_read_by_keys)
     , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
+    , hive_partition_columns_read_by_defaults(info.hive_partition_columns_read_by_defaults)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
@@ -2432,9 +2433,12 @@ Chunk StorageFileSource::generate()
 
             if (columns_description.hasDefaults())
             {
+                auto hive_columns = HivePartitioningUtils::makePartitionColumnsForDefaults(
+                    hive_partition_columns_read_by_defaults, current_path, storage->format_settings, getContext());
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, columns_description, *input_format, getContext(), hive_partition_columns_read_by_defaults, hive_columns);
                 });
             }
 

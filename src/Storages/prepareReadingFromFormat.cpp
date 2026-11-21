@@ -197,6 +197,39 @@ ReadFromFormatInfo prepareReadingFromFormat(
         for (const auto & column : info.columns_description)
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
+    NameSet unread_columns_read_by_defaults;
+    for (const auto & [_, column_default] : info.columns_description.getDefaults())
+    {
+        if (!column_default.expression)
+            continue;
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_default.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & input : columns_context.requiredColumns())
+        {
+            auto column = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+            if (!column)
+                continue;
+            const auto name = column->getNameInStorage();
+            if (info.format_header.has(name))
+                continue;
+            auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(name);
+            if (it == hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+                unread_columns_read_by_defaults.insert(name);
+            else if (!info.hive_partition_columns_read_by_defaults.contains(name))
+                info.hive_partition_columns_read_by_defaults.emplace_back(name, it->second);
+        }
+    }
+    /// Among the read columns, an unread column `k.null` would resolve to a subcolumn of the Hive column `k`.
+    info.hive_partition_columns_read_by_defaults.remove_if([&](const NameAndTypePair & hive_column)
+    {
+        return std::ranges::any_of(unread_columns_read_by_defaults, [&](const String & name)
+        {
+            return name.starts_with(hive_column.name + ".")
+                && hive_column.type->tryGetSubcolumnType(std::string_view(name).substr(hive_column.name.size() + 1));
+        });
+    });
+
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     if (supports_subset_of_columns && supports_tuple_elements)
@@ -389,6 +422,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
     /// to the chunk and selecting a hive column while filtering a real one fails.
     new_info.hive_partition_columns_to_read_from_file_path = info.hive_partition_columns_to_read_from_file_path;
+    new_info.hive_partition_columns_read_by_defaults = info.hive_partition_columns_read_by_defaults;
     for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
@@ -697,12 +731,8 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     /// main branch. The last rule feeds itself (pinning an input can strand another default's
     /// expression), so iterate to a fixpoint.
     ///
-    /// A hive partition column is such a format-unread input: it is parsed from the file path and
-    /// appended to the chunk only after the per-file reader pipeline, where `AddingDefaultsTransform`
-    /// runs, so no branch ever sees its real value and a default over one cannot be evaluated at
-    /// all - the single-pass plan fails with `UNKNOWN_IDENTIFIER` just the same (a pre-existing
-    /// limitation of hive partitioning). Keeping such a defaulted column on the main branch
-    /// preserves the single-pass behavior exactly.
+    /// A hive partition column is such a format-unread input: only the main branch's `AddingDefaultsTransform` gets it
+    /// from the file path, so a defaulted column whose expression reads one stays on the main branch.
     ///
     /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
     /// applies a default expression solely for a column present in the block of its own branch
