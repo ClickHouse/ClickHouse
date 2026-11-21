@@ -215,6 +215,12 @@ ObjectInfos ObjectIteratorSplitByBuckets::splitToBuckets(const ObjectInfoPtr & o
                 return {};
             }
         }
+        else
+        {
+            /// Formats other than `Parquet` have no internal blocks, so the file stays one task.
+            /// Dropping it here would make `bucket` granularity return no rows.
+            pending_objects_info.push(std::move(last_object_info));
+        }
     }
 
     const auto & settings = getContext()->getSettingsRef();
