@@ -73,9 +73,7 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node, bool fi
 }
 
 
-/// The input column an output of the DAG is a plain copy of, through aliases only (the analyzer renames
-/// `a` to `__table1.a` this way); nothing if the output is computed.
-static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name)
+std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name)
 {
     const auto * node = dag.tryFindInOutputs(output_name);
     if (!node)
