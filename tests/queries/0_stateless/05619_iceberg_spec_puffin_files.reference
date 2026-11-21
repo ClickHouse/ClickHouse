@@ -1,0 +1,9 @@
+--- iceberg/puffin-v1/empty-puffin-uncompressed.bin
+0
+--- iceberg-go/compressed-footer-lz4-cli.puffin
+0
+--- iceberg/puffin-v1/sample-metric-data-uncompressed.bin
+unsupported blob type 'some-blob'
+--- iceberg/puffin-v1/sample-metric-data-compressed-zstd.bin
+unsupported blob type 'some-blob'
+0
