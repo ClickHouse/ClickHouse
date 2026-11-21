@@ -97,7 +97,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        auto iterator = db.second->getTablesIteratorSkippingFailed(context, table_name_filter);
         for (; iterator->isValid(); iterator->next())
         {
             auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);

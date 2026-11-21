@@ -195,7 +195,7 @@ std::map<String, std::map<String, StoragePtr>> ReadFromSystemReplicas::collectRe
         if (db.second->isExternal())
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
-        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        auto iterator = db.second->getTablesIteratorSkippingFailed(context, table_name_filter);
         for (; iterator->isValid(); iterator->next())
         {
             auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
