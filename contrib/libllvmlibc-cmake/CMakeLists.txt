@@ -54,7 +54,6 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbn.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbnl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sin.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sincos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtl.cpp"

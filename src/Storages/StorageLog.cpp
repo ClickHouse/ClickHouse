@@ -7,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -18,7 +17,6 @@
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -456,12 +454,6 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
-                /// It must not be interrupted by the memory limit: otherwise the table is left with
-                /// the in-memory marks out of sync, and the next `INSERT` fails with a logical error.
-                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-                /// Remove excessive marks first: it cannot fail, unlike the truncation of files below.
-                storage.removeUnsavedMarks(lock);
 
                 /// No more writing.
                 for (auto & [_, stream] : streams)
@@ -472,6 +464,9 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
+
+                /// Remove excessive marks.
+                storage.removeUnsavedMarks(lock);
             }
         }
         catch (...)
@@ -533,7 +528,8 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, const ISerialization::SubstreamPath & substream_path) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
 
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
@@ -610,28 +606,13 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const ISerialization::SubstreamPath & substream_path) const
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    const auto & default_codec = CompressionCodecFactory::instance().getDefaultCodec();
-    auto get_codec_or_default = [&](const auto & column_desc) -> CompressionCodecPtr
+    auto get_codec_or_default = [&default_codec](const auto & column_desc)
     {
-        if (!column_desc.codec)
-            return default_codec;
-
-        /// `FirstApplicable` selects the codec for the data type of every substream, as in `MergeTree`: the structural
-        /// substreams (e.g. the sizes of an array) keep only generic codecs. Other codecs keep applying to the whole
-        /// column type here, so that the data written by the previous versions does not change.
-        if (CompressionCodecFirstApplicable::isInChain(column_desc.codec))
-        {
-            const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
-            return CompressionCodecFactory::instance().get(
-                column_desc.codec,
-                is_data_substream ? substream_path.back().data.type.get() : nullptr,
-                default_codec,
-                /*only_generic=*/!is_data_substream);
-        }
-
-        return CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec);
+        return column_desc.codec
+            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
+            : default_codec;
     };
 
     const auto & columns = metadata_snapshot->columns;
@@ -643,6 +624,11 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
+{
+    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 
@@ -663,7 +649,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = getCodecOrDefault(name_and_type.name, path);
+            auto compression = getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -673,7 +659,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         auto & stream = it->second;
         if (stream.written)
             return;
-    }, type); /// The data type of every substream is needed to select the codec by `FirstApplicable`.
+    });
 
     settings.getter = createStreamGetter(name_and_type);
 
@@ -1464,8 +1450,6 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
-        .stores_data_on_disk = true,
-        .supports_temporary = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

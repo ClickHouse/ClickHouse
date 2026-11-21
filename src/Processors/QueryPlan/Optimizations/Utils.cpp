@@ -10,17 +10,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Storages/StorageMerge.h>
 
 #include <algorithm>
 #include <optional>
@@ -86,40 +79,6 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
         return FilterResult::UNKNOWN;
 
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
-}
-
-bool canProduceTotals(QueryPlan::Node & root)
-{
-    std::vector<QueryPlan::Node *> stack{&root};
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-        auto * step = node->step.get();
-
-        /// `ReadFromMerge` builds its nested plans when asked, so it is not asked and is assumed to produce totals.
-        if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ReadFromMerge *>(step))
-            return true;
-        if (const auto * remote = typeid_cast<const ReadFromRemote *>(step); remote && remote->hasTotals())
-            return true;
-        if (const auto * cache = typeid_cast<const ReadFromQueryResultCacheStep *>(step); cache && cache->hasTotals())
-            return true;
-
-        /// An aggregation drops the totals of its input.
-        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
-            continue;
-
-        for (auto * child : node->children)
-            stack.push_back(child);
-
-        /// `LazyReadReplacingFinalStep` builds its nested plan when asked; it reads one source without totals.
-        if (typeid_cast<const LazyReadReplacingFinalStep *>(step))
-            continue;
-        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
-            if (child_plan)
-                stack.push_back(child_plan->getRootNode());
-    }
-    return false;
 }
 
 static bool isNotReadySetColumn(const ActionsDAG::Node & node)
@@ -549,55 +508,6 @@ FilterResult filterResultForNotMatchedRows(
     }
 
     return FilterResult::UNKNOWN;
-}
-
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
-{
-    while (node)
-    {
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            return reading;
-        if (node->children.size() != 1)
-            return nullptr;
-        node = node->children.front();
-    }
-    return nullptr;
-}
-
-bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
-{
-    for (size_t peeled = 0; peeled < max_peel; ++peeled)
-    {
-        const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
-        if (!expression_step)
-            return true;
-        if (node->children.size() != 1)
-            return false;
-
-        /// a moved sort changes the rows this step sees, e.g. `rowNumberInAllBlocks` would give other values
-        const ActionsDAG & dag = expression_step->getExpression();
-        if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
-            return false;
-
-        for (auto & sort_column : description)
-        {
-            const auto * out_node = dag.tryFindInOutputs(sort_column.column_name);
-            if (!out_node)
-                return false;
-
-            while (out_node->type == ActionsDAG::ActionType::ALIAS)
-                out_node = out_node->children.front();
-
-            if (out_node->type != ActionsDAG::ActionType::INPUT)
-                return false;
-
-            sort_column.column_name = out_node->result_name;
-        }
-
-        node = node->children.front();
-    }
-
-    return true;
 }
 
 bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)

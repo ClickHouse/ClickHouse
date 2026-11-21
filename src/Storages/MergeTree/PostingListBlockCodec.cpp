@@ -5,8 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
-#include <numeric>
-
 namespace DB
 {
 
@@ -67,7 +65,7 @@ namespace
             return needed_bytes_with_header;
         }
 
-        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
         {
             if (in.empty())
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
@@ -89,8 +87,6 @@ namespace
                 bits,
                 consumed_size);
 
-            std::inclusive_scan(out.begin(), out.begin() + count, out.begin(), std::plus<uint32_t>{}, base);
-
             /// Total bytes consumed from `in`: the bits byte plus the bit-packed payload.
             return 1 + consumed_size;
         }
@@ -101,8 +97,8 @@ namespace
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
-    /// One PFor block. It encodes the deltas `SegmentedPostingListCodec` already computed with `Delta::none`, and decodes
-    /// them with `Delta::d0` from `base`, which gives the same bytes and restores the row ids inside PFor's decode.
+    /// One PFor block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
+    /// TODO(ahmadov): move delta into PFor once `deltaApply` stops spilling, today `d0` is slower on exception blocks.
     class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
@@ -122,13 +118,13 @@ namespace
             return written;
         }
 
-        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
         {
             chassert(count > 0 && count <= out.size());
             const auto * data = reinterpret_cast<const uint8_t *>(in.data());
 
             /// `count` is never zero here, so a zero return means malformed input, not an empty block.
-            const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::d0, out.data(), data + in.size(), base);
+            const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::none, out.data(), data + in.size());
             if (consumed == 0)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());

@@ -46,7 +46,6 @@ namespace DB
     DECLARE(UInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.", 0) \
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, "If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
-    DECLARE(UInt64, min_bytes_before_external_group_by, 0, "The minimum size in bytes of the aggregation state of one thread before external GROUP BY writes it to disk.", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, "Compile aggregate functions to native code.", 0) \
     DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, "The number of identical aggregate expressions before they are JIT-compiled", 0) \
@@ -62,7 +61,6 @@ namespace DB
     DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
-    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, "Keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -79,7 +77,7 @@ namespace DB
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, "Allow to chunk hash join result by rows corresponding to single row from left table.", 0) \
-    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows from the right table in RIGHT and FULL JOINs.", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins.", 0) \
     \
     DECLARE(Bool, use_join_disjunctions_push_down, false, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
     \
@@ -105,8 +103,7 @@ namespace DB
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before join", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built: below it with a right-table estimate, as one part on one thread; at or above it, and also without an estimate, in parts that up to `max_threads` threads fill at the same time.", 0) \
-    DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, "How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table: `auto` (by `parallel_hash_join_threshold`), `serial` (one part on one thread) or `parallel` (parts that up to `max_threads` threads fill at the same time).", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available). The former is used when we know that the right table size is below the threshold.", 0) \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.", 0) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.", 0) \
     DECLARE(Bool, allow_dynamic_type_in_join_keys, false, "Allows using Dynamic type in JOIN keys", 0) \
@@ -129,11 +126,8 @@ namespace DB
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
-    DECLARE(Bool, enable_packed_string_keys_in_hash_join, false, "Store the single `String` key of a hash join in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys. Off by default, so a plan without the name compares the keys exactly.", 0) \
-    DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 0, "The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. 0 means no minimum.", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
-    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, "Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.", 0) \
 
 
 // clang-format on
@@ -152,14 +146,13 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-void QueryPlanSerializationSettings::write(WriteBuffer & out) const
+void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
 {
-    impl->write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    impl->writeChangedBinary(out);
 }
-
-void QueryPlanSerializationSettings::read(ReadBuffer & in)
+void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 {
-    impl->read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    impl->readBinary(in);
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)

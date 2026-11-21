@@ -11,8 +11,7 @@ struct FrameBounds
 {
     RowPoint start;
     RowPoint end;
-    bool start_visible = false;
-    bool end_visible = false;
+    bool fully_visible = false;
 };
 
 class Frame
@@ -21,10 +20,9 @@ public:
     explicit Frame(const WindowTransformParams & params_);
 
     void enterPartition(RowNumber partition_start);
-    void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
+    void advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition);
 
     const FrameBounds & bounds() const;
-    Int64 firstRowToRead() const;
 
 private:
     const WindowTransformParams & params;

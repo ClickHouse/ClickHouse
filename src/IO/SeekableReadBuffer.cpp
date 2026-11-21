@@ -22,7 +22,6 @@ namespace
             , in(in_)
             , custom_data(std::move(custom_data_))
         {
-            setWorkingBuffer(in.buffer(), in.offset());
         }
 
     private:
@@ -37,7 +36,7 @@ namespace
                 set(in.position(), 0);
                 return false;
             }
-            setWorkingBuffer(in.buffer(), in.offset());
+            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
             return true;
         }
 
@@ -45,7 +44,7 @@ namespace
         {
             in.position() = position();
             off_t new_pos = in.seek(off, whence);
-            setWorkingBuffer(in.buffer(), in.offset());
+            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
             return new_pos;
         }
 
