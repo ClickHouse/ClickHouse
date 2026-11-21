@@ -62,8 +62,8 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Ide
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- A lazily loaded queue table that nothing has touched has no storage object to ask, so the rename is
--- allowed - and it must not be loaded in order to answer, which is why the forward is not `getNested()`.
+-- A lazily loaded queue table that nothing has touched is answered from its `CREATE` query, and is not
+-- loaded in order to answer.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_untouched (a UInt32)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV)
@@ -74,10 +74,9 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
 
-RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 
 -- Still a stand-in: answering the check must not have materialized it.
-USE {CLICKHOUSE_DATABASE_2:Identifier};
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
 
-DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
