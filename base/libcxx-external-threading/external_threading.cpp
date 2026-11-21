@@ -4,6 +4,7 @@
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 #include <silk/util/platform.h>
+#include <silk/util/spinlock.h>
 
 #include <atomic>
 #include <cerrno>
@@ -19,13 +20,28 @@ _LIBCPP_BEGIN_NAMESPACE_STD
 
 struct __clickhouse_condvar_waiter
 {
+    /// For Silk-aware waiting.
     silk::FiberFuture future;
+
+    /// For futex waiting.
+    /// Needs acquire-release:
+    /// 1. Notifier thread reads from the waiter object and sets notified = 1.
+    /// 2. Waiter thread reads notified == 1 and destoys the object.
+    /// 3. Reading from the object must happen-before destroying it.
     uint32_t notified = 0;
-    uint32_t claim = 0;
-    bool fiber = false;
+
+    /// Indicates whether to wait using futex or via silk.
+    bool silk_aware_wait = false;
+
+    /// The WaiterList (intrusive list) pointers.
     __clickhouse_condvar_waiter * prev = nullptr;
     __clickhouse_condvar_waiter * next = nullptr;
-    bool queued = false;
+
+    /// In ConditionVariable::wait, when the wait times out, another thread may concurrently call notify_all and destroy the storage.
+    /// To avoid UAF on the storage:
+    /// (a) We keep the storage alive while the waiter list is non-empty.
+    /// (b) Removing a waiter list node requires claiming the node first (= CAS on the node itself, does not touch the storage).
+    bool claimed = false;
 };
 
 _LIBCPP_END_NAMESPACE_STD
@@ -71,7 +87,7 @@ public:
     bool tryLock()
     {
         uint32_t current = 0;
-        return state.compare_exchange_strong(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
+        return state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
     }
 
     void unlock()
@@ -154,13 +170,17 @@ public:
         return true;
     }
 
-    void unlock()
+    int unlock()
     {
+        if constexpr (_LIBCPP_HARDENING_MODE & (_LIBCPP_HARDENING_MODE_EXTENSIVE | _LIBCPP_HARDENING_MODE_DEBUG))
+            if (getOwnerIdentity() != Identity::current())
+                return EPERM;
         if (--storage.__count == 0)
         {
             setOwnerIdentity({});
             std::__libcpp_mutex_unlock(&storage.__mutex);
         }
+        return 0;
     }
 
 private:
@@ -194,6 +214,11 @@ private:
 
 using Waiter = std::__clickhouse_condvar_waiter;
 
+bool tryClaim(Waiter & waiter)
+{
+    return !std::atomic_ref(waiter.claimed).exchange(true, std::memory_order_relaxed);
+}
+
 class WaiterList
 {
 public:
@@ -211,16 +236,12 @@ public:
         else
             setHead(&waiter);
         storage.__tail = &waiter;
-        waiter.queued = true;
     }
 
-    bool remove(Waiter & waiter)
+    void remove(Waiter & waiter)
     {
         SpinLock lock(storage);
-        if (!waiter.queued)
-            return false;
         unlink(waiter);
-        return true;
     }
 
     Waiter * popFront()
@@ -228,10 +249,15 @@ public:
         if (empty())
             return nullptr;
         SpinLock lock(storage);
-        Waiter * const waiter = storage.__head;
-        if (waiter)
-            unlink(*waiter);
-        return waiter;
+        for (Waiter * waiter = storage.__head; waiter; waiter = waiter->next)
+        {
+            if (tryClaim(*waiter))
+            {
+                unlink(*waiter);
+                return waiter;
+            }
+        }
+        return nullptr;
     }
 
     Waiter * popAll()
@@ -239,12 +265,32 @@ public:
         if (empty())
             return nullptr;
         SpinLock lock(storage);
-        Waiter * const waiter = storage.__head;
-        for (Waiter * queued = waiter; queued; queued = queued->next)
-            queued->queued = false;
-        setHead(nullptr);
-        storage.__tail = nullptr;
-        return waiter;
+        Waiter * popped = nullptr;
+        for (Waiter * waiter = storage.__head; waiter;)
+        {
+            Waiter * next = waiter->next;
+            if (tryClaim(*waiter))
+            {
+                unlink(*waiter);
+                waiter->next = popped;
+                popped = waiter;
+            }
+            waiter = next;
+        }
+        return popped;
+    }
+
+    void waitUntilEmpty()
+    {
+        while (true)
+        {
+            {
+                SpinLock lock(storage);
+                if (!storage.__head)
+                    return;
+            }
+            silk::cpuPause();
+        }
     }
 
 private:
@@ -256,8 +302,8 @@ private:
         {
             std::atomic_ref lock(storage.__lock);
             while (lock.exchange(1, std::memory_order_acquire))
-                while (lock.load(std::memory_order_relaxed))
-                    silk::cpuPause();
+                if (!silk::spinWait([&] { return !lock.load(std::memory_order_relaxed); }))
+                    silk::schedYield();
         }
 
         ~SpinLock() { std::atomic_ref(storage.__lock).store(0, std::memory_order_release); }
@@ -266,21 +312,20 @@ private:
         std::__libcpp_condvar_t & storage;
     };
 
-    bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_acquire); }
+    bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_relaxed); }
 
-    void setHead(Waiter * waiter) { std::atomic_ref(storage.__head).store(waiter, std::memory_order_release); }
+    void setHead(Waiter * waiter) { std::atomic_ref(storage.__head).store(waiter, std::memory_order_relaxed); }
 
-    void unlink(Waiter & waiter)
+    void unlink(Waiter & claimed_waiter)
     {
-        if (waiter.prev)
-            waiter.prev->next = waiter.next;
+        if (claimed_waiter.prev)
+            claimed_waiter.prev->next = claimed_waiter.next;
         else
-            setHead(waiter.next);
-        if (waiter.next)
-            waiter.next->prev = waiter.prev;
+            setHead(claimed_waiter.next);
+        if (claimed_waiter.next)
+            claimed_waiter.next->prev = claimed_waiter.prev;
         else
-            storage.__tail = waiter.prev;
-        waiter.queued = false;
+            storage.__tail = claimed_waiter.prev;
     }
 
     std::__libcpp_condvar_t & storage;
@@ -297,25 +342,21 @@ public:
     int wait(Mutex mutex, uint64_t deadline)
     {
         Waiter waiter;
-        waiter.fiber = needSilkAwareWait();
+        waiter.silk_aware_wait = needSilkAwareWait();
         WaiterList(storage).push(waiter);
         mutex.unlock();
         int result = waitForNotify(waiter, deadline);
         if (result == ETIMEDOUT)
         {
-            if (tryClaim(waiter, CLAIMED_BY_TIMEOUT))
-            {
-                if (!WaiterList(storage).remove(waiter))
-                    result = 0;
-                std::atomic_ref(waiter.claim).store(TIMEOUT_CLEANUP_DONE, std::memory_order_release);
-            }
+            if (tryClaim(waiter))
+                WaiterList(storage).remove(waiter);
             else
             {
                 /// The notifier thread concurrently removed us from the wait list,
                 /// wait until it calls notify(*waiter) object before we destroy it.
                 waitForNotify(waiter, UINT64_MAX);
                 result = 0;
-            }
+            }   
         }
         mutex.lock();
         return result;
@@ -332,27 +373,16 @@ public:
         Waiter * waiter = WaiterList(storage).popAll();
         while (waiter)
         {
-            Waiter * const next = waiter->next;
+            Waiter * next = waiter->next;
             notify(*waiter);
             waiter = next;
         }
     }
 
 private:
-    static constexpr uint32_t UNCLAIMED = 0;
-    static constexpr uint32_t CLAIMED_BY_NOTIFIER = 1;
-    static constexpr uint32_t CLAIMED_BY_TIMEOUT = 2;
-    static constexpr uint32_t TIMEOUT_CLEANUP_DONE = 3;
-
-    static bool tryClaim(Waiter & waiter, uint32_t claimant)
-    {
-        uint32_t expected = UNCLAIMED;
-        return std::atomic_ref(waiter.claim).compare_exchange_strong(expected, claimant, std::memory_order_acq_rel);
-    }
-
     static int waitForNotify(Waiter & waiter, uint64_t deadline)
     {
-        if (waiter.fiber)
+        if (waiter.silk_aware_wait)
         {
             const uint64_t now = silk::getTimeNanoseconds();
             const uint64_t timeout = deadline > now ? deadline - now : 0;
@@ -371,18 +401,12 @@ private:
 
     static void notify(Waiter & waiter)
     {
-        if (!tryClaim(waiter, CLAIMED_BY_NOTIFIER))
-        {
-            while (std::atomic_ref(waiter.claim).load(std::memory_order_acquire) != TIMEOUT_CLEANUP_DONE)
-                silk::cpuPause();
-            return;
-        }
-        if (waiter.fiber)
+        if (waiter.silk_aware_wait)
         {
             waiter.future.set(0);
             return;
         }
-        uint32_t * const notified = &waiter.notified;
+        uint32_t * notified = &waiter.notified;
         std::atomic_ref(*notified).store(1, std::memory_order_release);
         futexWake(notified, 1);
     }
@@ -417,12 +441,14 @@ bool __libcpp_recursive_mutex_trylock(__libcpp_recursive_mutex_t * m)
 
 int __libcpp_recursive_mutex_unlock(__libcpp_recursive_mutex_t * m)
 {
-    RecursiveMutex(*m).unlock();
-    return 0;
+    return RecursiveMutex(*m).unlock();
 }
 
-int __libcpp_recursive_mutex_destroy(__libcpp_recursive_mutex_t *)
+int __libcpp_recursive_mutex_destroy(__libcpp_recursive_mutex_t * m)
 {
+    if constexpr (_LIBCPP_HARDENING_MODE & (_LIBCPP_HARDENING_MODE_EXTENSIVE | _LIBCPP_HARDENING_MODE_DEBUG))
+        if (m->__count)
+            return EBUSY;
     return 0;
 }
 
@@ -489,8 +515,9 @@ int __libcpp_condvar_timedwait(__libcpp_condvar_t * cv, __libcpp_mutex_t * m, __
     return ConditionVariable(*cv).wait(Mutex(*m), silk::getTimeNanoseconds() + static_cast<uint64_t>(nanoseconds));
 }
 
-int __libcpp_condvar_destroy(__libcpp_condvar_t *)
+int __libcpp_condvar_destroy(__libcpp_condvar_t * cv)
 {
+    WaiterList(*cv).waitUntilEmpty();
     return 0;
 }
 

@@ -29,7 +29,7 @@ std::mutex & getLoggerMutex()
 {
 	auto get_logger_mutex_placeholder_memory = []()
 	{
-		static char buffer[sizeof(std::mutex)]{};
+		alignas(std::mutex) static char buffer[sizeof(std::mutex)]{};
 		return buffer;
 	};
 
