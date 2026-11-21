@@ -582,6 +582,7 @@ struct AMQPSetupState
     std::string error;
     int error_code = 0;
     size_t bound_keys = 0;
+    size_t answered_queue_deletions = 0;
     bool abandoned = false;
 };
 }
@@ -1246,14 +1247,16 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             if (state->abandoned)
                 return;
             LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
-            connection->getHandler().stopBlockingLoop();
+            if (++state->answered_queue_deletions == queues.size())
+                connection->getHandler().stopBlockingLoop();
         })
         .onError([this, state, queue](const char * message)
         {
             if (state->abandoned)
                 return;
             LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
-            connection->getHandler().stopBlockingLoop();
+            if (++state->answered_queue_deletions == queues.size())
+                connection->getHandler().stopBlockingLoop();
         });
     }
     if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))

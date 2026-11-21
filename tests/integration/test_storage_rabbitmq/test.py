@@ -2499,6 +2499,64 @@ def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db,
     instance.query(f"DROP TABLE {table}")
 
 
+def test_rabbitmq_drop_table_deletes_all_queues(rabbitmq_cluster, db, unique):
+    # DROP TABLE must delete every queue of the table and stop waiting once the last deletion has answered.
+    num_queues = 10
+    queue_base = f"{unique}_drop_all"
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_drop_all (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_drop_all',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_num_queues = {num_queues},
+                     rabbitmq_queue_base = '{queue_base}'
+        """
+    )
+    queues = [f"{i}_{queue_base}" for i in range(1, num_queues + 1)]
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+
+    def queue_exists(queue):
+        # A passive declare of a missing queue closes the channel with 404, so use a fresh one each time.
+        channel = connection.channel()
+        try:
+            channel.queue_declare(queue=queue, passive=True)
+        except pika.exceptions.ChannelClosedByBroker as e:
+            assert e.reply_code == 404, f"unexpected channel close: {e}"
+            return False
+        channel.close()
+        return True
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while not all(queue_exists(q) for q in queues):
+        assert time.monotonic() < deadline, "the table did not declare all its queues"
+        time.sleep(0.5)
+
+    # Counted from here, so that a repeated run of this test on the same server does not see older lines.
+    logger = f"StorageRabbitMQ ({db}.rabbitmq_drop_all)"
+    deleted = f"{logger}: Successfully deleted queue"
+    timed_out = f"{logger}: Timed out waiting for queue cleanup"
+    deleted_before, timed_out_before = int(instance.count_in_log(deleted)), int(instance.count_in_log(timed_out))
+
+    instance.query(f"DROP TABLE {db}.rabbitmq_drop_all")
+
+    deadline = time.monotonic() + 30
+    while left := [q for q in queues if queue_exists(q)]:
+        assert time.monotonic() < deadline, f"queues still exist 30 s after DROP TABLE: {left}"
+        time.sleep(0.5)
+    connection.close()
+
+    # The loop must stop on the last answer, not on its timeout.
+    assert int(instance.count_in_log(deleted)) - deleted_before == num_queues
+    assert int(instance.count_in_log(timed_out)) == timed_out_before
+
+
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
