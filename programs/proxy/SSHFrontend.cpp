@@ -75,6 +75,7 @@ struct PendingOutput
     size_t bytes = 0;
     bool eof_received = false;      /// The source sent EOF: forwarded once everything before it is written.
     bool eof_sent = false;
+    bool violated = false;          /// The source sent data or another EOF after EOF.
 };
 
 constexpr size_t max_pending_output_bytes = 1024 * 1024;
@@ -240,7 +241,9 @@ bool pump(PendingOutput & out, ssh_channel source, ssh_channel destination, bool
     bool source_drained = true;
     for (const bool is_stderr : {false, true})
     {
-        if (is_stderr && !with_stderr)
+        /// After EOF, the EOF callback has taken everything the source channel had buffered, and a read
+        /// would only reopen its window. A source that is gone (its transport closed) has nothing to read.
+        if ((is_stderr && !with_stderr) || !source || out.eof_received)
             break;
         while (true)
         {
@@ -277,12 +280,24 @@ bool pump(PendingOutput & out, ssh_channel source, ssh_channel destination, bool
 }
 
 /// Called from the EOF callback of @p source: moves the data that the source channel still buffers into @p out,
-/// beyond its bound. No data follows EOF, so it is at most the receive window of the channel. It must be taken
-/// now: a peer that disconnects after EOF puts its session in the error state, in which libssh no longer reads
-/// the buffered data. libssh sets the EOF of the channel before the callback, so the reads here take only
-/// the buffered data and do not process further packets.
+/// beyond its bound, by at most the receive window of the channel. It must be taken now: a peer that disconnects
+/// after EOF puts its session in the error state, in which libssh no longer reads the buffered data. libssh sets
+/// the EOF of the channel before the callback, so the reads here take only the buffered data and do not process
+/// further packets.
+///
+/// libssh does not enforce that nothing follows EOF: it accepts data after EOF, invokes the EOF callback for every
+/// EOF, and these reads reopen the receive window. So this is done only for the first EOF, and a peer that sends
+/// data or EOF after it violates the protocol and has its session ended (see `PendingOutput::violated`).
+/// Thus at most one receive window is kept beyond the bound.
 void takeBufferedAfterEof(PendingOutput & out, ssh_channel source, bool with_stderr, Backend * backend, bool to_client)
 {
+    if (out.eof_received)
+    {
+        out.violated = true;
+        return;
+    }
+    out.eof_received = true;
+
     for (const bool is_stderr : {false, true})
     {
         if (is_stderr && !with_stderr)
@@ -311,6 +326,12 @@ int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_std
     auto * bridge = static_cast<Bridge *>(userdata);
     if (!bridge->backend_channel || is_stderr)
         return 0;
+    if (bridge->to_backend.eof_received)
+    {
+        /// Data after EOF: dropped, and the session is ended by the splice loop.
+        bridge->to_backend.violated = true;
+        return static_cast<int>(len);
+    }
     const size_t consumed = forward(bridge->to_backend, bridge->backend_channel, static_cast<const char *>(data), len, false);
     if (bridge->backend && consumed > 0)
         bridge->backend->addBytesFromClient(consumed);
@@ -320,7 +341,9 @@ int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_std
 void onClientEof(ssh_session, ssh_channel channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
-    bridge->to_backend.eof_received = true;
+    /// Without the backend leg, there is nowhere to forward the input to.
+    if (!bridge->backend_channel)
+        return;
     takeBufferedAfterEof(bridge->to_backend, channel, /*with_stderr=*/ false, bridge->backend.get(), /*to_client=*/ false);
 }
 
@@ -329,6 +352,12 @@ int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_st
     auto * bridge = static_cast<Bridge *>(userdata);
     if (!bridge->client_channel)
         return 0;
+    if (bridge->to_client.eof_received)
+    {
+        /// Data after EOF: dropped, and the session is ended by the splice loop.
+        bridge->to_client.violated = true;
+        return static_cast<int>(len);
+    }
     const size_t consumed = forward(bridge->to_client, bridge->client_channel, static_cast<const char *>(data), len, is_stderr != 0);
     if (bridge->backend && consumed > 0)
         bridge->backend->addBytesToClient(consumed);
@@ -338,7 +367,6 @@ int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_st
 void onBackendEof(ssh_session, ssh_channel channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
-    bridge->to_client.eof_received = true;
     takeBufferedAfterEof(bridge->to_client, channel, /*with_stderr=*/ true, bridge->backend.get(), /*to_client=*/ true);
 }
 
@@ -570,10 +598,49 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
         }
     }
 
-    /// Splice the two channels until either side closes, and the output of a closed backend is delivered.
-    while (!bridge.finished && bridge.client_channel && ssh_channel_is_open(bridge.client_channel) && bridge.backend_channel)
+    /// Releases the backend leg. The callbacks of the client channel stay installed and may still run while
+    /// the client session is polled, so the pointers they use are cleared: they then do nothing.
+    auto release_backend = [&]
     {
-        const bool backend_open = ssh_channel_is_open(bridge.backend_channel);
+        if (bridge.backend_channel)
+        {
+            ssh_channel_close(bridge.backend_channel);
+            ssh_channel_free(bridge.backend_channel);
+            bridge.backend_channel = nullptr;
+        }
+        if (bridge.backend_key)
+        {
+            ssh_key_free(bridge.backend_key);
+            bridge.backend_key = nullptr;
+        }
+        if (bridge.backend_session)
+        {
+            ssh_event_remove_session(bridge.event, bridge.backend_session);
+            ssh_disconnect(bridge.backend_session);
+            ssh_free(bridge.backend_session);
+            bridge.backend_session = nullptr;
+        }
+    };
+    SCOPE_EXIT({ release_backend(); });
+
+    const auto session_ended = [](ssh_session ssh)
+    {
+        return (ssh_get_status(ssh) & (SSH_CLOSED | SSH_CLOSED_ERROR)) != 0;
+    };
+
+    /// Splice the two channels until either side closes, and the output of a closed backend is delivered.
+    const bool spliced = bridge.backend_channel != nullptr;
+    while (spliced && !bridge.finished && bridge.client_channel && ssh_channel_is_open(bridge.client_channel))
+    {
+        /// A peer that sends data or EOF after EOF: see `takeBufferedAfterEof`.
+        if (bridge.to_backend.violated || bridge.to_client.violated)
+        {
+            LOG_DEBUG(bridge.log, "Ending an SSH session: the {} sent data or EOF after EOF",
+                bridge.to_client.violated ? "backend" : "client");
+            break;
+        }
+
+        const bool backend_open = bridge.backend_channel && ssh_channel_is_open(bridge.backend_channel);
         if (backend_open)
             pump(bridge.to_backend, bridge.client_channel, bridge.backend_channel, /*with_stderr=*/ false, bridge.backend.get(), /*to_client=*/ false);
         const bool to_client_drained = pump(bridge.to_client, bridge.backend_channel, bridge.client_channel,
@@ -588,25 +655,23 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
             break;
 
         if (ssh_event_dopoll(bridge.event, poll_ms) == SSH_ERROR)
-            break;
+        {
+            /// The poll fails when the transport of either session ends. If it is the backend that is gone
+            /// (it may close its connection right after EOF and the exit status), the output already received
+            /// from it is still owed to the client, whose window may be closed: release the backend leg
+            /// and keep polling the client until the output is delivered.
+            if (!bridge.backend_session || !session_ended(bridge.backend_session) || session_ended(session.getInternalPtr()))
+                break;
+            release_backend();
+        }
     }
 
     if (bridge.connection_counted && bridge.backend)
         bridge.backend->onConnectionEnd();
 
-    if (bridge.backend_channel)
-    {
-        ssh_channel_close(bridge.backend_channel);
-        ssh_channel_free(bridge.backend_channel);
-    }
-    if (bridge.backend_key)
-        ssh_key_free(bridge.backend_key);
-    if (bridge.backend_session)
-    {
-        ssh_event_remove_session(bridge.event, bridge.backend_session);
-        ssh_disconnect(bridge.backend_session);
-        ssh_free(bridge.backend_session);
-    }
+    /// Before the client is polled below: its callbacks must not find the backend channel freed.
+    release_backend();
+
     if (bridge.client_channel)
     {
         ssh_channel_close(bridge.client_channel);
