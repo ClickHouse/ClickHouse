@@ -29,13 +29,13 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsString role_arn;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
@@ -129,13 +129,15 @@ void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with
                 disk_only_key);
     }
 
-    const std::pair<const char *, S3AuthSettingsString> google_adc_settings[] = {
-        {"google_adc_client_id", S3AuthSetting::google_adc_client_id},
+    if (auto it = key_value_args.find("google_adc_client_id"); it != key_value_args.end())
+        auth[S3AuthSetting::google_adc_client_id] = it->second.safeGet<String>();
+
+    const std::pair<const char *, S3AuthSettingsSecretString> google_adc_secret_settings[] = {
         {"google_adc_client_secret", S3AuthSetting::google_adc_client_secret},
         {"google_adc_refresh_token", S3AuthSetting::google_adc_refresh_token},
     };
 
-    for (const auto & [name, setting] : google_adc_settings)
+    for (const auto & [name, setting] : google_adc_secret_settings)
     {
         if (auto it = key_value_args.find(name); it != key_value_args.end())
             auth[setting] = it->second.safeGet<String>();
@@ -265,8 +267,8 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     /// first token (see `ClickHouse::PocoRestAuthorizedUserOption`). `validateGCSRefreshTokenTriple`
     /// below rejects a partially specified triple.
     gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
-    gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
-    gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
+    gcs_settings.google_adc_client_secret = String(std::string_view(auth[S3AuthSetting::google_adc_client_secret].value));
+    gcs_settings.google_adc_refresh_token = String(std::string_view(auth[S3AuthSetting::google_adc_refresh_token].value));
     gcs_settings.google_adc_token_uri = google_adc_token_uri;
 
     /// `use_environment_credentials = 0` means "do not resolve an ambient, server-managed identity".

@@ -118,7 +118,7 @@ public:
 
     /// Aliases the immutable client/settings snapshot, so the returned pointer keeps the settings
     /// it points into alive even if `applyNewSettings` swaps the snapshot concurrently.
-    std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const override
+    [[nodiscard]] std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const override
     {
         auto snapshot = getClientWithSettings();
         return {snapshot, &snapshot->settings};

@@ -154,7 +154,7 @@ public:
 #if USE_GOOGLE_CLOUD
     /// `getType()` reports the wrapped storage's type, so a caller that dispatches on it -- the
     /// distributed cache does -- reaches this object believing it is the GCS storage itself.
-    std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const override
+    [[nodiscard]] std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const override
     {
         return object_storage->getGCSObjectStorageSettings();
     }
