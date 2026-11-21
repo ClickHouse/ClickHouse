@@ -1,0 +1,5 @@
+U0: OK
+TRUNCATE: OK
+U1: OK
+after truncate	0
+after insert	10	0	0
