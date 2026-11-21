@@ -1,0 +1,2 @@
+queued as UInt8, flushed into UInt16	0
+queued and flushed as UInt16	[3,4]

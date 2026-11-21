@@ -1,0 +1,69 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The same two shard databases as `two_shards_dist`, over credentials of their own: a user that
+             may select and insert the shard databases and nothing else. Both replicas declare a
+             <default_database>, so neither is local and every check goes over the connection. -->
+        <two_shards_restricted>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_0</default_database>
+                    <user>prom_cluster_shard_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_1</default_database>
+                    <user>prom_cluster_shard_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </two_shards_restricted>
+        <!-- The same two shard databases once more, over credentials narrower still: a user holding only the
+             column-level INSERT the shard write itself asks for, which carries no right to read metadata. -->
+        <two_shards_column_granted>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_0</default_database>
+                    <user>prom_cluster_column_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_1</default_database>
+                    <user>prom_cluster_column_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </two_shards_column_granted>
+        <!-- One internally replicated shard over those same credentials, its second replica down: nothing listens on 1234. -->
+        <one_shard_column_granted_replicated>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_0</default_database>
+                    <user>prom_cluster_column_user</user>
+                    <password></password>
+                </replica>
+                <replica>
+                    <host>localhost</host>
+                    <port>1234</port>
+                    <default_database>shard_0</default_database>
+                    <user>prom_cluster_column_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </one_shard_column_granted_replicated>
+    </remote_servers>
+</clickhouse>

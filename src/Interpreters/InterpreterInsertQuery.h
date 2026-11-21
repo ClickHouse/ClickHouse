@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
@@ -132,6 +133,10 @@ private:
     bool returning_insert_views_serial = false;
     bool explain_only = false;
     void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
+
+    /// The insert_expected_* requirements this insert checked, and the context it then runs on without them.
+    SettingsChanges consumed_insert_expectations;
+    ContextMutablePtr context_without_insert_expectations;
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.
