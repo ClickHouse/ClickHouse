@@ -111,6 +111,7 @@ public:
     [[nodiscard]] const ActionsDAG & getActionsDAG() const { return actions_dag; }
     [[nodiscard]] const ColumnNumbers & getResultPositions() const { return result_positions; }
     [[nodiscard]] const ExpressionActionsSettings & getSettings() const { return settings; }
+    [[nodiscard]] bool projectInputs() const { return project_inputs; }
 
     /// Get a list of input columns.
     [[nodiscard]] Names getRequiredColumns() const;
