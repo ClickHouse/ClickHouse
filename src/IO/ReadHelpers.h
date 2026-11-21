@@ -1102,9 +1102,9 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
         ++token_end;
 
     /// The value may continue in the next buffer, so copy it and parse the copy.
-    if (token_end == buf_end)
+    if (token_end == buf_end && !buf.isMemoryBuffer())
     {
-        /// hhh:mm:ss and a terminating zero byte
+        /// hhh:mm:ss and one more byte, so the copy does not end at the buffer end
         char token[10];
         size_t token_size = 0;
         while (token_size + 1 < sizeof(token) && !buf.eof()
@@ -1124,8 +1124,12 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 
         if (token_buf.position() != token + token_size)
         {
+            /// Otherwise the Time64 caller reads the fraction after the failed value, as for -.5
+            while (!buf.eof() && *buf.position() == '.')
+                ++buf.position();
+
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time {}", std::string_view(token, token_size));
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(token, token_size));
             else
                 return false;
         }
