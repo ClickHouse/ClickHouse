@@ -1,0 +1,24 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!-- The label matchers of the left side are copied to the "one" side of the operator, so it reads one instance instead of all. -->
+    <create_query>CREATE TABLE promql_one_side_ts ENGINE = TimeSeries</create_query>
+
+    <!-- 250 instances x 8 cpus x 4 modes of one counter, one sample every 15s for an hour. -->
+    <fill_query>
+        INSERT INTO promql_one_side_ts (metric_name, tags, samples)
+        SELECT
+            'cpu_seconds',
+            map('instance', toString(intDiv(number, 32)), 'cpu', toString(intDiv(number, 4) % 8), 'mode', toString(number % 4)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(step * (number % 7 + 1))), range(240))
+        FROM numbers_mt(8000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQueryRange('promql_one_side_ts', 'rate(cpu_seconds{{instance="1", mode="0"}}[5m]) / ignoring(mode) group_left sum without (mode) (rate(cpu_seconds[5m]))', 1000300, 1003585, 15) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_one_side_ts', 'rate(cpu_seconds{{instance="1"}}[5m]) / on(instance, cpu, mode) rate(cpu_seconds[5m] offset 10m)', 1000900, 1003585, 15) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_one_side_ts</drop_query>
+</test>
