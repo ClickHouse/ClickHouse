@@ -204,9 +204,8 @@ public:
     void boundKeyBytes() { bound_key_bytes = true; }
 
     void insert(ColumnPtr values);
-    /// Like insert, but stops at the first new key past exact_values_limit keys, so the set never holds more. Returns
-    /// whether it took every row.
-    [[nodiscard]] bool insertUntilKeyLimit(const ColumnPtr & values);
+    /// Like insert, but stops after the row whose key makes the set full, so it holds at most exact_values_limit + 1 keys.
+    void insertUntilFull(const ColumnPtr & values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
@@ -240,7 +239,7 @@ private:
     Set & getExactValues();
     [[nodiscard]] const Set & getExactValues() const;
     [[nodiscard]] ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
-    bool insertKeys(const ColumnPtr & values, size_t max_keys);
+    void insertKeys(const ColumnPtr & values, size_t max_keys);
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;

@@ -445,25 +445,24 @@ void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 }
 
 template <bool negate>
-bool ExactSetRuntimeFilter<negate>::insertUntilKeyLimit(const ColumnPtr & values)
+void ExactSetRuntimeFilter<negate>::insertUntilFull(const ColumnPtr & values)
 {
-    return insertKeys(values, exact_values_limit);
+    insertKeys(values, exact_values_limit);
 }
 
 template <bool negate>
-bool ExactSetRuntimeFilter<negate>::insertKeys(const ColumnPtr & values, size_t max_keys)
+void ExactSetRuntimeFilter<negate>::insertKeys(const ColumnPtr & values, size_t max_keys)
 {
     if (is_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter exact set after it was marked as finished");
 
     if (is_full)
-        return false;
+        return;
 
     auto & set = getExactValues();
-    const bool all_rows = set.insertFromColumns({values}, max_keys);
+    set.insertFromColumns({values}, max_keys);
     const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
     is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
-    return all_rows;
 }
 
 template <bool negate>
@@ -869,6 +868,11 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
+    /// A full exact set means the switch from it threw and the caller went on inserting. It holds the keys of the rows it
+    /// took, so retry.
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_); exact_filter && exact_filter->isFull())
+        switchFromExactFilter(filter_, nullptr);
+
     if (std::holds_alternative<KeySetDropped>(filter_))
         return;
 
@@ -885,12 +889,13 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     }
 
     auto * exact_filter = std::get_if<ExactFilter>(&filter_);
-    if (!exact_filter)
+    if (!exact_filter || exact_filter->isFull())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
-    /// The exact set stops at the first new key past its limit and its replacement takes the block, so a refused
-    /// replacement leaves the rows before that key. A full exact set takes none: its switch threw, so it is retried.
-    if (!exact_filter->insertUntilKeyLimit(values) || exact_filter->isFull())
+    /// The exact set stops after the key that fills it, so its replacement takes the whole block.
+    exact_filter->insertUntilFull(values);
+
+    if (exact_filter->isFull())
         switchFromExactFilter(filter_, values);
 }
 
@@ -906,7 +911,8 @@ void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_, const Colum
 {
     DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
     bitset_filter.insert(std::get<ExactFilter>(filter_).getValuesColumn());
-    bitset_filter.insert(block);
+    if (block)
+        bitset_filter.insert(block);
     filter_.emplace<DenseBitsetRuntimeFilter>(std::move(bitset_filter));
     ProfileEvents::increment(ProfileEvents::RuntimeFilterDenseBitsetsBuilt);
 }

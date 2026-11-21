@@ -331,9 +331,8 @@ TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
 
 TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItThrew)
 {
-    /// The exact set at its limit switches to an 8 MiB Bloom filter at the new key 7, which the memory limit refuses. The
-    /// set keeps the keys before it, and the next block retries the switch, as after `ISimpleTransform` passed the
-    /// exception downstream.
+    /// The full exact set switches to an 8 MiB Bloom filter, which the memory limit refuses. The set keeps its keys, and
+    /// the next block retries the switch, as after `ISimpleTransform` passed the exception downstream.
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
@@ -346,17 +345,17 @@ TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItTh
 
     filter.insert(makeUInt64Column({6}));
     filter.finishInsert();
-    /// The keys before the refused key are kept, and the probe is checked rather than skipped as for a dropped key set.
-    /// Other values may pass the Bloom filter.
-    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6}, type)), {1, 1, 1});
-    EXPECT_EQ(filter.getStats().rows_checked.load(), 3);
+    /// No key is lost, and the probe is checked rather than skipped as for a dropped key set. Other values may pass
+    /// the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7}, type)), {1, 1, 1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
     EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
 }
 
-TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsBeforeTheFirstNewKeyWhenItsSwitchThrows)
+TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsUpToTheFirstNewKeyWhenItsSwitchThrows)
 {
-    /// The exact set reaches its limit at key 5 and takes the duplicate 0 after it. At the new key 7 it switches to an
-    /// 8 MiB Bloom filter, which the memory limit refuses, so the set keeps only the rows before that key.
+    /// The exact set reaches its limit at key 5 and takes the duplicate 0 after it. The new key 7 fills it, and its switch
+    /// to an 8 MiB Bloom filter is refused by the memory limit, so the set keeps the rows up to 7 and 8 is in no filter.
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
@@ -369,14 +368,9 @@ TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsBeforeTheFirstNewKeyWhenItsS
     ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
     filter.finishInsert();
 
-    const auto description = filter.describe();
-    EXPECT_EQ(description.kind, RuntimeFilterKind::ExactSet);
-    ASSERT_TRUE(description.keys.has_value());
-    EXPECT_EQ(*description.keys, 2);
-    const auto recorded_values = filter.getRecordedKeyValues();
-    ASSERT_TRUE(recorded_values);
-    EXPECT_EQ(recorded_values->size(), 2);
-    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 0, 0});
+    /// A full set gives index analysis nothing.
+    EXPECT_FALSE(filter.getRecordedKeyValues());
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
     EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
 }

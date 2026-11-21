@@ -338,7 +338,7 @@ void Set::executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Contain
 
 
 template <typename Method>
-bool NO_INLINE Set::insertFromBlockImpl(
+void NO_INLINE Set::insertFromBlockImpl(
     Method & method,
     const ColumnRawPtrs & key_columns,
     size_t rows,
@@ -347,25 +347,20 @@ bool NO_INLINE Set::insertFromBlockImpl(
     ColumnUInt8::Container * out_filter,
     size_t max_keys)
 {
-    /// Each row adds at most one key, so only a block with more rows than keys left can reach `max_keys`.
-    if (rows > max_keys - std::min(max_keys, method.data.size()))
-        return insertFromBlockImplUpToKeys(method, key_columns, rows, variants, null_map, out_filter, max_keys);
-
     if (null_map)
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
         else
-            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
     }
     else
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
         else
-            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
     }
-    return true;
 }
 
 
@@ -376,7 +371,8 @@ void NO_INLINE Set::insertFromBlockImplCase(
     size_t rows,
     SetVariants & variants,
     [[maybe_unused]] ConstNullMapPtr null_map,
-    [[maybe_unused]] ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ColumnUInt8::Container * out_filter,
+    size_t max_keys)
 {
     typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
@@ -395,47 +391,19 @@ void NO_INLINE Set::insertFromBlockImplCase(
             }
         }
 
-        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
-    }
-}
 
-
-/// Out of line, so that the bulk insertion loop above stays as it is.
-template <typename Method>
-bool NO_INLINE Set::insertFromBlockImplUpToKeys(
-    Method & method,
-    const ColumnRawPtrs & key_columns,
-    size_t rows,
-    SetVariants & variants,
-    ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter,
-    size_t max_keys)
-{
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = null_map != nullptr});
-    for (size_t i = 0; i < rows; ++i)
-    {
-        bool inserted = false;
-        if (!null_map || !(*null_map)[i])
+        /// Checked only for a new key, so rows with keys the set has cost nothing more.
+        if (emplace_result.isInserted() && method.data.size() > max_keys)
         {
-            if (method.data.size() < max_keys)
-            {
-                inserted = state.emplaceKey(method.data, i, variants.string_pool).isInserted();
-            }
-            else if (!state.findKey(method.data, i, variants.string_pool).isFound())
-            {
-                /// A full set takes the rows with keys it has and stops at the first new key.
-                if (out_filter)
-                    std::fill(out_filter->begin() + i, out_filter->begin() + rows, 0);
-                return false;
-            }
+            if constexpr (build_filter)
+                std::fill(out_filter->begin() + i + 1, out_filter->begin() + rows, 0);
+            return;
         }
-        if (out_filter)
-            (*out_filter)[i] = inserted;
     }
-    return true;
 }
 
 
@@ -539,8 +507,7 @@ bool Set::insertFromColumns(const Columns & columns, size_t max_keys)
     if (fill_set_elements)
         holder.filter = ColumnUInt8::create(rows);
 
-    bool all_rows = true;
-    bool inserted = insertFromColumnsImpl(columns, holder, max_keys, all_rows);
+    bool inserted = insertFromColumnsImpl(columns, holder, max_keys);
     if (inserted && fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
@@ -553,17 +520,16 @@ bool Set::insertFromColumns(const Columns & columns, size_t max_keys)
             appendSetElements(holder);
     }
 
-    return inserted && all_rows;
+    return inserted;
 }
 
 bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
-    bool all_rows = true;
-    return insertFromColumnsImpl(columns, holder, std::numeric_limits<size_t>::max(), all_rows);
+    return insertFromColumnsImpl(columns, holder, std::numeric_limits<size_t>::max());
 }
 
-bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, bool & all_rows)
+bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys)
 {
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
@@ -599,7 +565,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
 
     data->callOnMethod([&](auto & method)
     {
-        all_rows = insertFromBlockImpl(
+        insertFromBlockImpl(
             method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr, max_keys);
     });
 
