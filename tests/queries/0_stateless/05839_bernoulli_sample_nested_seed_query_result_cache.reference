@@ -1,0 +1,9 @@
+nested quoted zero seed
+nested profile with the zero seed
+the profile applied last wins over an explicit seed
+nested nonzero seed under an outer zero seed
+1
+nested profile with a nonzero seed under an outer zero seed
+1
+sampled subquery next to a subquery with the zero seed and no sample
+1
