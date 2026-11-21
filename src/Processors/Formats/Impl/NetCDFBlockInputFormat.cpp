@@ -27,7 +27,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <queue>
 
 namespace DB
 {
@@ -189,27 +191,45 @@ VectorWithMemoryTracking<size_t> orderRowAxes(size_t num_axes, const VectorWithM
     order.reserve(num_used);
     VectorWithMemoryTracking<bool> is_ordered(num_axes, false);
 
+    /// The axes that can go next: the ones with no unordered predecessor, the smallest id first.
+    /// An axis gets here at most once, when its last predecessor is ordered, so the whole ordering
+    /// takes O((axes + edges) * log(axes)) rather than a scan of all the axes for every axis. The
+    /// number of axes is not bounded by the amount of data: a file of one row can have hundreds of
+    /// thousands of them, as repeated uses of dimensions of length one.
+    std::priority_queue<size_t, VectorWithMemoryTracking<size_t>, std::greater<>> ready;
+    for (size_t i = 0; i < num_axes; ++i)
+        if (is_used[i] && in_degree[i] == 0)
+            ready.push(i);
+
+    /// Every axis before this one is either unused or already ordered.
+    size_t first_unordered = 0;
+
     while (order.size() < num_used)
     {
-        size_t chosen = num_axes;
-        for (size_t i = 0; i < num_axes && chosen == num_axes; ++i)
-            if (is_used[i] && !is_ordered[i] && in_degree[i] == 0)
-                chosen = i;
-
-        /// The orders of the axes of two variables contradict each other, which is possible only
-        /// in a file where, for example, one variable has the dimensions (x, y) and another one
-        /// has (y, x). Any order will disagree with one of them, so take the first axis that is
-        /// left.
-        for (size_t i = 0; i < num_axes && chosen == num_axes; ++i)
-            if (is_used[i] && !is_ordered[i])
-                chosen = i;
+        size_t chosen;
+        if (!ready.empty())
+        {
+            chosen = ready.top();
+            ready.pop();
+        }
+        else
+        {
+            /// The orders of the axes of two variables contradict each other, which is possible
+            /// only in a file where, for example, one variable has the dimensions (x, y) and
+            /// another one has (y, x). Any order will disagree with one of them, so take the first
+            /// axis that is left.
+            while (!is_used[first_unordered] || is_ordered[first_unordered])
+                ++first_unordered;
+            chosen = first_unordered;
+        }
 
         is_ordered[chosen] = true;
         order.push_back(chosen);
 
+        /// A successor that is already ordered was taken out of turn to break a contradiction.
         for (size_t successor : successors[chosen])
-            if (in_degree[successor] != 0)
-                --in_degree[successor];
+            if (--in_degree[successor] == 0 && !is_ordered[successor])
+                ready.push(successor);
     }
 
     return order;
