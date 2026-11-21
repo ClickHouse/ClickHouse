@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- One builder thread, so the per-row failpoint sleep is not divided across the
+         global build pool: with the default 16 threads the whole fixture finishes in a
+         few seconds and the shutdown assertion below would hold even without the fix. -->
+    <max_build_vector_similarity_index_thread_pool_size>1</max_build_vector_similarity_index_thread_pool_size>
+</clickhouse>
