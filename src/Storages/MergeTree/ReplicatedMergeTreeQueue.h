@@ -240,6 +240,17 @@ private:
 
     void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
+    /// What shouldExecuteLogEntry learned about a MUTATE_PART entry it admitted, so that its caller can
+    /// act on it. Both members stay unset unless the entry was admitted as hardlink-only.
+    struct ExecuteDecision
+    {
+        /// The local source part.
+        MergeTreeData::DataPartPtr mutation_source_part;
+        /// Whether the mutation only hardlinks the files it does not touch, so it needs a small
+        /// reservation rather than one covering the whole source part.
+        bool hardlink_only = false;
+    };
+
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
       * Called under the state_mutex.
       */
@@ -249,7 +260,8 @@ private:
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
         const CommittingBlocks & committing_blocks,
-        std::unique_lock<SharedMutex> & state_lock) const;
+        std::unique_lock<SharedMutex> & state_lock,
+        ExecuteDecision * out_decision = nullptr) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
     /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
@@ -433,10 +445,17 @@ public:
     {
         ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
         CurrentlyExecutingPtr currently_executing_holder;
+        /// For a MUTATE_PART entry that only hardlinks: the small reservation, taken here rather than
+        /// when the entry is executed, because failing to reserve here only postpones the entry, while
+        /// the reservation the execution would otherwise take throws and fails the mutation attempt.
+        /// Held until the mutation runs, like currently_executing_holder.
+        ReservationSharedPtr hardlink_only_reservation;
 
-        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
+        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_,
+                      ReservationSharedPtr hardlink_only_reservation_ = nullptr)
             : log_entry(log_entry_)
             , currently_executing_holder(std::move(currently_executing_holder_))
+            , hardlink_only_reservation(std::move(hardlink_only_reservation_))
         {}
     };
 
@@ -470,6 +489,20 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
+
+    /// Same, for callers that already hold the state_mutex (it is not recursive). `log_missing_mutation`
+    /// = false skips the warnings about a mutation that cannot be found.
+    MutationCommands getMutationCommandsLocked(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+                                               Strings & mutation_ids, std::unique_lock<SharedMutex> & /* state_mutex lock */,
+                                               bool log_missing_mutation = true) const;
+
+    /// Whether a rename that still applies to `part` is queued up to `desired_mutation_version`. Renames
+    /// are selected by the part's metadata version, so a mutation can be handed one it does not list.
+    bool hasPendingRenameForPart(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
+
+    /// Same, for callers that already hold the state_mutex (it is not recursive).
+    bool hasPendingRenameForPartLocked(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+                                       std::unique_lock<SharedMutex> & /* state_mutex lock */) const;
 
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
