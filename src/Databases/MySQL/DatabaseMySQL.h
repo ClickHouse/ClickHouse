@@ -53,6 +53,7 @@ public:
         std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
         bool attach,
+        bool is_metadata_replay,
         UUID uuid);
 
     String getEngineName() const override { return "MySQL"; }
@@ -118,7 +119,8 @@ private:
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache(ContextPtr context) const TSA_REQUIRES(mutex);
+    /// The cache is shared by all queries, so it is filled with the global context, not the query's.
+    void fetchTablesIntoLocalCache() const TSA_REQUIRES(mutex);
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 

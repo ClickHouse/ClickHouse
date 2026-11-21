@@ -125,6 +125,7 @@ DatabaseMySQL::DatabaseMySQL(
     std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
     bool attach,
+    bool is_metadata_replay,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
@@ -138,7 +139,9 @@ DatabaseMySQL::DatabaseMySQL(
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty(); // NOLINT(bugprone-standalone-empty)
+        /// Server startup must not wait for the remote server.
+        if (!is_metadata_replay)
+            empty(); // NOLINT(bugprone-standalone-empty)
     }
     catch (...)
     {
@@ -170,7 +173,7 @@ bool DatabaseMySQL::empty() const
 {
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(getContext());
+    fetchTablesIntoLocalCache();
 
     if (local_tables_cache.empty())
         return true;
@@ -182,12 +185,12 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr /*local_context*/, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(local_context);
+    fetchTablesIntoLocalCache();
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
@@ -226,11 +229,11 @@ bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) 
     return bool(tryGetTable(name, local_context));
 }
 
-StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
+StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPtr /*local_context*/) const
 {
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(local_context);
+    fetchTablesIntoLocalCache();
 
     if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.contains(mysql_table_name))
         return local_tables_cache[mysql_table_name].second;
@@ -238,7 +241,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
     return StoragePtr{};
 }
 
-ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr /*local_context*/, bool throw_on_error) const
 {
     std::lock_guard lock(mutex);
 
@@ -246,7 +249,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     {
         /// This function can throw mysql exception, we don't have enough context to handle it.
         /// So we just catch and re-throw as known exception if needed.
-        fetchTablesIntoLocalCache(local_context);
+        fetchTablesIntoLocalCache();
     }
     catch (...)
     {
@@ -306,7 +309,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 {
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(getContext());
+    fetchTablesIntoLocalCache();
 
     if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
@@ -327,12 +330,12 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
     return create_query;
 }
 
-void DatabaseMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
+void DatabaseMySQL::fetchTablesIntoLocalCache() const
 {
-    const auto & tables_with_modification_time = fetchTablesWithModificationTime(local_context);
+    const auto & tables_with_modification_time = fetchTablesWithModificationTime(getContext());
 
     destroyLocalCacheExtraTables(tables_with_modification_time);
-    fetchLatestTablesStructureIntoCache(tables_with_modification_time, local_context);
+    fetchLatestTablesStructureIntoCache(tables_with_modification_time, getContext());
 }
 
 void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
@@ -857,7 +860,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
 
         /// Same policy as the `PostgreSQL` database engine: skip only the server's own metadata replay.
-        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        const bool is_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
@@ -883,6 +887,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 std::move(mysql_settings),
                 std::move(mysql_pool),
                 args.create_query.attach,
+                is_metadata_replay,
                 args.uuid);
         }
         catch (...)
