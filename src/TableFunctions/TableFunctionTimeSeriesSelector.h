@@ -15,6 +15,8 @@ namespace DB
 /// (timestamp, value) sorted by timestamp; a time series can be returned in multiple rows, e.g. one per bucket of the samples table),
 /// 'timestamp_and_value' returns the columns `timestamp` and `value` with one sample per row. The samples are converted when
 /// the samples table stores them the other way (see `TimeSeriesSettings::hasBucketedSamples`).
+/// 'samples_without_tags' is the same as 'samples' but the tags of the time series are not registered for timeSeriesIdToTags(),
+/// 'series' returns the column `tags` (a sorted array of pairs (name, value)) instead of the samples, one row per time series.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

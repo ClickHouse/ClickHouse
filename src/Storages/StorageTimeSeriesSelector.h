@@ -37,12 +37,16 @@ public:
         DateTime64 max_time{};
 
         /// The columns the table function timeSeriesSelector() returns besides `id`:
-        /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`); or
-        /// `timestamp` and `value` with one sample per row.
+        /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`);
+        /// `timestamp` and `value` with one sample per row; or
+        /// `tags` (of type `Array(Tuple(String, String))`) instead of samples: one row per time series, no samples are read.
+        /// `SamplesWithoutTags` is the same as `Samples` but doesn't register the tags of the time series for timeSeriesIdToTags().
         enum class ReturnColumns
         {
             Samples,
             TimestampAndValue,
+            SamplesWithoutTags,
+            Series,
         };
         ReturnColumns return_columns = ReturnColumns::Samples;
     };
