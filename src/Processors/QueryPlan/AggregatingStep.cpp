@@ -79,6 +79,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
     extern const QueryPlanSerializationSettingsBool group_by_each_block_no_merge;
 }
@@ -120,7 +121,10 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     };
 }
 
-static bool keysCanUsePackedStringMethod(const Block & header, const Names & keys)
+/// Whether `AggregatedDataVariants::chooseMethod` picks a method that `is_method` accepts for `keys`.
+/// A key that is not in `header` counts as a match: its type, and with it the method, is unknown.
+template <typename IsMethod>
+static bool keysCanChooseMethod(const Block & header, const Names & keys, IsMethod && is_method)
 {
     for (const auto & key : keys)
     {
@@ -129,22 +133,39 @@ static bool keysCanUsePackedStringMethod(const Block & header, const Names & key
     }
 
     Sizes key_sizes;
-    return AggregatedDataVariants::chooseMethod(header, keys, key_sizes) == AggregatedDataVariants::Type::key_packed_string;
+    return is_method(AggregatedDataVariants::chooseMethod(header, keys, key_sizes));
 }
 
-bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+template <typename IsMethod>
+static bool aggregationCanChooseMethod(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params, IsMethod && is_method)
 {
     if (grouping_sets_params.empty())
-        return keysCanUsePackedStringMethod(header, keys);
+        return keysCanChooseMethod(header, keys, is_method);
 
     /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
     for (const auto & grouping_set : grouping_sets_params)
     {
-        if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+        if (keysCanChooseMethod(header, grouping_set.used_keys, is_method))
             return true;
     }
 
     return false;
+}
+
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    return aggregationCanChooseMethod(
+        header,
+        keys,
+        grouping_sets_params,
+        [](AggregatedDataVariants::Type type) { return type == AggregatedDataVariants::Type::key_packed_string; });
+}
+
+bool aggregationCanUseFixedAndPackedStringKeys(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    return aggregationCanChooseMethod(header, keys, grouping_sets_params, AggregatedDataVariants::isKeysAndPackedString);
 }
 
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
@@ -488,37 +509,17 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
             return "a prior run measured the staged streams as repeat-dominated";
     }
 
-    /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
-    bool has_nullable_key = false;
+    /// TODO (nihalzp): Support LowCardinality keys.
     for (const auto & key : params.keys)
     {
-        const auto & type = pipeline.getHeader().getByName(key).type;
-        if (type->lowCardinality())
+        if (pipeline.getHeader().getByName(key).type->lowCardinality())
             return "a key is LowCardinality";
-        has_nullable_key |= type->isNullable();
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
         return "the aggregation method has no two-level form";
-
-    /// A missed row is staged with the key its method builds. These methods pack the null map into that key; the single-key
-    /// Nullable methods keep NULL in a separate cell of the table instead, which the staging bypasses.
-    if (has_nullable_key)
-    {
-        using Type = AggregatedDataVariants::Type;
-        switch (method)
-        {
-            case Type::nullable_keys128:
-            case Type::nullable_keys256:
-            case Type::nullable_serialized:
-            case Type::nullable_prealloc_serialized:
-                break;
-            default:
-                return "a Nullable key is kept in a separate null-key cell";
-        }
-    }
 
     return nullptr;
 }
@@ -1435,21 +1436,31 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
                 && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 
-    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only towards
-    /// a peer whose version knows it: `SettingFieldBool::operator=` marks the field as changed even for `false`,
-    /// so touching it unconditionally would make every serialized aggregation plan unreadable by an older peer.
-    /// Towards such a peer the name is left off when the mode is off (the peer aggregates the ordinary way,
-    /// which is exactly what the setting being off means), and the plan is refused when the mode is on: the
-    /// peer would silently run a fully merged aggregation instead of the requested per-block flush.
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE)
-        settings[QueryPlanSerializationSetting::group_by_each_block_no_merge] = params.group_by_each_block_no_merge;
-    else if (params.group_by_each_block_no_merge)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Setting `group_by_each_block_no_merge` requires query plan serialization version >= {}, "
-            "but the plan is serialized at version {}",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE,
-            version);
+    /// `group_by_each_block_no_merge` is written only when the mode is on, and the setting is `IMPORTANT`.
+    /// A peer that knows the name runs the per-block flush, and its default keeps the mode off when the name
+    /// is absent. A peer that does not know the name skips an ordinary name, so it would silently run a fully
+    /// merged aggregation instead of the requested per-block flush; for an `IMPORTANT` name it rejects the
+    /// plan. A plan with the mode off carries nothing, so such a peer reads it as before.
+    if (params.group_by_each_block_no_merge)
+        settings[QueryPlanSerializationSetting::group_by_each_block_no_merge] = true;
+
+    /// The plan default of `enable_fixed_and_packed_string_keys_in_aggregation` is `false`: the
+    /// serialized method, which an initiator predating the setting uses for these keys. So a peer that
+    /// knows the name receives `true` whenever this step can choose the method, and aggregates as the
+    /// initiator does.
+    ///
+    /// A peer that predates the name always uses the serialized method for these keys, and its two-level
+    /// bucket numbering differs, so it must reject the plan instead of corrupting the distributed merge. A
+    /// peer below the setting's version throws on any unknown name. As with the packed-string-keys setting
+    /// above, it gets the name only when the plan can go two-level: with both thresholds at `0`, its
+    /// single-level blocks merge as a plain union by key, so the name stays off the wire. A peer at the
+    /// setting's version that does not know the name yet gets it whenever this step can choose the method,
+    /// and throws too, because the setting is `IMPORTANT`.
+    if (params.enable_fixed_and_packed_string_keys
+        && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
+            || params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1625,6 +1636,44 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    const auto & input_header = *ctx.input_headers.front();
+    if (only_merge)
+    {
+        /// The step merges the states only for an aggregate projection, which is never combined with grouping sets
+        /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
+        if (has_grouping_sets)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
+        /// `AggregatingInOrderTransform` addresses the whole input with a mask built for the keys and the states only.
+        checkDeserializedMergeOnlyInput(keys, aggregates, input_header);
+    }
+    else
+    {
+        checkDeserializedAggregateOutputNames(keys, aggregates);
+        checkDeserializedAggregateArguments(aggregates, input_header);
+    }
+
+    /// `AggregatingInOrderTransform` takes the first columns of `group_by_sort_description` as the ones the input
+    /// is sorted by and looks them up among the keys of its output, and `less` compares the key columns at those positions.
+    if (sort_description_for_merging.size() > group_by_sort_description.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The sort description for merging of a deserialized in-order aggregation has {} columns, "
+            "more than the {} columns of the `GROUP BY` sort description",
+            sort_description_for_merging.size(), group_by_sort_description.size());
+    for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
+        if (sort_description_for_merging[i] != group_by_sort_description[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The sort description for merging of a deserialized in-order aggregation is not a prefix of "
+                "the `GROUP BY` sort description: {} at position {} instead of {}",
+                sort_description_for_merging[i].column_name, i, group_by_sort_description[i].column_name);
+    if (!group_by_sort_description.empty())
+    {
+        NameSet key_names(keys.begin(), keys.end());
+        for (const auto & column : group_by_sort_description)
+            if (!key_names.contains(column.column_name))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The `GROUP BY` sort description of a deserialized in-order aggregation refers to {}, which is not a key",
+                    column.column_name);
+    }
 
     UInt64 stats_key = 0;
     if (has_stats_key)
@@ -1709,6 +1758,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],

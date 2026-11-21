@@ -8,7 +8,6 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -16,27 +15,20 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool group_by_each_block_no_merge;
 }
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 }
 
 using namespace DB;
 
-/// `group_by_each_block_no_merge` may go on the wire only towards a peer whose query-plan serialization
-/// version knows the name.
+/// `group_by_each_block_no_merge` goes on the wire only when the mode is on, as an `IMPORTANT` setting.
 ///
-/// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched entry by
-/// name and `readBinary` throws on a name it does not know, and `SettingFieldBool::operator=` marks the field as
-/// changed even for `false`. Writing the name towards a peer that predates it would make every serialized
-/// aggregation plan unreadable there, even with the feature off. Towards such a peer the name is left off when the
-/// mode is off, and an enabled step is refused: the peer would silently run a fully merged aggregation instead.
+/// A reader of `QueryPlanSerializationSettings` skips a name it does not know, unless the setting is
+/// `IMPORTANT`. A peer that predates the name would otherwise skip it and silently run a fully merged
+/// aggregation instead of the requested per-block flush. With the `IMPORTANT` flag such a peer rejects the
+/// plan. A plan with the mode off does not carry the name at all, so such a peer reads it as before.
 namespace
 {
 
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
-constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE - 1;
 
 std::unique_ptr<AggregatingStep> makeAggregatingStep(bool group_by_each_block_no_merge)
 {
@@ -51,7 +43,8 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(bool group_by_each_block_no
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.group_by_each_block_no_merge = group_by_each_block_no_merge;
 
     return std::make_unique<AggregatingStep>(
@@ -72,15 +65,15 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(bool group_by_each_block_no
         /*explicit_sorting_required_for_aggregation_in_order=*/false);
 }
 
-/// The binary settings stream as written by `writeChangedBinary`.
-std::string serializeAggregatingStep(bool group_by_each_block_no_merge, UInt64 version)
+/// The settings stream as written by `QueryPlanSerializationSettings::write`.
+std::string serializeAggregatingStep(bool group_by_each_block_no_merge)
 {
     const auto step = makeAggregatingStep(group_by_each_block_no_merge);
     QueryPlanSerializationSettings settings;
-    step->serializeSettings(settings, version);
+    step->serializeSettings(settings, current_version);
 
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str();
 }
 
@@ -90,47 +83,34 @@ bool roundTrip(const std::string & wire)
 {
     ReadBufferFromString in(wire);
     QueryPlanSerializationSettings read;
-    read.readBinary(in);
+    read.read(in);
     return read[QueryPlanSerializationSetting::group_by_each_block_no_merge];
 }
 
 }
 
-TEST(GroupByEachBlockNoMergePlanSetting, RoundTripsTowardsAPeerThatKnowsTheName)
+TEST(GroupByEachBlockNoMergePlanSetting, EnabledIsCarriedAsAnImportantSetting)
 {
-    /// Both values are written for a peer at the current version, so the initiator's decision reaches
-    /// the remote aggregation either way.
-    for (bool enabled : {false, true})
-    {
-        const auto wire = serializeAggregatingStep(enabled, current_version);
-        EXPECT_TRUE(wire.contains("group_by_each_block_no_merge")) << "enabled = " << enabled;
-        EXPECT_EQ(roundTrip(wire), enabled) << "enabled = " << enabled;
-    }
+    const auto wire = serializeAggregatingStep(/*group_by_each_block_no_merge=*/true);
+    EXPECT_TRUE(wire.contains("group_by_each_block_no_merge"));
+    EXPECT_TRUE(roundTrip(wire));
+
+    /// The flags follow the name on the wire. The `IMPORTANT` flag (`0x01`) is what makes a peer that
+    /// predates the name reject the plan instead of skipping the name.
+    const std::string name = "group_by_each_block_no_merge";
+    const auto pos = wire.find(name);
+    ASSERT_NE(pos, std::string::npos);
+    ASSERT_LT(pos + name.size(), wire.size());
+    EXPECT_EQ(wire[pos + name.size()], '\x01');
 }
 
-TEST(GroupByEachBlockNoMergePlanSetting, DisabledIsNotCarriedTowardsAPeerThatPredatesTheName)
+TEST(GroupByEachBlockNoMergePlanSetting, DisabledIsNotCarried)
 {
-    /// The name must not appear towards an older peer - it would reject the whole plan - and the
-    /// peer's default keeps the mode off, which is what the initiator asked for.
-    const auto wire = serializeAggregatingStep(/*group_by_each_block_no_merge=*/false, pre_setting_version);
+    /// The name does not appear, so a peer that predates it reads the plan as before, and the default of a
+    /// peer that knows it keeps the mode off, which is what the initiator asked for.
+    const auto wire = serializeAggregatingStep(/*group_by_each_block_no_merge=*/false);
     EXPECT_FALSE(wire.contains("group_by_each_block_no_merge"));
     EXPECT_FALSE(roundTrip(wire));
-}
-
-TEST(GroupByEachBlockNoMergePlanSetting, EnabledFailsClosedTowardsAPeerThatPredatesTheName)
-{
-    /// An older peer cannot run the per-block flush and would silently merge everything instead.
-    const auto step = makeAggregatingStep(/*group_by_each_block_no_merge=*/true);
-    QueryPlanSerializationSettings settings;
-    try
-    {
-        step->serializeSettings(settings, pre_setting_version);
-        FAIL() << "expected NOT_IMPLEMENTED";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 }
 
 TEST(GroupByEachBlockNoMergePlanSetting, DefaultsToOffWhenAbsent)

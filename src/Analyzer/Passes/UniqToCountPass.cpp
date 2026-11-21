@@ -7,6 +7,7 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
@@ -18,6 +19,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsBool group_by_each_block_no_merge;
 }
@@ -158,7 +160,29 @@ public:
         if (!matchFnUniq(function_node->getFunctionName()))
             return;
 
+        /// The rows of different shards are not merged, so they can be equal.
+        if (subquery_node->getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
+            return;
+
+        /// A window function also processes subtotals, and totals of the subquery, which can be equal.
+        if (function_node->isWindowFunction() && (query_node->hasGroupBy() || subquery_node->isGroupByWithTotals()))
+            return;
+
+        /// `count` has no parameters, and does not return NULL as some variants do if all arguments are NULL, or if there are none.
+        if (!function_node->getParameters().getNodes().empty() || canContainNull(*function_node->getResultType()))
+            return;
+
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
+
+        /// The arguments must be different columns of the subquery, and not correlated columns with the same names.
+        QueryTreeNodePtrWithHashSet unique_arguments;
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+        {
+            const auto * column_node = uniq_argument_node->as<ColumnNode>();
+            if (!column_node || column_node->getColumnSourceOrNull().get() != subquery_node
+                || !unique_arguments.emplace(uniq_argument_node).second)
+                return;
+        }
 
         /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
         /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`

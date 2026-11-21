@@ -43,6 +43,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#include <Databases/IDatabase.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -992,7 +993,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            metadata.setSettingsChanges(args.storage_def->settings->ptr());
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
@@ -2696,7 +2697,7 @@ pruning are not driven by it.
 
 Certain MergeTree settings can be overridden at column level:
 
-- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. Data written in larger blocks by older versions cannot be read.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 
 Example:
