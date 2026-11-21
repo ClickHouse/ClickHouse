@@ -125,6 +125,14 @@
                     <table>default.prometheus_v5</table>
                 </handler>
             </my_rule_17>
+            <!-- Version 9 with an external tags target: metadata must still honor a row policy on the TimeSeries table. -->
+            <my_rule_v9_rls_metadata>
+                <url>/v9_rls/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_v9_rls</table>
+                </handler>
+            </my_rule_v9_rls_metadata>
 
             <my_rule_10>
                 <!-- This handler sets no database and no table, so both database and table names
