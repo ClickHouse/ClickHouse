@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <Common/Hex.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/FFOR.h>
@@ -3148,6 +3149,21 @@ protected:
         return unalignedLoadLittleEndian<UInt32>(compressed.data() + 5);
     }
 
+    /// The bytes of a series of values made by the generator, plus optional trailing bytes.
+    template <typename FloatType, typename Generator>
+    static std::vector<char> seriesBytes(size_t count, Generator && generator, size_t trailing_bytes = 0)
+    {
+        std::vector<char> bytes(count * sizeof(FloatType) + trailing_bytes);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const FloatType value = static_cast<FloatType>(generator(i));
+            memcpy(bytes.data() + i * sizeof(FloatType), &value, sizeof(FloatType));
+        }
+        for (size_t i = 0; i < trailing_bytes; ++i)
+            bytes[count * sizeof(FloatType) + i] = static_cast<char>(0xA0 + i);
+        return bytes;
+    }
+
     template <typename FloatType>
     static FloatType fromBits(UInt64 bits)
     {
@@ -3382,6 +3398,147 @@ TEST_F(WallabyTest, MalformedHeaders)
     auto codec32 = codecFor(sizeof(Float32));
     EXPECT_EQ(codec32->decompress(compressed.data(), static_cast<UInt32>(compressed.size()), decompressed.data()), uncompressed_size);
     EXPECT_EQ(0, memcmp(decompressed.data(), values.data(), uncompressed_size));
+}
+
+/// Blocks that the encoder made when the format (version 2) was fixed. They pin the format independently of the
+/// encoder, whose choices are free to change: the decoder has to read these bytes the same way, or the version in
+/// the first byte of the block has to change. Every block is also checked to be rejected without its last byte.
+TEST_F(WallabyTest, FixedPayloads)
+{
+    auto check = [](const char * name, std::string_view payload_hex, const std::vector<char> & expected)
+    {
+        SCOPED_TRACE(name);
+        auto codec = codecFor(sizeof(Float64));
+        const size_t header_size = ICompressionCodec::getHeaderSize();
+        ASSERT_EQ(payload_hex.size() % 2, 0u);
+        std::vector<char> block(header_size + payload_hex.size() / 2);
+        block[0] = static_cast<char>(codec->getMethodByte());
+        unalignedStoreLittleEndian<UInt32>(&block[1], static_cast<UInt32>(block.size()));
+        unalignedStoreLittleEndian<UInt32>(&block[5], static_cast<UInt32>(expected.size()));
+        for (size_t i = 0; i < payload_hex.size() / 2; ++i)
+            block[header_size + i] = static_cast<char>(unhex2(payload_hex.data() + 2 * i));
+
+        std::vector<char> decompressed(expected.size());
+        ASSERT_EQ(codec->decompress(block.data(), static_cast<UInt32>(block.size()), decompressed.data()), expected.size());
+        EXPECT_TRUE(decompressed == expected);
+
+        std::vector<char> truncated(block.begin(), block.end() - 1);
+        unalignedStoreLittleEndian<UInt32>(&truncated[1], static_cast<UInt32>(truncated.size()));
+        EXPECT_TRUE(decompressThrows(truncated, static_cast<UInt32>(expected.size())));
+    };
+
+    /// One value repeated: a chunk of the constant mode.
+    check("constant",
+        "12011f85eb51b81e0940",
+        seriesBytes<Float64>(16, [](size_t) { return 3.14; }));
+
+    /// Decimals with two digits: the division front-end.
+    check("decimals",
+        "12262161770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float64>(64, [](size_t i) { return static_cast<Float64>((i * 37) % 1000) / 100; }));
+
+    /// Products with 0.01, which are not correctly rounded decimals: the multiplication front-end.
+    check("multiplied",
+        "122a2161770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float64>(64, [](size_t i) { return static_cast<Float64>((i * 37) % 1000) * 0.01; }));
+
+    /// `Float32` decimals, reconstructed in single precision.
+    check("decimals32",
+        "02b62061770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float32>(64, [](size_t i) { return static_cast<Float32>((i * 37) % 1000) / 10.0f; }));
+
+    /// Irrational numbers: bit patterns.
+    check("roots",
+        "12a6a7067aefd9ffb0431e409b7e9edcfb74d13106a6184012215de7bf53efbeda163717964530b8ba33dca1a5ff95b12586"
+        "bc48aad29564aa969b5d05373605000d804208a3a4a8b051c537e81eb0e688e0feb6b56d8b02380054022001000400aa90e1"
+        "ca7f011200000000d5efa3929b0d8b7e9e300c011e001617b124fb360e633fb2e57e3107484b4c7ca922c634dab45a8c03c4"
+        "4f70d2a02b0c974ea68e5378660018bffb4fa26a71647a63ee276d8b96760e28d2ea934e00cd06031822574682a3b8379e11"
+        "610585fb8578f51f0dbc0d4be145c6201cba4103310f5330114908f48dd380970f15f0a1160226a934604622057c287e80c4"
+        "d40b30ee110126541740e9c50188fb19000000000091d9cc3d55743cb73e",
+        seriesBytes<Float64>(48, [](size_t i) { return std::sqrt(static_cast<Float64>(i + 2)); }));
+
+    /// `Float32` bit patterns of both signs: their differences are taken modulo 2^32.
+    check("signs32",
+        "020200b1f7be030662981f2b9a008000c0403f524247f9022c00400200d5c154720975f89d511e0035476d000000294c226b"
+        "30139a103f26a04b3547ed294c62ebae6c9308ce000080830d89d7d4b21f2b9a294ca2ad5b9edf0faa43c8ad6b30939ff0b4"
+        "0c64b8b4d4889a10bf294cc2fd207f0a93c826a0cbe3f8759891d14977d435476d9e1fda51e3dca1fb64294ce227f2e44709"
+        "5d2f23eaebaeecc3655563aef1b222f493084ec4f5f80255fba2ea46000000294c02",
+        seriesBytes<Float32>(48, [](size_t i)
+        {
+            const Float32 root = static_cast<Float32>(std::sqrt(static_cast<Float64>(i + 2)));
+            return i % 3 == 0 ? -root : root;
+        }));
+
+    /// Decimals with a NaN, an infinity and a negative zero among them: exceptions.
+    check("specials",
+        "122621e1720ccac4cb33000414d1070009000354d2e55b3125d1c95b5d22b2b5b85d8b023000000000000002001ab17b0a50"
+        "00000000050007001500170025002700000000000000f87f000000000000f07f000000000000f87f000000000000f07f0000"
+        "00000000f87f000000000000f07f36d72c3daf0c49a135aebd074a5f6c442b",
+        seriesBytes<Float64>(48, [](size_t i)
+        {
+            if (i % 16 == 5)
+                return std::bit_cast<Float64>(0x7ff8000000000000ULL);
+            if (i % 16 == 7)
+                return std::bit_cast<Float64>(0x7ff0000000000000ULL);
+            if (i % 16 == 9)
+                return std::bit_cast<Float64>(0x8000000000000000ULL);
+            return static_cast<Float64>((i * 37) % 1000) / 100;
+        }));
+
+    /// Plateaus: differences with zero runs.
+    check("runs",
+        "12a690e00b7c008202000004001474f95e80010000001008e4fa0730",
+        seriesBytes<Float64>(96, [](size_t i)
+        {
+            const size_t step = i / 24;
+            return static_cast<Float64>(step) * 1.5;
+        }));
+
+    /// A trend of `Float32` integers: differences of a higher order.
+    check("trend32",
+        "0236608189011c92710000800000111f6000000300000000f4207a103d881e440fa207d183e841f4207a103d881e440f",
+        seriesBytes<Float32>(64, [](size_t i) { return static_cast<Float32>(1000 + 3 * i + (i * i) % 5); }));
+
+    /// 16 distinct irrational values: dictionary symbols.
+    check("dictionary",
+        "1202f0050000000000c0ff8169ed0c316066d8577c0071ed0c316066d8573437447620774557cd9e5e1426794a7fb979377e"
+        "214b1c9e45edbbd7c995f1918b0bb1f27ad855e1c71675eeaae01323591a3cd7756b5121b88cd490c0051b7255b941b3afc5"
+        "900fe79ff40c97c4c23a85106cd0fe6af6e007000c00289b510e6b6840031ad0804692240f00cb1f9802d30f4ce13f1005a2"
+        "40149802c98f0120000000867ad1235d5ba556ed1a618f265e7b499d55246c818b9be6348c0d114bdcde225c7b506878ef71"
+        "9c470d3afdbc614bd247b6def65baa191ea9cd9b97ade79229a1798c93d05830702e9b6334234bfd257cf2ae0d1cb99b6f6c"
+        "5743bb8724dc212f50a6bffa5409733231dacbeea47a994b5cd7264fad5dc1de57c1ce509b1200",
+        seriesBytes<Float64>(400, [](size_t i) { return std::sqrt(static_cast<Float64>((i * 7) % 16 + 2)); }));
+
+    /// A walk with small steps on a grid of tenths: many tokens, with contexts.
+    {
+        std::vector<Float32> walk(512);
+        UInt32 state = 12345;
+        Int32 position = 1000;
+        for (Float32 & value : walk)
+        {
+            state = state * 1103515245U + 12345U;
+            position += static_cast<Int32>((state >> 16) % 7) - 3;
+            value = static_cast<Float32>(position) / 10.0f;
+        }
+        check("walk32",
+            "02b64001f6000c6a00004001803a78898fad22f8079400240000b22bf9fc05b99f53669e5036a622364bb5d69e71af5e98ee"
+            "a797d86a5725e457e9cbca440620ac79267f0addd2af895d02ef8e53f7d97fb09a2b3e8db3f96b794a2fb5d4acc46a24d5ab"
+            "a18d81ea41a2e2d95a3ae659680038c5913f4b8fa1dadfc2399190e317ac84d8b6471e54d2116cd0d2e1e26599fb58009648"
+            "6741e82192a57a6169037367e44db9cd3264493067c32a0018e4bd3a8875efe60c6493f662dbd119368998a22401882caf73"
+            "e3e3efeae1feea6d9b10",
+            seriesBytes<Float32>(walk.size(), [&](size_t i) { return walk[i]; }));
+    }
+
+    /// Random bit patterns: the block is stored verbatim.
+    check("noise",
+        "32157c4a7fb979379e2af894fe72f36e3c3f74df7d2c6da6da54f029fde5e6dd78696c747c9f6015177ee8befb58da4cb593"
+        "64097b12548453a8e053facbcdbbf1",
+        seriesBytes<Float64>(8, [](size_t i) { return std::bit_cast<Float64>(0x9E3779B97F4A7C15ULL * (i + 1)); }));
+
+    /// Three bytes that do not make a whole value after the values.
+    check("tail",
+        "1226b1201bc8c041500010002040000c000800000000008846a0a1a2",
+        seriesBytes<Float64>(5, [](size_t i) { return static_cast<Float64>(i) / 4; }, 3));
 }
 
 }
