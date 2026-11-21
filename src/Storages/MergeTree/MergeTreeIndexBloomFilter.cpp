@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -1092,6 +1093,24 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (set_contain_default_value)
             return false;
 
+        /// A missing key reads the inserted default of the value type, which the set compares after a cast to its type.
+        if (const auto * dag_node = key_node.getDAGNode())
+        {
+            const auto missing_key_type = removeLowCardinalityAndNullable(dag_node->result_type);
+            ColumnPtr set_contains_missing_key_value;
+            try
+            {
+                set_contains_missing_key_value = prepared_set->execute(
+                    {ColumnWithTypeAndName{createColumnWithInsertedDefault(*missing_key_type), missing_key_type, ""}}, false /*negative*/);
+            }
+            catch (const Exception &)
+            {
+                return false;
+            }
+            if (assert_cast<const ColumnUInt8 &>(*set_contains_missing_key_value).getData()[0])
+                return false;
+        }
+
         /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
         /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
         /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
@@ -1679,6 +1698,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
                         return false;
                 }
+                /// A missing key reads the inserted default, e.g. the first value of each `Enum` in a `Tuple`.
+                else if (missingMapKeyEquals(map_value_type, value_field, value_type, key_node.getContext()))
+                    return false;
             }
 
             size_t position = 0;

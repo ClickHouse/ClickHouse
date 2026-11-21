@@ -1,0 +1,116 @@
+table
+1	y	y	x	y
+2	x	x	x	x
+const array
+x
+('x',0)
+tuple
+('x',0)
+json
+{"a":"x"}
+{"a":"x"}
+array of indexes
+['y','x']
+[('y',1),('x',0)]
+['{"a":"y"}','{"a":"x"}']
+replicated
+y
+x
+y
+x
+map
+x
+1
+1	y	('y',1)
+2	x	('x',0)
+1	y	('y',1)
+2	x	('x',0)
+x
+y
+lowest member
+a	a
+insert select
+x
+y
+unchanged
+\N
+\N
+z
+0
+0
+0
+1	2
+2	0
+null index
+\N	0	0	0	0
+1	2	2	2	2
+5	1	1	1	1
+\N	0	0
+a	2	2
+b	1	1
+\N	0
+1	2
+5	1
+1	2	0
+5	0	0
+0
+tuple with nothing
+a
+['a']
+a
+skip index
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[1]
+[1]
+[1]
+[1]
+skip index, Date32
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[1]
+[1]
+[1]
+skip index, UInt8, Date32, Bool and strings
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[1,2]
+[1,2]
+[1,2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[2]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]

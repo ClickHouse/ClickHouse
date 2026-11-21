@@ -10,6 +10,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/CompareHelper.h>
+#include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 
@@ -299,36 +300,39 @@ void findKeyPositionsDispatch(
 /// values_column at that flat index into result. Otherwise, insert a default.
 /// ---------------------------------------------------------------------------
 
-/// Generic value extractor using virtual insertFrom / insertDefault.
+/// Generic value extractor using virtual insertFrom / insertDefaultInto.
 void extractValuesGeneric(
     const IColumn & values_column,
     IColumn & result,
+    const IDataType & value_type,
     const PaddedPODArray<size_t> & matched_positions)
 {
+    const bool trivial_default = value_type.isDefaultInsertTrivial();
     result.reserve(result.size() + matched_positions.size());
     for (size_t pos : matched_positions)
     {
         if (pos != KEY_NOT_FOUND)
             result.insertFrom(values_column, pos);
-        else
+        else if (trivial_default)
             result.insertDefault();
+        else
+            value_type.insertDefaultInto(result);
     }
 }
 
 /// Specialized value extractor for columns holding a flat array of values (ColumnVector,
 /// ColumnDecimal), with optional Nullable support.
 /// If src_null_map / dst_null_map are non-null, propagates null flags.
-/// For missing keys, inserts a default value and sets the null flag to 1.
+/// For missing keys, inserts `default_value` and sets the null flag to 1.
 template <typename ColumnType>
 void extractValuesVector(
     const ColumnType & values_column,
     ColumnType & result,
     const PaddedPODArray<size_t> & matched_positions,
+    typename ColumnType::ValueType default_value,
     const NullMap * src_null_map = nullptr,
     NullMap * dst_null_map = nullptr)
 {
-    using T = typename ColumnType::ValueType;
-
     const auto & src_data = values_column.getData();
     auto & dst_data = result.getData();
     size_t old_size = dst_data.size();
@@ -348,7 +352,7 @@ void extractValuesVector(
         }
         else
         {
-            dst_data[old_size + i] = T{};
+            dst_data[old_size + i] = default_value;
             if (dst_null_map)
                 (*dst_null_map)[old_size + i] = static_cast<UInt8>(1);
         }
@@ -458,6 +462,7 @@ void extractValuesFixedString(
 void extractValuesDispatch(
     const IColumn & values_column,
     IColumn & result,
+    const IDataType & value_type,
     const PaddedPODArray<size_t> & matched_positions)
 {
     /// Unwrap Nullable if present to get the underlying data column and null maps.
@@ -485,7 +490,7 @@ void extractValuesDispatch(
             extractValuesVector( \
                 assert_cast<const ColType &>(*data_column), \
                 assert_cast<ColType &>(*result_data_column), \
-                matched_positions, src_null_map, dst_null_map); \
+                matched_positions, getTypeDefaultValue<ColType>(value_type), src_null_map, dst_null_map); \
             return; \
         }
 #define DISPATCH_VECTOR(T) DISPATCH_COLUMN(T, ColumnVector<T>)
@@ -538,7 +543,7 @@ void extractValuesDispatch(
         default:
         {
             /// Fallback for all other column types (handles both Nullable and non-Nullable).
-            extractValuesGeneric(values_column, result, matched_positions);
+            extractValuesGeneric(values_column, result, value_type, matched_positions);
         }
     }
 }
@@ -549,6 +554,7 @@ void extractKeyValueFromMap(
     const IColumn & nested_column,
     const IColumn & key,
     IColumn & result,
+    const IDataType & value_type,
     size_t start,
     size_t end)
 {
@@ -563,7 +569,7 @@ void extractKeyValueFromMap(
     findKeyPositionsDispatch(keys_column, offsets, key, start, end, matched_positions);
 
     /// Phase 2: extract values at the matched positions.
-    extractValuesDispatch(values_column, result, matched_positions);
+    extractValuesDispatch(values_column, result, value_type, matched_positions);
 }
 
 namespace
