@@ -1894,6 +1894,19 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            /// Only the number of rows of a non-correlated plan matters. Its columns can be named by the query of a
+            /// view, whose `__tableN` identifiers restart from 1 and can be equal to a correlated column identifier.
+            if (!correlated_step_map[correlated_query_plan.getRootNode()])
+            {
+                SharedHeader header = correlated_query_plan.getCurrentHeader();
+                ActionsDAG drop_columns_dag(header->getNamesAndTypesList());
+                drop_columns_dag.getOutputs().clear();
+                auto drop_columns_step = std::make_unique<ExpressionStep>(header, std::move(drop_columns_dag));
+                drop_columns_step->setStepDescription("Drop columns of non-correlated EXISTS subquery");
+                correlated_query_plan.addStep(std::move(drop_columns_step));
+                correlated_step_map[correlated_query_plan.getRootNode()] = false;
+            }
+
             auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
             /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
             /// so they stay alive after decorrelation destroys the correlated plan, and the decision
