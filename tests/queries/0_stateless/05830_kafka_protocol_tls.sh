@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build is without SSL.
 
 # The Kafka-compatible interface over TLS (`kafka_port_secure`): requests work as on `kafka_port`,
 # and the cluster metadata advertises the port the client is connected to, so it stays on TLS.
