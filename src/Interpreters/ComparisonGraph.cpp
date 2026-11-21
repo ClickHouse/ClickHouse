@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -162,8 +163,16 @@ const auto & getArguments(const FunctionNode * function)
 
 /// `accurateLess` and `accurateEquals` compare a `Field` with a `Field` of the same type, and two numbers of any types.
 /// A query also compares other pairs, like an `IPv4` and an `IPv6`, after a conversion that the graph does not do.
+/// `accurateLess` puts a `NaN` after all numbers, but each ordered comparison with a `NaN` is false.
 bool canCompare(const Field & lhs, const Field & rhs)
 {
+    auto is_nan = [](const Field & field)
+    {
+        return field.getType() == Field::Types::Float64 && isNaN(field.safeGet<Float64>());
+    };
+    if (is_nan(lhs) || is_nan(rhs))
+        return false;
+
     auto is_number = [](Field::Types::Which type)
     {
         switch (type)
