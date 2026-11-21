@@ -48,11 +48,9 @@ struct AccumulateResultType<wide::integer<256, unsigned>>
 };
 #endif
 
-/// Uses addOverflow method (if available) to avoid UB for sumWithOverflow()
-///
-/// Since NO_SANITIZE_UNDEFINED works only for the function itself, without
-/// callers, and in case of non-POD type (i.e. Decimal) you have overwritten
-/// operator+=(), which will have UB.
+/// Adds with wrap-around and without UB (`sumWithOverflow`). `NO_SANITIZE_UNDEFINED` does not cover callees, so a `Decimal`
+/// is added via its native value here rather than with its `operator+=`, or with `addOverflow`, which is out of line (a call
+/// per row in `GROUP BY` and window functions, unless LTO inlines it).
 template <typename T>
 struct AggregateFunctionSumAddOverflowImpl
 {
@@ -60,13 +58,29 @@ struct AggregateFunctionSumAddOverflowImpl
     {
         lhs += rhs;
     }
+
+    /// A single addition, for the per-row path, where `unsigned __int128` compiles to one `add` and `adc`. The loops of
+    /// the batch paths keep `add`, as the compiler optimizes the loop of `wide::integer` better there (the masked loop
+    /// of `sumIf` was 1.5 times slower with `unsigned __int128` in the performance tests).
+    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE addOne(T & lhs, const T & rhs)
+    {
+        if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>)
+            lhs = __builtin_bit_cast(T, __builtin_bit_cast(unsigned __int128, lhs) + __builtin_bit_cast(unsigned __int128, rhs));
+        else
+            lhs += rhs;
+    }
 };
 template <typename DecimalNativeType>
 struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
 {
-    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
+    static void ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
     {
-        lhs.addOverflow(rhs);
+        AggregateFunctionSumAddOverflowImpl<DecimalNativeType>::add(lhs.value, rhs.value);
+    }
+
+    static void ALWAYS_INLINE addOne(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
+    {
+        AggregateFunctionSumAddOverflowImpl<DecimalNativeType>::addOne(lhs.value, rhs.value);
     }
 };
 
@@ -89,7 +103,7 @@ struct AggregateFunctionSumData
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
     {
-        Impl::add(sum, toAccumulateResult(value));
+        Impl::addOne(sum, toAccumulateResult(value));
     }
 
     /// On AArch64 clang-23 does not turn a sum of 8- or 16-bit integers into a 64-bit accumulator into a partial
