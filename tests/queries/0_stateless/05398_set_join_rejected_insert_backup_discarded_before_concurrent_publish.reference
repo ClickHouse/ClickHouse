@@ -1,0 +1,12 @@
+FAULT_INJECTED
+set rows after the concurrent insert:
+[1,4]
+set rows after reattach:
+[1,4]
+SET_SIZE_LIMIT_EXCEEDED
+join rows after the concurrent insert:
+1	committed
+5	next
+join rows after reattach:
+1	committed
+5	next

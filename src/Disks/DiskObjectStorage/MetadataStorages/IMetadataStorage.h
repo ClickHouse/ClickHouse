@@ -303,6 +303,18 @@ public:
     [[nodiscard]] virtual bool isReadOnly() const = 0;
     [[nodiscard]] virtual bool isRemote() const = 0;
 
+    /// See `IDisk::isPathOnLocalFilesystem`.
+    [[nodiscard]] virtual bool isPathOnLocalFilesystem() const { return true; }
+
+    /// See `IDisk::hasLocalFilesystemDirectoryNamespace`. A metadata storage describes the
+    /// directory structure itself, so the default is `false`: only a backend that keeps its
+    /// directory tree as real directories on a local disk (`MetadataStorageFromDisk`) can
+    /// answer `true`.
+    [[nodiscard]] virtual bool hasLocalFilesystemDirectoryNamespace() const { return false; }
+
+    /// See `IDisk::keepsMetadataAcrossRestarts`. Only the in-memory backends lose their metadata.
+    [[nodiscard]] virtual bool keepsMetadataAcrossRestarts() const { return true; }
+
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     [[nodiscard]] virtual bool appliesOperationsEagerly() const
     {
