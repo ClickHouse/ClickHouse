@@ -11,3 +11,5 @@ join desc, first	7	7
 join asc, first	7	7
 join desc, repeated	7	896
 join asc, repeated	7	896
+move, first	7	896
+move, repeated	7	1792

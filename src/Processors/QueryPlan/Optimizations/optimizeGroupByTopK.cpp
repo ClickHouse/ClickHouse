@@ -130,9 +130,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
-    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`) changes the boundary, but
-    /// what it depends on is not in the query condition cache key: as a filter it changes which rows reach the heap, as
-    /// a grouping key the number of groups per value of the first key.
+    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`, a virtual column like
+    /// `_disk_name`) changes the boundary, but what it depends on is not in the query condition cache key: as a filter it
+    /// changes which rows reach the heap, as a grouping key the number of groups per value of the first key.
     bool has_non_deterministic_expression = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     std::vector<const ActionsDAG *> path_expressions;
@@ -231,6 +231,15 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     {
         LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
         return nullptr;
+    }
+
+    const auto & virtuals = read_step->getStorageMetadata()->virtuals;
+    for (const auto & name : read_columns)
+    {
+        const auto * virtual_column
+            = virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+        if (virtual_column && !virtual_column->deterministic)
+            has_non_deterministic_expression = true;
     }
 
     SortColumnDescription key_sort_description(key_name, direction, nulls_direction);

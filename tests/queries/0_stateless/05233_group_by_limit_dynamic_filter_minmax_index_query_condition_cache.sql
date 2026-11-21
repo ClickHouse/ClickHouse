@@ -33,6 +33,7 @@ DROP TABLE IF EXISTS t_desc_alter;
 DROP TABLE IF EXISTS t_join_desc;
 DROP TABLE IF EXISTS t_join_asc;
 DROP TABLE IF EXISTS j_join;
+DROP TABLE IF EXISTS t_move;
 
 CREATE TABLE t_desc (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
@@ -115,9 +116,22 @@ INSERT INTO j_join SELECT number, 0 FROM numbers(128);
 SELECT 'join desc, repeated', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_desc GROUP BY k, g LIMIT 7);
 SELECT 'join asc, repeated', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_asc GROUP BY k, g LIMIT 7);
 
+-- `_disk_name` changes when a part moves, while the part keeps its name, so as a grouping key it changes the number of
+-- groups per value of the ranked column: after the partition moves back, the repeated query returns seven groups of 256 rows.
+CREATE TABLE t_move (id UInt64, k UInt64, p UInt8, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id PARTITION BY p
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0, storage_policy = 'policy_05212_a';
+SYSTEM STOP MERGES t_move;
+INSERT INTO t_move SELECT number % 9600, 75 - intDiv(number % 9600, 128), intDiv(number, 9600) FROM numbers(19200) SETTINGS max_block_size = 65409, max_insert_threads = 1;
+
+ALTER TABLE t_move MOVE PARTITION 1 TO DISK 'disk2_05212';
+SELECT 'move, first', count(), sum(c) FROM (SELECT k, _disk_name AS d, count() AS c FROM t_move GROUP BY k, d LIMIT 7);
+ALTER TABLE t_move MOVE PARTITION 1 TO DISK 'disk1_05212';
+SELECT 'move, repeated', count(), sum(c) FROM (SELECT k, _disk_name AS d, count() AS c FROM t_move GROUP BY k, d LIMIT 7);
+
 DROP TABLE t_desc;
 DROP TABLE t_desc_unique;
 DROP TABLE t_desc_alter;
 DROP TABLE t_join_desc;
 DROP TABLE t_join_asc;
 DROP TABLE j_join;
+DROP TABLE t_move;
