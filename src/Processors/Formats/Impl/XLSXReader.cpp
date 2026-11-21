@@ -374,8 +374,8 @@ public:
     }
 
     bool readRow(Row & row) override;
-    std::optional<CellRange> getDimension() const override { return dimension; }
-    bool isDate1904() const override { return date1904; }
+    [[nodiscard]] std::optional<CellRange> getDimension() const override { return dimension; }
+    [[nodiscard]] bool isDate1904() const override { return date1904; }
 
     void setDimension(const CellRange & dimension_) { dimension = dimension_; }
 

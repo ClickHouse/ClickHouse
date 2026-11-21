@@ -61,7 +61,7 @@ struct Cell
         text.clear();
     }
 
-    bool isEmpty() const { return type == CellType::Empty || type == CellType::Error; }
+    [[nodiscard]] bool isEmpty() const { return type == CellType::Empty || type == CellType::Error; }
 };
 
 /// A row of a worksheet as stored in the file: only the cells that are present, ordered by column.
@@ -91,10 +91,10 @@ public:
     virtual bool readRow(Row & row) = 0;
 
     /// The range of cells used in the sheet, if the file contains it.
-    virtual std::optional<CellRange> getDimension() const = 0;
+    [[nodiscard]] virtual std::optional<CellRange> getDimension() const = 0;
 
     /// Whether dates are counted from 1904-01-01 instead of 1900-01-01.
-    virtual bool isDate1904() const = 0;
+    [[nodiscard]] virtual bool isDate1904() const = 0;
 };
 
 /// `A` -> 0, `Z` -> 25, `AA` -> 26.
@@ -159,7 +159,7 @@ class ColumnTypeInferrer
 public:
     void add(const Cell & cell);
     void addMissing() { has_empty = true; }
-    DataTypePtr getType(const FormatSettings & format_settings) const;
+    [[nodiscard]] DataTypePtr getType(const FormatSettings & format_settings) const;
 
 private:
     bool has_empty = false;
@@ -186,7 +186,7 @@ public:
     /// Returns the next row. `cells[i]` is the cell in the i-th column of the range; `cells` is only as long as needed.
     bool next(VectorWithMemoryTracking<Cell> & cells);
 
-    bool isDate1904() const { return date1904; }
+    [[nodiscard]] bool isDate1904() const { return date1904; }
 
 private:
     bool readNonEmptyRow();

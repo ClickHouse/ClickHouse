@@ -133,7 +133,7 @@ public:
     explicit CompoundFile(std::string_view data_);
 
     /// Returns the content of the first stream with one of the names (compared case-insensitively).
-    std::optional<String> readStream(std::initializer_list<std::string_view> names) const;
+    [[nodiscard]] std::optional<String> readStream(std::initializer_list<std::string_view> names) const;
 
 private:
     static constexpr UInt32 END_OF_CHAIN = 0xFFFFFFFE;
@@ -153,10 +153,10 @@ private:
         UInt32 child = NO_STREAM;
     };
 
-    std::string_view sector(UInt32 id) const;
+    [[nodiscard]] std::string_view sector(UInt32 id) const;
     /// Reads a chain of sectors up to `size` bytes, or up to the end of the chain if `size` is not specified.
-    String readChain(UInt32 start, std::optional<UInt64> size) const;
-    String readMiniChain(UInt32 start, UInt64 size) const;
+    [[nodiscard]] String readChain(UInt32 start, std::optional<UInt64> size) const;
+    [[nodiscard]] String readMiniChain(UInt32 start, UInt64 size) const;
 
     std::string_view data;
     UInt32 sector_size = 512;
@@ -597,8 +597,8 @@ public:
         return true;
     }
 
-    std::optional<CellRange> getDimension() const override { return dimension; }
-    bool isDate1904() const override { return date1904; }
+    [[nodiscard]] std::optional<CellRange> getDimension() const override { return dimension; }
+    [[nodiscard]] bool isDate1904() const override { return date1904; }
 
 private:
     VectorWithMemoryTracking<CellRecord> cells;

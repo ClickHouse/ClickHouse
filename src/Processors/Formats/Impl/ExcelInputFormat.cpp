@@ -62,7 +62,7 @@ public:
         }
     }
 
-    String getName() const override { return formatName(file_format); }
+    [[nodiscard]] String getName() const override { return formatName(file_format); }
 
     void resetParser() override
     {

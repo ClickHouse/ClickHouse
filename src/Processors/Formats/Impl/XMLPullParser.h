@@ -36,16 +36,16 @@ public:
     Event next();
 
     /// The local name of the element, for `StartElement` and `EndElement`.
-    const String & name() const { return element_name; }
+    [[nodiscard]] const String & name() const { return element_name; }
 
     /// The value of an attribute with the specified local name, for `StartElement`. Returns `nullptr` if there is no such attribute.
-    const String * getAttribute(std::string_view local_name) const;
+    [[nodiscard]] const String * getAttribute(std::string_view local_name) const;
 
     /// The character data, for `Text`. Entities are decoded.
-    const String & text() const { return text_data; }
+    [[nodiscard]] const String & text() const { return text_data; }
 
     /// The number of currently open elements.
-    size_t depth() const { return current_depth; }
+    [[nodiscard]] size_t depth() const { return current_depth; }
 
     /// Skips the content of the element that has just been started, up to and including its end tag.
     void skipElement();
