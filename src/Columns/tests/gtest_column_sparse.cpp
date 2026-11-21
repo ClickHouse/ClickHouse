@@ -291,18 +291,36 @@ TEST(ColumnSparse, Permute)
 
 TEST(ColumnSparse, CompareColumn)
 {
-    auto test_case = [&](size_t n1, size_t k1, size_t n2, size_t k2, size_t row_num)
+    auto test_case = [&](size_t n1, size_t k1, size_t n2, size_t k2, size_t row_num, bool rhs_sparse, int direction)
     {
         auto [sparse_src1, full_src1] = createColumns(n1, k1);
         auto [sparse_src2, full_src2] = createColumns(n2, k2);
+        const IColumn & rhs = rhs_sparse ? *sparse_src2 : *full_src2;
 
         PaddedPODArray<Int8> comp_sparse;
         PaddedPODArray<Int8> comp_full;
 
-        sparse_src1->compareColumn(*sparse_src2, row_num, nullptr, comp_sparse, 1, 1);
-        full_src1->compareColumn(*full_src2, row_num, nullptr, comp_full, 1, 1);
+        sparse_src1->compareColumn(rhs, row_num, nullptr, comp_sparse, direction, 1);
+        full_src1->compareColumn(*full_src2, row_num, nullptr, comp_full, direction, 1);
 
-        if (comp_sparse != comp_full)
+        /// With a list of rows, every third one, only the listed rows get results, and the rows that compare equal stay
+        /// listed.
+        PaddedPODArray<UInt64> rows_sparse;
+        for (size_t row = 0; row < n1; row += 3)
+            rows_sparse.push_back(row);
+        PaddedPODArray<UInt64> rows_full;
+        rows_full.assign(rows_sparse);
+        PaddedPODArray<Int8> listed_sparse;
+        PaddedPODArray<Int8> listed_full;
+
+        sparse_src1->compareColumn(rhs, row_num, &rows_sparse, listed_sparse, direction, 1);
+        full_src1->compareColumn(*full_src2, row_num, &rows_full, listed_full, direction, 1);
+
+        bool listed_equal = rows_sparse == rows_full;
+        for (size_t row = 0; row < n1; row += 3)
+            listed_equal = listed_equal && listed_sparse[row] == listed_full[row];
+
+        if (comp_sparse != comp_full || !listed_equal)
         {
             DUMP_COLUMN(sparse_src1);
             DUMP_COLUMN(full_src1);
@@ -324,7 +342,7 @@ TEST(ColumnSparse, CompareColumn)
 
             size_t row_num = rng() % n2;
 
-            test_case(n1, k1, n2, k2, row_num);
+            test_case(n1, k1, n2, k2, row_num, rng() % 2 == 0, rng() % 2 == 0 ? 1 : -1);
         }
     }
     catch (const Exception & e)

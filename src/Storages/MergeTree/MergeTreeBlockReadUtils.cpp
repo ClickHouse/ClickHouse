@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
@@ -252,6 +253,32 @@ NameSet injectRequiredColumns(
     return injected_columns;
 }
 
+/// The predictor counts a sparse column at its expanded size, because many consumers expand it, such as most keys of
+/// `GROUP BY` and functions of several columns. So a column that turns sparse keeps the block sizes it had while it
+/// was stored full, and with them the pace of everything that runs once per block, such as the top-K threshold
+/// updates.
+
+/// Returns the bytes per row that the default rows of a column add when the column is stored sparse in the part and
+/// expanded in memory: the bytes of the default value (for a `String`, one offset) times the share of default rows.
+static double expandedDefaultBytesPerRow(const IMergeTreeDataPartInfoForReader & part, const String & name_in_storage, const DataTypePtr & type)
+{
+    auto info = part.getSerializationInfos().tryGet(name_in_storage);
+    if (!info || !ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::SPARSE) || info->getData().num_rows == 0)
+        return 0;
+
+    size_t default_bytes = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()->byteSize();
+    const auto & data = info->getData();
+    return static_cast<double>(default_bytes) * static_cast<double>(data.num_defaults) / static_cast<double>(data.num_rows);
+}
+
+/// Returns the bytes of a read column in the block, a sparse column at its expanded size.
+static size_t bytesInBlock(const IColumn & column)
+{
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        return column_sparse->byteSizeOfFullColumn();
+    return column.byteSize();
+}
+
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
@@ -329,7 +356,11 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
-                : static_cast<double>(column_data->byteSize()) / static_cast<double>(std::max<size_t>(1, column_data->size()));
+                : static_cast<double>(bytesInBlock(*column_data)) / static_cast<double>(std::max<size_t>(1, column_data->size()));
+
+            if (column_size.data_uncompressed && !info.is_subcolumn)
+                info.bytes_per_row_global += expandedDefaultBytesPerRow(
+                    *data_part, column_from_part ? column_from_part->getNameInStorage() : column_name, column_with_type_and_name.type);
 
             dynamic_columns_infos.emplace_back(info);
         }
@@ -401,7 +432,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
             continue;
         }
 
-        size_t new_size = columns[*position]->byteSize();
+        size_t new_size = bytesInBlock(*columns[*position]);
         size_t diff_size = new_size - info.size_bytes;
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);

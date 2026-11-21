@@ -1420,7 +1420,9 @@ void Aggregator::executeImpl(
                 && (bytesForPrefetch(method.data) > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
-            if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
+            /// The arguments of the compiled functions are full (see `prepareAggregateInstructions`). The other functions
+            /// keep their sparse arguments and add them outside of the compiled code.
+            if (compiled_aggregate_functions_holder)
             {
                 if (prefetch)
                     execute.template operator()<true, top_k_v>(false, true);
@@ -2230,6 +2232,7 @@ void Aggregator::executeAggregateInstructions(
             const AggregateFunctionInstruction * inst = aggregate_instructions + i;
             size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
             can_optimize_equal_keys_ranges &= inst->can_optimize_equal_keys_ranges;
+            chassert(!inst->has_sparse_arguments);
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
@@ -2474,6 +2477,12 @@ void Aggregator::prepareAggregateInstructions(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         bool allow_sparse_arguments = aggregate_columns[i].size() == 1;
+#if USE_EMBEDDED_COMPILER
+        /// The compiled code adds the rows of the compiled functions from full columns, so their arguments are expanded.
+        /// It runs only with keys: without keys the sparse arguments are cheaper, because the values are added once.
+        if (compiled_aggregate_functions_holder && params.keys_size > 0 && is_aggregate_function_compiled[i])
+            allow_sparse_arguments = false;
+#endif
         bool has_sparse_arguments = false;
         const bool allow_low_cardinality_argument
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
@@ -2671,6 +2680,12 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
+    /// The methods of one `String` key, and of fixed-width keys and one `String`, read a `ColumnReplicated` over a
+    /// `String` column in place (see `replicatedStrings`). So a sparse `String` key becomes one over its values, once
+    /// per block, instead of being expanded. An active top-K heap needs the key expanded, because it builds its ranked
+    /// columns from the key columns.
+    const bool reads_replicated_string_in_place = AggregatedDataVariants::readsReplicatedStringKeyInPlace(result.type) && !top_k_active;
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2680,7 +2695,15 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
         else
         {
-            materialized_columns.push_back(removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
+            /// Removes the special representations as `removeSpecialRepresentations` does, except that a sparse `String`
+            /// key that the method reads in place becomes a `ColumnReplicated` over its values.
+            ColumnPtr column = columns.at(keys_positions[i])->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated();
+            const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get());
+            if (reads_replicated_string_in_place && column_sparse && typeid_cast<const ColumnString *>(&column_sparse->getValuesColumn()))
+                column = column_sparse->toReplicated();
+            else
+                column = recursiveRemoveSparse(column);
+            materialized_columns.push_back(column->convertToFullColumnIfConst());
             key_columns[i] = materialized_columns.back().get();
         }
 

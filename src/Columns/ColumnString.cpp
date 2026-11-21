@@ -1065,14 +1065,39 @@ ColumnPtr ColumnString::createWithOffsets(
     }
     else
     {
+        /// Writes a run of default rows at once: the bytes of the default value repeated, then the offsets as an
+        /// arithmetic sequence. A 16-byte copy per row would overlap the previous one by up to 15 bytes for a short
+        /// default, such as `'0'` of `toString` over a sparse number column, and such stores are slow on some CPUs.
         auto insert_defaults = [&](size_t end)
         {
-            for (; row < end; ++row)
+            if (row >= end)
+                return;
+
+            const size_t count = end - row;
+            const size_t run_bytes = default_size * count;
+            UInt8 * dst = res_chars + res_size;
+            if (default_size == 1)
             {
-                memcpySmallAllowReadWriteOverflow15(res_chars + res_size, default_data, default_size);
-                res_size += default_size;
-                res_offsets[row] = res_size;
+                memset(dst, default_data[0], count);
             }
+            else
+            {
+                /// Each copy doubles the filled prefix.
+                memcpy(dst, default_data, default_size);
+                for (size_t filled = default_size; filled < run_bytes;)
+                {
+                    const size_t chunk = std::min(filled, run_bytes - filled);
+                    memcpy(dst + filled, dst, chunk);
+                    filled += chunk;
+                }
+            }
+
+            Offset * run_offsets = res_offsets + row;
+            for (size_t k = 0; k < count; ++k)
+                run_offsets[k] = res_size + (k + 1) * default_size;
+
+            res_size += run_bytes;
+            row = end;
         };
 
         for (size_t i = 0; i < num_values; ++i)
