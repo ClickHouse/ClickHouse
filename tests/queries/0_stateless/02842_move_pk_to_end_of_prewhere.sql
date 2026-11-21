@@ -15,12 +15,11 @@ INSERT INTO t_02848_mt1 SELECT number, toString(number) FROM numbers(100);
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02848_mt1 WHERE k = 3 AND notEmpty(v) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Prewhere filter%' OR explain LIKE '%Filter%';
 SELECT count() FROM t_02848_mt1 WHERE k = 3 AND notEmpty(v);
 
-CREATE TABLE t_02848_mt2 (a UInt32, b String, c Int32, d String) ENGINE = MergeTree ORDER BY (a,b,c) SETTINGS min_bytes_for_wide_part=0, default_compression_codec='LZ4'; -- prewhere reordering uses column sizes; pin codec (randomized server-side)
+CREATE TABLE t_02848_mt2 (a UInt32, b String, c Int32, d String) ENGINE = MergeTree ORDER BY (a,b,c) SETTINGS min_bytes_for_wide_part=0, default_compression_codec='LZ4', string_serialization_version='single_stream'; -- prewhere reordering uses column sizes; pin codec and string serialization (randomized server-side)
 
 INSERT INTO t_02848_mt2 SELECT number, toString(number), number, 'aaaabbbbccccddddtestxxxyyy' FROM numbers(100);
 
--- the estimated column sizes are: {a: 428, b: 318, c: 428, d: 73}
--- it's not correct but let's fix it in the future.
+-- the decoded column sizes are: {a: 400, b: 290, c: 400, d: 2700}
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_String', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02848_mt2 WHERE a = 3 AND b == '3' AND c < 20 AND d like '%es%' SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Prewhere filter%' OR explain LIKE '%Filter%';
 SELECT count() FROM t_02848_mt2 WHERE a = 3 AND b == '3' AND c < 20 AND d like '%es%';

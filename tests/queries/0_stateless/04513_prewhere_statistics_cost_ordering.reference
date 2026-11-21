@@ -3,3 +3,42 @@
 -- correctness: result is the same regardless of ordering
 0
 0
+-- a well-compressed wide string is not cheaper than a selective fixed-size column
+1
+-- the same without statistics
+1
+0
+0
+-- a sparse JSON path behind a cast runs after a selective LowCardinality filter
+1
+0
+0
+-- a function over LowCardinality runs on the dictionary, so it stays cheap
+1
+0
+0
+-- a conversion chain over a narrow column is charged for the strings it produces
+1
+0
+0
+-- a conversion of a full column to LowCardinality is charged for the values it hashes
+1
+1374
+1374
+-- a function that does not run on the dictionary is charged for its values
+1
+478
+478
+-- a function whose only non-constant argument is not LowCardinality is charged for its values
+1
+60
+60
+-- a lambda that captures no column is charged for running its body
+1
+83
+83
+Wide	10000
+Compact	9999
+-- one wide and one compact part order the conditions as one wide part
+1
+1

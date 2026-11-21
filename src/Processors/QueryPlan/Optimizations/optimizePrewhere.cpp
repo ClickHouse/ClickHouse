@@ -300,10 +300,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     ReadFromMergeTree::PartsForPrewhere prewhere_parts;
     if (use_pruned_parts)
         prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere(has_multiple_conditions ? &queried_columns : nullptr);
-    auto column_sizes = use_pruned_parts
-        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
-        : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
-    if (column_sizes.empty())
+    ReadFromMergeTree::ColumnSizesForPrewhere column_sizes;
+    if (read_from_merge_tree_step)
+        column_sizes = read_from_merge_tree_step->getColumnSizesForPrewhere(
+            queried_columns, use_pruned_parts ? prewhere_parts.parts : read_from_merge_tree_step->getParts());
+    else
+        column_sizes.sizes = storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+    if (column_sizes.sizes.empty())
         return;
 
     /// These two optimizations conflict:
@@ -314,10 +317,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (suppress_for_vector_search && read_from_merge_tree_step && shouldSuppressPrewhereForVectorSearch(*read_from_merge_tree_step, settings))
         return;
 
-    /// Extract column compressed sizes
-    UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
-    for (const auto & [name, sizes] : column_sizes)
-        column_compressed_sizes[name] = sizes.data_compressed;
+    /// Decoded sizes, or the compressed size where no decoded size is reported (`Memory`).
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_decoded_sizes;
+    for (const auto & [name, sizes] : column_sizes.sizes)
+        column_decoded_sizes[name] = sizes.data_uncompressed ? sizes.data_uncompressed : sizes.data_compressed;
 
     /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
     ConditionSelectivityEstimatorPtr selectivity_estimator;
@@ -330,7 +333,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     }
 
     MergeTreeWhereOptimizer where_optimizer{
-        std::move(column_compressed_sizes),
+        std::move(column_decoded_sizes),
+        column_sizes.rows,
         storage_snapshot,
         std::move(selectivity_estimator),
         queried_columns,

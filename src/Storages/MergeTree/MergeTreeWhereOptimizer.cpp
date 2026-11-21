@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
@@ -66,8 +67,7 @@ NameToIndexMap fillNamesPositions(const Names & names)
 constexpr double default_bytes_per_string_value = 64;
 constexpr double default_bytes_per_complex_value = 128;
 
-/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
-/// column whose real cost is unknown.
+/// Decoded bytes per value, the same unit as the measured column sizes.
 double approximateBytesPerValueForType(const IDataType & type)
 {
     if (type.haveMaximumSizeOfValue())
@@ -75,6 +75,53 @@ double approximateBytesPerValueForType(const IDataType & type)
     if (WhichDataType(type).isString())
         return default_bytes_per_string_value;
     return default_bytes_per_complex_value;
+}
+
+/// Adds the bytes per row produced by the functions in `node` that depend on a column, each node once.
+/// A function that the default `LowCardinality` implementation runs on the dictionary of its only non-constant argument
+/// produces only an index per row.
+bool addBytesPerRowOfFunctions(
+    const ActionsDAG::Node & node, UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & visited, double & bytes)
+{
+    if (auto it = visited.find(&node); it != visited.end())
+        return it->second;
+
+    bool depends_on_column = node.type == ActionsDAG::ActionType::INPUT;
+    /// A constant is computed once.
+    if (!node.column)
+        for (const auto * child : node.children)
+            if (addBytesPerRowOfFunctions(*child, visited, bytes))
+                depends_on_column = true;
+
+    if (depends_on_column && node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+        const IFunction * function = adaptor ? adaptor->getFunction().get() : nullptr;
+        const bool runs_on_dictionary = node.result_type->lowCardinality() && function
+            && function->useDefaultImplementationForLowCardinalityColumns() && function->isDeterministicInScopeOfQuery()
+            && std::ranges::count_if(node.children, [](const ActionsDAG::Node * child) { return !child->column; }) == 1
+            && std::ranges::any_of(
+                node.children, [](const ActionsDAG::Node * child) { return !child->column && child->result_type->lowCardinality(); });
+        bytes += runs_on_dictionary ? 1 : approximateBytesPerValueForType(*removeLowCardinality(node.result_type));
+
+        /// A lambda that captures no column still runs its body on every element, like one that does.
+        for (const auto * child : node.children)
+            if (WhichDataType(child->result_type).isFunction() && !visited.at(child))
+                bytes += default_bytes_per_complex_value;
+    }
+
+    visited.emplace(&node, depends_on_column);
+    return depends_on_column;
+}
+
+double approximateBytesPerRowOfFunctions(const std::vector<RPNBuilderTreeNode> & nodes)
+{
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> visited;
+    double bytes = 0;
+    for (const auto & node : nodes)
+        if (const auto * dag_node = node.getDAGNode())
+            addBytesPerRowOfFunctions(*dag_node, visited, bytes);
+    return bytes;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -159,6 +206,7 @@ bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet &
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+    UInt64 column_sizes_rows_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
@@ -175,6 +223,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , column_sizes_rows{column_sizes_rows_}
 {
     for (const auto & name : queried_columns)
     {
@@ -669,11 +718,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                         pk_positions.emplace(findMinPosition(infos[idx].columns, primary_key_names_positions));
             }
 
-            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
-            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+            /// Combine the cost per row - decoded bytes read plus bytes the functions produce - with selectivity using the classic
+            /// conjunctive filter ordering rule: sort by cost / (1 - selectivity), i.e. cost per rejected row.
             const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
             if (total_rows == 0)
-                /// No statistics: fall back to pure I/O cost.
+                /// No statistics: fall back to the decoded size of the columns.
                 cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
@@ -683,7 +732,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
                 cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
             else
-                cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
+                cond.bytes_per_rejected_row = (approximateBytesPerRow(cond.table_columns) + approximateBytesPerRowOfFunctions(cond.nodes))
+                    * static_cast<double>(total_rows) / rejected_rows;
 
             res.emplace_back(std::move(cond));
         }
@@ -863,7 +913,7 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     chassert(total_rows > 0);
 
     if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
-        return static_cast<double>(it->second) / static_cast<double>(total_rows);
+        return static_cast<double>(it->second) / static_cast<double>(column_sizes_rows ? column_sizes_rows : total_rows);
 
     const auto * virtual_column
         = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);

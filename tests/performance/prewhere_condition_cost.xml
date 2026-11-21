@@ -1,0 +1,43 @@
+<test iceberg="0">
+    <!-- PREWHERE orders conditions by cost per rejected row. Each query has a condition whose columns
+         compress far better than they decode or that runs a conversion chain, and a selective cheap one. -->
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>CREATE TABLE prewhere_cost_json (id UInt64, lc LowCardinality(String), j JSON) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE prewhere_cost_ends (k String, v String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE prewhere_cost_edit (a UInt32, s String CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>
+        INSERT INTO prewhere_cost_json SELECT
+            number,
+            if(intDiv(number, 200000) % 40 = 0, concat('v', toString(cityHash64(number, 1) % 2)), concat('v', toString(2 + cityHash64(number, 1) % 28))),
+            if(intDiv(number, 200000) % 40 = 0,
+                format('{{{{"k0":{{}},"k1":{{}}}}}}', toString(cityHash64(number, 2) % 5000000), toString(number % 1000)),
+                format('{{{{"k1":{{}},"k2":{{}}}}}}', toString(number % 1000), toString(cityHash64(number, 3) % 1000000)))::JSON
+        FROM numbers(30000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO prewhere_cost_ends SELECT
+            concat('[AAAAAAAAAAAA][BBBBBBBBBBBB]-SPOT-CCCCCCCCCCCCCCCC-K', leftPad(toString(intHash32(number) % 1000), 4, '0'), if(intHash32(number) % 1000 &lt; 900, '@ZZZZZZ', '@YYYYYY')),
+            if(intHash32(number) % 100 = 7 AND number % 3 = 0, 'p7', concat('p', toString(intHash64(number) % 500 + 10)))
+        FROM numbers(20000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO prewhere_cost_edit SELECT toUInt32(cityHash64(number)), concat('k', toString(intDiv(number, 1000000) % 4), '-', repeat('ab-cd-', 5))
+        FROM numbers(12000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_cost_json FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_cost_ends FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_cost_edit FINAL</fill_query>
+
+    <query>SELECT count() FROM prewhere_cost_json WHERE toUInt64OrZero(toString(j.k0)) = 1234567 AND lc IN ('v0', 'v1')</query>
+    <query>SELECT count() FROM prewhere_cost_ends WHERE k LIKE '%@ZZZZZZ' AND v = 'p7' SETTINGS optimize_rewrite_like_perfect_affix = 1</query>
+    <query>SELECT count() FROM prewhere_cost_edit WHERE a &lt; 4294967 AND editDistance(s, repeat('ab-dc-', 50)) &gt; 3</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_cost_json</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_cost_ends</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_cost_edit</drop_query>
+</test>

@@ -38,8 +38,10 @@ using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEst
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
+    /// `column_sizes_rows_` is the number of rows `column_sizes_` describe, or 0 if they describe all rows.
     MergeTreeWhereOptimizer(
         UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+        UInt64 column_sizes_rows_,
         const StorageSnapshotPtr & storage_snapshot,
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
@@ -213,6 +215,7 @@ private:
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes;
+    const UInt64 column_sizes_rows;
     UInt64 total_size_of_queried_columns = 0;
     UInt64 total_rows = 0;
 };

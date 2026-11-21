@@ -396,10 +396,17 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             return true;
         }
 
+        /// A lossless conversion of a column, e.g. `toFloat64(x)` of a `Float64` `x`, is estimated as the column.
+        const auto compared_column_name = [&](size_t i)
+        {
+            return unwrapLosslessConversion(func.getArgumentAt(i), /*allow_drop_nullable=*/ true, /*allow_conversion_functions=*/ true)
+                .getColumnName();
+        };
+
         if (num_args == 1)
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
-            column_name = func.getArgumentAt(0).getColumnName();
+            column_name = compared_column_name(0);
             if (metadata && !metadata->getColumns().tryGet(column_name))
                 return false;
             atom_it->second(out, column_name, Field{});
@@ -456,7 +463,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 {
                     chassert(is_in_operator);
                     const bool negative = func_name != "in";
-                    const auto lhs_name = func.getArgumentAt(0).getColumnName();
+                    const auto lhs_name = compared_column_name(0);
                     const DataTypePtr & set_type = prepared_set->getElementsTypes().front();
 
                     /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
@@ -480,7 +487,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// only to turn it back into ranges below: for a large set that dominates planning,
                 /// and each consumer of the same set derives an identical result.
                 set_for_ranges = prepared_set;
-                column_name = func.getArgumentAt(0).getColumnName();
+                column_name = compared_column_name(0);
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -489,7 +496,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     out.function = RPNElement::ALWAYS_FALSE;
                     return true;
                 }
-                column_name = func.getArgumentAt(0).getColumnName();
+                column_name = compared_column_name(0);
             }
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
             {
@@ -499,7 +506,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return true;
                 }
 
-                column_name = func.getArgumentAt(1).getColumnName();
+                column_name = compared_column_name(1);
                 if (func_name == "less")
                     func_name = "greater";
                 else if (func_name == "greater")

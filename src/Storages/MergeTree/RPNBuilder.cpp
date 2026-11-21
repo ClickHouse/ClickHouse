@@ -10,6 +10,7 @@
 #include <Columns/ColumnSet.h>
 
 #include <Functions/indexHint.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -397,7 +398,7 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool
 
 }
 
-bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable)
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable, bool allow_conversion_functions)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
         return false;
@@ -407,23 +408,31 @@ bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop
 
     const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
     const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+    bool is_conversion_to_type = false;
+    if (allow_conversion_functions && arguments_size == 1)
+    {
+        /// A built-in conversion function named after its result type, e.g. `toFloat64` or `toDateTime` to `DateTime('UTC')`.
+        const auto result_type = removeLowCardinalityAndNullable(node.result_type);
+        is_conversion_to_type = (function_name == "to" + result_type->getName() || function_name == "to" + String(result_type->getFamilyName()))
+            && FunctionFactory::instance().has(function_name);
+    }
 
-    if (!is_cast && !is_wrapper)
+    if (!is_cast && !is_wrapper && !is_conversion_to_type)
         return false;
 
     return isLosslessConversion(node.children.front()->result_type, node.result_type, allow_drop_nullable);
 }
 
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable)
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable, bool allow_conversion_functions)
 {
     if (!node.isFunction())
         return node;
 
     const auto function = node.toFunctionNode();
-    if (!isLosslessConversionFunction(*function.getDAGNode(), allow_drop_nullable))
+    if (!isLosslessConversionFunction(*function.getDAGNode(), allow_drop_nullable, allow_conversion_functions))
         return node;
 
-    return unwrapLosslessConversion(function.getArgumentAt(0), allow_drop_nullable);
+    return unwrapLosslessConversion(function.getArgumentAt(0), allow_drop_nullable, allow_conversion_functions);
 }
 
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable)
