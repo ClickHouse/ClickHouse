@@ -14,4 +14,8 @@
 
     <!-- Key ranges too wide for the array -->
     <query>SELECT number % 60000 AS a, toUInt8(number % 7) AS b, count() FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
+
+    <!-- Keys in long runs of equal values, as for a GROUP BY on a prefix of the sorting key -->
+    <query>SELECT toUInt16(intDiv(number, 65536) % 50) AS a, toUInt16(intDiv(number, 655) % 100) AS b, count() FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
+    <query>SELECT toUInt16(intDiv(number, 65536) % 50) AS a, toUInt16(intDiv(number, 655) % 100) AS b, count(), sum(number), avg(number) FROM numbers_mt(100000000) GROUP BY a, b FORMAT Null</query>
 </test>

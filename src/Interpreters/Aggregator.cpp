@@ -1369,6 +1369,18 @@ bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UI
     return true;
 }
 
+/// Whether the first rows of a chunk share one cell, which predicts long runs of equal keys in the chunk.
+bool directIndexChunkStartsWithRun(const UInt32 * __restrict cells, size_t size)
+{
+    static constexpr size_t probe_rows = 32;
+    if (size < probe_rows)
+        return false;
+    UInt32 diff = 0;
+    for (size_t i = 1; i < probe_rows; ++i)
+        diff |= cells[i] ^ cells[0];
+    return diff == 0;
+}
+
 template <typename T>
 void addDirectIndexKey(const T * __restrict data, size_t rows, UInt64 min_value, UInt32 stride, UInt32 * __restrict row_cells, bool first)
 {
@@ -1453,9 +1465,24 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
     UInt32 * __restrict first_rows = first_rows_array.data();
     UInt32 * __restrict used_cells = used_cells_array.data();
     size_t num_used_cells = 0;
+    /// Registers the first row of a cell; false when the block has too many distinct keys.
+    const auto use_cell = [&](UInt32 cell, size_t row) ALWAYS_INLINE
+    {
+        if (num_used_cells == max_used_cells)
+            return false;
+        first_rows[cell] = static_cast<UInt32>(row);
+        used_cells[num_used_cells++] = cell;
+        return true;
+    };
+    const auto give_up = [&]
+    {
+        ++backoff.failed_blocks;
+        return false;
+    };
     for (size_t chunk_begin = 0; chunk_begin < rows; chunk_begin += direct_index_chunk_rows)
     {
         const size_t chunk_size = std::min(rows - chunk_begin, direct_index_chunk_rows);
+        const size_t chunk_end = chunk_begin + chunk_size;
         for (size_t j = keys_size; j-- > 0;)
         {
             const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
@@ -1470,18 +1497,42 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
                     j + 1 == keys_size);
             });
         }
-        for (size_t i = chunk_begin; i < chunk_begin + chunk_size; ++i)
+        if (!is_simple_count)
         {
-            const UInt32 cell = row_cells[i];
-            if (counts[cell]++ == 0)
+            /// Only a lone `count` reads the number of rows of a cell, the other shapes only mark the used cells.
+            for (size_t i = chunk_begin; i < chunk_end; ++i)
             {
-                if (num_used_cells == max_used_cells)
+                const UInt32 cell = row_cells[i];
+                if (counts[cell] == 0)
                 {
-                    ++backoff.failed_blocks;
-                    return false;
+                    if (!use_cell(cell, i))
+                        return give_up();
+                    counts[cell] = 1;
                 }
-                first_rows[cell] = static_cast<UInt32>(i);
-                used_cells[num_used_cells++] = cell;
+            }
+        }
+        else if (directIndexChunkStartsWithRun(row_cells + chunk_begin, chunk_size))
+        {
+            /// A run of equal keys is counted at once: counting it row by row makes each row wait for the previous store.
+            for (size_t i = chunk_begin; i < chunk_end;)
+            {
+                const UInt32 cell = row_cells[i];
+                size_t run_end = i + 1;
+                while (run_end < chunk_end && row_cells[run_end] == cell)
+                    ++run_end;
+                if (counts[cell] == 0 && !use_cell(cell, i))
+                    return give_up();
+                counts[cell] += static_cast<UInt32>(run_end - i);
+                i = run_end;
+            }
+        }
+        else
+        {
+            for (size_t i = chunk_begin; i < chunk_end; ++i)
+            {
+                const UInt32 cell = row_cells[i];
+                if (counts[cell]++ == 0 && !use_cell(cell, i))
+                    return give_up();
             }
         }
     }
