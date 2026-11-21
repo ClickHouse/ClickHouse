@@ -1,0 +1,15 @@
+<clickhouse>
+    <https_port>8443</https_port>
+
+    <!-- Authenticate HTTPS requests by the TLS client certificate alone: the user name is the certificate's single URI Subject Alternative Name entry. -->
+    <ssl_certificate_username_field>SAN:URI</ssl_certificate_username_field>
+
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <verificationMode>relaxed</verificationMode>
+        </server>
+    </openSSL>
+</clickhouse>
