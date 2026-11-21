@@ -1,4 +1,5 @@
 import os
+import uuid
 
 import cassandra.cluster
 import pytest
@@ -401,3 +402,81 @@ def test_invalid_partition_key_prefix(started_cluster, partition_key_prefix):
         assert "INVALID_CONFIG_PARAMETER" in error
     finally:
         node.query("DROP DICTIONARY invalid_prefix_dict")
+
+
+UUID_A = "11111111-2222-3333-4444-555555555555"
+UUID_B = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+TIMEUUID_1 = "00000001-0000-1000-8000-000000000001"
+TIMEUUID_2 = "00000002-0000-1000-8000-000000000002"
+TIMEUUID_3 = "00000003-0000-1000-8000-000000000003"
+TIMEUUID_MISSING = "00000004-0000-1000-8000-000000000004"
+
+
+@pytest.fixture(scope="module")
+def uuid_key_table(started_cluster):
+    client = cassandra.cluster.Cluster(
+        [started_cluster.cassandra_ip], port=started_cluster.cassandra_port
+    )
+    session = client.connect()
+    session.execute(
+        "CREATE KEYSPACE IF NOT EXISTS uuid_keys WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}"
+    )
+    session.execute("DROP TABLE IF EXISTS uuid_keys.t")
+    session.execute(
+        "CREATE TABLE uuid_keys.t (k1 uuid, k2 timeuuid, value text, PRIMARY KEY (k1, k2))"
+    )
+    insert = session.prepare("INSERT INTO uuid_keys.t (k1, k2, value) VALUES (?, ?, ?)")
+    for k1, k2, value in [
+        (UUID_A, TIMEUUID_1, "a"),
+        (UUID_A, TIMEUUID_2, "b"),
+        (UUID_B, TIMEUUID_3, "c"),
+    ]:
+        session.execute(insert, (uuid.UUID(k1), uuid.UUID(k2), value))
+    client.shutdown()
+
+
+@pytest.mark.parametrize(
+    "layout, lifetime, key_type",
+    [
+        ("COMPLEX_KEY_HASHED()", "LIFETIME(0)", "UUID"),
+        ("COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)", "LIFETIME(1000)", "UUID"),
+        ("COMPLEX_KEY_DIRECT()", "", "UUID"),
+        ("COMPLEX_KEY_DIRECT()", "", "Nullable(UUID)"),
+    ],
+)
+def test_uuid_key(started_cluster, uuid_key_table, layout, lifetime, key_type):
+    """
+    A `uuid` partition key and a `timeuuid` clustering key, loaded in full and by keys.
+    """
+    node.query(
+        f"""
+        CREATE DICTIONARY uuid_key_dict (k1 {key_type}, k2 {key_type}, value String)
+        PRIMARY KEY k1, k2
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            keyspace 'uuid_keys'
+            column_family 't'))
+        LAYOUT({layout})
+        {lifetime}
+        """
+    )
+    try:
+        assert (
+            node.query(
+                f"""
+                SELECT dictGetOrDefault('uuid_key_dict', 'value', (k1, k2), 'missing')
+                FROM VALUES('i UInt8, k1 {key_type}, k2 {key_type}',
+                    (1, '{UUID_A}', '{TIMEUUID_1}'),
+                    (2, '{UUID_A}', '{TIMEUUID_2}'),
+                    (3, '{UUID_B}', '{TIMEUUID_3}'),
+                    (4, '{UUID_A}', '{TIMEUUID_MISSING}'))
+                ORDER BY i
+                """
+            )
+            == "a\nb\nc\nmissing\n"
+        )
+        if layout == "COMPLEX_KEY_HASHED()":
+            assert node.query("SELECT count() FROM uuid_key_dict") == "3\n"
+    finally:
+        node.query("DROP DICTIONARY uuid_key_dict")
