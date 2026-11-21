@@ -37,6 +37,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -298,6 +299,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"target_table", std::make_shared<DataTypeString>(),
             "For a materialized view, the name of the destination table the view writes to "
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
+        },
+        {"parent_table", std::make_shared<DataTypeString>(),
+            "For an inner table of a materialized view or a `TimeSeries` table, the name of that view or table "
+            "(always in the same database). Empty for other tables."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
@@ -1087,6 +1092,15 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    const String & parent_table = getParentTable(database, database_name, table_name);
+                    if (!parent_table.empty() && is_dependency_visible(StorageID{database_name, parent_table}))
+                        res_columns[res_index++]->insert(parent_table);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
                     if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
                         res_columns[res_index++]->insert(*metadata_snapshot->definer);
                     else
@@ -1098,6 +1112,47 @@ protected:
         return Chunk(std::move(res_columns), num_rows);
     }
 private:
+    /// Returns the materialized view or the `TimeSeries` table owning the inner table `table_name`, or an empty string.
+    /// The owners are taken from the definitions of the tables of the database (the name of an inner table may be out of date,
+    /// for example after `ATTACH` with another UUID), collected once per database and only if it has a table named like an inner table.
+    const String & getParentTable(const DatabasePtr & database, const String & database_name, const String & table_name)
+    {
+        static const String no_parent;
+        if (!table_name.starts_with(".inner"))
+            return no_parent;
+
+        if (!parent_tables_database || *parent_tables_database != database_name)
+        {
+            parent_tables.clear();
+            parent_tables_database = database_name;
+            for (auto it = database->getTablesIterator(context); it->isValid(); it->next())
+            {
+                const auto table = it->table();
+                if (!table)
+                    continue;
+
+                if (const auto * view = table->as<StorageMaterializedView>())
+                {
+                    if (view->hasInnerTable())
+                        parent_tables.emplace(view->getTargetTableId().table_name, it->name());
+                }
+                else if (const auto * time_series = table->as<StorageTimeSeries>())
+                {
+                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                    {
+                        if (!time_series->isInnerTable(target_kind))
+                            continue;
+                        if (auto inner_table_id = time_series->tryGetTargetTableID(target_kind, context))
+                            parent_tables.emplace(inner_table_id.table_name, it->name());
+                    }
+                }
+            }
+        }
+
+        auto it = parent_tables.find(table_name);
+        return it == parent_tables.end() ? no_parent : it->second;
+    }
+
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
@@ -1106,6 +1161,9 @@ private:
     ContextMutablePtr totals_context;
     bool done = false;
     TablesFilter tables_filter;
+    /// The owners of the inner tables of the database `parent_tables_database`, by the inner table name (see `getParentTable`).
+    std::optional<String> parent_tables_database;
+    std::unordered_map<String, String> parent_tables;
 };
 
 class ReadFromSystemTables : public SourceStepWithFilter

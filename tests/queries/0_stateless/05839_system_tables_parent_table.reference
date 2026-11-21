@@ -1,0 +1,46 @@
+Atomic:
+dst	
+metrics	
+mv	
+mv_to	
+src	
+.inner_id.metricfamilies.<uuid>	metrics
+.inner_id.recentsamples.<uuid>	metrics
+.inner_id.samples.<uuid>	metrics
+.inner_id.tags.<uuid>	metrics
+.inner_id.timeranges.<uuid>	metrics
+.inner_id.<uuid>	mv
+Atomic, after RENAME:
+dst	
+metrics_renamed	
+mv_renamed	
+mv_to	
+src	
+.inner_id.metricfamilies.<uuid>	metrics_renamed
+.inner_id.recentsamples.<uuid>	metrics_renamed
+.inner_id.samples.<uuid>	metrics_renamed
+.inner_id.tags.<uuid>	metrics_renamed
+.inner_id.timeranges.<uuid>	metrics_renamed
+.inner_id.<uuid>	mv_renamed
+filter by name:
+metrics_renamed
+Ordinary:
+metrics	
+mv	
+src	
+.inner.metricfamilies.metrics	metrics
+.inner.recentsamples.metrics	metrics
+.inner.samples.metrics	metrics
+.inner.tags.metrics	metrics
+.inner.timeranges.metrics	metrics
+.inner.mv	mv
+Ordinary, after RENAME:
+metrics_renamed	
+mv_renamed	
+src	
+.inner.metricfamilies.metrics_renamed	metrics_renamed
+.inner.recentsamples.metrics_renamed	metrics_renamed
+.inner.samples.metrics_renamed	metrics_renamed
+.inner.tags.metrics_renamed	metrics_renamed
+.inner.timeranges.metrics_renamed	metrics_renamed
+.inner.mv_renamed	mv_renamed
