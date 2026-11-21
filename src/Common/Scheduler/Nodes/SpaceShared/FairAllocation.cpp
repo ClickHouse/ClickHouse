@@ -119,7 +119,12 @@ void FairAllocation::approveDecrease()
     apply(*decrease);
     decrease = nullptr;
     approved_child.approveDecrease();
+    IncreaseRequest * old_increase = increase;
     setDecrease(approved_child, approved_child.decrease, false);
+    // The decrease lowered the usage of the child, so another child may now be the next to serve
+    selectIncrease();
+    if (increase != old_increase && parent)
+        propagate(Update().setIncrease(increase));
 }
 
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
@@ -150,14 +155,18 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
 {
     updateKey(from_child, new_increase, detach_child);
 
-    // Update current increase request
-    // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
+    selectIncrease();
+    return old_increase != increase;
+}
+
+void FairAllocation::selectIncrease()
+{
+    // To avoid thrashing we first serve running allocation increase requests, then pending ones
     increase_child = !increasing_children.empty() ?
         &*increasing_children.begin() :
         (!pending_children.empty() ? &*pending_children.begin() : nullptr);
     increase = increase_child ? increase_child->increase : nullptr;
-    return old_increase != increase;
 }
 
 bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child)

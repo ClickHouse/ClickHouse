@@ -221,9 +221,27 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     // freed object.
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
+    // A cancellation of this allocation is not processed yet: turn it into a full removal
+    allocation.cancel_only_if_pending = false;
     ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.reclaimable = 0;
     applyReclaimable(allocation, previous_available);
+    if (allocation.removing_hook.is_linked())
+        return;
+    removing_allocations.push_back(allocation);
+    if (&allocation == &*removing_allocations.begin())
+        scheduleActivation();
+}
+
+void AllocationQueue::cancelPendingAllocation(ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+    // Not pending: it has been admitted (`increaseApproved` was called under this mutex) or failed.
+    if (!allocation.pending_hook.is_linked() || allocation.removing_hook.is_linked())
+        return;
+    allocation.cancel_only_if_pending = true;
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -471,6 +489,9 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
+            // Admitted before the cancellation was processed - keep it untouched
+            if (std::exchange(allocation.cancel_only_if_pending, false) && !allocation.pending_hook.is_linked())
+                continue;
 
             ResourceCost previous_available = getAvailableReclaimable(allocation);
             allocation.reclaimable = 0;

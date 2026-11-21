@@ -22,8 +22,19 @@ SharingMode getSharingMode(CostUnit unit)
     {
         case CostUnit::IOByte:        return SharingMode::TimeShared;
         case CostUnit::CPUNanosecond: return SharingMode::TimeShared;
-        case CostUnit::QuerySlot:     return SharingMode::TimeShared;
+        case CostUnit::QuerySlot:     return SharingMode::SpaceShared;
         case CostUnit::MemoryByte:    return SharingMode::SpaceShared;
+    }
+}
+
+bool isEvictable(CostUnit unit)
+{
+    switch (unit)
+    {
+        case CostUnit::IOByte:        return false;
+        case CostUnit::CPUNanosecond: return false;
+        case CostUnit::QuerySlot:     return false;
+        case CostUnit::MemoryByte:    return true;
     }
 }
 

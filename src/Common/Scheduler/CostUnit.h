@@ -23,6 +23,11 @@ enum class CostUnit
 
 std::string_view costUnitToString(CostUnit unit);
 SharingMode getSharingMode(CostUnit unit);
+
+/// Whether a running allocation of a space-shared resource may be evicted (killed) to satisfy another allocation.
+/// Memory reservations are evictable, while query slots are not: a query that holds a slot is never stopped
+/// to admit another query, so a pending query waits until a slot is released.
+bool isEvictable(CostUnit unit);
 String formatReadableCost(ResourceCost cost, CostUnit unit);
 
 }

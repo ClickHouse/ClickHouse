@@ -61,7 +61,7 @@ struct WorkloadSettings
     /// `max_memory_to_spill_ratio * max_memory`. `unlimited` means no soft limit (spilling disabled).
     Int64 max_memory_before_spill = unlimited;
 
-    // Throttler (time-shared resource)
+    // Throttler (time-shared resource, or space-shared `QUERY` resource)
     [[nodiscard]] bool hasThrottler(CostUnit unit) const;
     [[nodiscard]] Float64 getThrottlerMaxSpeed(CostUnit unit) const;
     [[nodiscard]] Float64 getThrottlerMaxBurst(CostUnit unit) const;
@@ -75,7 +75,7 @@ struct WorkloadSettings
     [[nodiscard]] bool hasQueueLimit(CostUnit unit) const;
     [[nodiscard]] Int64 getQueueLimit(CostUnit unit) const;
 
-    // Allocation Limit (space-shared resource)
+    // Allocation Limit (space-shared resource: `max_memory` or `max_concurrent_queries`)
     [[nodiscard]] bool hasAllocationLimit(CostUnit unit) const;
     [[nodiscard]] Int64 getAllocationLimit(CostUnit unit) const;
     [[nodiscard]] Int64 getSoftAllocationLimit(CostUnit unit) const; // Soft limit (spill threshold); `unlimited` = disabled
