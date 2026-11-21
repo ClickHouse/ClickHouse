@@ -1012,7 +1012,7 @@ public:
         if (!nested || !(isFloat(nested) || isInt8(nested) || isUInt8(nested)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function hierarchicalKMeans requires an array of Float32, Float64, BFloat16, Int8 or UInt8");
-        nested_type = WhichDataType(array_type->getNestedType()).idx;
+        nested_type = WhichDataType(nested).idx;
     }
 
     String getName() const override { return "hierarchicalKMeans"; }

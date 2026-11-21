@@ -565,7 +565,7 @@ REGISTER_FUNCTION(AssignCentroid)
 {
     FunctionDocumentation::Description description =
         "Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant "
-        "array of numeric arrays, where the id is the 0-based position in that array, or as the name of a "
+        "array of arrays, where the id is the 0-based position in that array, or as the name of a "
         "`Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`.";
     FunctionDocumentation::Syntax syntax = "assignCentroid(vec, centroids | dict_name)";
     FunctionDocumentation::Arguments arguments = {
@@ -573,10 +573,11 @@ REGISTER_FUNCTION(AssignCentroid)
                 "`Float32` are converted to `Float32`, which is what the scoring kernel uses.",
          {"Array(Float32)", "Array(Float64)", "Array(BFloat16)", "Array(Int8)", "Array(UInt8)"}},
         {"centroids", "The centroids to score against, which must be constant. Given as an array of equally sized, "
-                      "non-empty numeric arrays of the same element types as `vec`, the id then being the 0-based "
-                      "position in that array; or as the name of a `Dictionary` with an attribute `cid` of an "
-                      "unsigned integer type that fits `UInt32` and an attribute `vec` of type `Array(Float32)`, the "
-                      "id then being `cid`. The dictionary is read once and cached until it reloads.",
+                      "non-empty arrays with any of the element types accepted for `vec` (not necessarily the same "
+                      "one), the id then being the 0-based position in that array; or as the name of a `Dictionary` "
+                      "with an attribute `cid` of an unsigned integer type that fits `UInt32` and an attribute `vec` "
+                      "of type `Array(Float32)`, the id then being `cid`. The dictionary is read once and cached until "
+                      "it reloads.",
          {"Array(Array(Float32))", "Array(Array(Float64))", "Array(Array(BFloat16))", "Array(Array(Int8))",
           "Array(Array(UInt8))", "String"}}
     };

@@ -15,6 +15,9 @@ SELECT '-- integer centroid literals are accepted too';
 SELECT assignCentroid([1, 2], [[0, 0], [1, 2]]);
 -- `[[0, 0], [-1, -2]]` alone is Array(Array(Int16)), the supertype of UInt8 and Int8, so it is cast.
 SELECT assignCentroid([-1, -2]::Array(Int8), [[0, 0], [-1, -2]]::Array(Array(Int8)));
+-- UInt8 centroids above 127 are cast as is: a -128 shift would make the first query return 1, a signed read the second 0.
+SELECT assignCentroid([72.0, 122.0], [[72, 122], [200, 250]]::Array(Array(UInt8)));
+SELECT assignCentroid([200.0, 250.0], [[72, 122], [200, 250]]::Array(Array(UInt8)));
 
 SELECT '-- same ids as the explicit CAST to Array(Float32), on many rows';
 DROP TABLE IF EXISTS vectors_u8;

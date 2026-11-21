@@ -8,6 +8,8 @@
 -- integer centroid literals are accepted too
 1
 1
+0
+1
 -- same ids as the explicit CAST to Array(Float32), on many rows
 0	0	1	1
 -- LowCardinality elements are accepted, as for floats
