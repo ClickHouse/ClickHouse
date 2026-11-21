@@ -162,6 +162,16 @@ bool isDistributedPlanSetting(const String & name)
     return name == "make_distributed_plan" || name.starts_with("distributed_plan_");
 }
 
+/// The settings of the distributed index analysis: with `distributed_index_analysis` the server
+/// sends the analysis of the indexes of a `MergeTree` table to the replicas of
+/// `cluster_for_parallel_replicas`, which is independent of both parallel replicas and the
+/// distributed query plan - again a query on other servers than the tables were checked on. The
+/// sandbox turns it off, so a `SETTINGS` clause must not turn it back on or configure it.
+bool isDistributedIndexAnalysisSetting(const String & name)
+{
+    return name.starts_with("distributed_index_analysis");
+}
+
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
@@ -207,6 +217,14 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 "servers. Use the run_query tool for this query",
                 name);
         };
+        const auto reject_distributed_index_analysis = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}` of the distributed index analysis, which can send queries to "
+                "other servers. Use the run_query tool for this query",
+                name);
+        };
         for (const auto & change : set_query->changes)
         {
             if (isProtectedSetting(change.name))
@@ -219,6 +237,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_parallel_replicas(change.name);
             if (isDistributedPlanSetting(change.name))
                 reject_distributed_plan(change.name);
+            if (isDistributedIndexAnalysisSetting(change.name))
+                reject_distributed_index_analysis(change.name);
         }
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
@@ -234,6 +254,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_parallel_replicas(name);
             if (isDistributedPlanSetting(name))
                 reject_distributed_plan(name);
+            if (isDistributedIndexAnalysisSetting(name))
+                reject_distributed_index_analysis(name);
         }
     }
 

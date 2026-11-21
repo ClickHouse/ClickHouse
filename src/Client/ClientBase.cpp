@@ -5127,6 +5127,12 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// validation refuses a `SETTINGS` clause that touches it.
         client_context->setSetting("make_distributed_plan", false);
 
+        /// The distributed index analysis (`distributed_index_analysis`) sends the analysis of the
+        /// indexes of a `MergeTree` table to the replicas of `cluster_for_parallel_replicas`, and
+        /// neither of the two switches above gates it. It is turned off the same way; the
+        /// validation refuses a `SETTINGS` clause that touches it.
+        client_context->setSetting("distributed_index_analysis", false);
+
         /// With `convert_query_to_cnf` the filters of the query are optimized with the `CHECK` and
         /// `ASSUME` constraints of the tables it reads (`optimize_using_constraints`,
         /// `optimize_substitute_columns`, `optimize_append_index`), and analyzing a constraint
@@ -6386,6 +6392,9 @@ Block ClientBase::fetchInternalQueryResult(
     /// The distributed query plan would dispatch the internal query to the stateless workers of the
     /// cluster in the same way, so it is switched off as well.
     settings_to_send->set("make_distributed_plan", false);
+    /// So would the distributed index analysis, which sends the analysis of the indexes of a
+    /// `MergeTree` table (some `system` tables are such) to the replicas of the cluster.
+    settings_to_send->set("distributed_index_analysis", false);
     /// The pagination of the session (`limit`, `offset`, `page`) would apply to the internal query
     /// as well, and cut rows out of its result: a safety probe of the agent would then see fewer
     /// rows than there are, and take the missing ones for a missing user-defined function or table.

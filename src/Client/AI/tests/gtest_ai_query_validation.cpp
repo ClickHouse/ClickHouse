@@ -889,6 +889,17 @@ TEST(AIQueryValidation, RejectsDistributedPlanSettings)
     EXPECT_FALSE(isAllowed("SELECT sum(number) FROM numbers(1000) SETTINGS make_distributed_plan = DEFAULT"));
     EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_plan_execute_locally = 0"));
     EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS make_distributed_plan = 1)"));
+
+    /// The distributed index analysis sends the analysis of the indexes to the replicas of the
+    /// cluster, which neither of the two switches above prevents.
+    EXPECT_FALSE(isAllowed(
+        "SELECT x FROM t WHERE x > 0 SETTINGS distributed_index_analysis = 1, "
+        "distributed_index_analysis_for_non_shared_merge_tree = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_index_analysis = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_index_analysis = DEFAULT"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_index_analysis_for_non_shared_merge_tree = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_index_analysis_only_on_coordinator = 1"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS distributed_index_analysis = 1)"));
 }
 
 TEST(AIQueryValidation, RejectsExpressionsInTheStructureOfTableFunctions)
