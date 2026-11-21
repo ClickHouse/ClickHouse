@@ -12,9 +12,21 @@
         </substitution>
     </substitutions>
 
+    <!-- A `minmax` index on the grouped column skips the granules beyond the boundary while reading.
+         `low` has its three values in every granule, so nothing can be skipped. -->
+    <create_query>
+        CREATE TABLE gbl_minmax (v UInt64, k UInt64, low UInt8, INDEX k_mm k TYPE minmax GRANULARITY 1, INDEX low_mm low TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY v SETTINGS add_minmax_index_for_numeric_columns = 0
+    </create_query>
+    <fill_query>INSERT INTO gbl_minmax SELECT number, intHash32(intDiv(number, 8192)) * 1000 + number % 1000, number % 3 FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE gbl_minmax FINAL</fill_query>
+    <drop_query>DROP TABLE IF EXISTS gbl_minmax</drop_query>
+
     <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
     <query>SELECT UserID, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, SearchPhrase LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
     <query>SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, m, SearchPhrase LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
     <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
     <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID DESC LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+    <query>SELECT k, count() FROM gbl_minmax GROUP BY k LIMIT 10</query>
+    <query>SELECT low, count() FROM gbl_minmax GROUP BY low LIMIT 3</query>
 </test>
