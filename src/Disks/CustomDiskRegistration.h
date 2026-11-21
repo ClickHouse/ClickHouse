@@ -28,7 +28,7 @@ public:
 
     ~CustomDiskRegistration();
 
-    const String & getDiskName() const { return disk_name; }
+    [[nodiscard]] const String & getDiskName() const { return disk_name; }
 
 private:
     const String disk_name;
