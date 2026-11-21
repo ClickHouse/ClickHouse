@@ -58,7 +58,9 @@ namespace DB
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
         /// The filter without the conjuncts on hive partition and virtual columns:
-        /// they are added after the format, and a column of the data file with the same name holds other values.
+        /// they are added after the format, and a column of the data file with the same name holds other values. Also without
+        /// the conjuncts on columns with a `DEFAULT` expression: `AddingDefaultsTransform` rewrites the values the format
+        /// reports as missing (e.g. `NULL`s read into a non-`Nullable` column) after the format pruned by the filter.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;
         /// Whether the format reads `column` as stored and its bounds cover every value: a default is computed after
         /// skipping, float bounds omit NaN, `String` bounds of a fixed-length array keep padding, other types may lack bounds.
