@@ -238,7 +238,8 @@ class MergeTreeData : public WithMutableContext, public IStorage, public IBackgr
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    using BrokenPartCallback = std::function<void (const String &)>;
+    /// after_read_error - a query failed to read the part.
+    using BrokenPartCallback = std::function<void (const String & part_name, bool after_read_error)>;
     using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -556,7 +557,7 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){});
+                  BrokenPartCallback broken_part_callback_ = [](const String &, bool){});
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy

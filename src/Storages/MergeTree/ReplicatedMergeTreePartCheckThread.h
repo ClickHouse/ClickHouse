@@ -57,7 +57,8 @@ public:
 
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
-    void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
+    /// after_read_error - a query failed to read the part.
+    void enqueuePart(const String & name, time_t delay_to_check_seconds = 0, bool after_read_error = false);
 
     /// Get the number of parts in the queue for check.
     size_t size() const;
@@ -70,9 +71,10 @@ public:
         const String & part_name,
         std::optional<time_t> * recheck_after = nullptr,
         bool throw_on_broken_projection = true,
-        bool throw_if_cancelled = false);
+        bool throw_if_cancelled = false,
+        bool after_read_error = false);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
+    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection, bool after_read_error = false);
 
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.
@@ -104,6 +106,7 @@ private:
         using TimePoint = std::chrono::steady_clock::time_point;
         String name;
         TimePoint time;
+        bool after_read_error = false;
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
 

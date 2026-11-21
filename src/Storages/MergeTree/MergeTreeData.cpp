@@ -14349,11 +14349,11 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
         for (const auto & part : parts)
         {
             if (part->getDataPartStorage().getDiskName() == data_part->getDataPartStorage().getDiskName())
-                broken_part_callback(part->name);
+                broken_part_callback(part->name, /* after_read_error */ false);
         }
     }
     else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
+        broken_part_callback(data_part->name, /* after_read_error */ true);
     else
         LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
