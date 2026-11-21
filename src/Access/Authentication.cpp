@@ -194,10 +194,11 @@ namespace
                 /// Only the plaintext password can be used: the signing key is derived from the secret itself,
                 /// so a hash of the password is not enough to verify the signature.
                 const auto & password = authentication_method.getPasswordHashBinary();
-                String secret = "AWS4";
-                secret.append(password.begin(), password.end());
+                static constexpr std::string_view secret_prefix = "AWS4";
 
-                std::vector<uint8_t> key(secret.begin(), secret.end());
+                /// The secret and the keys derived from it are kept out of core dumps, as the password itself.
+                AuthenticationData::Digest key(secret_prefix.begin(), secret_prefix.end());
+                key.insert(key.end(), password.begin(), password.end());
                 key = hmacSHA256(key, credentials->getDate());
                 key = hmacSHA256(key, credentials->getRegion());
                 key = hmacSHA256(key, credentials->getService());
