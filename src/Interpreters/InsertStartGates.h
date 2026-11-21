@@ -313,7 +313,7 @@ private:
     /// Whether a deferred check enforced by `storage` failed when the decision was made. Such a gate is not
     /// lent to a group write of `storage`, see `InsertStartGates::get`. An empty `storage` matches any
     /// failed deferred check. The caller holds the lock.
-    bool hasFailedDeferredCheckOf(const std::weak_ptr<const void> & storage) const
+    [[nodiscard]] bool hasFailedDeferredCheckOf(const std::weak_ptr<const void> & storage) const
     {
         const bool any = sameOwner(storage, {});
         for (const auto & [enforced_by, outcome] : failed_deferred)
@@ -408,7 +408,7 @@ public:
     }
 
     /// For the registry of a group write: the storage whose flush it is. Empty otherwise.
-    const std::weak_ptr<const void> & getFlushedBy() const { return flushed_by; }
+    [[nodiscard]] const std::weak_ptr<const void> & getFlushedBy() const { return flushed_by; }
 
     InsertStartGatePtr get(const StorageIDMaybeEmpty & table_id)
     {

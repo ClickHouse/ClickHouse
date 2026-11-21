@@ -81,7 +81,7 @@ public:
 
         /// Whether the target of `target_kind` belongs to one of the groups above. The optional targets the table
         /// does not have (see `hasTarget`) are not checked here.
-        bool contains(ViewTarget::Kind target_kind) const;
+        [[nodiscard]] bool contains(ViewTarget::Kind target_kind) const;
     };
     InsertTargets getInsertTargets(const Names & insert_columns) const;
 
