@@ -103,6 +103,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
+void registerOutputFormatOpenMetrics(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
 void registerOutputFormatPNG(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory);
@@ -113,6 +114,7 @@ void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
+void registerInputFormatOpenMetrics(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatFreeform(FormatFactory & factory);
@@ -278,6 +280,7 @@ void registerFormats()
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
+    registerOutputFormatOpenMetrics(factory);
     registerOutputFormatSQLInsert(factory);
     registerOutputFormatPNG(factory);
     registerOutputFormatHash(factory);
@@ -288,6 +291,7 @@ void registerFormats()
     registerInputFormatGeoJSON(factory);
     registerOutputFormatGeoJSON(factory);
     registerInputFormatLineAsString(factory);
+    registerInputFormatOpenMetrics(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif
