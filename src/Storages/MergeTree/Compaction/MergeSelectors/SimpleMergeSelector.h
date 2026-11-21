@@ -116,6 +116,13 @@ public:
           */
         double base = 5;
 
+        /** The value that `base` is lowered to when the parts are old enough or the partition has enough parts
+          * (see below). With the default of 2, a merge of a few parts of unequal size is never accepted, which is
+          * fine as long as many parts may be merged at once, but stops the table from compacting when
+          * `max_parts_to_merge_at_once` is narrowed to a few parts.
+          */
+        double min_lowered_base = 2;
+
 
         size_t window_size = 1000;
         bool enable_stochastic_sliding = false;

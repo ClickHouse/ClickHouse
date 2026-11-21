@@ -253,8 +253,9 @@ bool allow(
     /// The ratio should be within [0, 1]
     double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
 
-    double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
-    if (settings.use_blurry_base)
+    double lowered_base = interpolateLinear(settings.base, settings.min_lowered_base, combined_ratio);
+    /// A base of 1 accepts any merge, and a normal distribution needs a positive standard deviation.
+    if (settings.use_blurry_base && lowered_base > 1)
     {
         double partition_fill_factor = std::max(0., 1 - partition_size / static_cast<double>(settings.parts_to_throw_insert));
         /// Scale factor controls when (relativelty to the number of parts in partition)
@@ -351,8 +352,12 @@ void selectWithinPartsRange(
             );
         }
 
-        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
-
+        /// The interpolation above approaches its bounds from below, and the truncation to an integer can take the
+        /// result below `base`: with `base = 1` (aggressive selection by `OPTIMIZE`) and `max_parts_to_merge_at_once = 2`,
+        /// it gives something like 1.9999 and then 1, which allows no merge at all. A merge of fewer than two parts
+        /// makes no progress, so the heuristic never lowers the width below two; only an explicitly configured
+        /// `max_parts_to_merge_at_once` can.
+        max_parts_to_merge_at_once = std::min(std::max<size_t>(2, max_parts_to_merge_at_once), settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)

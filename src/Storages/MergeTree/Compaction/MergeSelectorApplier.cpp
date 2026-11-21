@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 #include <limits>
@@ -36,6 +37,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_threshold;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_min_count;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_max_age;
+    extern const MergeTreeSettingsUInt64 merge_memory_estimate_per_source_part_column;
 }
 
 namespace
@@ -56,6 +58,48 @@ struct ChooseContext
     const time_t current_time;
     const bool aggressive;
 };
+
+/// A merge keeps one block from every source part alive at the same time, and every column of every one
+/// of those blocks costs at least a minimum allocation, even when the block holds a handful of rows. That
+/// fixed cost is proportional to `source parts * columns` and does not shrink with the amount of data:
+/// merging 100 parts of `system.metric_log`, which has over two thousand columns, takes about 700 MiB
+/// before a single row is read.
+///
+/// On a server with little memory such a merge fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay
+/// where they were, and the next selection round picks the same parts again - the table stops compacting
+/// while its part count keeps growing. Narrow the merge instead, so that its fixed cost stays within a
+/// sixteenth of the memory limit. Ordinary tables, and even very wide tables on a large server, keep the
+/// configured `max_parts_to_merge_at_once`.
+///
+/// Every merge is priced as a horizontal one, which holds all columns of every source part at once: a
+/// vertical merge holds only the key columns, so it is over-priced, which costs some merge width but never
+/// the merge. The columns of the widest projection count as well, because its projection parts are merged
+/// with the same number of sources.
+///
+/// Returns 0 when there is no cap.
+size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
+{
+    const size_t bytes_per_source_column = ctx.merge_tree_settings[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
+    if (bytes_per_source_column == 0)
+        return 0;
+
+    const Int64 memory_limit = total_memory_tracker.getHardLimit();
+    if (memory_limit <= 0)
+        return 0;
+
+    size_t num_columns = ctx.metadata_snapshot.getColumns().getAllPhysical().size();
+    for (const auto & projection : ctx.metadata_snapshot.getProjections())
+        num_columns = std::max(num_columns, projection.metadata->getColumns().getAllPhysical().size());
+    num_columns = std::max<size_t>(1, num_columns);
+
+    /// Merges are background work that runs next to the queries and inserts the server is there for.
+    static constexpr size_t inverse_share_of_the_limit = 16;
+
+    /// Divide by the factors one after another instead of by their product, which could overflow for an
+    /// absurdly large estimate. A merge of fewer than two parts makes no progress, so never narrow below that.
+    return std::max<size_t>(
+        2, static_cast<size_t>(memory_limit) / inverse_share_of_the_limit / num_columns / bytes_per_source_column);
+}
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
@@ -156,6 +200,31 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         simple_merge_settings.small_parts_min_count = 0;
     }
 
+    if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
+    {
+        /// A value of 0 means "no limit".
+        const bool narrowed = simple_merge_settings.max_parts_to_merge_at_once == 0
+            || simple_merge_settings.max_parts_to_merge_at_once > affordable;
+        if (narrowed)
+            simple_merge_settings.max_parts_to_merge_at_once = affordable;
+
+        /// A minimum above the cap would stop the table from compacting at all, or, for
+        /// `small_parts_min_count`, until the small parts age.
+        simple_merge_settings.min_parts_to_merge_at_once = std::min(simple_merge_settings.min_parts_to_merge_at_once, affordable);
+        simple_merge_settings.small_parts_min_count = std::min(simple_merge_settings.small_parts_min_count, affordable);
+
+        /// The selector lowers the base for old parts and for partitions with many parts, but not below 2. A merge
+        /// is accepted when the sum of its parts is at least the base times the largest of them, and for a few
+        /// parts of unequal size that ratio stays below 2: two parts give less than 2, and parts that grow
+        /// geometrically, like `[1 KiB, 16 MiB, 1 KiB, 64 MiB]` repeated, give less than 1.5 with up to four parts.
+        /// The narrowed merge cannot take the many small parts that would raise the ratio, so no merge would ever
+        /// be accepted in the background, and the table would accumulate parts until inserts are rejected.
+        /// When the merge width is narrowed, lower the floor to 1, which accepts any merge, so that old parts
+        /// and partitions with many parts are eventually merged regardless of how uneven the parts are.
+        if (narrowed)
+            simple_merge_settings.min_lowered_base = 1;
+    }
+
     return simple_merge_settings;
 }
 
@@ -185,8 +254,16 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
             selector = std::make_shared<SimpleMergeSelector>(fillSimpleStochasticSettings(ctx));
             break;
         case MergeSelectorAlgorithm::TRIVIAL:
-            selector = std::make_shared<TrivialMergeSelector>();
+        {
+            /// The trivial selector merges a fixed number of parts and ignores `max_parts_to_merge_at_once`,
+            /// but the memory-derived cap has to reach it too: otherwise it would keep selecting the same
+            /// too-wide merge of a very wide table on a small server.
+            TrivialMergeSelector::Settings trivial_merge_settings;
+            if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
+                trivial_merge_settings.num_parts_to_merge = std::min(trivial_merge_settings.num_parts_to_merge, affordable);
+            selector = std::make_shared<TrivialMergeSelector>(trivial_merge_settings);
             break;
+        }
         case MergeSelectorAlgorithm::MANUAL:
             selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
             break;
