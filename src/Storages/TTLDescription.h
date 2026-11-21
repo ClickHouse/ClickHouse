@@ -30,6 +30,13 @@ struct TTLAggregateDescription
     /// Expressions to calculate the value of assignment expression
     ExpressionActionsPtr expression;
 
+    /// The assignment expression before analysis and the columns it reads, to build the arguments of its aggregate functions
+    ASTPtr expression_ast;
+    NamesAndTypesList expression_source_columns;
+
+    /// Calculates the arguments of the assignment's aggregate functions, e.g. `y * 2` in `x = sum(y * 2)`; nullptr if they have none.
+    ExpressionActionsPtr buildArgumentsExpression(const ContextPtr & context) const;
+
     TTLAggregateDescription() = default;
     TTLAggregateDescription(const TTLAggregateDescription & other);
     TTLAggregateDescription & operator=(const TTLAggregateDescription & other);
