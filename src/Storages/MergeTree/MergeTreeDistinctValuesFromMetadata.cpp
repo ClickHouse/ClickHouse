@@ -79,6 +79,9 @@ bool hasOnlyGeneralPurposeCodecs(const ASTPtr & codec, bool & uses_default)
 /// The parts mostly overlap in their values, so the sum over the parts is scaled by the ratio of the distinct values
 /// of the marks of all parts to the sum of the distinct values of the marks of each part.
 ///
+/// A part of a single granule has no next mark to compare with, so it adds nothing to the estimate, and a table
+/// whose parts all have a single granule gets no estimate.
+///
 /// The final mark holds the last row of the part rather than the start of a granule: it equals the start of the last
 /// granule when that one has a single row, so it is not used.
 ///
@@ -139,22 +142,23 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
             changes += column.compareAt(i, i + 1, column, /*nan_direction_hint=*/ 1) != 0;
         }
 
-        if (pairs != 0 && changes == pairs)
+        /// A part of a single granule has one mark, which tells nothing about the values of its rows: it is left out.
+        if (pairs == 0)
+            continue;
+
+        if (changes == pairs)
             return std::nullopt;
 
         /// The value of the first mark and those starting in the granules.
         const size_t part_pairs = granules - 1;
-        if (pairs != 0)
-        {
-            const Float64 changed_fraction = static_cast<Float64>(changes) / static_cast<Float64>(pairs);
-            sum_part_distinct_values += 1 + static_cast<Float64>(part_pairs) * -std::log1p(-changed_fraction);
-        }
-        else
-        {
-            sum_part_distinct_values += 1;
-        }
+        const Float64 changed_fraction = static_cast<Float64>(changes) / static_cast<Float64>(pairs);
+        sum_part_distinct_values += 1 + static_cast<Float64>(part_pairs) * -std::log1p(-changed_fraction);
         part_indexes.push_back({index, granules});
     }
+
+    /// Every part has a single granule, e.g. a small table: no estimate.
+    if (part_indexes.empty())
+        return std::nullopt;
 
     Float64 overlap = 1;
     if (part_indexes.size() > 1)
