@@ -1067,6 +1067,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    info_settings = info_settings.forPartType(global_ctx->future_part->part_format.part_type);
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     for (const auto & part : global_ctx->future_part->parts)

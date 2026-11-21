@@ -21,6 +21,7 @@ namespace MergeTreeSetting
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
+    MergeTreeDataPartType part_type,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
@@ -28,7 +29,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
     , reset_columns(reset_columns_)
-    , info_settings
+    , info_settings(SerializationInfo::Settings
     {
         static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
@@ -38,7 +39,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
         (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-    }
+    }.forPartType(part_type))
     , new_serialization_infos(info_settings)
 {
     if (reset_columns)

@@ -246,6 +246,15 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     settings.path.pop_back();
 }
 
+SerializationPtr SerializationStringSize::resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const
+{
+    SubstreamPath dictionary_sizes;
+    dictionary_sizes.push_back(Substream::StringDictionarySizes);
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES && substream_is_empty(dictionary_sizes))
+        return SerializationStringSize::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    return getPtr();
+}
+
 size_t SerializationStringSize::allocatedBytes() const
 {
     return sizeof(*this);

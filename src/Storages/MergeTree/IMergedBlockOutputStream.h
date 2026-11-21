@@ -19,6 +19,7 @@ public:
     IMergedBlockOutputStream(
         MergeTreeSettingsPtr storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
+        MergeTreeDataPartType part_type,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
         bool reset_columns_);

@@ -64,6 +64,9 @@ public:
     /// once and a code per row, a plain granule appends its rows with indexes to themselves.
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
+    /// A column whose part has no dictionary granule for it holds exactly the streams of `WITH_SIZE_STREAM`.
+    SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const override;
+
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 

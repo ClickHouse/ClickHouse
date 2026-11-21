@@ -370,6 +370,7 @@ Possible values:
 column is stored as a sorted dictionary of its distinct values plus a code per row when that form is smaller
 (see `string_dictionary_min_size_reduction`). Older versions cannot read such parts.
 )", 0, \
+        {"26.12", "with_size_stream", "with_dictionaries", "Change to the format with dictionary-encoded granules"}, \
         {"25.11", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"}, \
         {"25.10", "single_stream", "single_stream", "New setting"}) \
     DECLARE(Float, string_dictionary_min_size_reduction, 0.1f, R"(

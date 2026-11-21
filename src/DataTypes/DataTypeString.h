@@ -41,6 +41,11 @@ public:
     void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+
+    /// A column with a kind on top of the default one (`Sparse`) is never stored with `WITH_DICTIONARIES`: the values of
+    /// a sparse column are a subset of its rows, and `ColumnSparse` cannot hold a `ColumnReplicated`.
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    using IDataType::getSerialization;
 };
 
 }

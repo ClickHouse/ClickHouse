@@ -1390,6 +1390,17 @@ void SerializationString::serializeBinaryBulkWithDictionaries(
         writeStringGranule(streams, granules_state);
 }
 
+SerializationPtr SerializationString::resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const
+{
+    /// Every dictionary granule writes at least one dictionary value, so an empty stream of their lengths means that all
+    /// granules are plain: the streams `StringSizes` and `Regular` then hold the column as `WITH_SIZE_STREAM` writes it.
+    SubstreamPath dictionary_sizes;
+    dictionary_sizes.push_back(Substream::StringDictionarySizes);
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES && substream_is_empty(dictionary_sizes))
+        return SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    return getPtr();
+}
+
 MutableColumnPtr SerializationString::createColumnForDeserialization(const IDataType & type) const
 {
     if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES)

@@ -115,7 +115,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     StreamBaseManifestPtr stream_base_manifest,
     std::optional<FinishedColumns> finished_columns)
     : IMergedBlockOutputStream(
-          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
+          std::move(data_settings), data_part->getDataPartStoragePtr(), data_part->getType(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 class SipHash;
 
@@ -45,6 +46,15 @@ struct SerializationInfoSettings
     [[nodiscard]] bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
     [[nodiscard]] bool canUseSparseSerialization(const IDataType & type) const;
+
+    /// Returns the settings for the types nested in another type. `WITH_DICTIONARIES` exists only for top-level `String`
+    /// columns, because master supports no `ColumnReplicated` inside another column, so a nested `String` is written
+    /// with `WITH_SIZE_STREAM` instead.
+    [[nodiscard]] SerializationInfoSettings forNestedTypes() const;
+
+    /// Returns the settings for writing a part of type `part_type`. `WITH_DICTIONARIES` relies on the marks that a `Wide`
+    /// part keeps for every stream, so other parts are written and recorded with `WITH_SIZE_STREAM`.
+    [[nodiscard]] SerializationInfoSettings forPartType(MergeTreeDataPartType part_type) const;
 
     void updateHash(SipHash & hash) const;
 

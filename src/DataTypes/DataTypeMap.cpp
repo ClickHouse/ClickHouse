@@ -124,8 +124,8 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
     SerializationPtr value_serialization;
     if (settings.propagate_types_serialization_versions_to_nested_types)
     {
-        key_serialization = key_type->getSerialization(settings);
-        value_serialization = value_type->getSerialization(settings);
+        key_serialization = key_type->getSerialization(settings.forNestedTypes());
+        value_serialization = value_type->getSerialization(settings.forNestedTypes());
     }
     else
     {

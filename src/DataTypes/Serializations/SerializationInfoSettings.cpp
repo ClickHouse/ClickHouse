@@ -72,6 +72,21 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     return type.supportsSparseSerialization();
 }
 
+SerializationInfoSettings SerializationInfoSettings::forNestedTypes() const
+{
+    auto res = *this;
+    if (res.string_serialization_version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+        res.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    return res;
+}
+
+SerializationInfoSettings SerializationInfoSettings::forPartType(MergeTreeDataPartType part_type) const
+{
+    if (part_type == MergeTreeDataPartType::Wide)
+        return *this;
+    return forNestedTypes();
+}
+
 void SerializationInfoSettings::updateHash(SipHash & hash) const
 {
     hash.update(ratio_of_defaults_for_sparse);

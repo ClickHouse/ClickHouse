@@ -146,7 +146,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (size_t i = 0; i < elems.size(); ++i)
-        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
+        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings.forNestedTypes()));
 
     /// The result describes `new_type`, so the element identities have to be the ones of `new_type` as well:
     /// the elements can be renamed, and everything that merges tuple subinfos (`add`, `replaceData`) matches

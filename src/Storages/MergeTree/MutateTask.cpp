@@ -1453,6 +1453,7 @@ static void addRenamedColumnToColumnsSubstreams(
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
+    MergeTreeDataPartType new_part_type,
     const Block & updated_header,
     NamesAndTypesList storage_columns,
     NamesAndTypesList persistent_virtuals,
@@ -1584,6 +1585,7 @@ getColumnsForNewDataPart(
     /// Otherwise use fresh settings from storage.
     else
         settings = storage_serialization_settings;
+    settings = settings.forPartType(new_part_type);
 
     if (!serialization_infos.getMissingColumns().empty())
     {
@@ -5565,7 +5567,7 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = ctx->recalculate_ttl_only
         ? std::make_tuple(ctx->source_part->getColumns(), ctx->source_part->getSerializationInfos(), ctx->source_part->getColumnsSubstreams())
         : MutationHelpers::getColumnsForNewDataPart(
-            ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+            ctx->source_part, ctx->new_data_part->getType(), ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
             ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns, ctx->changes_storage_type);
 
     /// A part cannot be left with no columns: it could not be loaded or read.
