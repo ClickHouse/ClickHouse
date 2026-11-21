@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
@@ -371,6 +372,53 @@ MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap *
         }
         const auto ref = str.getDataAt(i);
         out->insertData(ref.data(), ref.size());
+    }
+    return out;
+}
+
+MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null)
+{
+    const WhichDataType which(to_no_null);
+    const size_t n = fixed.getN();
+    const size_t rows = fixed.size();
+
+    auto require = [&](size_t width)
+    {
+        if (n != width)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow fixed_size_binary of width {} cannot be read as {} (expected {})",
+                n, to_no_null->getName(), width);
+    };
+
+    if (which.isUUID())
+    {
+        require(16);
+        auto out = ColumnVector<UUID>::create(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto * dst = reinterpret_cast<uint8_t *>(&out->getData()[i]);
+            memcpy(dst, &fixed.getChars()[i * 16], 16);
+            std::reverse(dst, dst + 8);
+            std::reverse(dst + 8, dst + 16);
+        }
+        return out;
+    }
+
+    const size_t width = ArrowIPC::rawByteWidth(which);
+    if (width == 0)
+        return nullptr;
+
+    require(width);
+    auto out = to_no_null->createColumn();
+    auto copy = [&](auto & data) { data.resize(rows); if (rows) memcpy(data.data(), fixed.getChars().data(), rows * width); };
+    switch (which.idx)
+    {
+        case TypeIndex::IPv6: copy(assert_cast<ColumnVector<IPv6> &>(*out).getData()); break;
+        case TypeIndex::Int128: copy(assert_cast<ColumnVector<Int128> &>(*out).getData()); break;
+        case TypeIndex::UInt128: copy(assert_cast<ColumnVector<UInt128> &>(*out).getData()); break;
+        case TypeIndex::Int256: copy(assert_cast<ColumnVector<Int256> &>(*out).getData()); break;
+        default: copy(assert_cast<ColumnVector<UInt256> &>(*out).getData()); break;
     }
     return out;
 }
@@ -1798,6 +1846,19 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     return keys->index(*indexes, 0);
 }
 
+namespace
+{
+
+ColumnPtr convertUnionChild(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (const auto * fixed = typeid_cast<const ColumnFixedString *>(column.get()))
+        if (MutableColumnPtr raw = reinterpretFixedStringLeaf(*fixed, to))
+            return raw;
+    return castColumn({column, from, ""}, to);
+}
+
+}
+
 ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows)
 {
     const ArrowType & type = field.type;
@@ -1831,7 +1892,8 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     VectorWithMemoryTracking<ChildState> child_states;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
-    size_t total_child_rows = 0;
+    /// Whether every dense child holds exactly the values its rows select, each once and in row order.
+    bool dense_slots_in_row_order = true;
     /// No requested type reaches a child, as `fieldToCHType` declares the children below. The requested type
     /// of the union does not say which child it describes, and the children restart the dotted path, so a
     /// name looked up from it would belong to an unrelated column of the header.
@@ -1872,10 +1934,14 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             const Int64 target = dense ? Int64(value_offsets[row]) : Int64(row);
             if (dense && (target < 0 || static_cast<size_t>(target) >= child_rows))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dense union offset {} out of range", target);
+            if (dense && !size_determined)
+                dense_slots_in_row_order &= static_cast<size_t>(target) == selected_rows;
             ++selected_rows;
             if (!size_determined)
                 child_invisible[static_cast<size_t>(target)] = 0;
         }
+        if (dense && !size_determined)
+            dense_slots_in_row_order &= selected_rows == child_rows;
 
         ColumnUInt8::Ptr child_null_map;
         ColumnPtr child_column = size_determined
@@ -1893,7 +1959,6 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             child_column = nullable.getNestedColumnPtr();
         }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
-        total_child_rows += child_column->size();
         variant_columns.push_back(std::move(child_column));
         variant_types.push_back(removeNullable(child_type));
         child_states.push_back({std::move(child_null_map), size_determined});
@@ -1901,12 +1966,16 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
 
     /// The Variant's global discriminator order is defined by sorting element type names; build the
     /// local (child) -> global mapping accordingly.
-    auto variant_data_type = std::make_shared<DataTypeVariant>(variant_types);
+    /// Children that infer one type are told apart as the schema tells them apart, see `unionElementTypes`.
+    const DataTypes element_types = unionElementTypes(type, settings, /*allow_null_type=*/true);
+    chassert(element_types.size() == variant_types.size());
+    const auto converted = [&](size_t l) { return element_types[l]->getName() != variant_types[l]->getName(); };
+    auto variant_data_type = std::make_shared<DataTypeVariant>(element_types);
     /// `DataTypeVariant` deduplicates its element types by name, but the decoder keeps one local column
     /// per Arrow union child. If two children map to the same ClickHouse type, the locals would both point
     /// at a single global discriminator, producing a `ColumnVariant` whose physical layout does not match
     /// its declared type. Reject such a union rather than build an inconsistent column.
-    if (variant_data_type->getVariants().size() != variant_types.size())
+    if (variant_data_type->getVariants().size() != element_types.size())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC union has multiple children mapping to the same ClickHouse type, which Variant cannot represent");
@@ -1914,19 +1983,24 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     for (size_t g = 0; g < variant_data_type->getVariants().size(); ++g)
         name_to_global[variant_data_type->getVariants()[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
     VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(variant_columns.size());
-    for (size_t l = 0; l < variant_types.size(); ++l)
-        local_to_global[l] = name_to_global[variant_types[l]->getName()];
+    for (size_t l = 0; l < element_types.size(); ++l)
+        local_to_global[l] = name_to_global[element_types[l]->getName()];
 
     auto local_discriminators = ColumnVariant::ColumnDiscriminators::create(rows);
     auto offsets = ColumnVariant::ColumnOffsets::create(rows);
     auto & discr_data = local_discriminators->getData();
     auto & off_data = offsets->getData();
 
-    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it.
-    /// Sparse children hold a value for every union row, dense children may retain unselected values after
-    /// slicing, and a selected null value becomes a `Variant` NULL that leaves the value unreferenced. In
-    /// all these cases the selected values are gathered into compact element columns.
-    const bool compact_children = !dense || invisible_rows || total_child_rows > rows
+    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it, in
+    /// row order. Sparse children hold a value for every union row, dense children may retain unselected
+    /// values after slicing or select values out of order or more than once, and a selected null value
+    /// becomes a `Variant` NULL that leaves the value unreferenced. In all these cases the selected values
+    /// are gathered into compact element columns. So are the children converted to their alternative, which
+    /// must not see the undefined bytes of an unselected value.
+    bool any_converted = false;
+    for (size_t l = 0; l < element_types.size(); ++l)
+        any_converted |= converted(l);
+    const bool compact_children = !dense || invisible_rows || !dense_slots_in_row_order || any_converted
         || std::ranges::any_of(child_states, [](const ChildState & state) { return state.null_map != nullptr; });
     MutableColumns compact;
     if (compact_children)
@@ -1985,8 +2059,13 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     }
 
     if (compact_children)
+    {
+        for (size_t l = 0; l < compact.size(); ++l)
+            if (converted(l))
+                compact[l] = IColumn::mutate(convertUnionChild(std::move(compact[l]), variant_types[l], element_types[l]));
         return ColumnVariant::create(
             std::move(local_discriminators), std::move(offsets), std::move(compact), local_to_global);
+    }
     return ColumnVariant::create(
         std::move(local_discriminators), std::move(offsets), Columns(variant_columns), local_to_global);
 }
