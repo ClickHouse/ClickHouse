@@ -43,6 +43,14 @@ public:
 	
 	~ArchiveCompressor()
 	{
+		/// Join here: the worker may still be running compressImpl, which must not outlive this class.
+		try
+		{
+			stop();
+		}
+		catch (...)
+		{
+		}
 	}
 	
 	ActiveMethod<void, std::string, ArchiveCompressor, ActiveStarter<ActiveDispatcher> > compress;
