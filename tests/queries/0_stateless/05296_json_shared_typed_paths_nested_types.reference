@@ -41,12 +41,12 @@ na [json.e]	1	1	1	[\'{"p":100}\']
 na [json.e] max_block_size = 5	1	1	1	[\'{"p":100}\']
 na [json.e.p]	1	1	1	[100]
 na [json.e.p] max_block_size = 5	1	1	1	[100]
-na [json.e.size0]	1	1	1	1
-na [json.e.size0] max_block_size = 5	1	1	1	1
+na [json.e.size0]	1	1	1	[NULL]
+na [json.e.size0] max_block_size = 5	1	1	1	[NULL]
 na [(json.e.p, json)]	1	1	1	([100],\'{"a":{"p":{"arr":[0,1]},"q":10},"e":[{"p":100}]}\')
 na [(json.e.p, json)] max_block_size = 5	1	1	1	([100],\'{"a":{"p":{"arr":[0,1]},"q":10},"e":[{"p":100}]}\')
-na [(json.e.size0, json.e.p, json.a.q)]	1	1	1	(1,[100],10)
-na [(json.e.size0, json.e.p, json.a.q)] max_block_size = 5	1	1	1	(1,[100],10)
+na [(json.e.size0, json.e.p, json.a.q)]	1	1	1	([NULL],[100],10)
+na [(json.e.size0, json.e.p, json.a.q)] max_block_size = 5	1	1	1	([NULL],[100],10)
 na [json]	1	1	1	{"a":{"p":{"arr":[0,1]},"q":10},"e":[{"p":100}]}
 na [json] max_block_size = 5	1	1	1	{"a":{"p":{"arr":[0,1]},"q":10},"e":[{"p":100}]}
 -- a shared Dynamic with several types and a nested dynamic shared data inside the chunk
@@ -68,7 +68,7 @@ nd [json] max_block_size = 7	1	1	1	{"d":"d10","j":{"k":10,"p":{"a":20,"b":"b1"}}
 arr [arr]	1	1	1	[]
 arr [arr.a]	1	1	1	[]
 arr [arr.b]	1	1	1	[]
-arr [arr.size0]	1	1	1	0
+arr [arr.size0]	1	1	1	[]
 arr [(arr.a, arr)]	1	1	1	([],[])
 arr [arr] max_block_size = 5	1	1	1	[]
 arr [(arr.a, arr)] max_threads = 4	1	1	1	([],[])
@@ -78,27 +78,27 @@ arr [arr.b] max_block_size = 7	1	1	1	[]
 -- Array(JSON(SHARED ...)): granules of empty arrays alternating with granules of elements
 alt [arr]	1	1	1	[]
 alt [arr.a]	1	1	1	[]
-alt [(arr.size0, arr.b)]	1	1	1	(0,[])
+alt [(arr.size0, arr.b)]	1	1	1	([],[])
 alt [arr] max_block_size = 5	1	1	1	[]
 alt [(arr.a, arr)] max_block_size = 7	1	1	1	([],[])
 alt [arr] WHERE x >= 8 AND x < 20	1	1	1	[]
 alt [arr.a] WHERE x >= 8 AND x < 20	1	1	1	[]
-alt [(arr.size0, arr.b)] WHERE x >= 8 AND x < 20	1	1	1	(0,[])
+alt [(arr.size0, arr.b)] WHERE x >= 8 AND x < 20	1	1	1	([],[])
 alt [arr] max_block_size = 5 WHERE x >= 8 AND x < 20	1	1	1	[]
 alt [(arr.a, arr)] max_block_size = 7 WHERE x >= 8 AND x < 20	1	1	1	([],[])
 alt [arr] WHERE x >= 4 AND x < 30	1	1	1	[]
 alt [arr.a] WHERE x >= 4 AND x < 30	1	1	1	[]
-alt [(arr.size0, arr.b)] WHERE x >= 4 AND x < 30	1	1	1	(0,[])
+alt [(arr.size0, arr.b)] WHERE x >= 4 AND x < 30	1	1	1	([],[])
 alt [arr] max_block_size = 5 WHERE x >= 4 AND x < 30	1	1	1	[]
 alt [(arr.a, arr)] max_block_size = 7 WHERE x >= 4 AND x < 30	1	1	1	([],[])
 alt [arr] WHERE x >= 9	1	1	1	[]
 alt [arr.a] WHERE x >= 9	1	1	1	[]
-alt [(arr.size0, arr.b)] WHERE x >= 9	1	1	1	(0,[])
+alt [(arr.size0, arr.b)] WHERE x >= 9	1	1	1	([],[])
 alt [arr] max_block_size = 5 WHERE x >= 9	1	1	1	[]
 alt [(arr.a, arr)] max_block_size = 7 WHERE x >= 9	1	1	1	([],[])
 alt [arr] WHERE x >= 16 OR x < 4	1	1	1	[]
 alt [arr.a] WHERE x >= 16 OR x < 4	1	1	1	[]
-alt [(arr.size0, arr.b)] WHERE x >= 16 OR x < 4	1	1	1	(0,[])
+alt [(arr.size0, arr.b)] WHERE x >= 16 OR x < 4	1	1	1	([],[])
 alt [arr] max_block_size = 5 WHERE x >= 16 OR x < 4	1	1	1	[]
 alt [(arr.a, arr)] max_block_size = 7 WHERE x >= 16 OR x < 4	1	1	1	([],[])
 alt [arr] max_threads = 4	1	1	1	[]
@@ -107,7 +107,7 @@ alt [(arr, arr.a)] max_block_size = 5	1	1	1	([],[])
 aa [aa]	1	1	1	[[\'{"c":[]}\']]
 aa [aa.c]	1	1	1	[[[]]]
 aa [aa.c.size2]	1	1	1	[[0]]
-aa [aa.size1]	1	1	1	[1]
+aa [aa.size1]	1	1	1	[[NULL]]
 aa [(aa.c.size2, aa)]	1	1	1	([[0]],[[\'{"c":[]}\']])
 aa [az]	1	1	1	[\'{"b":0,"zz":[[10,null],[0]]}\']
 aa [az.zz]	1	1	1	[[[10,NULL],[0]]]
@@ -117,7 +117,7 @@ aa [(az.zz, az.zz.size1, az.zz.size2)]	1	1	1	([[[10,NULL],[0]]],[2],[[2,1]])
 aa [json]	1	1	1	{"items":[{"big":"bbbbbbbbbbbbbbbbbbbb","small":"0"},{"big":"bbbbbbbbbbbbbbbbbbbbb","small":"1"}]}
 aa [json.items]	1	1	1	[\'{"big":"bbbbbbbbbbbbbbbbbbbb","small":"0"}\',\'{"big":"bbbbbbbbbbbbbbbbbbbbb","small":"1"}\']
 aa [json.items.small]	1	1	1	[\'0\',\'1\']
-aa [json.items.size0]	1	1	1	2
+aa [json.items.size0]	1	1	1	[NULL,NULL]
 aa [(json.items.small, json.items)]	1	1	1	([\'0\',\'1\'],[\'{"big":"bbbbbbbbbbbbbbbbbbbb","small":"0"}\',\'{"big":"bbbbbbbbbbbbbbbbbbbbb","small":"1"}\'])
-aa [(json.items.size0, json)]	1	1	1	(2,\'{"items":[{"big":"bbbbbbbbbbbbbbbbbbbb","small":"0"},{"big":"bbbbbbbbbbbbbbbbbbbbb","small":"1"}]}\')
+aa [(json.items.size0, json)]	1	1	1	([NULL,NULL],\'{"items":[{"big":"bbbbbbbbbbbbbbbbbbbb","small":"0"},{"big":"bbbbbbbbbbbbbbbbbbbbb","small":"1"}]}\')
 aa [(aa.c.size2, az.zz.size2, json.items.small)] max_block_size = 7	1	1	1	([[0]],[[2,1]],[\'0\',\'1\'])

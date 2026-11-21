@@ -18,6 +18,8 @@ private:
     /// subcolumn dynamic_element_name = 'Tuple(a UInt32)' and nested_subcolumn = 'a'.
     /// Needed to extract nested subcolumn from values in shared variant.
     String nested_subcolumn;
+    /// The array level the nested subcolumn name was resolved at, which `sizeN` in it counts from.
+    size_t nested_subcolumn_array_level;
     bool is_null_map_subcolumn;
     /// True when the extraction wrapped the requested subcolumn into Nullable or
     /// LowCardinality(Nullable). Only forwarded to the variant element serialization of the requested
@@ -28,14 +30,14 @@ private:
     /// this one is read through the element; see `SerializationVariantElement`.
     bool selected_subcolumn_is_null_map;
 
-    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
-        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_), selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
+    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, size_t nested_subcolumn_array_level_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
+        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), nested_subcolumn_array_level(nested_subcolumn_array_level_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_), selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
     {
     }
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_);
-    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_ = false);
+    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, size_t nested_subcolumn_array_level_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_);
+    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, size_t nested_subcolumn_array_level_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_ = false);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;

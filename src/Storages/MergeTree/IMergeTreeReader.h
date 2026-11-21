@@ -156,8 +156,9 @@ protected:
     /// resolve default expressions for virtual columns.
     [[nodiscard]] ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
 
-    /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    [[nodiscard]] bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+    /// For the array sizes of a Nested member the part lacks, returns a member of the same Nested in the part
+    /// whose array sizes are the same shared offsets.
+    [[nodiscard]] std::optional<String> tryGetNestedMemberWithSharedOffsets(const String & name_in_storage, const NameAndTypePair & required_column) const;
 
     /// Returns the string value filter to apply during deserialization of the column, or nullptr.
     /// Takes the column as it is named in the part (an element of `columns_to_read`).

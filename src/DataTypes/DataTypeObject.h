@@ -83,6 +83,10 @@ public:
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    /// A typed path, or a typed path followed by a subcolumn its type knows.
+    std::unique_ptr<SubcolumnInfo> getKnownDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level) const override;
+    /// Any name is a valid path, so JSON can claim every name.
+    bool canResolveDynamicSubcolumn(std::string_view /*subcolumn_name*/) const override { return true; }
     void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
@@ -119,6 +123,14 @@ public:
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
+
+    /// With `allow_dynamic_subcolumns` false, resolves only the typed paths and the subcolumns their types know.
+    std::unique_ptr<SubcolumnInfo> resolveSubcolumn(
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null,
+        bool allow_dynamic_subcolumns) const;
 
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;

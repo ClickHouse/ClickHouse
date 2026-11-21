@@ -14,7 +14,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/escapeForFileName.h>
@@ -22,7 +24,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
-#include <DataTypes/DataTypeObject.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -478,21 +479,39 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
-bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
+std::optional<String> IMergeTreeReader::tryGetNestedMemberWithSharedOffsets(const String & name_in_storage, const NameAndTypePair & required_column) const
 {
     if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
-        return false;
+        return {};
 
     /// We cannot read separate subcolumn with offsets from compact parts.
-    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
-        return false;
+    if (!data_part_info_for_read->isWidePart() || !SerializationArray::isTopLevelArraySizesSubcolumn(required_column))
+        return {};
 
-    auto split = Nested::splitName(name_in_storage);
-    if (split.second.empty())
-        return false;
+    if (data_part_info_for_read->getColumnsDescription().has(name_in_storage))
+        return {};
 
-    auto nested_column = part_columns.tryGetColumn(GetColumnsOptions::All, split.first);
-    return nested_column && isNested(nested_column->type);
+    auto nested_name = Nested::splitName(name_in_storage).first;
+    if (nested_name == name_in_storage)
+        return {};
+
+    auto nested_column = part_columns.tryGetColumn(GetColumnsOptions::All, nested_name);
+    if (!nested_column || !isNested(nested_column->type))
+        return {};
+
+    /// The member is found by the stream its `size0` reads rather than by a name: a member can be named `size0` itself,
+    /// and the `size0` of a member of type `Array(Tuple(size0 ...))` is its element.
+    for (const auto & column : data_part_info_for_read->getColumns())
+    {
+        if (Nested::splitName(column.name).first != nested_name)
+            continue;
+
+        auto info = column.type->tryGetSubcolumnInfo("size0");
+        if (info && SerializationArray::isArraySizesSubcolumn(info->substreams_path))
+            return column.name;
+    }
+
+    return {};
 }
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
@@ -551,10 +570,10 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
         }
     }
 
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
-        name_in_storage = Nested::splitName(name_in_storage).first;
+    /// The array sizes of a Nested member are the shared offsets of its Nested, so a member the part lacks
+    /// reads them through another member. E.g. "n.arr1.size0" is read as "n.arr2.size0".
+    if (auto member = tryGetNestedMemberWithSharedOffsets(name_in_storage, required_column))
+        name_in_storage = *member;
 
     return {name_in_storage, subcolumn_name};
 }

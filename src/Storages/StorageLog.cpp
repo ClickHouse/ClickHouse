@@ -129,8 +129,6 @@ protected:
     Chunk generate() override;
 
 private:
-    NameAndTypePair getColumnOnDisk(const NameAndTypePair & column) const;
-
     /// Returns the cache key for the SubstreamsCache and DeserializeStatesCache.
     /// All columns from the same Nested group must share the same cache
     /// so that shared substreams (like Nested array offsets) are read only once
@@ -196,23 +194,6 @@ private:
     bool isFinished();
 };
 
-NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
-{
-    const auto & storage_columns = storage->columns_with_collected_nested;
-
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    auto name_in_storage = column.getNameInStorage();
-    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
-    {
-        auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
-        auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
-        return storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, new_name);
-    }
-
-    return column;
-}
-
 String LogSource::getCacheKey(const NameAndTypePair & name_and_type_on_disk) const
 {
     auto name_in_storage = name_and_type_on_disk.getNameInStorage();
@@ -269,28 +250,27 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
 
-    /// First, read prefixes for all physical columns/subcolumns.
+    /// First, read prefixes for all physical columns/subcolumns. The sizes of a Nested member are its group's shared
+    /// offsets already: every member writes them to the same stream.
     for (const auto & name_and_type : physical_columns)
     {
-        auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
-        auto cache_key = getCacheKey(name_and_type_on_disk);
-        readPrefix(name_and_type_on_disk, caches[cache_key], deserialize_states_caches[cache_key]);
+        auto cache_key = getCacheKey(name_and_type);
+        readPrefix(name_and_type, caches[cache_key], deserialize_states_caches[cache_key]);
     }
 
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
         MutableColumnPtr column;
-        auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
         {
-            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
-            readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
+            column = name_type.type->createColumn(*IDataType::getSerialization(name_type));
+            readData(name_type, column, max_rows_to_read, caches[getCacheKey(name_type)]);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage->disk, storage->table_path));
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage->disk, storage->table_path));
             throw;
         }
 
