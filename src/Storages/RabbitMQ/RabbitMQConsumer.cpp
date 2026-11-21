@@ -38,8 +38,18 @@ RabbitMQConsumer::RabbitMQConsumer(
 void RabbitMQConsumer::stop()
 {
     stopped = true;
-    cv.notify_one();
+    wakeUp();
     notifyReceivedSpace();
+}
+
+void RabbitMQConsumer::pushMessage(MessageData && message)
+{
+    if (!received.tryPush(std::move(message)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+
+    /// Under `mutex`: a notify between the reader's check and its wait would be lost.
+    std::lock_guard lock(mutex);
+    cv.notify_one();
 }
 
 void RabbitMQConsumer::notifyReceivedSpace()
@@ -128,11 +138,7 @@ void RabbitMQConsumer::subscribe(UInt64 generation)
                 .channel_id = channel_id};
 
             /// Only this callback pushes and it holds the mutex, so there is space.
-            if (!received.tryPush(std::move(result)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
-
-            lock.unlock();
-            cv.notify_one();
+            pushMessage(std::move(result));
         })
         .onError([this, generation](const char * message)
         {

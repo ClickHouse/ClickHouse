@@ -76,6 +76,8 @@ public:
 
     bool hasPendingMessages() { return !received.empty(); }
 
+    void pushMessage(MessageData && message);
+
     void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
     {
         std::unique_lock lock(mutex);
@@ -145,6 +147,7 @@ private:
     UInt64 last_commited_delivery_tag = 0;
 
     std::condition_variable cv;
+    /// Leaf lock: may be taken under `channel_mutex`, never the reverse.
     std::mutex mutex;
 
     /// Held by the channel callbacks while they touch the consumer state and by `updateChannel`
