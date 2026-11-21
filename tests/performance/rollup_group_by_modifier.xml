@@ -1,0 +1,50 @@
+<test>
+    <!--
+        Measures `GROUP BY ... WITH ROLLUP` over a grouping set large enough that producing it
+        dominates the query.
+
+        The table has six low-cardinality columns whose moduli are pairwise coprime, so the finest
+        grouping set has 4 * 7 * 11 * 13 * 17 * 71 = 4832828 rows while each coarser set is at least
+        70 times smaller. That makes the cost of the finest set, and of whatever the query does with
+        it, the thing being measured.
+
+        The queries are, in order: the rollup on its own; the same rollup read by a sorting consumer;
+        the same rollup read by a window `PARTITION BY`; and a variant whose aggregate result depends
+        on the order the states are merged in, which is expected to stay flat. `WITH CUBE` and a
+        plain `GROUP BY` over the same columns are controls and are expected to stay flat as well.
+
+        `max_threads` is pinned so the split of the input into blocks does not follow the host's core
+        count.
+    -->
+    <settings>
+        <max_threads>8</max_threads>
+        <max_memory_usage>0</max_memory_usage>
+    </settings>
+
+    <create_query>
+        create table rollup_modifier (k1 UInt8, k2 UInt8, k3 UInt8, k4 UInt8, k5 UInt8, k6 UInt16, v Int64)
+        engine = MergeTree order by tuple()
+    </create_query>
+
+    <fill_query>
+        insert into rollup_modifier select number % 4, number % 7, number % 11, number % 13,
+            number % 17, number % 71, number
+        from numbers_mt(20000000)
+    </fill_query>
+
+    <fill_query>optimize table rollup_modifier final</fill_query>
+
+    <query>select k1, k2, k3, k4, k5, k6, sum(v) from rollup_modifier group by k1, k2, k3, k4, k5, k6 with rollup format Null</query>
+
+    <query>select k1, k2, k3, k4, k5, k6, sum(v) as s from rollup_modifier group by k1, k2, k3, k4, k5, k6 with rollup order by s desc limit 100 format Null</query>
+
+    <query>select k1, s, rank() over (partition by k1 order by s) from (select k1, k2, k3, k4, k5, k6, sum(v) as s from rollup_modifier group by k1, k2, k3, k4, k5, k6 with rollup) format Null</query>
+
+    <query>select k1, k2, k3, k4, k5, k6, argMax(v, k6) from rollup_modifier group by k1, k2, k3, k4, k5, k6 with rollup format Null</query>
+
+    <query>select k1, k2, k3, k4, k5, sum(v) from rollup_modifier group by k1, k2, k3, k4, k5 with cube format Null</query>
+
+    <query>select k1, k2, k3, k4, k5, k6, sum(v) from rollup_modifier group by k1, k2, k3, k4, k5, k6 format Null</query>
+
+    <drop_query>drop table rollup_modifier</drop_query>
+</test>
