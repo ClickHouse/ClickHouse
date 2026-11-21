@@ -1,0 +1,14 @@
+-- t_merge_tree, query_plan_enable_optimizations = 0
+1	0
+1	0
+-- t_merge_tree, query_plan_enable_optimizations = 1
+1	0
+1	0
+-- t_memory, query_plan_enable_optimizations = 0
+1	0
+1	0
+-- t_memory, query_plan_enable_optimizations = 1
+1	0
+1	0
+-- the plans were cached
+4

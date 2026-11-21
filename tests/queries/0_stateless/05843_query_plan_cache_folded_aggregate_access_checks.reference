@@ -1,0 +1,25 @@
+-- arrayReduce
+1
+1
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- arrayReduce with a computed name
+1
+1
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- arrayReduceInRanges
+1
+1
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- initializeAggregation
+1
+1
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- an aggregate function with a combinator
+1
+1
+-- hits (must be 0): 0
+ACCESS_DENIED

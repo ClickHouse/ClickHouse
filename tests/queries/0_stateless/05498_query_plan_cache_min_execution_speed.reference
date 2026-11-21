@@ -1,0 +1,12 @@
+4999950000
+4999950000
+05498_rows_off	ExceptionWhileProcessing	0
+05498_bytes_off	ExceptionWhileProcessing	0
+05498_rows_miss	ExceptionWhileProcessing	0
+05498_rows_hit	ExceptionWhileProcessing	1
+05498_bytes_miss	ExceptionWhileProcessing	0
+05498_bytes_hit	ExceptionWhileProcessing	1
+05498_set_miss	ExceptionBeforeStart	0
+05498_set_hit	ExceptionBeforeStart	1
+05498_no_limit_miss	QueryFinish	0
+05498_no_limit_hit	QueryFinish	1

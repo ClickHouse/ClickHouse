@@ -1,0 +1,10 @@
+-- a view whose body has a scalar WITH alias is not cached without the opt-in
+2
+2
+-- hits: 0
+-- with the opt-in, the table of a scalar WITH alias is a dependency of the cached plan
+2
+2
+-- hits (warm): 1
+1
+-- hits after the table was replaced (must be 0): 0

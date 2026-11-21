@@ -40,6 +40,7 @@
 
 #include <Core/Settings.h>
 
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 #include <Storages/buildQueryTreeForShard.h>
@@ -74,6 +75,7 @@ extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
 extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
@@ -428,6 +430,26 @@ static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, co
     }
 }
 
+/// The optimization passes can remove the evidence that a plan depends on a value frozen during
+/// analysis: `IfConstantConditionPass` replaces `if(currentRequestURL IN (''), a, b)` with the selected
+/// branch and drops the folded condition together with its source expression. So the eligibility of a
+/// cacheable logical plan is decided on the resolved tree, before the optimizations, and recorded in
+/// the collector that `executeQuery` checks before it stores the plan. This covers the query itself
+/// and the bodies of the views expanded while it is planned, which are analyzed through this function
+/// too. The collector of storage identities is set only while a cacheable logical plan is being built.
+static void markQueryTreeIneligibleForPlanCacheIfNeeded(
+    const QueryTreeNodePtr & query_tree, const SelectQueryOptions & select_query_options, const ContextPtr & context)
+{
+    if (!select_query_options.cacheable_logical_plan)
+        return;
+
+    if (auto identities = context->getPlanCacheStorageIdentities();
+        identities
+        && !queryTreeIsEligibleForPlanCache(
+            query_tree, context, context->getSettingsRef()[Setting::query_plan_cache_allow_scalar_subqueries]))
+        identities->markIneligible();
+}
+
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
@@ -464,6 +486,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         /// (e.g. `length(arr)` into the subcolumn `arr.size0`), but the result of an expression has no origin.
         query_tree_pass_manager.runOnlyResolve(query_tree);
         result_column_origins = getResultColumnOrigins(query_tree);
+        markQueryTreeIneligibleForPlanCacheIfNeeded(query_tree, select_query_options, context);
         query_tree_pass_manager.runFrom(query_tree, QueryTreePassManager::resolve_passes_count);
     }
 

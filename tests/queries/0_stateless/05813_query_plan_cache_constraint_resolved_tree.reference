@@ -1,0 +1,7 @@
+7	8
+7	8
+2000-01-01
+2000-01-01
+-- plan cache hits per query (only the deterministic constraint is cached)
+deterministic	2	1
+non_deterministic	2	0

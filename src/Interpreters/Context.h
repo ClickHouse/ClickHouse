@@ -150,6 +150,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryResultCache;
+class QueryPlanCache;
 class QueryConditionCache;
 class EncryptionHeaderCache;
 class ISystemLog;
@@ -576,6 +577,74 @@ public:
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
+    /// Records the identities of the storages that were resolved while a cacheable logical plan was
+    /// built for the query plan cache. The plan bakes in the semantics (row policies, expanded view
+    /// bodies, schema) of exactly these storages, so both the dependencies stored in the cache entry
+    /// and the storages the plan is finally executed against must be the very same ones - in an
+    /// `Atomic` database a concurrent `DROP`/`CREATE` can otherwise make the same name resolve to a
+    /// different table between analysis and execution (see `QueryPlan::resolveStorages`).
+    /// Nested plan building (expanded view bodies, subqueries) happens in contexts copied from the
+    /// planning context, and the pointer is shared by those copies, so all of it is recorded here.
+    struct PlanCacheStorageIdentities
+    {
+        /// The identity of one analyzed storage: which table object the name resolved to, and a
+        /// fingerprint of the semantics the plan bakes in from it (schema and row policy, see
+        /// `computeQueryPlanCacheSemanticsFingerprint`) as of the analysis-time metadata snapshot.
+        /// The UUID alone detects a `DROP`/`CREATE` swap but not an in-place `ALTER`
+        /// (`MODIFY COLUMN`, `ALTER VIEW ... MODIFY QUERY`, `ALTER ROW POLICY`) between analysis
+        /// and dependency collection, which changes the semantics under the same UUID.
+        struct StorageIdentity
+        {
+            UUID uuid;
+            UInt64 semantics_fingerprint;
+        };
+
+        void add(const StorageID & storage_id, UInt64 semantics_fingerprint)
+        {
+            std::lock_guard lock(mutex);
+            const auto key = std::pair{storage_id.getDatabaseName(), storage_id.table_name};
+            const StorageIdentity identity{storage_id.uuid, semantics_fingerprint};
+            auto [it, inserted] = identities.emplace(key, identity);
+            if (!inserted && (it->second.uuid != identity.uuid || it->second.semantics_fingerprint != identity.semantics_fingerprint))
+            {
+                has_conflicting_identities = true;
+            }
+        }
+
+        std::map<std::pair<String, String>, StorageIdentity> get() const
+        {
+            std::lock_guard lock(mutex);
+            return identities;
+        }
+
+        bool hasConflictingIdentities() const
+        {
+            std::lock_guard lock(mutex);
+            return has_conflicting_identities;
+        }
+
+        /// Records that a query tree analyzed while building the plan, but not visible in the
+        /// caller's query tree (the body of a view expanded at plan time, or a row-policy filter), is
+        /// not eligible for the cache - e.g. it folds a non-deterministic function such as `now`.
+        void markIneligible()
+        {
+            std::lock_guard lock(mutex);
+            has_ineligible_query_tree = true;
+        }
+
+        bool hasIneligibleQueryTree() const
+        {
+            std::lock_guard lock(mutex);
+            return has_ineligible_query_tree;
+        }
+
+        mutable std::mutex mutex;
+        std::map<std::pair<String, String>, StorageIdentity> identities TSA_GUARDED_BY(mutex);
+        bool has_conflicting_identities TSA_GUARDED_BY(mutex) = false;
+        bool has_ineligible_query_tree TSA_GUARDED_BY(mutex) = false;
+    };
+    using PlanCacheStorageIdentitiesPtr = std::shared_ptr<PlanCacheStorageIdentities>;
+
     struct SQLSecurityOverriddenBody
     {
         StorageID view = StorageID::createEmpty();
@@ -590,6 +659,10 @@ protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
+
+    /// Set only while a cacheable logical plan is being built; nullptr otherwise. A pointer, so that
+    /// nested contexts (view bodies, subqueries) record into the same collector.
+    PlanCacheStorageIdentitiesPtr plan_cache_storage_identities;
 
 public:
     /// Record names of created objects of factories (for testing, etc)
@@ -1223,6 +1296,9 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
+
+    PlanCacheStorageIdentitiesPtr getPlanCacheStorageIdentities() const { return plan_cache_storage_identities; }
+    void setPlanCacheStorageIdentities(PlanCacheStorageIdentitiesPtr other) { plan_cache_storage_identities = std::move(other); }
 
     void addQueryAccessInfo(
         const StorageID & table_id,
@@ -1859,6 +1935,11 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+
+    void setQueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
+    void updateQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<QueryPlanCache> getQueryPlanCache() const;
+    void clearQueryPlanCache() const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
 

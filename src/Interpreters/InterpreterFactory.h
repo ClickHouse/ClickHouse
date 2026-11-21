@@ -30,7 +30,13 @@ public:
      InterpreterPtr get(
         ASTPtr & query,
         ContextMutablePtr context,
-        const SelectQueryOptions & options = {});
+        const SelectQueryOptions & options = {},
+        bool increment_query_profile_events = true);
+
+    /// Increments the `Query`, `InitialQuery`, `SelectQuery`, ... counters that `get` increments for every
+    /// query, unless `increment_query_profile_events` is false. For a code path that constructs an interpreter
+    /// without `get`, or that has already counted the query before falling back to `get`.
+    static void incrementQueryProfileEvents(const IAST & query, const ContextPtr & context);
 
     using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;
 

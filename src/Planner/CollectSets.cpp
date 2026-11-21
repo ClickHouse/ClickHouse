@@ -15,6 +15,8 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
@@ -88,7 +90,23 @@ public:
 
         if (storage_set)
         {
-            storage_set->checkNoRowPolicy(planner_context.getQueryContext());
+            const auto & query_context = planner_context.getQueryContext();
+            storage_set->checkNoRowPolicy(query_context);
+
+            /// A `Set` storage is read here, not through a plan leaf, so record its identity for the
+            /// query plan cache like `PlannerJoinTree` does for the storages it reads: otherwise the
+            /// cache would drop it from the dependencies of the plan, and a hit of a plan in which the
+            /// set is folded into a constant (inside a scalar subquery) would neither revalidate it
+            /// nor recheck `SELECT` on it (see `Context::PlanCacheStorageIdentities`). The set is used
+            /// unfiltered, as `checkNoRowPolicy` has just verified, so the fingerprint describes no row
+            /// policy: a policy created after that check makes it differ from the collected dependency.
+            if (auto identities = query_context->getPlanCacheStorageIdentities())
+            {
+                identities->add(
+                    second_argument_table->getStorageID(),
+                    computeQueryPlanCacheSemanticsFingerprint(
+                        second_argument_table->getStorageSnapshot()->metadata, /*row_policy=*/ nullptr, query_context));
+            }
 
             /// Handle storage_set as ready set.
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});

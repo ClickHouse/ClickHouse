@@ -1,0 +1,12 @@
+-- table function
+2
+early: 1
+late: 0
+-- reused MATERIALIZED CTE
+100
+early: 1
+late: 0
+-- table function in an IN subquery
+2
+early: 1
+late: 0

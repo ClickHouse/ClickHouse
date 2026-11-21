@@ -1,0 +1,13 @@
+-- 1. deterministic row policy: query IS cacheable
+-- result: 6
+-- hits after a repeat (must be 1): 1
+-- 2. row policy calling a non-deterministic function: query is NOT cacheable
+-- result: 6
+-- hits after a repeat (must be 0): 0
+-- 3. additional_table_filters with a scalar subquery: query is NOT cacheable
+-- result: 3
+-- hits after a repeat (must be 0): 0
+-- boundary moved to 4, reflected immediately: 10
+-- 4. additional_result_filter: query is NOT cacheable
+-- result: 4 5 
+-- hits after a repeat (must be 0): 0

@@ -1,0 +1,21 @@
+-- first run (allowed, per-column grant on the view):
+1
+2
+-- second run with only column grants on the view is allowed and is not a hit:
+1
+2
+0
+-- revoking the selected column while another remains denies the query:
+ACCESS_DENIED
+-- after granting table-level SELECT on the view the plan is cached and hit:
+1
+2
+1
+2
+1
+-- replacing table-level SELECT with a column grant: the cached entry is not hit, the query is allowed:
+1
+2
+0
+-- the refused hit is counted as a validation miss although the schema and row policies are unchanged:
+1
