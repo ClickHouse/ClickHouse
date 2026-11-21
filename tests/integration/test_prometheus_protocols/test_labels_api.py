@@ -67,6 +67,27 @@ def get_bad_data_from_api(path, **kwargs):
     return data
 
 
+def columns_read_by_last_query(query_pattern):
+    # The names of the columns the last matching SQL query read from the inner tables, without the table prefix.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return node.query(
+        "SELECT arraySort(arrayDistinct(arrayMap(c -> replaceAll(extract(c, "
+        r"'^default\\.`[^`]+`\\.(.*)$'), '`', ''), columns))) "
+        "FROM system.query_log WHERE type = 'QueryFinish' "
+        f"AND query LIKE '%{query_pattern}%' AND query NOT LIKE '%query_log%' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1"
+    ).strip()
+
+
+def last_query_text(query_pattern):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return node.query(
+        "SELECT query FROM system.query_log WHERE type = 'QueryFinish' "
+        f"AND query LIKE '%{query_pattern}%' AND query NOT LIKE '%query_log%' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1 FORMAT TSVRaw"
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     try:
@@ -84,6 +105,23 @@ def setup():
         node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
+        )
+        # The `job` tag is stored in a column named like the alias of the aggregated array in the generated SQL.
+        node.query(
+            "CREATE TABLE prometheus_alias ENGINE=TimeSeries "
+            "SETTINGS tags_to_columns = {'job': 'labels'}"
+        )
+        node.query(
+            "INSERT INTO prometheus_alias (metric_name, tags, samples) VALUES "
+            "('m', {'job': 'west', 'host': 'h1'}, [(toDateTime64(1000, 3), 1)]), "
+            "('m', {'job': 'east', 'host': 'h2'}, [(toDateTime64(1000, 3), 1)])"
+        )
+        # Rows written directly to the tags table: a tag with an empty value, and a metric name present only in `tags`.
+        node.query("CREATE TABLE prometheus_direct ENGINE=TimeSeries")
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_direct) (metric_name, tags) VALUES "
+            "('direct_metric', {'__name__': 'direct_metric', 'empty_tag': '', 'job': 'j1'}), "
+            "('', {'__name__': 'name_in_tags_only', 'job': 'j2'})"
         )
         send_test_data()
         assert_eq_with_retry(node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1")
@@ -164,6 +202,19 @@ def test_labels_time_range_is_inclusive_and_supports_one_sided_bounds():
     assert get_json_from_api("/api/v1/labels?end=999")["data"] == []
 
 
+def test_labels_time_range_with_one_metric_reads_the_time_ranges_of_that_metric():
+    # The time ranges table is read over the id range of the metric; series with ids outside the range are kept.
+    data = get_json_from_api("/api/v1/labels?match[]=cpu_usage&start=990&end=1040")["data"]
+    assert data == ["__name__", "datacenter", "host"]
+    query = last_query_text("groupUniqArrayArray(arrayConcat(")
+    time_ranges_subquery, outer_where = query.split(" AS time_ranges_subquery USING (id) WHERE ")
+    assert "lessOrEquals(id, tuple(sipHash64('cpu_usage'), toUUID('ffffffff-ffff-ffff-ffff-ffffffffffff')))" in time_ranges_subquery
+    assert "notEquals(tupleElement(id, 1), sipHash64('cpu_usage'))" in outer_where
+    # Without a `__name__` matcher there is no metric id range to read over.
+    get_json_from_api("/api/v1/labels?start=990&end=1040")
+    assert "sipHash64" not in last_query_text("groupUniqArrayArray(arrayConcat(")
+
+
 def test_labels_rejects_inverted_time_range():
     get_bad_data_from_api("/api/v1/labels?start=1030&end=1000")
 
@@ -214,3 +265,22 @@ def test_labels_records_query_finish():
         )
         > 0
     )
+
+
+def test_labels_reads_only_the_keys_of_the_tags_map():
+    # The label names are the keys of the `tags` map plus the names of the tags stored in dedicated columns:
+    # the query reads the `tags.keys` subcolumn and the sizes of the dedicated columns, not the values of the map.
+    assert get_json_from_api("/api/v1/labels")["data"] == ALL_LABELS
+    assert columns_read_by_last_query("groupUniqArrayArray(arrayConcat(") == "['host_column.size','metric_name','tags.keys']"
+
+
+def test_labels_matcher_on_column_named_like_the_alias():
+    # The matcher must bind to the column `labels` of the tags table, not to the alias of the aggregated array.
+    data = get_json_from_api("/alias/api/v1/labels", params={"match[]": '{job="west"}'})["data"]
+    assert data == ["__name__", "host", "job"]
+    assert get_json_from_api("/alias/api/v1/labels", params={"match[]": '{job="north"}'})["data"] == []
+
+
+def test_labels_reports_a_key_with_an_empty_value():
+    # Only the keys of the `tags` map are read: a tag stored with an empty value is reported by its name.
+    assert get_json_from_api("/direct/api/v1/labels")["data"] == ["__name__", "empty_tag", "job"]
