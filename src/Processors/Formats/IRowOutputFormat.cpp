@@ -1,7 +1,10 @@
+#include <memory>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 
 
 namespace DB
