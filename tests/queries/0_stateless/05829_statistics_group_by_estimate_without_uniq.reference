@@ -1,0 +1,5 @@
+-- a GROUP BY over a filtered read of one row
+1
+1
+-- a GROUP BY over an unfiltered read of one row
+1
