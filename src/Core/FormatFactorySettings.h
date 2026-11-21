@@ -121,6 +121,17 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"20.5", false, true, "Enable using header with names for formats with WithNames/WithNamesAndTypes suffixes"}) \
+    DECLARE(Bool, input_format_with_names_rename_duplicate_columns, true, R"(
+Enables or disables renaming of duplicate column names in the header of formats with the `WithNames`/`WithNamesAndTypes` suffixes and in automatically detected headers. The second and following occurrences of a name get a suffix: `name`, `name_1`, `name_2`, ...
+
+If disabled, duplicate names are kept as they are, which makes the duplicated fields be handled as before: for example, with `input_format_skip_unknown_fields = 1` fields with a name that is not in the table structure are skipped, and schema inference rejects duplicate names.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.11", false, true, "Rename duplicate column names in the header of formats with names instead of rejecting them."}) \
     DECLARE(Bool, input_format_with_types_use_header, true, R"(
 Controls whether format parser should check if data types from the input data match data types from the target table.
 

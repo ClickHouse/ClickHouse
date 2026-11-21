@@ -1,0 +1,56 @@
+--- count CSV, renaming 1 0 ---
+1
+2
+2
+--- count CSV, renaming 0 1 ---
+2
+1
+1
+--- count TSV, renaming 1 0 ---
+1
+2
+2
+--- count TSV, renaming 0 1 ---
+2
+1
+1
+--- count CustomSeparated, renaming 1 0 ---
+1
+2
+2
+--- count CustomSeparated, renaming 0 1 ---
+2
+1
+1
+--- DESC CSVWithNames, renaming 1 0 ---
+a	Nullable(String)
+a_1	Nullable(String)
+rejected
+--- DESC CSVWithNames, renaming 0 1 ---
+rejected
+a	Nullable(String)
+a_1	Nullable(String)
+--- DESC CustomSeparatedWithNamesAndTypes, renaming 1 0 ---
+a	String
+a_1	String
+rejected
+--- DESC CustomSeparatedWithNamesAndTypes, renaming 0 1 ---
+rejected
+a	String
+a_1	String
+--- DESC JSONCompactEachRowWithNamesAndTypes, renaming 1 0 ---
+a	String
+a_1	String
+rejected
+--- DESC JSONCompactEachRowWithNamesAndTypes, renaming 0 1 ---
+rejected
+a	String
+a_1	String
+--- DESC RowBinaryWithNamesAndTypes, renaming 1 0 ---
+a	String
+a_1	String
+rejected
+--- DESC RowBinaryWithNamesAndTypes, renaming 0 1 ---
+rejected
+a	String
+a_1	String

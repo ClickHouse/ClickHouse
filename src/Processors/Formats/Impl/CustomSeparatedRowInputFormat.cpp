@@ -852,6 +852,7 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
                 factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
                 {
                     String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                    result += fmt::format(", rename_duplicate_columns={}", settings.with_names_rename_duplicate_columns);
                     if (!with_names)
                         result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.custom.try_detect_header);
                     return result + fmt::format(
@@ -863,6 +864,14 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
                             settings.custom.row_after_delimiter,
                             settings.custom.row_between_delimiter,
                             settings.custom.result_after_delimiter);
+                });
+            }
+            else
+            {
+                /// The types are given in the header, so only the names of the header depend on the settings.
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+                {
+                    return fmt::format("rename_duplicate_columns={}", settings.with_names_rename_duplicate_columns);
                 });
             }
         };

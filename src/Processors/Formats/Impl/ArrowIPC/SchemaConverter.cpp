@@ -26,8 +26,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Formats/makeColumnNamesUnique.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
@@ -361,31 +360,15 @@ ArrowType parseType(const flatbuf::Field & field)
 /// fields, so that every field can be inferred, requested and matched by its own name.
 void makeFieldNamesUnique(ArrowFields & fields)
 {
-    UnorderedSetWithMemoryTracking<std::string> original_names;
+    Names names;
+    names.reserve(fields.size());
     for (const ArrowField & field : fields)
-        original_names.insert(field.name);
-    if (original_names.size() == fields.size())
-        return;
+        names.push_back(field.name);
 
-    UnorderedSetWithMemoryTracking<std::string> used_names;
-    /// The next suffix to try for each repeated name, so that every candidate is tried at most once (a schema with many
-    /// equal names would otherwise take quadratic time).
-    UnorderedMapWithMemoryTracking<std::string, size_t> next_suffix;
-    for (ArrowField & field : fields)
-    {
-        if (used_names.insert(field.name).second)
-            continue;
-        size_t & suffix = next_suffix.try_emplace(field.name, 1).first->second;
-        while (true)
-        {
-            std::string candidate = fmt::format("{}_{}", field.name, suffix++);
-            if (!original_names.contains(candidate) && used_names.insert(candidate).second)
-            {
-                field.name = std::move(candidate);
-                break;
-            }
-        }
-    }
+    makeColumnNamesUnique(names);
+
+    for (size_t i = 0; i < fields.size(); ++i)
+        fields[i].name = std::move(names[i]);
 }
 
 }

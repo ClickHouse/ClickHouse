@@ -1098,7 +1098,7 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 String result = getAdditionalFormatInfoByEscapingRule(
                     settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
-                result += fmt::format(", skip_first_lines={}", settings.tsv.skip_first_lines);
+                result += fmt::format(", skip_first_lines={}, rename_duplicate_columns={}", settings.tsv.skip_first_lines, settings.with_names_rename_duplicate_columns);
                 if (!with_names)
                     result += fmt::format(
                         ", column_names_for_schema_inference={}, try_detect_header={}",
