@@ -47,6 +47,8 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -358,10 +360,21 @@ static bool queryReadsDataFromClient(const ASTPtr & ast)
 /// Whether `ast` contains an `EXPLAIN ANALYZE`, anywhere in the tree (it can also be a subquery, e.g.
 /// `SELECT * FROM (EXPLAIN ANALYZE SELECT ...)`). Unlike the other kinds of `EXPLAIN`, it runs its inner
 /// query to completion while its interpreter builds the result, before the pipeline is pulled.
+/// The parser lowers an `EXPLAIN` in a subquery to the `viewExplain` table function, which takes the kind of the
+/// `EXPLAIN` as its first argument, so no `ASTExplainQuery` is left there; the table function can also be written directly.
 static bool containsExplainAnalyze(const IAST & ast)
 {
     if (const auto * explain = ast.as<ASTExplainQuery>(); explain && explain->getKind() == ASTExplainQuery::Analyze)
         return true;
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "viewExplain")
+    {
+        /// A kind that is not a string literal is not valid for `viewExplain`; do not let it past this check.
+        const auto * kind = function->arguments && !function->arguments->children.empty()
+            ? function->arguments->children.front()->as<ASTLiteral>() : nullptr;
+        if (!kind || kind->value.getType() != Field::Types::String
+            || kind->value.safeGet<String>() == ASTExplainQuery::toString(ASTExplainQuery::Analyze))
+            return true;
+    }
     for (const auto & child : ast.children)
         if (child && containsExplainAnalyze(*child))
             return true;
