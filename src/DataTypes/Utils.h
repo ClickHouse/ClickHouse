@@ -40,4 +40,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
+/// A column of `size` default values of `type`, as `IDataType::insertDefaultInto` inserts them, e.g. the smallest value of an `Enum`.
+MutableColumnPtr createColumnWithDefaults(const IDataType & type, size_t size);
+
 }

@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -142,15 +143,9 @@ DataTypePtr stripHint(const DataTypePtr & type);
 /// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
 DataTypePtr arrayElementHint(const DataTypePtr & hint);
 
-/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
-/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
-/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
-/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
-
-/// The requested type hint for the element at `pos` of a Tuple, named or not, or null when the hint is not a Tuple
-/// or has no such element. Used for the fields of a struct with `ArrowType::positional_fields`.
-DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos);
+/// The requested type hints for the fields of a struct, null where there is none: matched by name as the later CAST matches them
+/// (`DataTypeTuple::matchElementsByName`), else by position: an unnamed Tuple hint (Map entries) or `by_position` (`positional_fields`).
+DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive);
 
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
 DataTypePtr mapEntriesHint(const DataTypePtr & hint);
@@ -202,8 +197,8 @@ public:
 
     /// Decodes requested fields from a record batch, validating every root node's row count. When
     /// `keep_top_level_fields` is set, only the named fields have their values decoded; other fields are
-    /// skipped. Names are normalized according to the reader's case-insensitive matching setting.
-    /// `target_types` maps normalized column names, including dotted subcolumn names, to requested types.
+    /// skipped; their names are normalized according to the reader's case-insensitive matching setting.
+    /// `target_types` (see `bindRequestedTypes`) maps dotted field paths to requested types.
     /// These hints guide numeric `date32` decoding, raw-byte reinterpretation, and struct nullability at
     /// every nesting level, following the same rules as the Apache Arrow library reader.
     /// `reachable_buffers`, when set, is a 0/1 mask (see `reachableTopLevelBuffers`) marking the buffers the
@@ -244,6 +239,10 @@ public:
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> collectDictionaryUses(
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
+
+    /// The `target_types` of `header`: each column's type keyed by its name and, with case-insensitive matching, by the path
+    /// of the field it reads, resolved as the reader extracts the column. A field read by several case variants has none.
+    [[nodiscard]] UnorderedMapWithMemoryTracking<String, DataTypePtr> bindRequestedTypes(const Block & header) const;
 
 private:
     Slice nextBuffer();
@@ -391,15 +390,15 @@ private:
     void finishBatch();
 
     /// A field name as the reader matches it against the header: lower-cased when column matching is
-    /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
+    /// case-insensitive. The keys of `keep_top_level_fields` use the same normalization.
     [[nodiscard]] String normalizedName(const String & name) const;
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
-    /// normalized name appended to its parent's path.
+    /// name appended to its parent's path.
     [[nodiscard]] String childPath(const String & path, const String & child_name) const;
-    /// The requested type hint and the path of the `i`-th field of a struct: by name, or by position (the path
+    /// The requested type hints of the fields of a struct and the path of its `i`-th field: by name, or by position (the path
     /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
     /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
-    [[nodiscard]] DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
+    [[nodiscard]] DataTypes structFieldHints(const DataTypePtr & hint, const ArrowType & type) const;
     [[nodiscard]] String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
 
     const ArrowSchema & schema;
@@ -408,7 +407,7 @@ private:
 
     /// State valid only during a single decode call.
     const flatbuf::RecordBatch * current_batch = nullptr;
-    /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
+    /// Requested column types by dotted field path, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used

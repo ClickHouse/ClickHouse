@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/Utils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -1231,7 +1232,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     const auto & from_element_types = from_type->getElements();
     const auto & to_element_types = to_type->getElements();
 
-    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
+    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type, settings.tuple_elements_matching);
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
     for (size_t i = 0; i < to_element_types.size(); ++i)
@@ -1273,17 +1274,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
             }
             else
             {
-                const auto & to_element_type = to_element_types[i];
-                if (to_element_type->isDefaultInsertTrivial())
-                {
-                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
-                }
-                else
-                {
-                    auto column = to_element_type->createColumn();
-                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
-                    converted_columns[i] = std::move(column);
-                }
+                converted_columns[i] = createColumnWithDefaults(*to_element_types[i], input_rows_count);
             }
         }
 
@@ -3503,9 +3494,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, tuple_elements_matching);
 }
 
 FunctionBasePtr createFunctionBaseCast(
