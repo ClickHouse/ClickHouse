@@ -1106,8 +1106,7 @@ static MarkRange getGranulesOfFirstKeyColumnValue(const IColumn & key_index, siz
     auto compare = [&](size_t mark) { return key_index.compareAt(mark, 0, value, /*nan_direction_hint=*/ 1); };
     const size_t index_size = std::min(key_index.size(), num_granules + 1);
 
-    /// The first granule which can contain the value is the one before the first mark (except the first mark)
-    /// with a key not less than the value.
+    /// The first granule which can contain the value precedes the first mark after mark 0 with a key not less than it.
     size_t begin = 1;
     size_t end = index_size;
     while (begin < end)
@@ -1120,7 +1119,6 @@ static MarkRange getGranulesOfFirstKeyColumnValue(const IColumn & key_index, siz
     }
     const size_t first_granule = std::min(begin - 1, num_granules);
 
-    /// The granules from the first one with a key greater than the value cannot contain it.
     begin = 0;
     end = num_granules;
     while (begin < end)
@@ -1134,14 +1132,12 @@ static MarkRange getGranulesOfFirstKeyColumnValue(const IColumn & key_index, siz
     return {first_granule, std::max(first_granule, begin)};
 }
 
-/// Calls `callback(value_idx, ranges)` for every value in `values` of the first sorting key column which can be in the
-/// selected ranges of the part, with the selected marks whose granules can contain this value according to the primary index.
+/// Calls `callback(value_idx, ranges)` with the selected marks of the part that can contain each value, until it returns false.
 template <typename Callback>
 static void forEachFirstKeyColumnValueRanges(const RangesInDataPart & part_with_ranges, const IColumn & values, Callback && callback)
 {
     const auto & part = *part_with_ranges.data_part;
     const size_t num_granules = part.index_granularity->getMarksCountWithoutFinal();
-    /// Without the first key column in the index, every value is read from all the selected marks.
     const auto index = part.getIndex();
     const IColumn * key_index = index && !index->empty() && index->front()->size() >= num_granules ? index->front().get() : nullptr;
 
@@ -1170,9 +1166,7 @@ static void forEachFirstKeyColumnValueRanges(const RangesInDataPart & part_with_
     }
 }
 
-/// Splits every part into one part for every value in `values` of the first sorting key column, with the marks whose
-/// granules can contain this value according to the primary index. A granule with several values is read for each of
-/// them, so a stream has to filter out the rows of other values. Fills the index of the value of every resulting part.
+/// One part for every value of every part, with the marks that can contain the value; `value_of_part` gets its index.
 static RangesInDataParts splitPartsByFirstKeyColumnValues(
     const RangesInDataParts & parts_with_ranges, const IColumn & values, VectorWithMemoryTracking<size_t> & value_of_part)
 {
@@ -1195,12 +1189,8 @@ static RangesInDataParts splitPartsByFirstKeyColumnValues(
     return result;
 }
 
-/// Whether reading every value of the first sorting key column by its own streams can be much cheaper than reading
-/// and sorting the rows of these values. Every stream reads at least a granule before the merge outputs the first row,
-/// so with a LIMIT the read takes about a granule per stream instead of all the granules of the values. But a stream
-/// costs much more to start than reading a granule of a few columns, which is mostly what the top-K filter of a usual
-/// read does, especially with the query condition cache. So the streams have to be few, with many granules each.
-/// `parts` may have whole parts as the ranges: only the granules of the values are counted.
+/// A stream costs much more to start than reading a granule of a few columns, which is mostly what the top-K filter
+/// of a usual read does, so reading by values pays off only with few streams of many granules each.
 static bool isReadingByFirstKeyColumnValuesCheap(const RangesInDataParts & parts, const IColumn & values, size_t max_streams)
 {
     static constexpr size_t min_marks_per_stream = 32;
@@ -1223,7 +1213,6 @@ static bool isReadingByFirstKeyColumnValuesCheap(const RangesInDataParts & parts
     return streams && marks / streams >= min_marks_per_stream;
 }
 
-/// The filter which keeps the rows with `value` of the first sorting key column `key_column`.
 static ExpressionActionsPtr makeFirstKeyColumnValueFilter(
     const Block & header, const String & key_column, const Field & value, const String & filter_column, const ContextPtr & context)
 {
@@ -1246,7 +1235,6 @@ Pipe ReadFromMergeTree::readInOrder(
     std::optional<size_t> split_index,
     bool split_by_values)
 {
-    /// See `requestReadingInOrder`: every value of the first sorting key column is read by its own streams.
     VectorWithMemoryTracking<size_t> value_of_part;
     VectorWithMemoryTracking<ExpressionActionsPtr> value_filters;
     String value_filter_column;
@@ -1257,7 +1245,6 @@ Pipe ReadFromMergeTree::readInOrder(
             return {};
         value_filters.resize(read_in_order_split_values->size());
 
-        /// The ranges were split for the whole part: the first read of a value could take many marks otherwise.
         for (auto & part_with_ranges : parts_with_ranges)
             part_with_ranges.ranges = splitRangesToAvoidLargeReads(
                 part_with_ranges.ranges,
@@ -1475,7 +1462,6 @@ Pipe ReadFromMergeTree::readInOrder(
             /// A granule at the border of two values is read by the streams of both, each keeps only its own rows.
             if (value_filter_column.empty())
             {
-                /// Not the name of a column of the read.
                 value_filter_column = "__read_in_order_key_value_filter";
                 while (pipe.getHeader().has(value_filter_column))
                     value_filter_column = "_" + value_filter_column;
@@ -2499,13 +2485,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
         need_preliminary_merge = false;
 
-    /// The preliminary merge orders by the whole sorting key prefix, which would mix the streams of different values
-    /// of the first key column ordered only by the rest of the key (see `requestReadingInOrder`).
+    /// A preliminary merge by the whole key prefix would not keep the order by the rest of the key across the values.
     const bool split_by_values = read_in_order_split_values != nullptr;
     if (split_by_values)
     {
         need_preliminary_merge = false;
-        /// Only the local read below splits the values, see `requestReadingInOrder`.
         if (is_parallel_reading_from_replicas)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading values of the first key column by separate streams is not supported with parallel replicas");
     }
@@ -4784,12 +4768,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
         return false;
 
-    /// Reading every value by its own streams is done only by the local in-order read of `spreadMarkRangesAmongStreamsWithOrder`,
-    /// which must not have been requested in another way before. A later request keeps the split: the streams of a value
-    /// are ordered by the whole key as well.
+    /// Only a first request may split; a later one keeps the split, as the streams of a value are ordered by the whole key too.
     if (split_values)
     {
-        /// Without a LIMIT, the whole ranges are read anyway, by many more streams.
         if (!query_limit || query_info.input_order_info || prefix_size < 2 || isQueryWithFinal() || is_parallel_reading_from_replicas
             || output_each_partition_through_separate_port || context->getSettingsRef()[Setting::make_distributed_plan]
             || !context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]
@@ -4802,8 +4783,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis->parts_with_ranges, *split_values, context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]))
             return false;
 
-        /// The streams stop after about a granule only if the rows of their ranges pass the whole filter, so the primary key
-        /// has to use all of it, on the first two key columns: a selective condition elsewhere would make the streams scan.
+        /// The streams stop early only if the primary key uses the whole filter: another selective condition makes them scan.
         if (!indexes || !indexes->key_condition)
             return false;
         const auto & key_condition = indexes->key_condition->generateUnsubstituted();

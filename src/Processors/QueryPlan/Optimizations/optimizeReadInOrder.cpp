@@ -260,8 +260,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
 
-/// Columns which take one of several constant values after filtering, mapped to the node of the literal set of the values.
-/// For the condition 'x IN (1, 2) AND y = 3', 'x' is mapped to the set (1, 2).
+/// Columns in a literal set of several values, mapped to the set node: for 'x IN (1, 2) AND y = 3', 'x' to (1, 2).
 using ColumnsFixedToSets = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 /// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
@@ -405,7 +404,6 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-/// If `columns_fixed_to_sets` is set, a column in a literal set with several elements, like `column IN (1, 2)`, is added to it.
 void appendFixedColumnsFromFilterExpression(
     const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns, ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
@@ -470,7 +468,7 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-/// Additionally, build a set of fixed columns, and the columns fixed to literal sets if `columns_fixed_to_sets` is set.
+/// Additionally, build a set of fixed columns.
 void buildSortingDAG(
     const QueryPlan::Node & node,
     std::optional<ActionsDAG> & dag,
@@ -676,15 +674,12 @@ struct SortingInputOrder
     /// Convert the PR values to ORDER BY key.
     /// If empty, the optimization cannot be applied.
     std::optional<ActionsDAG> virtual_row_conversion{};
-    /// If set, the first sorting key column is fixed to these values by a literal set, like 'x' in
-    /// 'WHERE x IN (1, 2) ORDER BY y' for the key (x, y), and the order holds only within the rows of every value.
-    /// The storage has to read each value by its own streams (see `ReadFromMergeTree::requestReadingInOrder`).
+    /// If set, the first sorting key column is in this literal set, like 'x' in 'WHERE x IN (1, 2) ORDER BY y' for the key (x, y),
+    /// and the order holds only within the rows of every value, so the storage reads each value by its own streams.
     ColumnPtr split_values{};
 };
 
 /// For the case when the order of keys is important (ORDER BY keys).
-/// If `columns_fixed_to_sets` is set, the first sorting key column may be skipped as fixed if it is in a literal set,
-/// see `SortingInputOrder::split_values`.
 SortingInputOrder buildInputOrderFromSortDescription(
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -721,11 +716,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
         enrichFixedColumns(sorting_key_dag, fixed_key_columns);
     }
 
-    /// The literal set which the first sorting key column itself is in, if any.
     const FutureSetFromTuple * first_key_column_set = nullptr;
     if (dag && columns_fixed_to_sets && !sorting_key.column_names.empty())
     {
-        /// The storage filters the rows of a value by the column, so it has to be a column of the table, not an expression.
+        /// A column of the table, not an expression: the storage filters the rows of each value by it.
         const ActionsDAG::Node * first_key_column = sorting_key_dag.tryFindInOutputs(sorting_key.column_names.front());
         if (first_key_column && first_key_column->type != ActionsDAG::ActionType::INPUT)
             first_key_column = nullptr;
@@ -734,7 +728,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
             auto it = matches.find(column);
             if (first_key_column && it != matches.end() && it->second.node == first_key_column && !it->second.monotonicity)
             {
-                /// Every value is read by separate streams from every part, so the number of values is limited.
                 static constexpr size_t max_values_to_read_separately = 1000;
                 const auto * set = tryGetLiteralSetForProbe(*set_node, *column);
                 if (set && set->get()->getTotalRowCount() <= max_values_to_read_separately)
@@ -909,10 +902,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             else if (next_sort_key == 0 && first_key_column_set && !sort_node->column && !fixed_columns.contains(sort_node)
                 && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && reverse_indicator == 1)
             {
-                /// The first key column is in a literal set, e.g. 'WHERE x IN (1, 2) ORDER BY y' for the key (x, y).
-                /// The rows with one value of the column are ordered by the rest of the key, as if the column was fixed.
-                /// So the storage reads every value by its own streams, and the column is skipped like a fixed one.
-                /// The virtual row cannot be used for the same reason as for a fixed key column above.
+                /// The rows with one value of the first key column are ordered by the rest of the key, so it is skipped
+                /// like a fixed one, and the storage reads every value of its set by its own streams.
                 auto values = first_key_column_set->getKeyColumns();
                 if (values.size() != 1 || values.front()->empty())
                     break;
@@ -982,7 +973,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (order_key_prefix_descr.empty())
         return {};
 
-    /// The first key column was skipped for its set, but no ORDER BY column after it is read in order.
+    /// No ORDER BY column after the first key column skipped for its set is read in order.
     if (split_values && read_direction == 0)
         return {};
 
@@ -1504,7 +1495,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-/// Every value of the first sorting key column is read by its own streams only if `reads_by_values` is passed; it is set to true then.
+/// The values of a literal set are read by separate streams only if `reads_by_values` is passed; it is set to true then.
 InputOrderInfoPtr buildInputOrderInfo(
     SortingStep & sorting,
     bool & apply_virtual_row,
@@ -1570,7 +1561,6 @@ InputOrderInfoPtr buildInputOrderInfo(
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return nullptr;
 
-        /// Reading the values of a literal set by separate streams is done only if the caller asks for it, and not through a join.
         const bool allow_split_by_values = reads_by_values && find_reading_ctx.traversed_joins.empty();
         auto order_info = buildInputOrderFromSortDescription(
             reading,
@@ -2249,7 +2239,7 @@ void optimizeReadInOrder(
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
-        /// Not with the streams of the values of the first key column, as below.
+        /// Each stream of a set value would buffer a block ahead, while a LIMIT takes rows from a few streams.
         if (any_child_reads_by_values)
             use_buffering = false;
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
@@ -2263,8 +2253,6 @@ void optimizeReadInOrder(
                  allow_split_by_values ? &reads_by_values : nullptr))
     {
         /// Use buffering only if have filter or don't have limit.
-        /// Not with the streams of the values of the first key column: each of them would read a block ahead,
-        /// while a LIMIT usually takes rows from a few streams (see `ReadFromMergeTree::requestReadingInOrder`).
         bool use_buffering = order_info->limit == 0 && !reads_by_values;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }

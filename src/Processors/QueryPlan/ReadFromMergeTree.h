@@ -395,9 +395,8 @@ public:
     void setNoRowsNeeded() { no_rows_needed = true; }
 
     /// Returns `false` if requested reading cannot be performed.
-    /// `split_values`: the first sorting key column is in this literal set of values, and the order is required only
-    /// within the rows of every value, like for 'WHERE x IN (1, 2) ORDER BY y' and the key (x, y). Then every value is
-    /// read by its own streams, which are ordered by the rest of the key (and by the whole key as well).
+    /// `split_values`: the first sorting key column is in this literal set and the order is required only within the rows
+    /// of every value, like for 'WHERE x IN (1, 2) ORDER BY y' and the key (x, y); every value is read by its own streams.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, ColumnPtr split_values = nullptr);
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
@@ -893,7 +892,6 @@ private:
         /// Index of this split when reading in-order with parallel replicas; nullopt means
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt,
-        /// Read every value of `read_in_order_split_values` by its own streams.
         bool split_by_values = false);
 
     /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
