@@ -1,5 +1,5 @@
-reference is non-trivial (8 7 1):
-8	7	1
+reference is non-trivial (9 8 1):
+9	8	1
 scalar add, one block (all 1):
 1	1
 2	1
@@ -9,6 +9,7 @@ scalar add, one block (all 1):
 6	1
 7	1
 8	1
+9	1
 scalar add, small blocks (all 1):
 1	1
 2	1
@@ -18,6 +19,7 @@ scalar add, small blocks (all 1):
 6	1
 7	1
 8	1
+9	1
 addMany, one array with prefix and tail (all 1):
 1	1
 2	1
@@ -27,6 +29,7 @@ addMany, one array with prefix and tail (all 1):
 6	1
 7	1
 8	1
+9	1
 addMany, prefix array then tail array (all 1):
 1	1
 2	1
@@ -36,6 +39,7 @@ addMany, prefix array then tail array (all 1):
 6	1
 7	1
 8	1
+9	1
 addMany, tail array then prefix array (all 1):
 1	1
 2	1
@@ -45,6 +49,7 @@ addMany, tail array then prefix array (all 1):
 6	1
 7	1
 8	1
+9	1
 merge of partial states, ascending (all 1):
 1	1
 2	1
@@ -54,6 +59,7 @@ merge of partial states, ascending (all 1):
 6	1
 7	1
 8	1
+9	1
 merge of partial states, descending (all 1):
 1	1
 2	1
@@ -63,6 +69,7 @@ merge of partial states, descending (all 1):
 6	1
 7	1
 8	1
+9	1
 parallel GROUP BY (all 1):
 1	1
 2	1
@@ -72,6 +79,7 @@ parallel GROUP BY (all 1):
 6	1
 7	1
 8	1
+9	1
 serialization roundtrip (all 1):
 0	1	1
 0	2	1
@@ -81,6 +89,7 @@ serialization roundtrip (all 1):
 0	6	1
 0	7	1
 0	8	1
+0	9	1
 1	1	1
 1	2	1
 1	3	1
@@ -89,6 +98,7 @@ serialization roundtrip (all 1):
 1	6	1
 1	7	1
 1	8	1
+1	9	1
 remote() (all 1):
 1	1
 2	1
@@ -98,3 +108,4 @@ remote() (all 1):
 6	1
 7	1
 8	1
+9	1

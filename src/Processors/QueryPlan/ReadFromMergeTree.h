@@ -775,6 +775,9 @@ private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
+    size_t getReplicasCountForParallelReading();
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -994,6 +997,7 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+    std::optional<size_t> replicas_count_for_parallel_reading;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     std::shared_ptr<HypotheticalProjection> hypothetical_projection;
