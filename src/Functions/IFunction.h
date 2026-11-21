@@ -488,6 +488,10 @@ public:
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
 
+    /// See the comment for the same method in `IFunctionBase`. The `Variant` and `Dynamic` adaptors build
+    /// the function for each type only when they execute it, so their own hash comes from here.
+    virtual void updateHash(SipHash &) const {}
+
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
