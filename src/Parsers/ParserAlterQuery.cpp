@@ -1996,6 +1996,7 @@ Note that:
 
 - Data won't be deleted from `table1`.
 - `table1` may be a temporary table.
+- For non-replicated `MergeTree` tables the replaced parts of `table2` stay on disk as inactive parts for `old_parts_lifetime` seconds. For `ReplicatedMergeTree` tables they are removed at once.
 
 For the query to run successfully, the following conditions must be met:
 
