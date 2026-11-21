@@ -66,7 +66,7 @@ public:
 
     /// Incremented every time a new connection is opened, so a user can tell that it talks to a server
     /// it has not checked yet: a reconnection resolves the endpoint again and may reach another server.
-    UInt64 getGeneration() const { return generation; }
+    [[nodiscard]] UInt64 getGeneration() const { return generation; }
 
 private:
 
