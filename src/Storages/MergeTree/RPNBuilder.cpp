@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -374,7 +375,7 @@ namespace
 /// Whether converting a value of type `from` to type `to` never changes a non-NULL value.
 /// Dropping `Nullable` throws on NULL. Such a query may not throw if the index skips the granules
 /// with NULL, which is accepted.
-bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool allow_drop_nullable)
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool allow_drop_nullable, bool is_wrapper)
 {
     auto from_type = removeLowCardinality(from);
     auto to_type = removeLowCardinality(to);
@@ -385,14 +386,18 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool
     from_type = removeNullable(from_type);
     to_type = removeNullable(to_type);
 
-    /// Not `equals`: it ignores the time zone of `DateTime`, which changes how a literal is parsed,
-    /// and the custom name of `Bool`, to which `CAST` converts a `UInt8` 2 as 1.
+    /// A conversion to `Bool` makes every nonzero byte 1, also from `Bool`; `toNullable` and `toLowCardinality` keep it.
+    if (!is_wrapper && isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
+        return false;
+
+    /// Not `equals`: it ignores the time zone of `DateTime`, which changes how a literal is parsed.
     if (from_type->getName() == to_type->getName())
         return true;
 
     const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType(), allow_drop_nullable);
+    return from_array && to_array
+        && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType(), allow_drop_nullable, is_wrapper);
 }
 
 }
@@ -411,7 +416,7 @@ bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop
     if (!is_cast && !is_wrapper)
         return false;
 
-    return isLosslessConversion(node.children.front()->result_type, node.result_type, allow_drop_nullable);
+    return isLosslessConversion(node.children.front()->result_type, node.result_type, allow_drop_nullable, is_wrapper);
 }
 
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable)
