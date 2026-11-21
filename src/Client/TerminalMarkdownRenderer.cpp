@@ -437,10 +437,11 @@ std::optional<std::vector<String>> mdxStringArrayAttribute(std::string_view attr
                 rest.remove_prefix(1);
             if (rest.empty() || rest.front() == ']')
                 return result;
-            if (rest.front() != '"')
+            const char quote = rest.front();
+            if (quote != '"' && quote != '\'')
                 return std::nullopt;
             rest.remove_prefix(1);
-            const size_t close = rest.find('"');
+            const size_t close = rest.find(quote);
             if (close == std::string_view::npos)
                 return std::nullopt;
             result.emplace_back(rest.substr(0, close));
@@ -453,7 +454,7 @@ std::optional<std::vector<String>> mdxStringArrayAttribute(std::string_view attr
 String cloudOnlyBadgeLabel(std::string_view attributes)
 {
     std::vector<String> supported = {"cloud", "private", "BYOC"};
-    if (auto attribute = mdxStringArrayAttribute(attributes, "supported"))
+    if (auto attribute = mdxStringArrayAttribute(attributes, "supported"); attribute && !attribute->empty())
         supported = std::move(*attribute);
 
     for (auto & platform : supported)

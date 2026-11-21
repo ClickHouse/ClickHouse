@@ -678,9 +678,9 @@
     /// `CommunityMaintainedBadge` -> `Community Maintained`).
     function cloudOnlyBadgeLabel(attributes) {
         const match = /(?:^|\s)supported\s*=\s*\{?\s*\[([^\]]*)\]/.exec(attributes || '');
-        const supported = match
-            ? Array.from(match[1].matchAll(/"([^"]*)"/g), (item) => item[1])
-            : ['cloud', 'private', 'BYOC'];
+        const supported = Array.from((match?.[1] || '').matchAll(/(["'])(.*?)\1/g), (item) => item[2]);
+        if (!supported.length)
+            supported.push('cloud', 'private', 'BYOC');
         const platforms = supported.map((platform) => ({
             cloud: 'ClickHouse Cloud',
             private: 'ClickHouse Private',
