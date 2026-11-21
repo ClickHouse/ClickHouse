@@ -124,12 +124,12 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
     {
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
-            entry.expressions.expression, block, entry.description.result_column);
+            entry.expressions.expression, block, entry.description.result_column, entry.description.expression_columns);
         extractTimestamps(ttl_column.get());
 
         /// Phase 2: apply TTL expiration and WHERE filter to produce the filter mask.
         auto where_column = ITTLAlgorithm::executeExpressionAndGetColumn(
-            entry.expressions.where_expression, block, entry.description.where_result_column);
+            entry.expressions.where_expression, block, entry.description.where_result_column, entry.description.where_expression_columns);
 
         for (size_t i = 0; i < num_rows; ++i)
         {
