@@ -938,6 +938,15 @@ void registerCSVSchemaReader(FormatFactory & factory)
         {
             String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
             result += fmt::format(", skip_first_lines={}", settings.csv.skip_first_lines);
+            /// These decide how the text is split into rows and values, so they change the schema, the row count, or whether the file can be read at all.
+            result += fmt::format(
+                ", allow_cr_end_of_line={}, trim_whitespaces={}, allow_variable_number_of_columns={},"
+                " skip_trailing_empty_lines={}, allow_whitespace_or_tab_as_delimiter={}",
+                settings.csv.allow_cr_end_of_line,
+                settings.csv.trim_whitespaces,
+                settings.csv.allow_variable_number_of_columns,
+                settings.csv.skip_trailing_empty_lines,
+                settings.csv.allow_whitespace_or_tab_as_delimiter);
             if (!with_names)
                 result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
             return result;
