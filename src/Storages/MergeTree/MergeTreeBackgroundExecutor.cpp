@@ -37,6 +37,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 void RoundRobinRuntimeQueue::updatePolicy(std::string_view)
@@ -547,6 +549,23 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
 
 template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::waitUntilIdle(std::chrono::steady_clock::time_point deadline)
+{
+    std::unique_lock lock(mutex);
+    /// Foreground reservations are released without this mutex, so they cannot participate in
+    /// a condition-variable predicate. The profiler finishes foreground SQL before draining.
+    if (reserved_task_slots != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot drain {} while foreground task slots are reserved", toString(name));
+    if (!task_slots_available.wait_until(lock, deadline, [&]() TSA_REQUIRES(mutex)
+        { return shutdown || (pending.empty() && active.empty() && idle_threads == threads_count); }))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot drain {}: pending={}, active={}, parked={}/{}, reserved={}",
+            toString(name), !pending.empty(), active.size(), idle_threads, threads_count, reserved_task_slots.load());
+    if (shutdown)
+        throw Exception(ErrorCodes::ABORTED, "Cannot drain {} during shutdown", toString(name));
+}
+
+template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name);
@@ -563,7 +582,12 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
             {
                 /// The only place without lock tracing.
                 std::unique_lock lock(mutex);
+                /// Parking happens after the previous routine and all its locals were destroyed.
+                ++idle_threads;
+                if (idle_threads == threads_count)
+                    task_slots_available.notify_all();
                 has_tasks.wait(lock, [this]() TSA_REQUIRES(mutex) { return !pending.empty() || shutdown; });
+                --idle_threads;
 
                 if (shutdown)
                     break;

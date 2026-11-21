@@ -15,6 +15,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
+#include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int ABORTED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -611,6 +613,71 @@ void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<
     delayed_tasks_cond_var.notify_all();
 }
 
+BackgroundSchedulePool::PauseGuard::PauseGuard(BackgroundSchedulePool & pool_, std::chrono::steady_clock::time_point deadline)
+    : pool(pool_)
+{
+    pool.pauseExecution(deadline);
+}
+
+BackgroundSchedulePool::PauseGuard::~PauseGuard()
+{
+    pool.resumeExecution();
+}
+
+void BackgroundSchedulePool::PauseGuard::waitUntilIdle(std::chrono::steady_clock::time_point deadline)
+{
+    pool.waitUntilPaused(deadline);
+}
+
+void BackgroundSchedulePool::pauseExecution(std::chrono::steady_clock::time_point deadline)
+{
+    {
+        std::scoped_lock lock(tasks_mutex, delayed_tasks_mutex);
+        ++pause_count;
+    }
+    delayed_tasks_cond_var.notify_all();
+    bool complete = false;
+    SCOPE_EXIT({
+        if (!complete)
+            resumeExecution();
+    });
+    waitUntilPaused(deadline);
+    complete = true;
+}
+
+void BackgroundSchedulePool::waitUntilPaused(std::chrono::steady_clock::time_point deadline)
+{
+    {
+        UniqueLock lock(delayed_tasks_mutex);
+        chassert(pause_count);
+        if (!delayed_tasks_cond_var.wait_until(lock.getUnderlyingLock(), deadline, [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+            { return shutdown || delayed_thread_parked; }))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot pause {}: the timer worker has not parked", toString(thread_name));
+    }
+    {
+        UniqueLock lock(tasks_mutex);
+        chassert(pause_count);
+        if (!tasks_cond_var.wait_until(lock.getUnderlyingLock(), deadline, [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+            { return shutdown || idle_threads == threads.size(); }))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot pause {}: {} of {} workers are parked", toString(thread_name), idle_threads, threads.size());
+        if (shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Cannot pause {} during shutdown", toString(thread_name));
+    }
+}
+
+void BackgroundSchedulePool::resumeExecution()
+{
+    {
+        std::scoped_lock lock(tasks_mutex, delayed_tasks_mutex);
+        chassert(pause_count);
+        --pause_count;
+    }
+    tasks_cond_var.notify_all();
+    delayed_tasks_cond_var.notify_all();
+}
+
 
 void BackgroundSchedulePool::threadFunction()
 {
@@ -627,11 +694,13 @@ void BackgroundSchedulePool::threadFunction()
             UniqueLock tasks_lock(tasks_mutex);
 
             ++idle_threads;
+            if (pause_count)
+                tasks_cond_var.notify_all();
             /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
             /// tasks_lock has already locked tasks_mutex.
             tasks_cond_var.wait(tasks_lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
-                return shutdown || !runnable_task_types.empty();
+                return shutdown || (!pause_count && !runnable_task_types.empty());
             });
             --idle_threads;
             if (shutdown)
@@ -702,6 +771,15 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
             while (!shutdown)
             {
+                if (pause_count)
+                {
+                    delayed_thread_parked = true;
+                    delayed_tasks_cond_var.notify_all();
+                    delayed_tasks_cond_var.wait(lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+                        { return shutdown || !pause_count; });
+                    delayed_thread_parked = false;
+                    continue;
+                }
                 Poco::Timestamp current_time;
                 Poco::Timestamp min_time = current_time;
 
@@ -709,10 +787,9 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                 {
                     auto t = delayed_tasks.begin();
                     min_time = t->first;
-                    task = t->second;
                 }
 
-                if (!task)
+                if (delayed_tasks.empty())
                 {
                     delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
                     if (shutdown)
@@ -732,6 +809,8 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                 }
 
                 /// We have a task ready for execution
+                /// Do not retain a task reference while the timer is parked at a checkpoint.
+                task = delayed_tasks.begin()->second;
                 found = true;
                 break;
             }

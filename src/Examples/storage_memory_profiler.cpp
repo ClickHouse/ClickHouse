@@ -14,8 +14,10 @@
 #include <Examples/storage_memory_profiler.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <unistd.h>
@@ -35,6 +37,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Core/ServerSettings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
@@ -55,6 +58,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/registerStorages.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -83,10 +87,13 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int SYSTEM_ERROR;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ServerSetting
 {
+extern const ServerSettingsUInt64 background_pool_size;
+extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
 extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
 extern const ServerSettingsString index_mark_cache_policy;
 extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -115,6 +122,61 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
 
 StorageMemoryProfiler::~StorageMemoryProfiler() = default;
 
+size_t StorageMemoryProfiler::captureCheckpoint(const std::string & label)
+{
+    /// SQL execution has finished. Freeze periodic producers first; admitted executor tasks
+    /// can still finish all their steps and enqueue future callbacks while the pools are paused.
+    /// Do not create unused pools just to pause them.
+    const std::array pools{
+        global_context->getSchedulePoolIfExists(),
+        global_context->getBufferFlushSchedulePoolIfExists(),
+        global_context->getMessageBrokerSchedulePoolIfExists(),
+        global_context->getDistributedSchedulePoolIfExists(),
+        global_context->getIcebergSchedulePoolIfExists(),
+        global_context->getStreamingSchedulePoolIfExists(),
+    };
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    std::array<std::optional<BackgroundSchedulePool::PauseGuard>, pools.size()> guards;
+    for (size_t i = 0; i < pools.size(); ++i)
+        if (pools[i])
+            guards[i].emplace(*pools[i], deadline);
+
+    if (auto executor = global_context->getMergeMutateExecutor())
+        executor->waitUntilIdle(deadline);
+    for (const auto & executor :
+            {global_context->getMovesExecutor(),
+             global_context->getFetchesExecutor(),
+             global_context->getCommonExecutor()})
+        if (executor)
+            executor->waitUntilIdle(deadline);
+
+    if (background_pool_size)
+    {
+        /// These pools retain their workers in controlled mode. A completed wait includes
+        /// callback cleanup, and no worker retirement can race the heap dump.
+        for (auto * pool :
+                {&global_context->getLoadMarksThreadpool(),
+                 &getPartsCleaningThreadPool().get(),
+                 &getActivePartsLoadingThreadPool().get()})
+        {
+            if (!pool->waitUntil(deadline))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot drain storage profiler auxiliary workers");
+            pool->wait(); /// Propagate a stored job exception; the bounded wait alone does not.
+        }
+    }
+
+    for (auto & guard : guards)
+        if (guard)
+            guard->waitUntilIdle(deadline);
+
+    /// Retain the pause through both measurements. Guards also resume the pools on errors.
+    flushJemallocThreadCache();
+    refreshJemallocEpoch();
+    const size_t allocated = getJemallocAllocated();
+    dumpProfile(label);
+    return allocated;
+}
+
 
 void StorageMemoryProfiler::printUsage()
 {
@@ -131,6 +193,8 @@ void StorageMemoryProfiler::printUsage()
         "  --prefix PREFIX         Prefix for heap dump files (default: memory_profile_)\n"
         "  --no-system-tables      Skip system tables for faster startup\n"
         "  --no-mark-caches        Leave mark caches uninitialized (for uncached-read testing)\n"
+        "  --background-pool-size N  Use N merge/mutation workers; other MergeTree executors, schedule pools, marks loading, active-parts loading and parts cleaning use one worker\n"
+        "  --max-threads N         Set foreground query max_threads (SQL may override it)\n"
         "  --symbolize             Symbolize each heap dump immediately\n"
         "  -h, --help              Show this help message\n"
         "\n"
@@ -296,8 +360,40 @@ void StorageMemoryProfiler::initializeContext()
     config->setString("users.default.profile", "default");
     config->setString("users.default.quota", "default");
     config->setString("quotas.default", "");
+    if (background_pool_size)
+    {
+        const ServerSettings defaults;
+        const double default_task_capacity = static_cast<double>(defaults[ServerSetting::background_pool_size])
+            * static_cast<double>(defaults[ServerSetting::background_merges_mutations_concurrency_ratio]);
+        config->setUInt64("background_pool_size", *background_pool_size);
+        /// Keep enough task slots for default `MergeTreeSettings`, including projections that do not inherit server overrides.
+        /// Task slots bound admitted work; only `background_pool_size` controls the number of executor workers.
+        config->setDouble("background_merges_mutations_concurrency_ratio",
+            std::max(1.0, std::ceil(default_task_capacity / static_cast<double>(*background_pool_size))));
+        for (const auto * setting : {
+                 "background_move_pool_size",
+                 "background_fetches_pool_size",
+                 "background_common_pool_size",
+                 "background_schedule_pool_size",
+                 "background_schedule_pool_initial_size",
+                 "background_buffer_flush_schedule_pool_size",
+                 "background_message_broker_schedule_pool_size",
+                 "background_distributed_schedule_pool_size",
+                 "background_streaming_schedule_pool_size",
+                 "iceberg_background_schedule_pool_size",
+                 "load_marks_threadpool_pool_size"})
+            config->setUInt64(setting, 1);
+    }
     global_context->setConfig(config);
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
+
+    if (background_pool_size)
+    {
+        /// Include pool objects in startup, and retain the workers once real work creates them.
+        global_context->getLoadMarksThreadpool();
+        getPartsCleaningThreadPool().initialize(/*max_threads*/ 1, /*max_free_threads*/ 1, /*queue_size*/ 10000);
+        getActivePartsLoadingThreadPool().initialize(/*max_threads*/ 1, /*max_free_threads*/ 1, /*queue_size*/ 10000);
+    }
 
 #define INITIALIZE_STATIC_THREAD_POOL(SUFFIX, NAME, METRIC) get##SUFFIX##ThreadPool().initializeWithDefaultSettingsIfNotInitialized();
     APPLY_FOR_STATIC_THREAD_POOLS(INITIALIZE_STATIC_THREAD_POOL)
@@ -396,6 +492,8 @@ void StorageMemoryProfiler::setupDatabase()
     session_context = Context::createCopy(global_context);
     session_context->makeSessionContext();
     session_context->setClientInterface(ClientInfo::Interface::LOCAL);
+    if (max_threads)
+        session_context->setSetting("max_threads", UInt64(*max_threads));
 
     /// Attach system tables if needed
     if (!no_system_tables)
@@ -526,6 +624,22 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         {
             symbolize = true;
         }
+        else if (arg == "--background-pool-size")
+        {
+            if (i + 1 >= args.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--background-pool-size requires a positive integer");
+            background_pool_size = parse<size_t>(args[++i]);
+            if (!*background_pool_size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--background-pool-size must be positive");
+        }
+        else if (arg == "--max-threads")
+        {
+            if (i + 1 >= args.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--max-threads requires a positive integer");
+            max_threads = parse<size_t>(args[++i]);
+            if (!*max_threads)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--max-threads must be positive");
+        }
         else
         {
             fmt::print(stderr, "Unknown option: {}\n", arg);
@@ -569,6 +683,10 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         /// Print header
         fmt::print(stdout, "# Memory Profiler Summary\n");
         fmt::print(stdout, "# Timestamp: {}\n", std::chrono::system_clock::now().time_since_epoch().count());
+        if (background_pool_size)
+            fmt::print(stdout, "# Background workers: merge/mutation={}, other MergeTree executors=1, schedule pools=1, marks loading=1, active-parts loading=1, parts cleaning=1; merge/mutation task capacity >= default\n", *background_pool_size);
+        if (max_threads)
+            fmt::print(stdout, "# Foreground query max_threads: {} (SQL may override it)\n", *max_threads);
         fmt::print(stdout, "# Files: ");
         for (size_t i = 0; i < sql_files.size(); ++i)
         {
@@ -579,14 +697,10 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         fmt::print(stdout, "\n#\ncheckpoint\tallocated_bytes\tdiff_from_start\tdiff_from_prev\n");
 
         /// Initial measurement
-        flushJemallocThreadCache();
-        refreshJemallocEpoch();
-        size_t initial_allocated = getJemallocAllocated();
+        size_t initial_allocated = captureCheckpoint("start");
         size_t prev_allocated = initial_allocated;
 
         fmt::print(stdout, "start\t{}\t0\t0\n", initial_allocated);
-
-        dumpProfile("start");
 
         /// Process each SQL file
         for (size_t i = 0; i < sql_files.size(); ++i)
@@ -599,17 +713,12 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
             executeQueriesFromFile(filepath);
 
             /// Measure memory after execution
-            flushJemallocThreadCache();
-            refreshJemallocEpoch();
-            size_t current_allocated = getJemallocAllocated();
-
             std::string label = fmt::format("after_{:02d}_{}", i + 1, filename);
+            size_t current_allocated = captureCheckpoint(label);
             int64_t diff_from_start = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(initial_allocated);
             int64_t diff_from_prev = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(prev_allocated);
 
             fmt::print(stdout, "{}\t{}\t{}\t{}\n", label, current_allocated, diff_from_start, diff_from_prev);
-
-            dumpProfile(label);
 
             prev_allocated = current_allocated;
         }
