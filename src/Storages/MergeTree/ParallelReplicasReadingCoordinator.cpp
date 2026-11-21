@@ -185,8 +185,6 @@ public:
     /// Total number of marks a replica wants per coordinator request, announced once by the first replica.
     size_t announced_min_marks_per_request{0};
 
-    ProgressCallback progress_callback;
-
     struct ReplicaStatus
     {
         bool is_finished{false};
@@ -209,7 +207,8 @@ public:
     CoordinationMode getCoordinationMode() const { return mode; }
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
-    virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
+    virtual void
+    doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const = 0;
 
@@ -225,7 +224,7 @@ public:
     /// and echoed back to followers as the authoritative set they should construct sources for.
     virtual RangesInDataPartsDescription getRegisteredParts() const = 0;
 
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback)
     {
         if (++received_initial_requests > replicas_count)
             throw Exception(
@@ -242,10 +241,8 @@ public:
         if (announced_min_marks_per_request == 0 && announcement.min_marks_per_request > 0)
             announced_min_marks_per_request = announcement.min_marks_per_request;
 
-        doHandleInitialAllRangesAnnouncement(std::move(announcement));
+        doHandleInitialAllRangesAnnouncement(std::move(announcement), progress_callback);
     }
-
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
 
 using Parts = std::set<Part>;
@@ -277,7 +274,8 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
-    void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
+    void
+    doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
 
@@ -363,7 +361,7 @@ private:
     /// The second and all subsequent announcements needed only to understand if we can schedule reading from the given part to the given replica.
     void initializeReadingState(InitialAllRangesAnnouncement announcement);
 
-    void updateQueryProgress();
+    void updateQueryProgress(const ProgressCallback & progress_callback);
 
     enum class ScanMode : uint8_t
     {
@@ -506,7 +504,7 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
     distribution_by_hash_queue[replica_number].clear();
 }
 
-void DefaultCoordinator::updateQueryProgress()
+void DefaultCoordinator::updateQueryProgress(const ProgressCallback & progress_callback)
 {
     // Update progress with total rows
     if (progress_callback)
@@ -523,7 +521,8 @@ void DefaultCoordinator::updateQueryProgress()
     }
 }
 
-void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(
+    InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback)
 {
     LOG_TRACE(log, "Initial request: {}", announcement.describe());
     LOG_TEST(log, "Initial request ranges: {}", announcement.description.describe());
@@ -542,7 +541,7 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
     /// Update total rows to read as soon as snapshot is initialized
     if (received_initial_requests == 1)
-        updateQueryProgress();
+        updateQueryProgress(progress_callback);
 
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
@@ -983,7 +982,8 @@ public:
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
-    void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
+    void doHandleInitialAllRangesAnnouncement(
+        [[maybe_unused]] InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
     bool isReadingCompleted() const override;
 
@@ -1028,7 +1028,8 @@ void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
     }
 }
 
-void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(
+    InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback)
 {
     LOG_TRACE(log, "Received an announcement: {}", announcement.describe());
     LOG_TEST(log, "Announcement ranges: {}", announcement.description.describe());
@@ -1214,7 +1215,8 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
 
 InitialAllRangesAnnouncementResponse
-ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(
+    InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback)
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
@@ -1284,7 +1286,7 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     if (is_reading_completed)
         return response;
 
-    coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    coordinator->handleInitialAllRangesAnnouncement(std::move(announcement), progress_callback);
 
     /// Capture the authoritative parts list AFTER the coordinator has processed the first
     /// announcement. Within a single MergeTree replica's announcement, parts are non-overlapping
@@ -1526,10 +1528,6 @@ ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream
             break;
     }
 
-    // progress_callback is not set when local plan is used for initiator
-    if (progress_callback)
-        coordinator->setProgressCallback(progress_callback);
-
     for (const auto replica : unavailable_replicas)
         coordinator->markReplicaAsUnavailable(replica);
 
@@ -1587,15 +1585,6 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
         summary_span.addAttribute("clickhouse.requests", total_requests);
         summary_span.addAttribute("clickhouse.marks_assigned", total_marks_assigned);
     }
-}
-
-void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
-{
-    std::lock_guard lock(mutex);
-    // store callback since coordinators may not be instantiated yet
-    progress_callback = std::move(callback);
-    for (auto & [_, coordinator] : stream_to_coordinator)
-        coordinator->setProgressCallback(progress_callback);
 }
 
 void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedCallback callback)
