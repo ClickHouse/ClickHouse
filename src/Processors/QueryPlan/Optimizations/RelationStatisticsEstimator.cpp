@@ -540,7 +540,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
 
         /// `STREAM` defers range analysis until execution. Its placeholder result has zero
         /// selected rows but does not mean that the relation is empty.
-        if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
+        if (!reading->selectsPartsAtPlanTime() && analyzed_result && analyzed_result->selected_rows == 0)
         {
             return RelationStats{
                 .estimated_rows = {},
