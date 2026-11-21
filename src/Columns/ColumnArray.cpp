@@ -1485,7 +1485,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     /// Convert indexes to UInt64 in case of overflow.
     auto nested_indexes_column = ColumnUInt64::create();
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    nested_indexes.reserve_exact(getOffsets().back());
+    size_t nested_size = 0;
+    for (size_t i = 0; i < limit; ++i)
+        nested_size += sizeAt(indexes[i]);
+    nested_indexes.reserve_exact(nested_size);
 
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
