@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -485,19 +486,37 @@ private:
     const QueryTreeNodePtrWithHashMap<UInt64> * query_node_to_component;
 };
 
+/// Equal `arrayJoin` expressions are computed once, so a substitution inside one can merge two of them.
+/// A node of an `arrayJoin` argument can also be an argument of another expression (e.g. through an alias).
+void collectArrayJoinNodes(const QueryTreeNodePtr & node, bool in_array_join, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    in_array_join = in_array_join || (function_node && function_node->getFunctionName() == "arrayJoin");
+    if (in_array_join)
+        result.insert(node.get());
+
+    for (const auto & child : node->getChildren())
+        if (child && !isSubqueryNodeType(child->getNodeType()))
+            collectArrayJoinNodes(child, in_array_join, result);
+}
+
 class SubstituteColumnVisitor : public InDepthQueryTreeVisitor<SubstituteColumnVisitor>
 {
 public:
     SubstituteColumnVisitor(
         const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_,
         const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map_,
+        const std::unordered_set<const IQueryTreeNode *> & array_join_nodes_,
         ContextPtr context_)
-        : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
+        : query_node_to_component(query_node_to_component_)
+        , id_to_query_node_map(id_to_query_node_map_)
+        , array_join_nodes(array_join_nodes_)
+        , context(std::move(context_))
     {}
 
-    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child) const
     {
-        return !isSubqueryNodeType(child->getNodeType());
+        return !array_join_nodes.contains(parent.get()) && !isSubqueryNodeType(child->getNodeType());
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -521,6 +540,7 @@ public:
 private:
     const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
     const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map;
+    const std::unordered_set<const IQueryTreeNode *> & array_join_nodes;
     ContextPtr context;
 };
 
@@ -593,6 +613,11 @@ void substituteColumns(QueryNode & query_node, const TableExpressionNodes & tabl
 {
     static constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
     static constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
+
+    std::unordered_set<const IQueryTreeNode *> array_join_nodes;
+    for (const auto & child : query_node.getChildren())
+        if (child && !isSubqueryNodeType(child->getNodeType()))
+            collectArrayJoinNodes(child, false, array_join_nodes);
 
     for (const auto & table_expression : table_expressions)
     {
@@ -681,7 +706,7 @@ void substituteColumns(QueryNode & query_node, const TableExpressionNodes & tabl
         for (size_t i = 0; i < components_list.size(); ++i)
             id_to_query_node_map[components_list[i]] = min_expressions[i];
 
-        SubstituteColumnVisitor substitute_column{query_node_to_component, id_to_query_node_map, context};
+        SubstituteColumnVisitor substitute_column{query_node_to_component, id_to_query_node_map, array_join_nodes, context};
 
         run_for_all([&](QueryTreeNodePtr & node)
         {
@@ -728,6 +753,73 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const TableExpressionNodes & t
         addIndexConstraint(cnf, table_expressions, context);
 }
 
+class CollectArrayJoinsVisitor : public ConstInDepthQueryTreeVisitor<CollectArrayJoinsVisitor>
+{
+public:
+    explicit CollectArrayJoinsVisitor(bool skip_aggregate_functions_) : skip_aggregate_functions(skip_aggregate_functions_) {}
+
+    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType & child) const
+    {
+        const auto * function_node = parent->as<FunctionNode>();
+        return !(skip_aggregate_functions && function_node && function_node->isAggregateFunction())
+            && !isSubqueryNodeType(child->getNodeType());
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "arrayJoin")
+            array_joins.insert(node);
+    }
+
+    QueryTreeNodePtrWithHashSet array_joins;
+
+private:
+    bool skip_aggregate_functions;
+};
+
+/// In `HAVING`, an `arrayJoin` in an aggregate function argument expands the rows before the aggregation and an equal one
+/// outside of aggregate functions expands them after it.
+struct ArrayJoins
+{
+    QueryTreeNodePtrWithHashSet outside_aggregate_functions;
+    QueryTreeNodePtrWithHashSet in_aggregate_functions;
+};
+
+ArrayJoins collectArrayJoins(const QueryTreeNodePtr & node)
+{
+    CollectArrayJoinsVisitor outside_aggregate_functions(/*skip_aggregate_functions=*/ true);
+    outside_aggregate_functions.visit(node);
+
+    CollectArrayJoinsVisitor in_aggregate_functions(/*skip_aggregate_functions=*/ false);
+    for (const auto & aggregate_function : collectAggregateFunctionNodes(node))
+        in_aggregate_functions.visit(aggregate_function);
+
+    return {std::move(outside_aggregate_functions.array_joins), std::move(in_aggregate_functions.array_joins)};
+}
+
+bool containsAll(const QueryTreeNodePtrWithHashSet & set, const QueryTreeNodePtrWithHashSet & subset)
+{
+    return std::ranges::all_of(subset, [&](const auto & node) { return set.contains(node); });
+}
+
+/// The reductions treat atoms as booleans, but each distinct `arrayJoin` multiplies the rows and aggregate functions
+/// make the query aggregating, so a filter that loses an `arrayJoin` or all aggregate functions is a different query.
+bool keepsArrayJoinsAndAggregation(const QueryTreeNodePtr & node, const QueryTreeNodePtr & new_node)
+{
+    if (hasAggregateFunctionNodes(node) && !(new_node && hasAggregateFunctionNodes(new_node)))
+        return false;
+
+    const auto array_joins = collectArrayJoins(node);
+    if (array_joins.outside_aggregate_functions.empty() && array_joins.in_aggregate_functions.empty())
+        return true;
+    if (!new_node)
+        return false;
+
+    const auto new_array_joins = collectArrayJoins(new_node);
+    return containsAll(new_array_joins.outside_aggregate_functions, array_joins.outside_aggregate_functions)
+        && containsAll(new_array_joins.in_aggregate_functions, array_joins.in_aggregate_functions);
+}
+
 void optimizeNode(QueryTreeNodePtr & node, const TableExpressionNodes & table_expressions, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -764,6 +856,9 @@ void optimizeNode(QueryTreeNodePtr & node, const TableExpressionNodes & table_ex
     /// failing one. `new_node` is null when the filter reduces to a constant and is dropped, which is
     /// fine to apply.
     if (new_node && isCorrelatedQueryOrUnionNode(new_node))
+        return;
+
+    if (!keepsArrayJoinsAndAggregation(node, new_node))
         return;
 
     node = std::move(new_node);
