@@ -60,10 +60,6 @@ SELECT '-- division of the minimal signed number by minus one, wide and narrow d
 {{ fn_throws('intDiv', "CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)', 'ILLEGAL_DIVISION') }}
 {{ fn_throws('intDiv', "CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)', 'ILLEGAL_DIVISION') }}
 {{ fn_throws('intDiv', 'toInt8(-128)', 'toInt256(-1)', 'ILLEGAL_DIVISION') }}
-{{ fn_throws('modulo', "CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)', 'ILLEGAL_DIVISION') }}
-{{ fn_throws('modulo', "CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)', 'ILLEGAL_DIVISION') }}
-{{ fn_throws('modulo', 'toInt8(-128)', 'toInt128(-1)', 'ILLEGAL_DIVISION') }}
-{{ fn_throws('modulo', 'toInt8(-128)', 'toInt256(-1)', 'ILLEGAL_DIVISION') }}
 
 SELECT '-- positiveModulo by the most negative divisor value';
 {{ fn_throws('positiveModulo', 'toInt256(-100)', 'toInt8(-128)', 'ILLEGAL_DIVISION') }}

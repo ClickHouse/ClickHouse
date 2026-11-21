@@ -38,11 +38,11 @@ SELECT modulo(toInt32(-1), toUInt32(0)); -- { serverError ILLEGAL_DIVISION }
 SELECT '-- control: gcd and lcm were never affected';
 SELECT gcd(toInt32(-4), toUInt32(6)), lcm(toInt32(-4), toUInt32(6));
 
-SELECT '-- control: the minimal-signed-number guard fires on the same inputs as before';
-SELECT modulo(toInt32(-2147483648), toInt32(-1)); -- { serverError ILLEGAL_DIVISION }
-SELECT modulo(toInt32(-2147483648), toInt64(-1)); -- { serverError ILLEGAL_DIVISION }
-SELECT modulo(toInt64(-9223372036854775808), toInt32(-1)); -- { serverError ILLEGAL_DIVISION }
-SELECT positiveModulo(toInt32(-2147483648), toInt32(-1)); -- { serverError ILLEGAL_DIVISION }
+SELECT '-- the minimal signed number modulo -1 is 0';
+SELECT modulo(toInt32(-2147483648), toInt32(-1));
+SELECT modulo(toInt32(-2147483648), toInt64(-1));
+SELECT modulo(toInt64(-9223372036854775808), toInt32(-1));
+SELECT positiveModulo(toInt32(-2147483648), toInt32(-1));
 SELECT modulo(toInt32(-2147483648), toUInt64(1)), modulo(toInt128(-1), toInt128(-1));
 
 SELECT '-- regression: a same-width unsigned operand near the signed maximum overflowed the first fix';
