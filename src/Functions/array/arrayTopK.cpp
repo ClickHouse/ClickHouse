@@ -8,6 +8,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/arraySortPrefixKeys.h>
 #include <Functions/castTypeToEither.h>
 #include <base/sort.h>
 
@@ -80,13 +81,14 @@ size_t readK(const IColumn & k_column, bool k_is_signed, size_t row, const char 
 
 /// K-selection pass for a single call, specialized at compile time on the comparator type.
 /// Builds the result `ColumnArray`.
-template <typename Comparator>
+template <typename Comparator, typename Sort>
 ColumnPtr applyComparator(
     const IColumn & k_column,
     bool k_is_signed,
     const ColumnArray & source,
     const IColumn & mapped,
-    const char * function_name)
+    const char * function_name,
+    Sort sort)
 {
     const auto & offsets = source.getOffsets();
     const size_t size = offsets.size();
@@ -147,9 +149,9 @@ ColumnPtr applyComparator(
         const size_t take = std::min(k, row_indices.size());
 
         if (take == row_indices.size())
-            ::sort(row_indices.begin(), row_indices.end(), cmp);
+            sort(row_indices.begin(), row_indices.end(), cmp);
         else
-            ::partial_sort(row_indices.begin(), row_indices.begin() + take, row_indices.end(), cmp);
+            sort(row_indices.begin(), row_indices.begin() + take, row_indices.end(), cmp);
 
         for (size_t j = 0; j < take; ++j)
             indexes.push_back(row_indices[j]);
@@ -204,7 +206,12 @@ ColumnPtr dispatchByColumn(
         [&](const auto & column)
         {
             using ColumnT = std::decay_t<decltype(column)>;
-            result = applyComparator<Less<IsAscending, ColumnT>>(k_column, k_is_signed, source, *mapped_full, function_name);
+            using Comparator = Less<IsAscending, ColumnT>;
+            if constexpr (std::is_same_v<ColumnT, ColumnString> || std::is_same_v<ColumnT, ColumnFixedString>)
+                result = applyComparator<Comparator>(
+                    k_column, k_is_signed, source, *mapped_full, function_name, makePrefixKeySort<IsAscending>(prefixKeyGetter(column)));
+            else
+                result = applyComparator<Comparator>(k_column, k_is_signed, source, *mapped_full, function_name, DefaultSort{});
             return true;
         });
 
@@ -212,7 +219,14 @@ ColumnPtr dispatchByColumn(
         return result;
 
     /// Fall back to GenericLess<>.
-    return applyComparator<GenericLess<IsAscending>>(k_column, k_is_signed, source, *mapped_full, function_name);
+    bool sorted_by_prefix_keys = callWithGenericStringPrefixKeyGetter(*mapped_data, [&](auto get_key)
+    {
+        result = applyComparator<GenericLess<IsAscending>>(
+            k_column, k_is_signed, source, *mapped_full, function_name, makePrefixKeySort<IsAscending>(get_key));
+    });
+    if (sorted_by_prefix_keys)
+        return result;
+    return applyComparator<GenericLess<IsAscending>>(k_column, k_is_signed, source, *mapped_full, function_name, DefaultSort{});
 }
 
 }

@@ -23,6 +23,16 @@ struct DefaultSort
     {
         ::sort(begin, end, compare);
     }
+
+    /// Sorts the first `middle - begin` elements, or all of them if `middle` is `end`.
+    template <typename RandomIt, typename Compare>
+    void operator()(RandomIt begin, RandomIt middle, RandomIt end, Compare compare)
+    {
+        if (middle == end)
+            ::sort(begin, end, compare);
+        else
+            ::partial_sort(begin, middle, end, compare);
+    }
 };
 
 struct DefaultPartialSort

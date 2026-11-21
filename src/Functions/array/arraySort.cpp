@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/arraySort.h>
+#include <Functions/array/arraySortPrefixKeys.h>
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
 #include <base/extended_types.h>
@@ -196,7 +197,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
 
     ColumnArray::Offset current_offset = 0;
 
-#define APPLY_COMPARATOR(CMP) \
+#define APPLY_COMPARATOR(CMP, SORT) \
     for (size_t i = 0; i < size; ++i) \
     { \
         auto next_offset = offsets[i]; \
@@ -206,13 +207,13 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
             if (limit) \
             { \
                 const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset); \
-                ::partial_sort(&permutation[current_offset], &permutation[current_offset + effective_limit], &permutation[next_offset], CMP); \
+                SORT(&permutation[current_offset], &permutation[current_offset + effective_limit], &permutation[next_offset], CMP); \
             } \
             else \
-                ::sort(&permutation[current_offset], &permutation[next_offset], CMP); \
+                SORT(&permutation[current_offset], &permutation[next_offset], CMP); \
         } \
         else \
-            ::sort(&permutation[current_offset], &permutation[next_offset], CMP); \
+            SORT(&permutation[current_offset], &permutation[next_offset], CMP); \
         current_offset = next_offset; \
     }
 
@@ -220,7 +221,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     else if (checkAndGetColumn<TYPE>(mapped.get())) \
     { \
         Less<positive, TYPE> cmp(*mapped); \
-        APPLY_COMPARATOR(cmp) \
+        APPLY_COMPARATOR(cmp, DefaultSort{}) \
     }
 
     if (false)
@@ -240,9 +241,19 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal64>)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal128>)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal256>)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnString)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFixedString)
 #undef DISPATCH_FOR_NONNULLABLE_COLUMN
+
+#define DISPATCH_FOR_NONNULLABLE_STRING_COLUMN(TYPE) \
+    else if (checkAndGetColumn<TYPE>(mapped.get())) \
+    { \
+        Less<positive, TYPE> cmp(*mapped); \
+        auto prefix_key_sort = makePrefixKeySort<positive>(prefixKeyGetter(assert_cast<const TYPE &>(*mapped))); \
+        APPLY_COMPARATOR(cmp, prefix_key_sort) \
+    }
+
+    DISPATCH_FOR_NONNULLABLE_STRING_COLUMN(ColumnString)
+    DISPATCH_FOR_NONNULLABLE_STRING_COLUMN(ColumnFixedString)
+#undef DISPATCH_FOR_NONNULLABLE_STRING_COLUMN
 
     else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(mapped.get()))
     {
@@ -252,7 +263,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     else if (checkAndGetColumn<TYPE>(&nullable->getNestedColumn())) \
     { \
         NullableLess<positive, TYPE> cmp(nullable->getNestedColumn(), null_map); \
-        APPLY_COMPARATOR(cmp) \
+        APPLY_COMPARATOR(cmp, DefaultSort{}) \
     }
 
         if (false)
@@ -272,19 +283,36 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal64>)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal128>)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal256>)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnString)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnFixedString)
+#undef DISPATCH_FOR_NULLABLE_COLUMN
+
+#define DISPATCH_FOR_NULLABLE_STRING_COLUMN(TYPE) \
+    else if (checkAndGetColumn<TYPE>(&nullable->getNestedColumn())) \
+    { \
+        const auto & nested_column = assert_cast<const TYPE &>(nullable->getNestedColumn()); \
+        NullableLess<positive, TYPE> cmp(nested_column, null_map); \
+        auto prefix_key_sort = makePrefixKeySort<positive>(makeNullablePrefixKeyGetter<positive>(prefixKeyGetter(nested_column), null_map)); \
+        APPLY_COMPARATOR(cmp, prefix_key_sort) \
+    }
+
+        DISPATCH_FOR_NULLABLE_STRING_COLUMN(ColumnString)
+        DISPATCH_FOR_NULLABLE_STRING_COLUMN(ColumnFixedString)
+#undef DISPATCH_FOR_NULLABLE_STRING_COLUMN
         else
         {
             GenericLess<positive> cmp(*mapped);
-            APPLY_COMPARATOR(cmp)
+            APPLY_COMPARATOR(cmp, DefaultSort{})
         }
-#undef DISPATCH_FOR_NULLABLE_COLUMN
     }
     else
     {
         GenericLess<positive> cmp(*mapped);
-        APPLY_COMPARATOR(cmp)
+        bool sorted_by_prefix_keys = callWithGenericStringPrefixKeyGetter(*mapped, [&](auto get_key)
+        {
+            auto prefix_key_sort = makePrefixKeySort<positive>(get_key);
+            APPLY_COMPARATOR(cmp, prefix_key_sort)
+        });
+        if (!sorted_by_prefix_keys)
+            APPLY_COMPARATOR(cmp, DefaultSort{})
     }
 #undef APPLY_COMPARATOR
 
