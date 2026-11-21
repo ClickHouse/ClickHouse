@@ -124,6 +124,8 @@ SQLQueryPiece applySimpleFunction(
 
                 res.store_method = StoreMethod::VECTOR_GRID;
                 res.metric_name_dropped = argument.metric_name_dropped;
+                /// The function keeps the series ids, so an order fixed by an inner sort*() call stays valid.
+                res.sort_rank_subquery = argument.sort_rank_subquery;
 
                 break;
             }

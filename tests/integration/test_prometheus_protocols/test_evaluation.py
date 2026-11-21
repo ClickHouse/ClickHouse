@@ -154,6 +154,41 @@ def execute_range_query_in_clickhouse_sql(query, start_time, end_time, step):
     )
 
 
+# Host label values for sort_by_label over many series: leading zeros and digit runs past Int64
+# make Prometheus's comparator non-transitive, so the order depends on its exact sort algorithm.
+def natsort_many_hosts(count):
+    hosts = []
+    for i in range(count):
+        if i % 5 == 4:
+            digits = "0" * ((i // 5) % 3 + 1) + str(i // 5)
+        elif i % 13 == 12:
+            digits = "9" * (2 + i // 13)
+        elif i % 7 == 3:
+            digits = "92233720368547758%02d" % i
+        else:
+            digits = "0" * (i % 3) + str((i * 37) % 61)
+        hosts.append("host" + digits)
+    return hosts
+
+
+# Expected Prometheus and ClickHouse results for the series of `name` in the order of `ordered_digits`.
+def natsort_many_expected(name, count, ordered_digits):
+    value_of = {host: i + 1 for i, host in enumerate(natsort_many_hosts(count))}
+    hosts = ["host" + digits for digits in ordered_digits]
+    result = {
+        "resultType": "vector",
+        "result": [
+            {"metric": {"__name__": name, "host": host}, "value": [200, str(value_of[host])]}
+            for host in hosts
+        ],
+    }
+    chresult = [
+        [f"[('__name__','{name}'),('host','{host}')]", "1970-01-01 00:03:20.000", value_of[host]]
+        for host in hosts
+    ]
+    return json.dumps(result), chresult
+
+
 # Sends all test data to the "protobuf_receiver" service and also to ClickHouse via the RemoteWrite protocol.
 def send_test_data():
     send_data([({"__name__": "up", "job": "prometheus"}, {1753176654.832: 1})])
@@ -561,6 +596,28 @@ def send_test_data():
                 {"__name__": "rate_bucket", "le": "+Inf"},
                 {300: 60, 330: 90, 360: 120},
             ),
+            # A digit run above the Int64 range: Prometheus compares it with other digit runs as a string.
+            (
+                {"__name__": "natsort_hosts", "host": "host9223372036854775808"},
+                {200: 3},
+            ),
+            (
+                {"__name__": "natsort_hosts", "host": "host923"},
+                {200: 2},
+            ),
+            (
+                {"__name__": "natsort_hosts", "host": "host99"},
+                {200: 1},
+            ),
+        ]
+    )
+
+    # Prometheus gives in-memory series to sort_by_label in arrival order, so send them in label order like its blocks.
+    send_data(
+        [
+            ({"__name__": name, "host": host}, {200: i + 1})
+            for name, count in [("natsort_twenty", 20), ("natsort_sixty", 60)]
+            for i, host in sorted(enumerate(natsort_many_hosts(count)), key=lambda item: item[1])
         ]
     )
 
@@ -3489,24 +3546,23 @@ def test_multiple_series_in_same_resultset():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "sort_by_label(rate(http_errors[100]), 'http_code')",
-    #     200,
-    #     '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "0.04"]}, {"metric": {"http_code": "404"}, "value": [200, "0.07"]}]}',
-    #     [
-    #         [
-    #             "[('http_code','401')]",
-    #             "1970-01-01 00:03:20.000",
-    #             "0.04",
-    #         ],
-    #         [
-    #             "[('http_code','404')]",
-    #             "1970-01-01 00:03:20.000",
-    #             "0.07",
-    #         ],
-    #     ]
-    # )
+    do_query_test(
+        "sort_by_label(rate(http_errors[100]), 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "0.04"]}, {"metric": {"http_code": "404"}, "value": [200, "0.07"]}]}',
+        [
+            [
+                "[('http_code','401')]",
+                "1970-01-01 00:03:20.000",
+                "0.04",
+            ],
+            [
+                "[('http_code','404')]",
+                "1970-01-01 00:03:20.000",
+                "0.07",
+            ],
+        ],
+    )
 
     do_query_test_expect_error(
         "rate({http_code='404'}[100])",
@@ -3522,6 +3578,238 @@ def test_multiple_series_in_same_resultset():
     #     "vector cannot contain metrics with the same labelset",
     #     "Multiple series have the same tags {'http_code': '404'}",
     # )
+
+
+def test_sort_functions():
+    # At timestamp 200: http_errors{http_code="401"} == 4, http_errors{http_code="404"} == 5.
+    do_query_test(
+        "sort(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label(http_errors, 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    # "9223372036854775808" does not fit Int64, so it is less than "923" and "99" by a string compare.
+    do_query_test(
+        "sort_by_label(natsort_hosts, 'host')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "natsort_hosts", "host": "host9223372036854775808"}, "value": [200, "3"]}, {"metric": {"__name__": "natsort_hosts", "host": "host99"}, "value": [200, "1"]}, {"metric": {"__name__": "natsort_hosts", "host": "host923"}, "value": [200, "2"]}]}',
+        [
+            ["[('__name__','natsort_hosts'),('host','host9223372036854775808')]", "1970-01-01 00:03:20.000", 3],
+            ["[('__name__','natsort_hosts'),('host','host99')]", "1970-01-01 00:03:20.000", 1],
+            ["[('__name__','natsort_hosts'),('host','host923')]", "1970-01-01 00:03:20.000", 2],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label_desc(natsort_hosts, 'host')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "natsort_hosts", "host": "host923"}, "value": [200, "2"]}, {"metric": {"__name__": "natsort_hosts", "host": "host99"}, "value": [200, "1"]}, {"metric": {"__name__": "natsort_hosts", "host": "host9223372036854775808"}, "value": [200, "3"]}]}',
+        [
+            ["[('__name__','natsort_hosts'),('host','host923')]", "1970-01-01 00:03:20.000", 2],
+            ["[('__name__','natsort_hosts'),('host','host99')]", "1970-01-01 00:03:20.000", 1],
+            ["[('__name__','natsort_hosts'),('host','host9223372036854775808')]", "1970-01-01 00:03:20.000", 3],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label_desc(http_errors, 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # PromQL sort* functions order the vector at the call site, and outer functions keep that order:
+    # sort(-http_errors) is ascending by the negated values (404 first), and abs() must not reorder it.
+    do_query_test(
+        "abs(sort(-http_errors))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "404"}, "value": [200, "5"]}, {"metric": {"http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # More than 12 and more than 50 series take the partition and pivot paths of Go's pdqsort.
+    for query, name, count, order in [
+        (
+            "sort_by_label(natsort_twenty, 'host')", "natsort_twenty", 20,
+            "0 00 001 002 0002 03 6 0013 015 037 39 0041 043 0052 054 56 9223372036854775803 9223372036854775810 "
+            "9223372036854775817 99",
+        ),
+        (
+            "sort_by_label_desc(natsort_twenty, 'host')", "natsort_twenty", 20,
+            "9223372036854775803 99 9223372036854775817 9223372036854775810 56 054 0052 043 0041 39 037 015 0013 6 03 "
+            "002 0002 001 0 00",
+        ),
+        (
+            "sort_by_label(natsort_sixty, 'host')", "natsort_sixty", 60,
+            "0 00 001 1 002 0002 03 004 05 0005 6 06 7 007 0008 008 09 009 0010 00011 011 12 0013 0014 015 016 0020 021 "
+            "022 23 0025 027 29 0031 35 037 39 0041 043 45 0047 51 0052 0053 054 055 56 0058 0059 060 9223372036854775803 "
+            "9223372036854775810 9223372036854775817 9223372036854775831 9223372036854775845 9223372036854775852 99 999 "
+            "9999 99999",
+        ),
+        (
+            "sort_by_label_desc(natsort_sixty, 'host')", "natsort_sixty", 60,
+            "9223372036854775852 9223372036854775845 9223372036854775831 9223372036854775817 9223372036854775810 "
+            "9223372036854775803 99999 9999 999 99 060 0059 0058 56 055 054 0053 0052 51 0047 45 043 0041 39 037 35 0031 "
+            "29 027 0025 23 022 021 0020 016 015 0014 0013 12 00011 011 0010 09 009 008 0008 7 007 06 6 0005 05 004 03 002 "
+            "0002 001 1 0 00",
+        ),
+    ]:
+        do_query_test(query, 200, *natsort_many_expected(name, count, order.split()))
+
+    # Label manipulation must also keep the order fixed by an inner sort call.
+    do_query_test(
+        "label_replace(sort_desc(http_errors), 'note', 'x', 'http_code', '.*')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404", "note": "x"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401", "note": "x"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404'),('note','x')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401'),('note','x')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # Binary operators between vectors keep the order of the left side (of the right side for group_right),
+    # and `or` puts the series added from the right side after the left ones, as Prometheus does.
+    do_query_test(
+        "sort_desc(http_errors) == http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) + http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "8"]}, {"metric": {"http_code": "404"}, "value": [200, "10"]}]}',
+        [
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 8],
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 10],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) * on(http_code) group_left http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "404"}, "value": [200, "25"]}, {"metric": {"http_code": "401"}, "value": [200, "16"]}]}',
+        [
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 25],
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 16],
+        ],
+    )
+
+    do_query_test(
+        "http_errors * on(http_code) group_right sort(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "16"]}, {"metric": {"http_code": "404"}, "value": [200, "25"]}]}',
+        [
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 16],
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 25],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) and http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        "sort(http_errors) > 4 or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors) < 5 or http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        'http_errors{http_code="404"} or sort(http_errors)',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # Functions making new series drop the order fixed by an inner sort call instead of losing the series.
+    do_query_test(
+        'count_values("value", sort(http_errors{http_code="401"}))',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"value": "4"}, "value": [200, "1"]}]}',
+        [["[('value','4')]", "1970-01-01 00:03:20.000", 1]],
+    )
+
+    do_query_test(
+        "sum(sort(http_errors)) / count(sort(http_errors))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "4.5"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 4.5]],
+    )
+
+    do_query_test(
+        'absent(sort(nonexistent_metric_name{job="api"}))',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "1"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 1]],
+    )
 
 
 def test_alignment_with_subquery_step():
@@ -3782,16 +4070,16 @@ def test_math_binary_operators():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "foo + bar",
-    #     150,
-    #     '{"resultType": "vector", "result": [{"metric": {"shape": "square", "size": "s"}, "value": [150, "740"]}, {"metric": {"shape": "circle", "size": "l"}, "value": [150, "1016"]}]}',
-    #     [
-    #         ["[('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 740],
-    #         ["[('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1016],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(foo + bar, 'shape')",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "1016"]}, {"metric": {"shape": "square", "size": "s"}, "value": [150, "740"]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1016],
+            ["[('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 740],
+        ],
+    )
 
     do_query_test(
         "(foo + bar)[50:10]",
@@ -3838,18 +4126,17 @@ def test_math_binary_operators():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "foo + on(shape) bar",
-    #     150,
-    #     '{"resultType": "vector", "result": [{"metric": {"shape": "square"}, "value": [150, "740"]}, {"metric": {"shape": "triangle"}, "value": [150, "110"]}, {"metric": {"shape": "circle"}, "value": [150, "1016"]}]}',
-    #     ''
-    #     [
-    #         ["[('shape','triangle')]", "1970-01-01 00:02:30.000", 110],
-    #         ["[('shape','square')]", "1970-01-01 00:02:30.000", 740],
-    #         ["[('shape','circle')]", "1970-01-01 00:02:30.000", 1016]
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(foo + on(shape) bar, 'shape')",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [150, "1016"]}, {"metric": {"shape": "square"}, "value": [150, "740"]}, {"metric": {"shape": "triangle"}, "value": [150, "110"]}]}',
+        [
+            ["[('shape','circle')]", "1970-01-01 00:02:30.000", 1016],
+            ["[('shape','square')]", "1970-01-01 00:02:30.000", 740],
+            ["[('shape','triangle')]", "1970-01-01 00:02:30.000", 110],
+        ],
+    )
 
     do_query_test(
         "(foo + on(shape) bar)[50:10]",
@@ -5099,17 +5386,17 @@ def test_aggregation_operators():
         [],
     )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "sum(bar) without (shape)",
-    #     120,
-    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "25"]}, {"metric": {"size": "s"}, "value": [120, "40"]}, {"metric": {"size": "xl"}, "value": [120, "8"]}]}',
-    #     [
-    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 25],
-    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 40],
-    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 8],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(sum(bar) without (shape), 'size')",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "25"]}, {"metric": {"size": "s"}, "value": [120, "40"]}, {"metric": {"size": "xl"}, "value": [120, "8"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:02:00.000", 25],
+            ["[('size','s')]", "1970-01-01 00:02:00.000", 40],
+            ["[('size','xl')]", "1970-01-01 00:02:00.000", 8],
+        ],
+    )
 
     do_query_test(
         "(sum(last_over_time(bar[10])) without (shape))[50:10]",
@@ -5229,19 +5516,19 @@ def test_aggregation_operators():
                 [["[]", "1970-01-01 00:02:00.000", "nan"]],
             )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # group replaces all values with 1.
     # {shape="circle", size="l"} and {shape="rectangle", size="l"} are merged to one group.
-    # do_query_test(
-    #     "group(bar) without (shape)",
-    #     120,
-    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "1"]}, {"metric": {"size": "s"}, "value": [120, "1"]}, {"metric": {"size": "xl"}, "value": [120, "1"]}]}',
-    #     [
-    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 1],
-    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 1],
-    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 1],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(group(bar) without (shape), 'size')",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "1"]}, {"metric": {"size": "s"}, "value": [120, "1"]}, {"metric": {"size": "xl"}, "value": [120, "1"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:02:00.000", 1],
+            ["[('size','s')]", "1970-01-01 00:02:00.000", 1],
+            ["[('size','xl')]", "1970-01-01 00:02:00.000", 1],
+        ],
+    )
 
     do_query_test(
         "(group(last_over_time(bar[10])) without (shape))[50:10]",
@@ -5427,17 +5714,17 @@ def test_aggregation_operators():
     #     [["[]", "[('1970-01-01 00:01:50.000',8.65),('1970-01-01 00:02:00.000',30.4),('1970-01-01 00:02:10.000',76),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',757.5)]"]],
     # )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # topk keeps all tags.
-    # do_query_test(
-    #     "topk(2, bar)",
-    #     140,
-    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [140, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [140, "700"]}]}',
-    #     [
-    #         ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:20.000", 90],
-    #         ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:20.000", 700],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(topk(2, bar), 'shape')",
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [140, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [140, "700"]}]}',
+        [
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:20.000", 90],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:20.000", 700],
+        ],
+    )
 
     do_query_test(
         "topk(2, last_over_time(bar[10]))[50:10]",
@@ -5528,16 +5815,16 @@ def test_aggregation_operators():
         [],
     )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "bottomk(2, bar)",
-    #     140,
-    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [140, "50"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [140, "8"]}]}',
-    #     [
-    #         ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:20.000", 50],
-    #         ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:20.000", 8],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(bottomk(2, bar), 'shape')",
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [140, "50"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [140, "8"]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:20.000", 50],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:20.000", 8],
+        ],
+    )
 
     do_query_test(
         "bottomk(2, last_over_time(bar[10]))[50:10]",
