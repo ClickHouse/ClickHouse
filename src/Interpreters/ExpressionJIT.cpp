@@ -200,6 +200,8 @@ public:
 
     const std::vector<FunctionBasePtr> & getNestedFunctions() const { return nested_functions; }
 
+    const CompileDAG & getCompileDAG() const { return dag; }
+
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         if (!compiled_function_holder)
@@ -511,7 +513,54 @@ const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFun
     return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
+{
+    if (!node.function_base)
+        return {};
+
+    const auto * llvm_function = typeid_cast<const LLVMFunction *>(node.function_base.get());
+    if (!llvm_function)
+        return {};
+
+    const auto & dag = llvm_function->getCompileDAG();
+    if (dag.getNodesCount() == 0 || dag.getInputNodesCount() != node.children.size())
+        return {};
+
+    /// The i-th INPUT of the compiled DAG is the i-th child of the node, see `compileFunctions`.
+    std::vector<const Node *> input_to_child(dag.getNodesCount(), nullptr);
+    for (size_t i = 0, next_child = 0; i < dag.getNodesCount(); ++i)
+        if (dag[i].type == CompileDAG::CompileType::INPUT)
+            input_to_child[i] = node.children[next_child++];
+
+    auto is_and = [&](size_t i)
+    {
+        return dag[i].type == CompileDAG::CompileType::FUNCTION && dag[i].function->getName() == "and";
+    };
+
+    NodeRawConstPtrs conjuncts;
+    if (!is_and(dag.getNodesCount() - 1))
+        return conjuncts;
+
+    std::vector<size_t> stack{dag.getNodesCount() - 1};
+    while (!stack.empty())
+    {
+        size_t i = stack.back();
+        stack.pop_back();
+        if (is_and(i))
+            stack.insert(stack.end(), dag[i].arguments.begin(), dag[i].arguments.end());
+        /// Only INPUTs are returned: `in` and its variants are never compiled (`FunctionIn` is not compilable and
+        /// a `Set` argument has no native type), so they stay children of `node` and `isAlwaysFalseByEmptySet` can
+        /// inspect their sets. If `in` becomes compilable, this walk must also handle its FUNCTION nodes in the DAG.
+        else if (input_to_child[i])
+            conjuncts.push_back(input_to_child[i]);
+    }
+    return conjuncts;
+}
+
+void ActionsDAG::compileFunctions(
+    size_t min_count_to_compile_expression,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
     struct Data
     {
@@ -655,9 +704,15 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
+            auto executable_function = fn->prepare(arguments);
+
+            /// Taken before the first replacement, so it holds the DAG as built.
+            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
+                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
+
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = fn->prepare(arguments);
+            node->function = std::move(executable_function);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;
