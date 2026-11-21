@@ -1050,10 +1050,9 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             /// we can't delete the local part, as if the changes were applied then inserted block appeared in
             /// `/blocks/`, and it can not be inserted again.
             ///
-            /// `actionAfterLastFailedRetry` is deliberately not used here: it only runs when the retry
-            /// controller itself terminates the loop (the retry limit is reached or `stopRetries` is called),
-            /// while this site must keep control on every unsuccessful exit (query timeout, `KILL QUERY`,
-            /// non-retryable errors). Instead, any exception leaving the recovery loop is treated as
+            /// `onGiveUp` is deliberately not used here: it does not run on every unsuccessful exit
+            /// (e.g. non-hardware `KeeperException` rethrows), while this site must keep control on every
+            /// unsuccessful exit (query timeout, `KILL QUERY`, non-retryable errors). Instead, any exception leaving the recovery loop is treated as
             /// "the commit status is unknown", and the local part is preserved - rolling it back could
             /// lose data that Keeper has committed.
             auto preserve_part_and_throw_unknown_status = [&](const String & recovery_failure)
@@ -1466,7 +1465,7 @@ void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr
             context->getProcessListElement()
         });
 
-    quorum_retries_ctl.actionAfterLastFailedRetry([&]
+    quorum_retries_ctl.onGiveUp([&]
     {
         ProfileEvents::increment(ProfileEvents::QuorumFailedInserts);
         /// We do not know whether or not data has been inserted in other replicas
