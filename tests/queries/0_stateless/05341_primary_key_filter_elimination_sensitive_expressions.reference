@@ -1,0 +1,8 @@
+pure_expression	1
+pure_lambda	1
+direct_side_effect	1
+lambda_side_effect	1
+captured_lambda_side_effect	1
+nested_lambda_side_effect	1
+enabled	29785	29785	29555	29555	29785	29555
+disabled	29785	29785	29555	29555	29785	29555

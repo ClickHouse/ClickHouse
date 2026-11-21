@@ -94,6 +94,20 @@ The drop queries also run when the test fails, and a test whose drop queries can
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Settings introduced by the tested build
+
+To compare a new opt-in optimization with a reference build that does not know its setting, mark that inline setting with `allow_missing_on_reference="1"`:
+
+```xml
+<settings>
+    <new_optimization allow_missing_on_reference="1">1</new_optimization>
+</settings>
+```
+
+The runner checks `system.settings` on the reference server (the first of two or more connections). It omits only annotated settings that are absent there and records each omission in the raw output. When the reference supports the setting, the value is applied on both sides. The setting remains required on every other server and in single-server runs; unknown unannotated settings still fail normally.
+
+Keep the setting out of the benchmark SQL: an unknown setting in a `SETTINGS` clause still prevents that query from running on the reference. The queries must have the same semantics with the optimization absent. This option is for SQL benchmarks; shell-script queries do not inherit the runner's settings. `--print-settings` prints the requested settings without probing a server, so its output requires a build that supports them.
+
 ### Queries whose time keeps growing with each run
 
 Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.

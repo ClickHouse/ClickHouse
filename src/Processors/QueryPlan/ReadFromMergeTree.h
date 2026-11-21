@@ -364,10 +364,16 @@ public:
         bool check_row_limits,
         bool skip_ranges_analysis,
         bool report_index_usage,
-        bool stop_at_first_match);
+        bool stop_at_first_match,
+        bool allow_exact_count_optimization = true);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
+    /// Collect speculative proofs after the caller has analyzed the ordinary read and checked its row limits.
+    /// These ranges can bridge gaps, so intersect them with the ordinary selection before using them.
+    /// Do not check execution row limits on this temporary analysis, report the index usage, or enable exact-count candidate policy.
+    AnalysisResultPtr selectRangesToReadForPredicateElimination() const;
+
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits,
     /// memoizing the result or reporting the index usage. The executed read analyzes again after its final mode is known.
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
@@ -772,6 +778,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    AnalysisResultPtr selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization, bool check_row_limits) const;
+
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
