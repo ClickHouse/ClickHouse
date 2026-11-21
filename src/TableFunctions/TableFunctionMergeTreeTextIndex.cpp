@@ -6,6 +6,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -116,7 +117,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
-    auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
+    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context));
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr();
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 

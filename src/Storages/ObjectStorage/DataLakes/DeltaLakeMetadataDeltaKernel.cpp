@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -599,10 +600,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
+    for (const auto & column : info.columns_description)
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = DeltaLake::getPhysicalName(column.name, physical_names_map);
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
@@ -631,8 +639,17 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
+    /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
+    /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
+    if (!snapshot->getPhysicalNamesMap().empty())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to DeltaLake tables with column mapping enabled is not supported");
+    }
+
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create();
+    delta_transaction->create(partition_columns, snapshot->getTableSchema());
 
     if (partition_columns.empty())
     {

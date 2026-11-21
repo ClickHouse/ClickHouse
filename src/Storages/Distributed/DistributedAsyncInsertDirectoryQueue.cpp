@@ -494,8 +494,11 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
+        /// The whole batch is sent with the `ClientInfo` of its first file, so files that the shard would
+        /// authenticate differently must never be merged into one batch.
         return std::tie(settings, query, client_info.query_kind) ==
                std::tie(other.settings, other.query, other.client_info.query_kind) &&
+               getRemoteAuthenticationIdentity(client_info) == getRemoteAuthenticationIdentity(other.client_info) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -505,6 +508,9 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
+            const auto [initial_user, initial_host] = getRemoteAuthenticationIdentity(batch_header.client_info);
+            hash_state.update(initial_user.data(), initial_user.size());
+            hash_state.update(initial_host.data(), initial_host.size());
             batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }

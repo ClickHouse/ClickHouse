@@ -86,7 +86,7 @@ add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
-# parquet/arrow/orc
+# parquet/arrow
 add_contrib (xsimd-cmake xsimd) # required by arrow
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
 add_contrib (avro-cmake avro) # requires: snappy

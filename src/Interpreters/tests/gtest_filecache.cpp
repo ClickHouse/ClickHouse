@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 
@@ -30,6 +31,7 @@
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
@@ -1724,6 +1726,65 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
 
+TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reserve_key_directory_failure");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_key_directory_failure", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("reserve_key_directory_failure_key");
+
+    /// A regular file at the key directory path makes `create_directories` fail, even as root.
+    const fs::path key_path = cache->getKeyPath(key, user);
+    fs::create_directories(key_path.parent_path());
+    std::ofstream(key_path) << "x";
+
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(holder->size(), 1u);
+    auto seg = *holder->begin();
+    ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+
+    /// On this branch `createBaseDirectory` throws for an error other than a full or read-only disk.
+    std::string failure_reason;
+    ASSERT_ANY_THROW(seg->reserve(8, 1000, failure_reason));
+    ASSERT_EQ(seg->getReservedSize(), 0u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 0u);
+
+    /// Releasing the last holder of the empty segment removes it, so the same offset gets
+    /// a new segment, which caches normally once the directory can be created.
+    seg.reset();
+    holder = nullptr;
+    fs::remove(key_path);
+    auto next_holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(next_holder->size(), 1u);
+    download(*next_holder->begin());
+    ASSERT_EQ(cache->getUsedCacheSize(), 8u);
+}
+
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
 {
     /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
@@ -1851,5 +1912,222 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
 
         auto found = query_limit.tryGetQueryContext(state_guard.lock());
         ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
+{
+    /// Regression: dynamic resize temporarily clears the queue iterator before
+    /// evicting a `PARTIALLY_DOWNLOADED` segment. The invariant must allow that
+    /// delayed-removal state.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("partial_dl_dynamic_resize");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("partial_dl_resize", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("partial_dl_resize_key");
+
+    /// Segment 1: `PARTIALLY_DOWNLOADED` with reserved size 8 and downloaded size 3.
+    {
+        auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+        ASSERT_EQ(holder->size(), 1u);
+        auto seg = *holder->begin();
+        ASSERT_EQ(seg->state(), State::EMPTY);
+
+        ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+        ASSERT_EQ(seg->state(), State::DOWNLOADING);
+
+        std::string failure_reason;
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+
+        /// `seg->write` expects the key directory to exist, as in `download`.
+        auto key_str = key.toString();
+        auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
+        if (!fs::exists(subdir))
+            fs::create_directories(subdir);
+        std::string data(3, 'a');
+        seg->write(data.data(), data.size(), seg->getCurrentWriteOffset());
+
+        FileSegment::complete(
+            FileSegmentPtr(seg),
+            /*allow_background_download=*/false,
+            /*force_shrink_to_downloaded_size=*/false);
+
+        ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED)
+            << "Test setup did not produce a PARTIALLY_DOWNLOADED segment; "
+               "got: " << FileSegment::stateToString(seg->state());
+        ASSERT_EQ(seg->getReservedSize(), 8u);
+        ASSERT_EQ(seg->getDownloadedSize(), 3u);
+    }
+
+    /// Segment 2: a `DOWNLOADED` segment to make resize evict real entries.
+    {
+        auto holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
+        ASSERT_EQ(holder->size(), 1u);
+        auto seg = *holder->begin();
+        ASSERT_EQ(seg->state(), State::EMPTY);
+        download(seg, /*complete=*/true);
+        ASSERT_EQ(seg->state(), State::DOWNLOADED);
+    }
+
+    /// Sanity: the partial segment is still in `PARTIALLY_DOWNLOADED`.
+    {
+        auto infos = cache->getFileSegmentInfos(key, user.user_id);
+        ASSERT_EQ(infos.size(), 2u);
+        bool found_partial = false;
+        for (const auto & info : infos)
+        {
+            if (info.range_left == 0 && info.range_right == 7)
+            {
+                ASSERT_EQ(info.state, State::PARTIALLY_DOWNLOADED);
+                ASSERT_EQ(info.downloaded_size, 3u);
+                found_partial = true;
+            }
+        }
+        ASSERT_TRUE(found_partial);
+    }
+
+    /// Trigger resize while the partial segment is in delayed-removal state.
+    DB::FileCacheSettings new_settings = settings;
+    new_settings[FileCacheSetting::max_size] = 4;
+    DB::FileCacheSettings actual_settings = settings;
+
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+    ASSERT_LE(cache->getUsedCacheSize(), 4u);
+}
+
+TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
+{
+    /// Regression: failed eviction must restore queue entries with reserved size
+    /// and clear delayed-removal state on the segment.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("failed_eviction_restore");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("failed_eviction_restore", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("failed_eviction_restore_key");
+
+    /// `PARTIALLY_DOWNLOADED` segment, reserved size 8 and downloaded size 3.
+    {
+        auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+        auto seg = *holder->begin();
+        ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+
+        auto key_str = key.toString();
+        auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
+        if (!fs::exists(subdir))
+            fs::create_directories(subdir);
+        std::string data(3, 'a');
+        seg->write(data.data(), data.size(), seg->getCurrentWriteOffset());
+
+        FileSegment::complete(FileSegmentPtr(seg), false, false);
+        ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED);
+        ASSERT_EQ(seg->getReservedSize(), 8u);
+        ASSERT_EQ(seg->getDownloadedSize(), 3u);
+    }
+
+    /// Second segment to keep the cache full and force eviction during resize.
+    {
+        auto holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
+        auto seg = *holder->begin();
+        download(seg, /*complete=*/true);
+        ASSERT_EQ(seg->state(), State::DOWNLOADED);
+    }
+
+    /// Both priority entries account for reserved size.
+    ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
+
+    /// Force the failed-eviction restore loop to run.
+    {
+        DB::FailPointInjection::enableFailPoint("file_cache_dynamic_resize_fail_to_evict");
+        SCOPE_EXIT({
+            DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
+        });
+
+        /// Trigger resize. The restore path must keep total queue size at 16.
+        DB::FileCacheSettings new_settings = settings;
+        new_settings[FileCacheSetting::max_size] = 4;
+        DB::FileCacheSettings actual_settings = settings;
+
+        ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+        /// Failed eviction reverts limits to the previous value.
+        ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
+
+        /// Release-visible check for restored reserved-size accounting.
+        ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+        ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
+
+        /// All segments must still be reachable from the priority queue.
+        {
+            auto infos = cache->getFileSegmentInfos(key, user.user_id);
+            ASSERT_EQ(infos.size(), 2u);
+            for (const auto & info : infos)
+                ASSERT_NE(info.queue_entry_type, FileCacheQueueEntryType::None);
+        }
+    }
+
+    /// A second resize verifies delayed-removal state was cleared.
+    {
+        DB::FileCacheSettings second_new_settings = settings;
+        second_new_settings[FileCacheSetting::max_size] = 4;
+        DB::FileCacheSettings second_actual = settings;
+
+        ASSERT_NO_THROW(cache->applySettingsIfPossible(second_new_settings, second_actual));
+        ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
 }

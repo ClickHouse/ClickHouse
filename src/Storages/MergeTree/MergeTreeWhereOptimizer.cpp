@@ -107,6 +107,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    if (estimator)
+        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -335,17 +338,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
         cond.columns_size = getColumnsSize(cond.table_columns);
 
-        /// Resolve each column to its physical storage name so that subcolumns
-        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
-        const auto & storage_columns_description = storage_metadata->getColumns();
-        for (const auto & col : cond.table_columns)
-        {
-            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
-                cond.table_storage_columns.insert(resolved->getNameInStorage());
-            else
-                cond.table_storage_columns.insert(col);
-        }
-
         cond.viable =
             !has_invalid_column
             /// Condition depend on some column. Constant expressions are not moved.
@@ -383,6 +375,22 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Find min position in PK of any column that is used in this condition.
             pk_positions.emplace(cond.min_position_in_primary_key);
         }
+
+        /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
+        /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+        const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
+        if (total_rows == 0)
+            /// No statistics: fall back to pure I/O cost.
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
+        else if (rejected_rows <= 0)
+            /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
+            cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+        else if (cond.columns_size == 0)
+            /// Compact parts don't track per-column compressed sizes: fall back to pure selectivity,
+            /// otherwise every condition collapses to cost 0 and keeps its original position.
+            cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
+        else
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size) / rejected_rows;
 
         res.emplace_back(std::move(cond));
     }
@@ -476,20 +484,17 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         }
     };
 
-    /// Move condition and all other conditions that depend on the same set of physical storage columns.
-    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
-    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
-    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
+    /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
         move_to_prewhere_conditions(cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
-        /// Move all other viable conditions that depend on the same set of storage columns.
+        /// Move all other viable conditions that depend on the same set of columns.
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
         {
-            if (jt->viable && jt->table_storage_columns == cond_it->table_storage_columns)
+            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
             {
                 move_to_prewhere_conditions(jt++);
             }

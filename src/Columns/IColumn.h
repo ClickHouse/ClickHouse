@@ -132,9 +132,15 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
+    /// If column isn't ColumnBLOB, return itself.
+    /// If column is ColumnBLOB, deserializes the BLOB back into the column it holds.
+    [[nodiscard]] virtual Ptr convertToFullColumnIfDetached() const { return getPtr(); }
+
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        Ptr converted = convertToFullColumnIfConst()
+        /// Detached goes first: the BLOB holds the serialized form of everything below it.
+        Ptr converted = convertToFullColumnIfDetached()
+            ->convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
             ->convertToFullColumnIfSparse()
             ->convertToFullColumnIfLowCardinality();

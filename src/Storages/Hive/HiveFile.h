@@ -5,9 +5,10 @@
 
 #include <vector>
 #include <memory>
+#include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
-#include <arrow/adapters/orc/adapter.h>
+#include <Processors/Formats/Impl/ORC/Reader.h>
 #include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
@@ -217,18 +218,18 @@ public:
     bool useSplitMinMaxIndex() const override;
 
 private:
-    static Range buildRange(const orc::ColumnStatistics * col_stats);
+    static Range buildRange(const ORC::Proto::ColumnStatistics * col_stats);
 
     void loadFileMinMaxIndexImpl() override;
     void loadSplitMinMaxIndexesImpl() override;
-    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
+    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics);
     void prepareReader();
     void prepareColumnMapping();
 
     std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
-    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
+    std::unique_ptr<ORC::Reader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 

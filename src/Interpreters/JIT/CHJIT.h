@@ -89,7 +89,7 @@ public:
 
 private:
 
-    std::unique_ptr<llvm::Module> createModuleForCompilation();
+    std::unique_ptr<llvm::Module> createModuleForCompilation(llvm::LLVMContext & context);
 
     CompiledModule compileModule(std::unique_ptr<llvm::Module> module);
 
@@ -99,7 +99,6 @@ private:
 
     static std::unique_ptr<llvm::TargetMachine> getTargetMachine();
 
-    llvm::LLVMContext context;
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::DataLayout layout;
     std::unique_ptr<JITCompiler> compiler;

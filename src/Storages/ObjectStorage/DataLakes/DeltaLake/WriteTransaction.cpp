@@ -45,18 +45,13 @@ UInt64 getCurrentTime()
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void exportTable(
-    std::shared_ptr<arrow::Table> table,
+void exportRecordBatch(
+    const arrow::RecordBatch & batch,
     ffi::FFI_ArrowArray & array,
     ffi::FFI_ArrowSchema & schema)
 {
-    auto batch = table->CombineChunksToBatch();
-    if (!batch.ok())
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to create chunks batch: {}", batch.status().ToString());
-
     arrow::Status status = arrow::ExportRecordBatch(
-        **batch,
+        batch,
         reinterpret_cast<ArrowArray *>(&array),
         reinterpret_cast<ArrowSchema *>(&schema));
 
@@ -150,7 +145,7 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create()
+void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -167,16 +162,28 @@ void WriteTransaction::create()
             engine.get()),
         "with_engine_info");
 
-    write_context = ffi::get_write_context(transaction.get());
-    write_schema = DeltaLake::getWriteSchema(write_context.get());
+    if (partition_columns.empty())
+    {
+        /// Unpartitioned tables: let the kernel build the write context.
+        unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+            "get_unpartitioned_write_context");
+        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
 
-    auto * write_path_raw = static_cast<std::string *>(
-        ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
-    if (!write_path_raw)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
+        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
+            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
+        if (!write_path_raw)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
-    write_path = *write_path_raw;
-    delete write_path_raw;
+        write_path = *write_path_raw;
+    }
+    else
+    {
+        /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
+        /// write schema and path directly; per-partition values are handled when committing.
+        write_schema = table_schema;
+        write_path = kernel_helper->getTableLocation();
+    }
 
     auto pos = write_path.find("://");
     if (pos == std::string::npos)
@@ -230,31 +237,67 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array;
-    ffi::FFI_ArrowSchema schema;
-    SCOPE_EXIT({
-        if (schema.release)
-            schema.release(&schema);
-    });
-    exportTable(write_metadata, array, schema);
-
-    KernelEngineData engine_data;
-    try
+    /// Metadata too large for one Arrow record batch comes back as several table chunks. Recombining them
+    /// would hit the same 32-bit offset limit, so each record batch is added to the transaction on its own.
+    /// `TableBatchReader` yields nothing for an empty table, which still has to reach the kernel as before.
+    arrow::RecordBatchVector batches;
+    if (write_metadata->num_rows() == 0)
     {
-        /// Takes ownership of `array` (but not`schema`) if successfully called.
-        engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
-            "get_engine_data");
+        auto empty_batch = arrow::RecordBatch::MakeEmpty(write_metadata->schema());
+        if (!empty_batch.ok())
+            throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+                "Failed to create an empty record batch: {}", empty_batch.status().ToString());
+        batches.push_back(*std::move(empty_batch));
     }
-    catch (...)
+    else
     {
-        if (array.release)
-            array.release(&array);
-        throw;
+        arrow::TableBatchReader batch_reader(*write_metadata);
+        while (true)
+        {
+            std::shared_ptr<arrow::RecordBatch> batch;
+            arrow::Status read_status = batch_reader.ReadNext(&batch);
+            if (!read_status.ok())
+                throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+                    "Failed to read a record batch: {}", read_status.ToString());
+            if (!batch)
+                break;
+            batches.push_back(std::move(batch));
+        }
     }
 
-    ffi::add_files(transaction.get(), engine_data.release());
-    auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
+    for (const auto & batch : batches)
+    {
+        ffi::FFI_ArrowArray array{};
+        ffi::FFI_ArrowSchema schema{};
+        SCOPE_EXIT({
+            if (schema.release)
+                schema.release(&schema);
+        });
+        exportRecordBatch(*batch, array, schema);
+
+        KernelEngineData engine_data;
+        try
+        {
+            /// Takes ownership of `array` (but not`schema`) if successfully called.
+            engine_data = DeltaLake::KernelUtils::unwrapResult(
+                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+                "get_engine_data");
+        }
+        catch (...)
+        {
+            if (array.release)
+                array.release(&array);
+            throw;
+        }
+
+        ffi::add_files(transaction.get(), engine_data.release());
+    }
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::commit(transaction.release(), engine.get()),
+        "commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
 }

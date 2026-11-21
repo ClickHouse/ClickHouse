@@ -21,13 +21,19 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
+#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
 
 #include <Core/Settings.h>
 
 #include <filesystem>
+#include <set>
 #include <utility>
+
+#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -64,7 +70,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const std::string & config_prefix,
     const ContextPtr & context,
     bool run_access_check,
-    bool run_local_paths_check) const
+    bool run_local_paths_check,
+    RemoteHostFilterCheck remote_host_filter_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -84,7 +91,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
 }
 
 #if USE_AWS_S3
@@ -117,6 +124,37 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
+/// A custom disk with an endpoint that remote_url_allow_hosts does not allow: a log line per disk
+/// and one system.warnings entry that lists all such disks.
+static void warnAboutDiskNotAllowedByRemoteHostFilter(const std::string & disk_name, const S3::URI & uri, const ContextPtr & global_context)
+{
+    Poco::URI endpoint_uri(uri.endpoint);
+    /// host[:port], as in an <s3_bucket> entry.
+    std::string host_and_port = endpoint_uri.getAuthority();
+    if (auto at = host_and_port.rfind('@'); at != std::string::npos)
+        host_and_port.erase(0, at + 1);
+    const std::string s3_bucket_entry = host_and_port + "/" + uri.bucket;
+
+    LOG_WARNING(
+        getLogger("ObjectStorageFactory"),
+        "Custom disk `{}` uses endpoint `{}` that is not allowed by `remote_url_allow_hosts`. The disk was created before "
+        "this check and is kept while loading existing metadata (server start or UNDROP). Add `<s3_bucket>{}</s3_bucket>` "
+        "to the list or recreate the tables that use it.",
+        disk_name, s3_bucket_entry, s3_bucket_entry);
+
+    /// system.warnings keeps one message per type, so the message lists all disks seen so far.
+    /// No lock: disk creation runs under storage_policies_mutex in Context::getOrCreateDisk.
+    static std::set<std::string> disks;
+    disks.insert(fmt::format("`{}` -> `{}`", disk_name, s3_bucket_entry));
+    global_context->addOrUpdateWarningMessage(
+        Context::WarningType::CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
+        PreformattedMessage::create(
+            "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
+            "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` entries for them or recreate "
+            "the tables that use them.",
+            fmt::join(disks, ", ")));
+}
+
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
      auto creator = [](
@@ -125,13 +163,23 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
+        /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
+        /// For a disk loaded from existing metadata a rejection is only reported: throwing here would fail
+        /// the table load, or the server start for a database metadata disk.
+        if (remote_host_filter_check != RemoteHostFilterCheck::None
+            && !uri.checkRemoteHostFilter(
+                context->getGlobalContext()->getRemoteHostFilter(),
+                /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+            warnAboutDiskNotAllowedByRemoteHostFilter(name, uri, context->getGlobalContext());
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -156,7 +204,8 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const std::string & config_prefix,
            const ContextPtr & context,
            bool /* run_access_check */,
-           bool /* run_local_paths_check */) -> ObjectStoragePtr
+           bool /* run_local_paths_check */,
+           RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -180,7 +229,8 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -219,7 +269,8 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -247,7 +298,8 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool run_local_paths_check) -> ObjectStoragePtr
+        bool run_local_paths_check,
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes;

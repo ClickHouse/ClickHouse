@@ -12,9 +12,12 @@
 namespace DB
 {
 
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+
 struct TopKThresholdTracker
 {
-    explicit TopKThresholdTracker(int direction_) : direction(direction_) {}
+    TopKThresholdTracker(int direction_, DataTypePtr data_type_) : direction(direction_), data_type(std::move(data_type_)) {}
 
     void testAndSet(const Field & value)
     {
@@ -65,12 +68,15 @@ struct TopKThresholdTracker
     bool isSet() const { return is_set; } /// unlocked read is fine
 
     int getDirection() const { return direction; }
+    /// The type of the sort column the published values are taken from.
+    const DataTypePtr & getDataType() const { return data_type; }
 
 private:
     Field threshold;
     mutable SharedMutex mutex;
     std::atomic<bool> is_set{false};
     int direction{0};
+    DataTypePtr data_type;
 };
 
 using TopKThresholdTrackerPtr = std::shared_ptr<TopKThresholdTracker>;

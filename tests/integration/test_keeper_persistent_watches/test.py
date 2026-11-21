@@ -6,6 +6,7 @@ import pytest
 import os
 import threading
 import re
+import struct
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -343,3 +344,57 @@ def test_clear_watches(started_cluster):
     destroy_zk_client(client)
     data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
     assert "zk_watch_count\t0" in data
+
+CHECK_WATCH, REMOVE_WATCH, ADD_WATCH = 17, 18, 106
+ZOK, ZBADARGUMENTS, ZNOWATCHER = 0, -8, -121
+# (opnum, type or mode, expected error): types are 1..5 and modes 0..1, so the last request of each op is valid.
+UNKNOWN_TYPE_REQUESTS = [
+    (CHECK_WATCH, 0, ZBADARGUMENTS),
+    (CHECK_WATCH, 6, ZBADARGUMENTS),
+    (CHECK_WATCH, 1, ZNOWATCHER),
+    (REMOVE_WATCH, 0, ZBADARGUMENTS),
+    (REMOVE_WATCH, 6, ZBADARGUMENTS),
+    (REMOVE_WATCH, 1, ZNOWATCHER),
+    (ADD_WATCH, -1, ZBADARGUMENTS),
+    (ADD_WATCH, 2, ZBADARGUMENTS),
+    (ADD_WATCH, 0, ZOK),
+]
+
+def recv_exactly(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise EOFError("Keeper closed the connection")
+        data += chunk
+    return data
+
+def send_unknown_type_requests():
+    with get_keeper_socket(node1.name) as sock:
+        handshake = struct.pack(">iqiqi16s", 0, 0, 30000, 0, 16, b"\0" * 16)
+        sock.sendall(struct.pack(">i", len(handshake)) + handshake)
+        reply = recv_exactly(sock, struct.unpack(">i", recv_exactly(sock, 4))[0])
+        assert struct.unpack(">q", reply[8:16])[0] != 0
+        path = b"/testUnknownWatchType"
+        for xid, (opnum, value, expected) in enumerate(UNKNOWN_TYPE_REQUESTS, start=1):
+            body = struct.pack(">iii", xid, opnum, len(path)) + path + struct.pack(">i", value)
+            sock.sendall(struct.pack(">i", len(body)) + body)
+            reply = recv_exactly(sock, struct.unpack(">i", recv_exactly(sock, 4))[0])
+            reply_xid, _, error = struct.unpack(">iqi", reply[:16])
+            assert (reply_xid, error) == (xid, expected), (opnum, value)
+
+def test_watch_requests_with_unknown_type(started_cluster):
+    # Through Raft (`quorum_reads`), then a restart that replays the logged requests, then through the local read path.
+    config = "/etc/clickhouse-server/config.d/keeper_config1.xml"
+    try:
+        node1.replace_in_config(config, "<raft_logs_level>", "<quorum_reads>1</quorum_reads><raft_logs_level>")
+        node1.restart_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node1)
+        assert "quorum_reads=true" in keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
+        send_unknown_type_requests()
+    finally:
+        node1.replace_in_config(config, "<quorum_reads>1</quorum_reads>", "")
+        node1.restart_clickhouse(kill=True)
+    keeper_utils.wait_until_connected(cluster, node1)
+    assert "quorum_reads=false" in keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
+    send_unknown_type_requests()

@@ -90,6 +90,30 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
 namespace DeltaLake
 {
 
+namespace
+{
+
+/// A data file with the size its `add` action records.
+struct DataObjectInfo : public DB::ObjectInfo
+{
+    DataObjectInfo(std::string path_, int64_t size_)
+        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
+        , size(size_)
+    {
+    }
+
+    std::optional<size_t> getFileSizeHint() const override
+    {
+        if (size > 0)
+            return static_cast<size_t>(size);
+        return std::nullopt;
+    }
+
+    const int64_t size;
+};
+
+}
+
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 private:
@@ -120,7 +144,6 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
-        DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -135,7 +158,6 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
-        , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -437,13 +459,9 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
-            {
-                chassert(object->getObjectMetadata());
-                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
-            }
+                callback(DB::FileProgress(0, object->getFileSizeHint().value_or(0)));
             return object;
         }
     }
@@ -510,8 +528,28 @@ public:
         void * engine_context,
         ffi::SharedScanMetadata * scan_metadata)
     {
-        ffi::visit_scan_metadata(scan_metadata, engine_context, Iterator::scanCallback);
-        ffi::free_scan_metadata(scan_metadata);
+        auto * iter = static_cast<Iterator *>(engine_context);
+        /// Release the handle on all exit paths to avoid leaking it.
+        SCOPE_EXIT({
+            ffi::free_scan_metadata(scan_metadata);
+        });
+        /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the `extern "C"`
+        /// frame, so store it (like `scanCallback`) and let `scanDataFunc` rethrow after it returns.
+        try
+        {
+            KernelUtils::unwrapResult(
+                ffi::visit_scan_metadata(
+                    scan_metadata,
+                    iter->kernel_snapshot_state->engine.get(),
+                    engine_context,
+                    Iterator::scanCallback),
+                "visit_scan_metadata");
+        }
+        catch (...) // Ok: exception saved via setScanException, rethrown by scanDataFunc
+        {
+            iter->setScanException();
+            iter->data_files_cv.notify_all();
+        }
     }
 
     static bool scanCallback(
@@ -597,7 +635,7 @@ public:
 
         std::string full_path = DB::resolvePathInsideTable(
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
-        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
 
         LOG_TEST(
@@ -641,7 +679,6 @@ private:
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
-    const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -748,10 +785,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     struct StatsVisitor
     {
+        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+
+        ffi::SharedExternEngine * const engine;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
         std::optional<size_t> total_rows = 0;
+        /// Set when `visitData` catches an exception; rethrown by the caller after
+        /// `scan_metadata_next` returns (the callback runs inside a Rust `extern "C"` frame).
+        std::exception_ptr exception;
 
         static bool visit(
             ffi::NullableCvoid engine_context,
@@ -784,12 +827,31 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
         {
-            ffi::visit_scan_metadata(scan_metadata, engine_context, StatsVisitor::visit);
-            ffi::free_scan_metadata(scan_metadata);
+            auto * visitor = static_cast<StatsVisitor *>(engine_context);
+            /// Release the handle on all exit paths to avoid leaking it.
+            SCOPE_EXIT({
+                ffi::free_scan_metadata(scan_metadata);
+            });
+            /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the
+            /// `extern "C"` frame, so store it and let the caller rethrow after the call returns.
+            try
+            {
+                KernelUtils::unwrapResult(
+                    ffi::visit_scan_metadata(
+                        scan_metadata,
+                        visitor->engine,
+                        engine_context,
+                        StatsVisitor::visit),
+                    "visit_scan_metadata");
+            }
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+            }
         }
     };
 
-    StatsVisitor visitor;
+    StatsVisitor visitor(state->engine.get());
 
     while (true)
     {
@@ -799,6 +861,10 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
                 &visitor,
                 StatsVisitor::visitData),
             "scan_metadata_next");
+
+        /// Rethrow only now that `scan_metadata_next` has returned to C++ (see `visitData`).
+        if (visitor.exception)
+            std::rethrow_exception(visitor.exception);
 
         if (!have_scan_data)
             break;
@@ -911,23 +977,24 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
 
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
+    KernelSnapshotBuilder snapshot_builder(KernelUtils::unwrapResult(
+        ffi::get_snapshot_builder(
+            KernelUtils::toDeltaString(helper_.getTableLocation()),
+            engine.get()),
+        "get_snapshot_builder"));
     if (snapshot_version_.has_value())
     {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot_at_version(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get(),
-                snapshot_version_.value()),
-            "snapshot");
+        auto * builder_handle = snapshot_builder.get();
+        ffi::snapshot_builder_set_version(&builder_handle, snapshot_version_.value());
     }
-    else
-    {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get()),
-            "snapshot");
-    }
+    /// `snapshot_builder_build` consumes the handle, so release() prevents the RAII destructor
+    /// from double-freeing on success. The destructor still frees on early exception paths.
+    snapshot = KernelUtils::unwrapResult(
+        ffi::snapshot_builder_build(snapshot_builder.release()),
+        "snapshot_builder_build");
+
     snapshot_version = ffi::version(snapshot.get());
     scan = KernelUtils::unwrapResult(
         ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
@@ -966,7 +1033,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
-        object_storage,
         filter_dag,
         callback,
         list_batch_size,
@@ -982,12 +1048,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get());
+        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
-        auto read_schema = getReadSchemaFromSnapshot(state->scan.get());
+        auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
 
         LOG_TRACE(

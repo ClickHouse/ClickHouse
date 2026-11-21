@@ -8,10 +8,13 @@
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
+
+#include <Interpreters/Context.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -838,6 +841,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1124,6 +1128,8 @@ private:
 
                 if (!url.getUserInfo().empty())
                 {
+                    Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
                     Poco::Net::HTTPCredentials http_credentials;
                     Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
@@ -1274,9 +1280,8 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
+        it = deserializer_cache.try_emplace(
+            schema_id, output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings).first;
     }
     return it->second;
 }

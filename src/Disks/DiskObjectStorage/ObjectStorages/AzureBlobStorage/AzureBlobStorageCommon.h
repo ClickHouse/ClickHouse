@@ -146,6 +146,8 @@ struct ConnectionParams
 
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    String getConnectionURLWithoutQuery() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;
@@ -162,6 +164,10 @@ BlobClientOptions getClientOptions(
     bool for_disk);
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

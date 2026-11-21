@@ -157,11 +157,15 @@ void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) cons
         elem->serialializeKindStackBinary(out);
 }
 
-void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
-    SerializationInfo::deserializeFromKindsBinary(in);
+    SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
+
+    /// `Detached` and `Replicated` always wrap a whole column, never a single tuple element:
+    /// no writer builds such an element, and both are unwrapped only at the top level of a column.
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED).without(ISerialization::Kind::REPLICATED);
     for (const auto & elem : elems)
-        elem->deserializeFromKindsBinary(in);
+        elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
 }
 
 void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const

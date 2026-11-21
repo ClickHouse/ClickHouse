@@ -95,7 +95,12 @@ public:
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
+    /// A change equal to the current value is dropped from `changes`.
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
+    void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
@@ -104,8 +109,12 @@ public:
 private:
     enum ReactionOnViolation
     {
+        /// Any violation, an unknown name or an uncastable value throws.
         THROW_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value is dropped.
         CLAMP_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value throws.
+        CLAMP_ON_VIOLATION_THROW_ON_INVALID,
     };
 
     struct Constraint
@@ -165,7 +174,8 @@ private:
     bool checkImpl(const Settings & current_settings,
                   SettingChange & change,
                   ReactionOnViolation reaction,
-                  SettingSource source) const;
+                  SettingSource source,
+                  bool ignore_unchanged_settings = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 

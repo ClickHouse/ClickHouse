@@ -76,9 +76,6 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse/fastops
-[submodule "contrib/orc"]
-	path = contrib/orc
-	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -205,7 +202,7 @@
 	url = https://github.com/ClickHouse/azure-sdk-for-cpp
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
-	url = https://github.com/zlib-ng/minizip-ng
+	url = https://github.com/ClickHouse/minizip-ng
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -214,7 +211,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/ClickHouse/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -338,7 +335,7 @@
 	url = https://github.com/ClickHouse/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
-	url = https://github.com/ClickHouse/mongo-c-driver.git
+	url = https://github.com/ClickHouse/mongo-c-driver
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git

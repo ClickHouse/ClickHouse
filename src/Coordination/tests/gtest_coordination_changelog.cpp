@@ -4,9 +4,15 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <thread>
+
+namespace DB::FailPoints
+{
+    extern const char keeper_changelog_preallocate_no_space[];
+}
 
 
 template<typename TestType>
@@ -63,6 +69,35 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
     EXPECT_EQ(changelog.last_entry()->get_term(), 77);
     EXPECT_EQ(changelog.entry_at(1)->get_term(), 77);
     EXPECT_EQ(changelog.log_entries(1, 2)->size(), 1);
+}
+
+/// A failed preallocation (e.g. `ENOSPC`) fails the batch, but must leave the writer usable:
+/// the next append retries the preallocation. Previously the append completion thread
+/// finalized the writer without holding the writer lock, and the next append dereferenced
+/// the destroyed file buffer.
+TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterPreallocationFailure)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000, .max_size = 1024 * 1024},
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_preallocate_no_space);
+
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_FALSE(changelog.flush());
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        changelog.append(entry);
+        EXPECT_TRUE(changelog.flush());
+    }
 }
 
 TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
@@ -442,6 +477,45 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
         DB::FlushSettings(),
         this->keeper_context);
     changelog_reader.init(5, 0);
+}
+
+TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsInvalidSize)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+    auto entry = getLogEntry("hello_world", 10);
+    changelog.append(entry);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    /// A pack of one entry holds the entry count, the entry size and the entry itself. A peer controls the size,
+    /// so only the size is rewritten here.
+    auto entries = changelog.pack(1, 1);
+    const auto entry_size = static_cast<int32_t>(entries->size() - 2 * sizeof(int32_t));
+    auto apply_with_size = [&](int32_t size)
+    {
+        entries->pos(sizeof(int32_t));
+        entries->put(size);
+        changelog.apply_pack(2, *entries);
+    };
+
+    /// On master a size past the entry over-reads the pack in `nuraft::buffer::get` and a negative size
+    /// wraps the allocation size in `nuraft::buffer::alloc`.
+    EXPECT_THROW(apply_with_size(entry_size + 1), DB::Exception);
+    EXPECT_THROW(apply_with_size(-1), DB::Exception);
+    EXPECT_EQ(changelog.next_slot(), 2);
+
+    apply_with_size(entry_size);
+    changelog.apply_pack(3, *changelog.pack(1, 0));
+    changelog.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog.next_slot(), 3);
+    EXPECT_EQ(changelog.entry_at(2)->get_term(), 10);
 }
 
 

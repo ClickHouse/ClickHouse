@@ -328,8 +328,9 @@ struct PlainStringDecoder : public PageDecoder
     {
         for (size_t i = 0; i < num_values; ++i)
         {
-            UInt32 x;
-            memcpy(&x, data, 4); /// omitting range check because input is padded
+            requireRemainingBytes(4);
+            UInt32 x = 0;
+            memcpy(&x, data, 4);
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
             data += len;
@@ -350,8 +351,9 @@ struct PlainStringDecoder : public PageDecoder
             col_str.reserve(col_str.size() + to_reserve);
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                requireRemainingBytes(4);
+                UInt32 x = 0;
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 if (!filter || filter[filter_offset + i])
@@ -370,12 +372,7 @@ struct PlainStringDecoder : public PageDecoder
                     num_pass += filter[filter_offset + i];
                 if (num_pass == 0)
                 {
-                    for (size_t i = 0; i < num_values; ++i)
-                    {
-                        UInt32 x;
-                        memcpy(&x, data, 4);
-                        data += 4 + size_t(x);
-                    }
+                    skip(num_values);
                     return;
                 }
                 chars_buf.reserve(num_pass * 32); // rough estimate
@@ -383,7 +380,8 @@ struct PlainStringDecoder : public PageDecoder
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
                 {
-                    UInt32 x;
+                    requireRemainingBytes(4);
+                    UInt32 x = 0;
                     memcpy(&x, data, 4);
                     size_t len = 4 + size_t(x);
                     requireRemainingBytes(len);
@@ -405,8 +403,9 @@ struct PlainStringDecoder : public PageDecoder
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                requireRemainingBytes(4);
+                UInt32 x = 0;
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 offset += len;
@@ -1676,6 +1675,8 @@ Int96Converter::Int96Converter()
 
 void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
+    const bool saturate = overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+
     std::span<char> to_span = col.insertRawUninitialized(num_values);
     Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
     for (size_t i = 0; i < num_values; ++i)
@@ -1700,16 +1701,17 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// This interpretation is consistent with the arrow reader code (DecodeInt96Timestamp in
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
-        bool overflow = false;
-        Int64 x;
-        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
-        overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
-        overflow |= common::addOverflow(x, nanos, x);
 
-        if (overflow)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
-
-        to[i] = x;
+        /// julian_day comes from Int32, so neither the subtraction nor the product can overflow Int128.
+        const Int128 total = Int128(julian_day - 2440588l) * day_nanos + nanos;
+        if (total < std::numeric_limits<Int64>::min() || total > std::numeric_limits<Int64>::max())
+        {
+            if (!saturate)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+            to[i] = julian_day < 2440588l ? std::numeric_limits<Int64>::min() : std::numeric_limits<Int64>::max();
+        }
+        else
+            to[i] = static_cast<Int64>(total);
     }
 }
 

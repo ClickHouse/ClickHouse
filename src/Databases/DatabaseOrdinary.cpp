@@ -30,6 +30,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
+#include <Storages/TableZnodeInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/Stopwatch.h>
@@ -42,6 +44,7 @@
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -141,12 +144,36 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
+void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    /// A conversion mints a path the table never had, so the substituted name is validated as strictly
+    /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
+    /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
+    const auto & server_settings = local_context->getServerSettings();
+    TableZnodeInfo::resolve(
+        server_settings[ServerSetting::default_replica_path],
+        server_settings[ServerSetting::default_replica_name],
+        StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
+        create_query,
+        LoadingStrictnessLevel::SECONDARY_CREATE,
+        local_context,
+        /*validate_substitutions=*/true);
+}
+
+String DatabaseOrdinary::getConvertedMergeTreeEngineName(const String & engine_name, bool replicated)
+{
+    if (replicated)
+        return "Replicated" + engine_name;
+    chassert(engine_name.starts_with("Replicated"));
+    return engine_name.substr(strlen("Replicated"));
+}
+
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
     auto engine = make_intrusive<ASTFunction>();
-    String engine_name;
+    const String engine_name = getConvertedMergeTreeEngineName(storage->engine->name, replicated);
 
     if (replicated)
     {
@@ -163,8 +190,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = "Replicated" + storage->engine->name;
     }
     else
     {
@@ -174,8 +199,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = storage->engine->name.substr(strlen("Replicated"));
     }
 
     /// Set new engine for the old query
@@ -232,6 +255,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
+    checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
@@ -414,6 +438,15 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -421,6 +454,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
         || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -505,7 +541,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 
@@ -787,7 +823,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };

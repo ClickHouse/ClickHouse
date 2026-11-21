@@ -725,13 +725,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     # DeltaLake table functions are not available under Memory Sanitizer (Rust code is not instrumented)
@@ -742,9 +742,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:
@@ -764,13 +764,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     if has_delta_lake:
@@ -780,9 +780,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:
@@ -885,7 +885,7 @@ def test_create_dictionary():
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
-    for toggle, secret in enumerate(["[HIDDEN]", password]):
+    for toggle, (secret, url) in enumerate([("[HIDDEN]", "[HIDDEN]"), (password, "http://localhost:8123/dict.tsv")]):
         assert (
             node.query(f"SHOW CREATE TABLE dict1 {show_secrets}={toggle}")
             == f"CREATE DICTIONARY default.dict1\\n(\\n    `n` int DEFAULT 0,\\n    `m` int DEFAULT 1\\n)\\nPRIMARY KEY n\\nSOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
@@ -893,12 +893,12 @@ def test_create_dictionary():
 
         assert (
             node.query(f"SHOW CREATE TABLE dict2 {show_secrets}={toggle}")
-            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
         )
 
         assert (
             node.query(f"SHOW CREATE TABLE dict3 {show_secrets}={toggle}")
-            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
         )
 
         assert (
@@ -907,8 +907,8 @@ def test_create_dictionary():
             )
             == (
                 f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
-                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
-                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'{url}\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
             )
         )
 
@@ -919,11 +919,11 @@ def test_create_dictionary():
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
 
             "CREATE DICTIONARY dict2 (`n` int DEFAULT 0) PRIMARY KEY n "
-            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
+            "SOURCE(HTTP(URL '[HIDDEN]' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
 
             "CREATE DICTIONARY dict3 (`n` int DEFAULT 0) PRIMARY KEY n "
-            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
+            "SOURCE(HTTP(URL '[HIDDEN]' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
         ],
         must_not_contain=[password],
@@ -1029,6 +1029,89 @@ def test_backup_table_s3_named_collection():
 
     node.query("DROP TABLE IF EXISTS backup_test_s3_nc")
     node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
+
+
+def test_database_backup_engine_s3():
+    """Secrets in the nested S3(...) destination of the `Backup` database engine must be masked in logs,
+    both for the explicit-key form and for the named-collection form (including session_token and the
+    Google ADC secrets). The CREATE fails because the backup does not exist, but it is still logged."""
+    password = new_password()
+
+    queries = [
+        f"CREATE DATABASE backup_db_s3_1 ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '{password}'))",
+        f"CREATE DATABASE backup_db_s3_2 ENGINE = Backup('', S3(named_collection_6, url = 'http://minio1:9001/root/data/db_backup_nonexistent', access_key_id = 'minio', secret_access_key = '{password}', session_token = '{password}', google_adc_client_secret = '{password}'))",
+    ]
+    for query in queries:
+        node.query_and_get_answer_with_error(query)
+
+    check_logs(
+        must_contain=[
+            "ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '[HIDDEN]'))",
+            "session_token = '[HIDDEN]'",
+            "secret_access_key = '[HIDDEN]'",
+            "google_adc_client_secret = '[HIDDEN]'",
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_1")
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
+
+
+def test_database_backup_engine_azure_display_surfaces():
+    """A live `Backup` database over an `AzureBlobStorage` locator: `account_key` must not reach
+    `SHOW CREATE DATABASE` or `system.databases.engine_full`. Only `S3` locators are reconstructed
+    argument by argument, so an Azure one keeps its engine name and arity and hides every argument."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    # A backup destination is write-once and the container is emptied only when the cluster starts,
+    # so give every run its own blob path: a repeat inside one session hits BACKUP_ALREADY_EXISTS.
+    blob = "db_backup_azure_surfaces_" + "".join(
+        random.choice(string.ascii_lowercase) for _ in range(8)
+    )
+    locator = (
+        f"AzureBlobStorage('{azure_storage_account_url}', '{cluster.azurite_container}', "
+        f"'{blob}', '{azure_account_name}', '{azure_account_key}')"
+    )
+    masked_locator = (
+        "AzureBlobStorage('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')"
+    )
+    surfaces = [
+        "SHOW CREATE DATABASE backup_db_azure_view",
+        "SELECT engine_full FROM system.databases WHERE name = 'backup_db_azure_view'",
+    ]
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("CREATE DATABASE backup_db_azure_src")
+    node.query(
+        "CREATE TABLE backup_db_azure_src.t (x int) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO backup_db_azure_src.t SELECT * FROM numbers(10)")
+    node.query(f"BACKUP DATABASE backup_db_azure_src TO {locator} FORMAT Null")
+    node.query(
+        f"CREATE DATABASE backup_db_azure_view ENGINE = Backup('backup_db_azure_src', {locator})"
+    )
+
+    # TSVRaw so the locator is compared as written rather than through TSV escaping.
+    for surface in surfaces:
+        shown = node.query(f"{surface} FORMAT TSVRaw")
+        assert masked_locator in shown, shown
+        assert azure_account_key not in shown, shown
+
+    # The key is in the locator, so its absence above is masking rather than an argument that the
+    # regenerated definition never carried.
+    for surface in surfaces:
+        shown = node.query(f"{surface} {show_secrets}=1 FORMAT TSVRaw")
+        assert azure_account_key in shown, shown
+
+    # The masked surfaces belong to a working database, not to one that failed to open.
+    assert node.query("SELECT count() FROM backup_db_azure_view.t") == "10\n"
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
 
 
 def test_backup_table_azure_named_collection():

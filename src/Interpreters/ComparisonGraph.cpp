@@ -40,9 +40,16 @@ ASTPtr normalizeAtom(const ASTPtr & atom, ContextPtr)
     {
         if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
         {
-            auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
-            new_func->setIsOperator(func->isOperator());
-            res = new_func;
+            /// The AST here is not analyzed, so a malformed comparison with the wrong number of
+            /// arguments (e.g. `less(x)` from a fuzzed constraint expression) can reach this point.
+            /// Only binary comparisons can be normalized by swapping their arguments; anything else
+            /// is left unchanged and ignored later, where `arguments.size() == 2` is checked.
+            if (func->arguments && func->arguments->children.size() == 2)
+            {
+                auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+                new_func->setIsOperator(func->isOperator());
+                res = new_func;
+            }
         }
     }
 

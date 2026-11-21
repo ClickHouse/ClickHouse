@@ -186,6 +186,8 @@ Default value: empty string.
 
 URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
 
+Setting it is the same data flow as `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, so it requires the `WRITE` grant on the `S3` source. A grant limited by a URL filter is not enough, because the move writes keys that are built from `after_processing_move_prefix` and the source keys, not from the URI. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
+
 Possible values:
 
 - String.

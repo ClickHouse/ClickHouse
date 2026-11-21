@@ -1171,7 +1171,7 @@ namespace ErrorCodes
     in the Keeper, the cache will update as soon as possible, so that we are
     able to filter the duplicated inserts in the memory.
     )", 0) \
-    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
     How many records may be in the ClickHouse Keeper log if there is inactive
     replica. An inactive replica becomes lost when when this number exceed.
 

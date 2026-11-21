@@ -286,12 +286,6 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
-void ReplxxLineReader::setLastIsDelimiter(bool flag)
-{
-    replxx_last_is_delimiter = flag;
-}
-
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader
     (
@@ -342,7 +336,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
     }
 
-    rx.install_window_change_handler();
+    /// The handler of `SIGWINCH` is process-wide. In the embedded mode the process is the server,
+    /// and the pseudoterminal is not its controlling terminal, so the signal is never delivered.
+    if (!options.embedded_mode)
+        rx.install_window_change_handler();
 
     auto callback = [&suggest = options.suggest, this] (const String & context, size_t context_size)
     {
@@ -357,7 +354,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+    {
+        rx.set_highlighter_callback([this](const String & query, std::vector<Replxx::Color> & colors, int cursor_position)
+        {
+            highlighter(query, colors, cursor_position, last_is_delimiter);
+        });
+    }
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
@@ -365,16 +367,17 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (options.ignore_shell_suspend)
+    /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
+    if (options.ignore_shell_suspend || options.embedded_mode)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
     {
         /// If we allow multiline and there is already something in the input, start a newline.
         /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && multiline && !replxx_last_is_delimiter)
+        if (highlighter && multiline && !last_is_delimiter)
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
-        replxx_last_is_delimiter = false;
+        last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.

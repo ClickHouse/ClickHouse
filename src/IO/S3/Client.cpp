@@ -31,6 +31,7 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Base64.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -78,6 +79,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
@@ -1041,9 +1043,9 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
 
     /// The endpoint is taken from an attacker-controllable 301 response (Location header or
     /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
+    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). Unlike the Poco 307
+    /// path in PocoHTTPClient, this also accepts `<s3_bucket>` entries. Throws UNACCEPTABLE_URL.
+    result.checkRemoteHostFilter(client_configuration.remote_host_filter);
 
     return result;
 }
@@ -1196,6 +1198,21 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     if (!server_side_encryption_customer_key_base64.empty())
     {
+        /// `base64Decode` throws on characters outside the alphabet but skips whitespace and ignores padding bits,
+        /// so the round trip below accepts only the canonical base64 of an AES-256 key, the only key SSE-C takes.
+        String customer_key;
+        try
+        {
+            customer_key = base64Decode(server_side_encryption_customer_key_base64);
+        }
+        catch (const Poco::DataFormatException &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+        }
+
+        if (customer_key.size() != AES256_KEY_BYTES || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+
         /// See Client::GeneratePresignedUrlWithSSEC().
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
@@ -1204,10 +1221,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
             server_side_encryption_customer_key_base64});
 
-        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
-        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
     }
 
     // These will be added after request signing

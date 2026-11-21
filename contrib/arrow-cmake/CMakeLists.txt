@@ -57,18 +57,9 @@ else()
 endif()
 
 
-# === orc
-set(ORC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++")
-set(ORC_INCLUDE_DIR "${ORC_SOURCE_DIR}/include")
-set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
-# set(ORC_SOURCE_WRAP_DIR "${ORC_SOURCE_DIR}/wrap")
-
-set(ORC_BUILD_SRC_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src")
-set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
-
-set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
+# Used by `flight.cmake` to generate the Arrow Flight sources.
 if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(PROTOBUF_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
     set(GRPC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
@@ -76,16 +67,6 @@ else ()
     set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
     set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 endif()
-set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
-
-add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
-        COMMAND ${PROTOBUF_EXECUTABLE}
-        -I ${PROTO_DIR}
-        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto"
-        # Without these, the generated sources are not regenerated when the schema or
-        # `protoc` itself changes, and a stale `orc_proto.pb.h` is compiled instead.
-        DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE})
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -107,128 +88,6 @@ target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
 set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
 
-# arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
-# Apple Clang compiler failed to compile this code without specifying c++11 standard.
-# As result these compiler features detected as absent. In result it failed to compile orc itself.
-# In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
-if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set(CXX11_FLAGS "-std=c++0x")
-endif ()
-
-set (ORC_CXX_HAS_INITIALIZER_LIST 1)
-set (ORC_CXX_HAS_NOEXCEPT 1)
-set (ORC_CXX_HAS_NULLPTR 1)
-set (ORC_CXX_HAS_OVERRIDE 1)
-set (ORC_CXX_HAS_UNIQUE_PTR 1)
-set (ORC_CXX_HAS_CSTDINT 1)
-set (ORC_CXX_HAS_THREAD_LOCAL 1)
-
-include(orc_check.cmake)
-configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
-
-
-# ARROW_ORC + adapters/orc/CMakefiles
-set(ORC_SRCS
-        "${CMAKE_CURRENT_BINARY_DIR}/orc_proto.pb.h"
-        "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.cc"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.hh"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.cc"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.hh"
-        "${ORC_SOURCE_SRC_DIR}/Bpacking.hh"
-        "${ORC_SOURCE_SRC_DIR}/BpackingDefault.cc"
-        "${ORC_SOURCE_SRC_DIR}/BpackingDefault.hh"
-        "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
-        "${ORC_SOURCE_SRC_DIR}/ByteRLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnReader.hh"
-        "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnWriter.hh"
-        "${ORC_SOURCE_SRC_DIR}/Common.cc"
-        "${ORC_SOURCE_SRC_DIR}/Dictionary.cc"
-        "${ORC_SOURCE_SRC_DIR}/DictionaryLoader.cc"
-        "${ORC_SOURCE_SRC_DIR}/Compression.cc"
-        "${ORC_SOURCE_SRC_DIR}/Compression.hh"
-        "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.cc"
-        "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.hh"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.cc"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.hh"
-        "${ORC_SOURCE_SRC_DIR}/Dispatch.hh"
-        "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
-        "${ORC_SOURCE_SRC_DIR}/Geospatial.cc"
-        "${ORC_SOURCE_SRC_DIR}/Int128.cc"
-        "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
-        "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.hh"
-        "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.hh"
-        "${ORC_SOURCE_SRC_DIR}/Options.hh"
-        "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLE.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEv1.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEv2.hh"
-        "${ORC_SOURCE_SRC_DIR}/Reader.cc"
-        "${ORC_SOURCE_SRC_DIR}/Reader.hh"
-        "${ORC_SOURCE_SRC_DIR}/RleDecoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleEncoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/SchemaEvolution.cc"
-        "${ORC_SOURCE_SRC_DIR}/SchemaEvolution.hh"
-        "${ORC_SOURCE_SRC_DIR}/Statistics.cc"
-        "${ORC_SOURCE_SRC_DIR}/Statistics.hh"
-        "${ORC_SOURCE_SRC_DIR}/StripeStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/StripeStream.hh"
-        "${ORC_SOURCE_SRC_DIR}/Timezone.cc"
-        "${ORC_SOURCE_SRC_DIR}/Timezone.hh"
-        "${ORC_SOURCE_SRC_DIR}/TypeImpl.cc"
-        "${ORC_SOURCE_SRC_DIR}/TypeImpl.hh"
-        "${ORC_SOURCE_SRC_DIR}/Utils.hh"
-        "${ORC_SOURCE_SRC_DIR}/Vector.cc"
-        "${ORC_SOURCE_SRC_DIR}/Writer.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/InputStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/InputStream.hh"
-        "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/OutputStream.hh"
-        "${ORC_SOURCE_SRC_DIR}/io/Cache.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/Cache.hh"
-        "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.hh"
-        "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.hh"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.hh"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.hh"
-        "${ORC_SOURCE_SRC_DIR}/sargs/TruthValue.cc"
-        )
-
-add_library(_orc ${ORC_SRCS})
-target_link_libraries(_orc PRIVATE
-    ch_contrib::protobuf
-    ch_contrib::lz4
-    ch_contrib::snappy
-    ch_contrib::zlib
-    ch_contrib::zstd)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC
-    ${ORC_INCLUDE_DIR}
-    "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
-target_compile_options(_orc PRIVATE
-    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
-)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
-target_include_directories(_orc SYSTEM PRIVATE
-    ${ORC_SOURCE_SRC_DIR}
-    ${ORC_SOURCE_WRAP_DIR}
-    ${ORC_BUILD_SRC_DIR}
-    ${ORC_ADDITION_SOURCE_DIR}
-    ${ARROW_SRC_DIR})
 
 # === arrow
 
@@ -240,11 +99,8 @@ configure_file("${LIBRARY_DIR}/util/config_internal.h.cmake" "${ARROW_GENERATED_
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 # find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
-# grep -v 'csv' | grep -v 'acero' | grep -v 'dataset' | grep -v 'testing' | grep -v 'gpu' | grep -v 'engine' | grep -v 'filesystem' | grep -v 'benchmark.cc'
+# grep -v 'csv' | grep -v 'acero' | grep -v 'dataset' | grep -v 'testing' | grep -v 'gpu' | grep -v 'engine' | grep -v 'filesystem' | grep -v 'benchmark.cc' | grep -v 'adapters/orc'
 set(ARROW_SRCS
-        "${LIBRARY_DIR}/adapters/orc/adapter.cc"
-        "${LIBRARY_DIR}/adapters/orc/options.cc"
-        "${LIBRARY_DIR}/adapters/orc/util.cc"
         "${LIBRARY_DIR}/array/array_base.cc"
         "${LIBRARY_DIR}/array/array_binary.cc"
         "${LIBRARY_DIR}/array/array_decimal.cc"
@@ -466,10 +322,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
         "${LIBRARY_DIR}/visitor.cc"
-
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/util.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
         )
 
 add_definitions(-DARROW_WITH_BROTLI)
@@ -514,10 +366,6 @@ target_link_libraries(_arrow PRIVATE
 # ARROW_HAVE_* SIMD defines. PUBLIC so the headers are visible to _parquet too (it links _arrow
 # PUBLIC).
 target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
-target_link_libraries(_arrow PUBLIC _orc)
-
-add_dependencies(_arrow protoc)
-
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 

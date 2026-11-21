@@ -275,6 +275,14 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 }
 
 
+bool StorageMaterializedPostgreSQL::hasBucketedMapSerialization() const
+{
+    if (auto nested = tryGetNested())
+        return nested->hasBucketedMapSerialization();
+    return false;
+}
+
+
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, getNested());

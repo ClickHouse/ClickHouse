@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 
@@ -601,18 +602,23 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
     result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
 
-    result.storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)
         return result;
 
-    auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-    if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage))
     {
-        result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
-        return result;
+        /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
+        auto dictionary = storage_dictionary->getDictionary(planner_context->getQueryContext());
+        if (dictionary->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        {
+            /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
+            result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
+            return result;
+        }
     }
 
-    result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
     if (result.storage_key_value)
         return result;
 

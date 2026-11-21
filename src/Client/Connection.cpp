@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
@@ -78,6 +79,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -912,6 +914,20 @@ void Connection::sendQuery(
             disconnect();
     });
 
+    /// Over the cluster secret a shard authenticates as `initial_user` without a password, so forward
+    /// only an `initial_user` equal to the authenticated `current_user`. Skip the check when
+    /// `current_user` is empty -- server-internal paths (async `Distributed` insert, buffer flush) have none.
+    if (!cluster_secret.empty() && client_info && !client_info->current_user.empty()
+        && client_info->initial_user != client_info->current_user)
+    {
+        /// A mismatch means a forged SECONDARY_QUERY impersonating another user -- including an empty
+        /// initial_user, which the shard would otherwise run with full access -- so refuse it.
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Refusing to forward a query over the cluster secret: its initial_user '{}' differs "
+            "from the authenticated user '{}'.",
+            client_info->initial_user, client_info->current_user);
+    }
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -1524,7 +1540,9 @@ void Connection::initBlockInput()
     if (!block_in)
     {
         initMaybeCompressedInput();
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+        /// The server may send marshalled result blocks; their consumers convert them back.
+        block_in = std::make_unique<NativeReader>(
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 

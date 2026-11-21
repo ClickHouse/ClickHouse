@@ -427,7 +427,12 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
 {
     std::lock_guard lock(jit_lock);
 
-    auto module = createModuleForCompilation();
+    /// A fresh context per compile: `LLVMContext` never frees the constants it interns, and the optimizer
+    /// creates new ones for every distinct literal, so a long-lived context grows without bound.
+    /// Declared before `module`, which must be destroyed first.
+    auto context = std::make_unique<llvm::LLVMContext>();
+
+    auto module = createModuleForCompilation(*context);
     compile_function(*module);
     auto module_info = compileModule(std::move(module));
 
@@ -435,7 +440,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
     return module_info;
 }
 
-std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
+std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation(llvm::LLVMContext & context)
 {
     std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit" + std::to_string(current_module_key), context);
     module->setDataLayout(layout);
@@ -566,10 +571,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())

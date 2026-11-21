@@ -147,6 +147,8 @@ private:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     const ObjectStorageQueueTableMetadata & getTableMetadata() const;
+    /// Returns nullptr if the table is not started up or is already shut down.
+    std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(

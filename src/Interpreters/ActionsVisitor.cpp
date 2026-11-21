@@ -33,6 +33,7 @@
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/StorageProxy.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1280,7 +1281,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
 
-                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                if (StorageSet * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
             }
 

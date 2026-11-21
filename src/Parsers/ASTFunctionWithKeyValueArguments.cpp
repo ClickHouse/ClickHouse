@@ -8,6 +8,20 @@
 namespace DB
 {
 
+namespace
+{
+    /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
+    /// the custom HTTP headers of the `HTTP` source, whose values often carry API tokens. The headers
+    /// are hidden as a whole, names included: the query is logged before the dictionary source
+    /// validates its structure, so a malformed definition must not leak either.
+    /// The `url` and `endpoint` of the `HTTP` source are hidden whole: the userinfo, the path or the query can carry credentials.
+    bool isSecretKey(const String & key)
+    {
+        return key == "password" || key == "headers" || key == "header"
+            || key == "url" || key == "endpoint";
+    }
+}
+
 String ASTPair::getID(char) const
 {
     return "pair";
@@ -30,9 +44,9 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     if (second_with_brackets)
         ostr << "(";
 
-    if (!settings.show_secrets && (first == "password"))
+    if (!settings.show_secrets && isSecretKey(first))
     {
-        /// Hide password in the definition of a dictionary:
+        /// Hide the password and the HTTP headers in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
@@ -59,7 +73,16 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return (first == "password") || second->hasSecretParts();
+    if (isSecretKey(first))
+        return true;
+    /// The `uri` is a secret part only when it carries a password, see `formatImpl`.
+    if (first == "uri")
+    {
+        String uri = second->formatWithSecretsOneLine();
+        if (maskURIPassword(&uri))
+            return true;
+    }
+    return second->hasSecretParts();
 }
 
 

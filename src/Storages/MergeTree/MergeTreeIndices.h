@@ -350,6 +350,11 @@ void setIndexValidator(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
+/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
+/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
+/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
+/// Does nothing for other index types.
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);

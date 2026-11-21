@@ -26,6 +26,10 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
+    /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
+    /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
+    bool supportsTruncate() const override { return false; }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
@@ -51,7 +55,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -139,6 +143,7 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getTargetTable()->supportsDeduplication(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
@@ -241,13 +246,13 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
             return std::nullopt;
 
-        return target->getColumnSizes();
+        return target->tryGetColumnSizes(query_context);
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }

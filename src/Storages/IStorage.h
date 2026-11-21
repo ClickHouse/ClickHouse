@@ -167,6 +167,9 @@ public:
     virtual bool supportsSubcolumns() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
+    /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
+    /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
+    virtual bool hasBucketedMapSerialization() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -193,8 +196,9 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
@@ -489,6 +493,10 @@ public:
     virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
+
+    /// Return true if the storage supports TRUNCATE operation.
+    /// Storages without their own data (e.g. View) return false.
+    virtual bool supportsTruncate() const { return true; }
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

@@ -215,12 +215,19 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
+    std::lock_guard guard(mutex);
+
+    /// shutdown() is allowed to run before or during startup() (see its declaration) and nulls `view`.
+    if (!view)
+        return;
+
     if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
+
+    /// `set_handle` is not thread safe and shutdown() resets it under `mutex`.
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
 
-    std::lock_guard guard(mutex);
     scheduleRefresh(guard);
 }
 

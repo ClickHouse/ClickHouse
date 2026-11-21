@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUOTA_EXCEEDED;
+    extern const int QUOTA_REQUIRES_CLIENT_KEY;
 }
 
 
@@ -304,6 +305,18 @@ void EnabledQuota::checkExceeded(QuotaType quota_type) const
         return;
     auto loaded = intervals.load();
     Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
+}
+
+
+void EnabledQuota::checkClientKeySupplied() const
+{
+    if (!requires_client_key)
+        return;
+    throw Exception(
+        ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY,
+        "Quota {} (for user {}) requires a client supplied key.",
+        intervals.load()->quota_name,
+        getUserName());
 }
 
 

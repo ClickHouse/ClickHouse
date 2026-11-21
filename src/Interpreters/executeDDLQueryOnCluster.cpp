@@ -194,6 +194,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         entry.initiator_user = context->getUserName();
         entry.initiator_user_roles = context->getAccessControl().tryReadNames(context->getCurrentRoles());
     }
+
+    /// The workers run the query as the initiator's user and roles only if the entry carries them.
+    const bool workers_use_initiator_user = !entry.initiator_user.empty() && entry.version >= DDLLogEntry::INITIATOR_USER_VERSION;
+    if (params.additional_access_check)
+        params.additional_access_check(/* throw_if_unresolved = */ !workers_use_initiator_user);
+
     ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 

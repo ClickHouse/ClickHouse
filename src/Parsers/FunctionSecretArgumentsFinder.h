@@ -28,6 +28,9 @@ public:
         /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
         /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
         virtual bool tryGetLiteralText(String * res) const = 0;
+        /// A `SETTINGS` clause among the arguments (`remote(..., SETTINGS ...)`): not a positional
+        /// argument, and it hides its own secret values when formatted.
+        virtual bool isSettings() const { return false; }
     };
     class Arguments
     {
@@ -107,6 +110,13 @@ protected:
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
+    /// The raw indexes of the arguments that are not `key = value` pairs, in order. A positional
+    /// argument after the first named one is hidden instead of listed.
+    std::vector<size_t> classifyPositionalArguments();
+
+    /// Hides the positional argument at `slot`, counting only the positional arguments.
+    void markPositionalSecretArgument(size_t slot);
+
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
     /// (`extra_credentials` carries the assume-role secret `external_id`; its non-secret identifiers
     /// stay visible, see isNonSecretExtraCredentialsKey). The parsers accept them at any position, not
@@ -157,7 +167,37 @@ protected:
 
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
+    /// Hides every `extra_credentials(...)` whole, its keys included: a key can be written as anything, a credential too.
+    void maskAzureExtraCredentials();
+    /// The key of a `key = value` argument if it is one of the keys an Azure named collection accepts. Any other left
+    /// operand can be the credential itself (`'sp=r&sig=...' = 'x'`), so its argument is hidden whole.
+    static std::optional<String> tryGetAzureKey(const AbstractFunction & equals);
+    /// Hides every override from `start` on that this rule cannot read: one whose key an Azure named collection does not
+    /// accept or whose value is no plain literal (it can nest a credential), and every connection override when there are
+    /// several: only one is read, and only one can be partly shown.
+    void maskUnreadAzureCollectionOverrides(size_t start);
+    /// The raw indexes of the arguments the Azure parser assigns slots to, the ones before `start` (the cluster name) as
+    /// written: it strips the `SETTINGS` clause and the first `extra_credentials(...)`, and a `key = value` takes no slot.
+    /// Also hides the value of a key the explicit form does not read (all of an argument whose key is no Azure key), and
+    /// every argument when a second `extra_credentials(...)` shifts the slots.
+    std::vector<size_t> azureSlotArguments(size_t start);
+    /// The raw index of the argument holding a credential, if any: the two-argument shape takes a shared access signature
+    /// beside the url (`endpoint.sas_auth`), the longer ones an `account_key` - unless the fourth names a format.
+    std::optional<size_t> azureCredentialArgument(const std::vector<size_t> & slot_arguments, size_t url_arg_idx) const;
+    /// After the collection name every argument must be an override or `extra_credentials(...)`; a positional one is
+    /// invalid but logged before validation rejects it, and can be a credential.
+    void maskPositionalsAfterAzureCollection(size_t start);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
+    /// Hides a connection value that no rule here can show: a URL carrying a credential of its own
+    /// (`user:key@`, a SAS `?sig=...`), or a value that is not a plain string literal.
+    void maskUnshowableAzureConnectionValue(size_t index, const AbstractFunction::Argument & value, bool argument_is_named);
+    /// The same, for the `connection_string` and `storage_account_url` overrides of a named collection from `start` on.
+    void maskUnshowableAzureConnectionOverrides(size_t start);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
@@ -166,6 +206,18 @@ protected:
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
+
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
 
     void findRemoteFunctionSecretArguments();
 
@@ -191,6 +243,10 @@ protected:
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;
