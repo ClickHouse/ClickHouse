@@ -170,7 +170,7 @@ print(t, (m.get(t, "") if t else ""))
         printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "(no release tag)" "-" "-" "⚠️  NO TAG — investigate"
         continue
     fi
-    # Age from the annotated tag object's tagger date — exactly what auto_release.py
+    # Age from the annotated tag object's tagger date — exactly what auto_release_job.py
     # uses (repo.get_git_tag(ref.object.sha).tagger.date). Fall back to the GitHub
     # Release publish date only if the tag object carries no date (e.g. a lightweight
     # tag): a valid recent git tag alone is healthy, even with no published Release.
