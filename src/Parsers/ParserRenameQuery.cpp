@@ -137,7 +137,7 @@ RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
 
 Renames one or more tables.
 
-Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned.
+Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system, and two [`Atomic`](/reference/engines/database-engines/atomic) databases must store their metadata on the same [disk](/reference/engines/database-engines/atomic#metadata-disk). Otherwise, an error is returned.
 If you rename multiple tables in one query, the operation is not atomic. It may be partially executed, and queries in other sessions may get `Table ... does not exist ...` error.
 
 **Syntax**
@@ -185,6 +185,7 @@ This task can also be accomplished with a [`RENAME`](/reference/statements/renam
 
 <Note>
 The `EXCHANGE` query is supported by the [`Atomic`](/reference/engines/database-engines/atomic) and [`Shared`](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) database engines only.
+Two `Atomic` databases can exchange tables or dictionaries only if they store their metadata on the same [disk](/reference/engines/database-engines/atomic#metadata-disk).
 </Note>
 
 **Syntax**
