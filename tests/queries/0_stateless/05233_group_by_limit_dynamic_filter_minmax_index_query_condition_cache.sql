@@ -57,12 +57,12 @@ SETTINGS log_comment = '05233_qcc_orderby_2';
 
 SYSTEM FLUSH LOGS query_log;
 
--- The first run selects all 75 granules; the repeated one hits the cache and selects only those it kept.
+-- The first run selects all 75 granules; the repeated one hits the cache and selects only the one holding the result.
 SELECT
     splitByChar('_', log_comment)[3] AS arm,
     anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_1')) = 75,
     anyIf(ProfileEvents['QueryConditionCacheHits'], endsWith(log_comment, '_2')) > 0,
-    anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_2')) * 10 < anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_1'))
+    anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_2')) = 1
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05233_qcc_groupby_1', '05233_qcc_groupby_2', '05233_qcc_orderby_1', '05233_qcc_orderby_2')
