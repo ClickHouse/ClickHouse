@@ -77,33 +77,33 @@ public:
         return std::make_shared<FunctionIcebergTruncate>(context_);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return false;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     /// Documentation-only — implements the Iceberg `truncate(W, v)` transform.
     /// For string-like inputs the result is `String`; integers widen via internal
     /// `plus`/`minus` calls (e.g. `UInt32 -> Int64`) and `Decimal(P, S)` becomes
     /// `Decimal(max P, S)`, which isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const UInt, StringOrFixedString | NativeInteger | Decimal) -> Any";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -111,7 +111,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided
         /// in create/Constructor? Two reasons:
@@ -174,9 +174,9 @@ public:
 
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
     {
         /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
         if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
@@ -184,7 +184,7 @@ public:
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
@@ -238,18 +238,20 @@ public:
         std::unreachable();
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 };
+
+}
 
 REGISTER_FUNCTION(IcebergTruncate)
 {
@@ -262,8 +264,6 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
-}
-
 }
 
 }

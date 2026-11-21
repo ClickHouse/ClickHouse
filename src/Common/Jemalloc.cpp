@@ -146,7 +146,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
     }
 }
 
-void jemallocDeallocationTracker(const void * ptr, unsigned usize)
+void jemallocDeallocationTracker(const void * ptr, size_t usize)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)

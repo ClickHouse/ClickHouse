@@ -73,7 +73,7 @@ if __name__ == "__main__":
     from types import SimpleNamespace
 
     # FIXME these should be parameters for the script
-    # So far I call `tests/docker_scripts/setup_minio.sh stateless` to start MinIO
+    # So far I call `ci/jobs/scripts/functional_tests/setup_seaweedfs.sh stateless` to start SeaweedFS
     cluster_settings = {
         "minio_ip": "127.0.0.1",
         "minio_port": 11111,
@@ -89,6 +89,8 @@ if __name__ == "__main__":
         "instances_dir": "/var/lib/clickhouse/user_files",
         "client_bin_path": sys.argv[1],
         "with_kafka": False,
+        "with_nats": False,
+        "with_rabbitmq": False,
         "iceberg_rest_catalog_port": 8181,
         "glue_catalog_port": 3000,
         "hms_catalog_port": 9083,
