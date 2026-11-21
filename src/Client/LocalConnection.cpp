@@ -1135,6 +1135,11 @@ void LocalConnection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAl
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
+void LocalConnection::sendQueryCoordinationResponse(const QueryCoordinationResponse &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,
