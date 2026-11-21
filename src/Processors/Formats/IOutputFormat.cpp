@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/ColumnLessBlock.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/Framing/IFramingFormat.h>
@@ -205,7 +206,8 @@ void IOutputFormat::write(const Block & block)
     writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
-    consume(Chunk(block.getColumns(), block.rows()));
+    /// A block with no columns keeps its number of rows in the block info, `Block::rows` reports zero for it.
+    consume(Chunk(block.getColumns(), getNumRowsIncludingColumnLess(block)));
 
     if (framing)
         writeFramingPayloadBoundary(FramedPacketKind::Data);
