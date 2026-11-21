@@ -101,6 +101,10 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;
 
+    /// Decorrelation aggregates all evaluations of a correlated query together, so the first `LIMIT + OFFSET` keys are not per evaluation.
+    if (query.isCorrelated())
+        return std::nullopt;
+
     /// `LIMIT n AFTER cond` / `LIMIT n UNTIL cond` select a window of `n` rows around a boundary
     /// that is only found once the boundary row is produced. Capping the aggregation at
     /// `n + offset` arbitrary groups can stop it before the boundary key ever appears, so the
