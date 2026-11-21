@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -1226,6 +1227,34 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
         && isStringOrFixedString(actual_type);
 }
 
+/// The `Field` of a `Variant` or `Dynamic` constant is the value of its active member without that member's type,
+/// which a conversion to a date or time needs: a day number and a second count are both plain integers.
+static bool isTypeErasedConstantForDate(const DataTypePtr & value_type, const DataTypePtr & date_type)
+{
+    if (!value_type)
+        return false;
+    const DataTypePtr value = removeLowCardinalityAndNullable(value_type);
+    return (isVariant(value) || isDynamic(value)) && isDateOrDate32OrDateTimeOrDateTime64(date_type);
+}
+
+/// The search functions compare a `Date32` with a `DateTime` as their least supertype, a `DateTime64` in the
+/// session time zone, while a direct conversion to the `DateTime` reads the date in that type's time zone.
+static Field convertConstantLikeSearchFunction(
+    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+{
+    if (isTypeErasedConstantForDate(value_type, actual_type))
+        return {};
+
+    const DataTypePtr value = value_type ? removeLowCardinalityAndNullable(value_type) : nullptr;
+    if (cast_to_supertype && value && isDate32(value) && isDateTime(actual_type))
+    {
+        const DataTypePtr supertype = getLeastSupertype(DataTypes{actual_type, value});
+        const Field supertype_value = convertFieldToType(field, *supertype, value.get());
+        return convertFieldToType(supertype_value, *actual_type, supertype.get(), {}, /*strict=*/ true);
+    }
+    return convertFieldToType(field, *actual_type, value_type.get());
+}
+
 /// Convert a constant for hashing against the elements of an indexed array column, the way the
 /// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
 /// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
@@ -1258,7 +1287,7 @@ static Field convertConstantForArrayIndexFunction(
         return std::move(*enum_value);
 
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
-        return convertFieldToType(value_field, *actual_type, value_type.get());
+        return convertConstantLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 
     return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 }
@@ -1266,7 +1295,7 @@ static Field convertConstantForArrayIndexFunction(
 static ColumnPtr createColumnFromConstantArray(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
 {
-    if (value_field.getType() != Field::Types::Array)
+    if (value_field.getType() != Field::Types::Array || isTypeErasedConstantForDate(value_type, actual_type))
         return nullptr;
 
     /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
@@ -1298,7 +1327,7 @@ static ColumnPtr createColumnFromConstantArray(
         else if (coerce)
             converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
         else
-            converted = convertFieldToType(f, *actual_type, element_type.get());
+            converted = convertConstantLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
         if (converted.isNull())
             return nullptr;
 
@@ -1541,7 +1570,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return true;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertConstantLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ true);
             if (converted_field.isNull())
                 return false;
 
@@ -1679,6 +1708,26 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
                         return false;
                 }
+                else if (isDateOrDate32OrDateTimeOrDateTime64(map_value_type)
+                    && isDateOrDate32OrDateTimeOrDateTime64(removeLowCardinalityAndNullable(value_type)))
+                {
+                    /// A missing key yields the column default, zero even for `Date32` (whose `getDefault` is `1900-01-01`),
+                    /// and `equals` compares it with the constant in their least supertype.
+                    const DataTypePtr constant_type = removeLowCardinalityAndNullable(value_type);
+                    const DataTypePtr supertype = getLeastSupertype(DataTypes{map_value_type, constant_type});
+                    auto missing_value = map_value_type->createColumn();
+                    missing_value->insertDefault();
+                    const Field missing_in_supertype = convertFieldToType((*missing_value)[0], *supertype, map_value_type.get());
+                    const Field constant_in_supertype = convertFieldToType(value_field, *supertype, constant_type.get());
+                    if (missing_in_supertype.isNull() || constant_in_supertype.isNull() || missing_in_supertype == constant_in_supertype)
+                        return false;
+
+                    map_value_field = convertConstantLikeSearchFunction(value_field, value_type, map_value_type, /*cast_to_supertype=*/ true);
+                    if (map_value_field.isNull())
+                        return false;
+                }
+                else if (isTypeErasedConstantForDate(value_type, map_value_type))
+                    return false;
             }
 
             size_t position = 0;
