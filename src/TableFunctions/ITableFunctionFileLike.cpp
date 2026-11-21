@@ -7,6 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunctionFileLike.h>
@@ -102,9 +103,10 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     /// reach none of the inferred columns, as for `id` and `s` of `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
     /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
     /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
-    /// storage does not support the other kinds of columns. It is created so only when it can parse the data with them: the
-    /// format can read a subset of its columns, or there are as many of them as inferred columns, not counting the columns
-    /// of the hive-style partitions of the path, which are read from the path in both cases. Otherwise, as for
+    /// storage does not support the other kinds of columns. It is created so only when it has the columns that their `DEFAULT`
+    /// expressions use, and it can parse the data with them: the format can read a subset of its columns, or there are as
+    /// many of them as inferred columns, not counting the columns of the hive-style partitions of the path, which are read
+    /// from the path in both cases. Otherwise, as for
     /// `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the data
     /// with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
     /// inferred columns keeps reading them by name: a query names an ordinary or a `MATERIALIZED` stored column or a
@@ -123,14 +125,23 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
         };
 
         /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data. The
-        /// storage created with the stored columns also reads those of them that it has from the path.
+        /// storage created with the stored columns also reads those of them that it has from the path. It is created with the
+        /// format that the storage has detected if the format is `auto`, so it does not read the data to detect it again.
         const NamesAndTypesList * partition_columns = nullptr;
+        String detected_format = format;
         /// NOLINT(storage-cast): the storage `getStorage` has just built, never a proxy.
-        if (const auto * storage_file = dynamic_cast<const StorageFile *>(storage.get()))
+        auto * storage_file = dynamic_cast<StorageFile *>(storage.get());
+        if (storage_file)
+        {
             partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
+            detected_format = storage_file->getFormatName();
+        }
         /// NOLINT(storage-cast): the same storage.
         else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
+        {
             partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
+            detected_format = storage_url->getFormatName();
+        }
         const auto is_partition_column = [&](const String & name)
         {
             return partition_columns && partition_columns->contains(name);
@@ -165,6 +176,26 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
             stored_columns.add(column);
         }
 
+        /// The storage could not evaluate a `DEFAULT` expression that uses a column it does not have, as `helper` of
+        /// `(id UInt32 DEFAULT helper, helper UInt32 ALIAS 42)`.
+        const auto defaults_use_only_stored_columns = [&]
+        {
+            for (const auto & column : stored_columns)
+            {
+                if (!column.default_desc.expression)
+                    continue;
+                IdentifierNameSet identifiers;
+                column.default_desc.expression->collectIdentifierNames(identifiers);
+                for (const auto & identifier : identifiers)
+                {
+                    if (!stored_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier)
+                        && cached_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+                        return false;
+                }
+            }
+            return true;
+        };
+
         const auto can_parse_data_with_stored_columns = [&]
         {
             size_t num_data_columns = 0;
@@ -174,10 +205,21 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
                 return true;
             /// With the settings of the context that creates the storage, as `input_format_with_names_use_header` for
             /// `CSVWithNames`, which a query could change, as for a table with these columns given as the structure argument.
-            return format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
+            return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(detected_format, context);
         };
-        if (has_other_column && !has_inferred_column && can_parse_data_with_stored_columns())
-            storage = getStorage(filename, format, stored_columns, context, table_name, compression_method, is_insert_query);
+        if (has_other_column && !has_inferred_column && defaults_use_only_stored_columns() && can_parse_data_with_stored_columns())
+        {
+            auto storage_with_stored_columns
+                = getStorage(filename, detected_format, stored_columns, context, table_name, compression_method, is_insert_query);
+            /// The data of a file descriptor, such as `stdin`, that the first storage has read to infer the columns cannot be
+            /// read again.
+            if (storage_file)
+            {
+                /// NOLINT(storage-cast): the storage `getStorage` has just built for the same file.
+                storage_file->moveReadBufferFromFileDescriptorTo(assert_cast<StorageFile &>(*storage_with_stored_columns));
+            }
+            storage = std::move(storage_with_stored_columns);
+        }
     }
 
     storage->startup();

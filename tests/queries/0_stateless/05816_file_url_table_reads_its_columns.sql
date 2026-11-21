@@ -57,6 +57,20 @@ CREATE TABLE t_hive_key (id UInt32, s String, key UInt32) AS file(currentDatabas
 SELECT * FROM t_hive_key ORDER BY id;
 SELECT key FROM t_hive_key;
 
+SELECT '--- fewer given columns than a format detected from the data, which can read a subset of its columns, has';
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_jsonl_without_extension', 'JSONEachRow', 'a UInt32, b String') VALUES (42, 'hello');
+CREATE TABLE t_detected (renamed String) AS file(currentDatabase() || '_05816_jsonl_without_extension');
+SELECT renamed = '' FROM t_detected;
+
+SELECT '--- given columns with defaults that use the given columns';
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_external.jsonl', 'JSONEachRow', 'external UInt32') VALUES (1);
+CREATE TABLE t_defaults (id UInt32 DEFAULT 5, next UInt32 DEFAULT id + 1) AS file(currentDatabase() || '_05816_external.jsonl', 'JSONEachRow');
+SELECT id, next FROM t_defaults;
+
+SELECT '--- a default that uses an alias column, which the storage cannot have';
+CREATE TABLE t_default_alias (id UInt32 DEFAULT helper, helper UInt32 ALIAS 42) AS file(currentDatabase() || '_05816_external.jsonl', 'JSONEachRow');
+SELECT id FROM t_default_alias; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+
 SELECT '--- url';
 CREATE TABLE t_url (x UInt8, y String) AS url('http://127.0.0.1:8123/?query=SELECT+1,%27a%27+FORMAT+CSV', 'CSV');
 SELECT * FROM t_url;
@@ -75,4 +89,7 @@ DROP TABLE t_fewer;
 DROP TABLE t_fewer_subset;
 DROP TABLE t_hive;
 DROP TABLE t_hive_key;
+DROP TABLE t_detected;
+DROP TABLE t_defaults;
+DROP TABLE t_default_alias;
 DROP TABLE t_url;

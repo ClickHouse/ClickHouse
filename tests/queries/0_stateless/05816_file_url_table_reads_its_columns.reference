@@ -34,6 +34,11 @@ world	2
 2	world	7
 7
 7
+--- fewer given columns than a format detected from the data, which can read a subset of its columns, has
+1
+--- given columns with defaults that use the given columns
+5	6
+--- a default that uses an alias column, which the storage cannot have
 --- url
 1	a
 1	a

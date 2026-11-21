@@ -135,6 +135,10 @@ public:
     /// The columns taken from the hive-style partitions of the path (`/key=value/`), not from the data.
     [[nodiscard]] const NamesAndTypesList & getHivePartitionColumnsToReadFromFilePath() const { return hive_partition_columns_to_read_from_file_path; }
 
+    /// If this storage has read from its file descriptor to infer the columns, gives the data it has read to `other`, a storage
+    /// of the same file descriptor that has not read from it, so that `other` reads the data from its beginning.
+    void moveReadBufferFromFileDescriptorTo(StorageFile & other);
+
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;

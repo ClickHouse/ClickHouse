@@ -82,6 +82,9 @@ public:
     /// The columns taken from the hive-style partitions of the path (`/key=value/`), not from the data.
     [[nodiscard]] const NamesAndTypesList & getHivePartitionColumnsToReadFromFilePath() const { return hive_partition_columns_to_read_from_file_path; }
 
+    /// The format of the data, which the storage detects if it was created with `auto`.
+    [[nodiscard]] const String & getFormatName() const { return format_name; }
+
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
