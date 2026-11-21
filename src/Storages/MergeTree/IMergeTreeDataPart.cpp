@@ -2716,9 +2716,13 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// them to disk. Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found or empty. Will calculate them from data on disk.", name);
 
-        /// An empty checksums.txt on disk would be re-read (and rejected) by checkDataPart, so
-        /// drop it first. Any leftover .tmp from an interrupted rewrite is skipped by checkDataPart.
-        if (buf && !getDataPartStorage().isReadonly())
+        /// Drop an empty checksums.txt before it is rewritten below. Any leftover .tmp from an
+        /// interrupted rewrite is skipped by checkDataPart.
+        /// Under `leader_election`, a follower (or a node that has not acquired the lease yet) must
+        /// not remove the file from shared object storage owned by the current leader, the same as
+        /// it must not write it below. `checkDataPart` ignores an empty checksums.txt when the
+        /// checksums are not required, so the file can stay in place; the leader repairs it.
+        if (buf && !getDataPartStorage().isReadonly() && storage.mayMutateSharedStorage())
         {
             buf.reset();
             getDataPartStorage().removeFileIfExists("checksums.txt");
