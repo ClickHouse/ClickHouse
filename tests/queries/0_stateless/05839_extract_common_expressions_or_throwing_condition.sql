@@ -30,6 +30,12 @@ WHERE (x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(1
 SELECT count() FROM (SELECT number % 10 AS x, number % 7 AS y, toString(number) AS s FROM numbers(10))
 WHERE s != 'zz' AND ((x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(10, x) > 0));
 
+SELECT count() FROM values('x UInt64, d Dynamic, s String', (0, 'bad', 'a'))
+WHERE (x != 0 AND not(d) AND s LIKE '%a%') OR (x > 5 AND not(d) AND s LIKE '%b%');
+
+SELECT count() FROM values('x UInt64, v Variant(String, UInt8), s String', (0, 'bad', 'a'))
+WHERE (x != 0 AND not(v) AND s LIKE '%a%') OR (x > 5 AND not(v) AND s LIKE '%b%');
+
 SELECT trim(line) FROM
 (
     EXPLAIN SYNTAX run_query_tree_passes = 1

@@ -1065,8 +1065,12 @@ bool canBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_functi
 
             if (lazy && only_functions_that_can_throw)
             {
+                /// `and`, `or` and `not` only combine their arguments, but `not` over `Dynamic` or `Variant`
+                /// is executed for each alternative and throws for one it does not accept.
                 const auto & function_name = function_node->getFunctionName();
-                if (function_name != "and" && function_name != "or" && function_name != "not" && function_base->canThrow(argument_types))
+                bool combines_arguments = (function_name == "and" || function_name == "or" || function_name == "not")
+                    && std::ranges::none_of(argument_types, [](const auto & argument) { return isDynamic(argument.type) || isVariant(argument.type); });
+                if (!combines_arguments && function_base->canThrow(argument_types))
                     return true;
             }
         }
