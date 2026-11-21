@@ -163,6 +163,7 @@ const auto & getArguments(const FunctionNode * function)
 
 /// `accurateLess` and `accurateEquals` compare a `Field` with a `Field` of the same type, and two numbers of any types.
 /// A query also compares other pairs, like an `IPv4` and an `IPv6`, after a conversion that the graph does not do.
+/// A decimal and a float compare after the decimal is rounded to `Float64`, so the order of the bounds is not exact.
 /// `accurateLess` puts a `NaN` after all numbers, but each ordered comparison with a `NaN` is false.
 bool canCompare(const Field & lhs, const Field & rhs)
 {
@@ -171,6 +172,11 @@ bool canCompare(const Field & lhs, const Field & rhs)
         return field.getType() == Field::Types::Float64 && isNaN(field.safeGet<Float64>());
     };
     if (is_nan(lhs) || is_nan(rhs))
+        return false;
+
+    auto is_float = [](const Field & field) { return field.getType() == Field::Types::Float64; };
+    auto is_decimal = [](const Field & field) { return Field::isDecimal(field.getType()); };
+    if ((is_decimal(lhs) && is_float(rhs)) || (is_float(lhs) && is_decimal(rhs)))
         return false;
 
     auto is_number = [](Field::Types::Which type)
@@ -270,6 +276,19 @@ bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNode
     const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
     return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type))
         || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
+}
+
+bool comparesDecimalWithFloat(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_decimal = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDecimal(type) || isDateTime64(type); });
+    };
+    auto has_float = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isFloat(type); });
+    };
+    return (has_decimal(left) && has_float(right)) || (has_float(left) && has_decimal(right));
 }
 
 bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
@@ -429,10 +448,12 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// A string constant compared with another type is a value of that type, which the bounds do not know.
     /// A `FixedString` compared with another string type is padded with zero bytes. A `Dynamic` compares by its active type.
     /// A `Date` compared with a `DateTime` is converted to a time, but its bounds count days.
+    /// A decimal compared with a float is rounded to `Float64`, but its relations in the graph are exact.
     if constexpr (!with_ast)
     {
         if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
-            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right))
+            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right)
+            || comparesDecimalWithFloat(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }
 

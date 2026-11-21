@@ -347,6 +347,10 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (arguments.size() == 2 && comparesDateWithDateTime(arguments[0], arguments[1]))
                 continue;
 
+            /// `CHECK d = toFloat64(1)` holds for the decimal 1.000000000000000001, which rounds to 1.
+            if (arguments.size() == 2 && comparesDecimalWithFloat(arguments[0], arguments[1]))
+                continue;
+
             constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);

@@ -215,6 +215,10 @@ bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr
 /// The comparison converts the date to a time, but the graph compares a count of days with a count of seconds.
 bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
+/// Returns true if one argument has a `Decimal` or a `DateTime64` and the other has a float, like `d = f` for a `Decimal` `d`.
+/// The comparison rounds the decimal to `Float64`, so `CHECK d = f` does not make `d` equal to `f`.
+bool comparesDecimalWithFloat(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
+
 /// Returns true if an argument has a `Dynamic` or a `Variant`, whose active type decides how it compares.
 /// `CHECK v = 1` does not make `v` the number 1: an `Enum` value 1 in `v` compares with '9' as the name '9'.
 bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
