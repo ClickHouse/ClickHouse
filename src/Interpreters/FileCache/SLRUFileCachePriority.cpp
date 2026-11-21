@@ -213,6 +213,30 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
 
+void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result)
+{
+    auto lock = getPriorityGuard().readLock();
+
+    /// Keep `split_queue` from Split above, and add the sub-queue of this SLRU.
+    ObservedQueue observed_protected = observed_queue;
+    observed_protected.slru_queue = "Protected";
+    ObservedQueue observed_probationary = observed_queue;
+    observed_probationary.slru_queue = "Probationary";
+
+    /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements and query_order
+    /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.
+    if (query_order == IterationOrder::HOTTEST)
+    {
+        protected_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_protected, result, lock);
+        probationary_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_probationary, result, lock);
+    }
+    else
+    {
+        probationary_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_probationary, result, lock);
+        protected_queue.iterate(query_max_elements, query_max_total_size, query_order, observed_protected, result, lock);
+    }
+}
+
 void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {
     protected_queue.resetEvictionPos(cursor);

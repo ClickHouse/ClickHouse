@@ -1,8 +1,11 @@
 #pragma once
+#include <atomic>
 #include <cctype>
-#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <optional>
+#include <vector>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 
 namespace DB
@@ -77,5 +80,53 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
+    };
+
+    struct FileSegmentSummaryInfo
+    {
+        /// 1-based position of the segment in the output for 'hottest' and 'coldest', i.e. the priority order.
+        /// For 'random': distinct, but in no particular order.
+        UInt64 priority_rank{0};
+        /// Real on-disk file, including the _<size> suffix of downloaded segments
+        String path;
+        /// Cache key
+        String key;
+        /// Segment offset in the source file
+        UInt64 offset;
+        /// Segment size as accounted by the cache
+        UInt64 size;
+        String state;
+        /// See `IFileCachePriority::ObservedQueue`.
+        std::optional<String> split_queue;
+        std::optional<String> slru_queue;
+        String user_id;
+    };
+
+    using FileSegmentSummaryInfoList = std::vector<FileSegmentSummaryInfo>;
+
+    /// The state of the walk over the queues in `IFileCachePriority::observeFilesystemCache`, shared by all sub-queues.
+    /// Under the priority lock, the walk only copies queue entries; their file segments are read after it is released.
+    struct FileSegmentSummaryInfos
+    {
+        struct ObservedEntry
+        {
+            IFileCachePriority::EntryPtr entry;
+            IFileCachePriority::ObservedQueue observed_queue;
+        };
+
+        /// `HOTTEST` and `COLDEST`: the copied entries in the walk order. `RANDOM`: the reservoir.
+        std::vector<ObservedEntry> entries;
+        /// `HOTTEST` and `COLDEST`: the sum of the sizes of the copied entries, as the queue entries see them.
+        UInt64 copied_size = 0;
+        /// `HOTTEST` and `COLDEST`: set when `query_max_elements` entries are copied, or `copied_size` passes `query_max_total_size`.
+        /// The next sub-queue (SLRU's second one, Split's second one) is then not walked at all.
+        bool limit_reached{false};
+        /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`, so that the priority lock
+        /// is released without walking the rest of the queue. The result is incomplete then. `nullptr` if the walk cannot be cancelled.
+        const std::atomic<bool> * cancellation_flag = nullptr;
+
+        [[nodiscard]] bool isCancelled() const { return cancellation_flag && cancellation_flag->load(std::memory_order_relaxed); }
+        /// `RANDOM` only: the number of entries walked so far, which all sub-queues sample from as one reservoir.
+        UInt64 seen = 0;
     };
 }

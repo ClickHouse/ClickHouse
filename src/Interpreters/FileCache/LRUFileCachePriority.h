@@ -194,6 +194,8 @@ private:
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
 
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result) override;
+
     /// Non-null when this queue's structural locking is redirected to another guard
     /// (set by SLRU for its sub-queues). See `getPriorityGuard`.
     CachePriorityGuard * effective_priority_guard = nullptr;
@@ -274,6 +276,19 @@ private:
     void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
+
+    /// Copies the entries of this queue to `result`, without reading their file segments (no key locks).
+    /// `HOTTEST` and `COLDEST`: appends the entries in `query_order` until `result` has `query_max_elements` of them,
+    /// or their sizes pass `query_max_total_size`, then sets `result.limit_reached`. Does nothing if it is already set.
+    /// `RANDOM`: continues the reservoir sampling (Algorithm R) of `result`, coldest first, over the whole queue.
+    /// SLRU calls it for both of its sub-queues with the same `result` and its shared lock.
+    void iterate(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        ObservedQueue observed_queue,
+        FileSegmentSummaryInfos & result,
+        const CachePriorityGuard::ReadLock &);
 
     LRUQueue::iterator iterateImpl(
         LRUQueue::iterator start_pos,

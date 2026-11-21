@@ -151,6 +151,8 @@ protected:
     size_t getHoldElements() override;
 
 private:
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result) override;
+
     SegmentType getPriorityType(const SegmentType & segment_type) const;
 
     IFileCachePriority & getPriority(SegmentType type) { return *priorities_holder[static_cast<uint8_t>(type)]; }

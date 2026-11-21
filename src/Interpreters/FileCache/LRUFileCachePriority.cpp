@@ -1,12 +1,20 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
+#include <base/types.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
+
+#include <optional>
+#include <random>
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -286,6 +294,102 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
     assertNotSealed("iterate");
     auto lock = getPriorityGuard().readLock();
     iterateImpl(queue.begin(), func, stat, lock);
+}
+
+void LRUFileCachePriority::iterate(
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IterationOrder query_order,
+    ObservedQueue observed_queue,
+    FileSegmentSummaryInfos & result)
+{
+    auto lock = getPriorityGuard().readLock();
+    iterate(query_max_elements, query_max_total_size, query_order, observed_queue, result, lock);
+}
+
+void LRUFileCachePriority::iterate(
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IterationOrder query_order,
+    ObservedQueue observed_queue,
+    FileSegmentSummaryInfos & result,
+    const CachePriorityGuard::ReadLock &)
+{
+    /// Here and not in the public overload, so that SLRU, which calls this one for its sub-queues directly, is checked too.
+    assertNotSealed("iterate");
+
+    /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
+    /// an aggregation of system cache and data cache in the case of SplitFileCachePriority.
+    if (result.limit_reached || result.isCancelled())
+        return;
+
+    /// Returns false to stop the walk on the limit.
+    /// Only the state of the entry is checked here. The key lock, needed to read the file segment, is taken by
+    /// `observeFilesystemCache` after the priority lock is released, so that a busy key does not block the whole queue.
+    auto add_entry = [&](const EntryPtr & entry)
+    {
+        const auto entry_state = entry->getState();
+        if (!isObservable(entry_state))
+            return true;
+
+        /// A new entry before its first space reservation has no segment to return, so it should not take a place in the result.
+        /// A `PreActive` entry has size 0 until its SLRU move is committed, but its segment is there.
+        const size_t entry_size = entry->size.load();
+        if (entry_state != Entry::State::PreActive && entry_size == 0)
+            return true;
+
+        /// For random sampling we walk through the whole queue
+        if (query_order == IterationOrder::RANDOM)
+        {
+            /// Algorithm R: the first `query_max_elements` entries fill the reservoir, then the n-th entry
+            /// replaces a random one with the probability `query_max_elements / n`.
+
+            /// This is the n-th entry, with n = `result.seen`.
+            ++result.seen;
+
+            /// The reservoir is not full yet: take every entry.
+            if (result.entries.size() < query_max_elements)
+            {
+                result.entries.push_back({entry, observed_queue});
+                return true;
+            }
+
+            /// The reservoir is full: replace a random entry with the probability `query_max_elements / n`.
+            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen - 1)(thread_local_rng);
+            if (slot < query_max_elements)
+                result.entries[slot] = {entry, observed_queue};
+            return true;
+        }
+
+        /// coldest/hottest, no need for sampling.
+        result.entries.push_back({entry, observed_queue});
+
+        /// This is an approximation: a `PreActive` entry counts as 0
+        result.copied_size += entry_size;
+
+        return result.entries.size() < query_max_elements && result.copied_size <= query_max_total_size;
+    };
+
+    auto add_entries = [&](auto && entries)
+    {
+        size_t walked = 0;
+        for (const auto & entry : entries)
+        {
+            if (++walked % observe_check_cancellation_every == 0 && result.isCancelled())
+                return;
+
+            if (!add_entry(entry))
+            {
+                result.limit_reached = true;
+                return;
+            }
+        }
+    };
+
+    if (query_order == IterationOrder::HOTTEST)
+        add_entries(queue | std::views::reverse);
+    else
+        add_entries(queue);
 }
 
 size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)

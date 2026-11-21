@@ -10,6 +10,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -20,6 +22,8 @@ struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileSegment;
 struct FileSegmentInfo;
+struct FileSegmentSummaryInfo;
+struct FileSegmentSummaryInfos;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsage;
@@ -259,6 +263,41 @@ public:
 
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     virtual void iterate(IterateFunc func, FileCacheReserveStat & stat) = 0;
+
+    /// Order in which `observeFilesystemCache` selects queue entries.
+    enum class IterationOrder : uint8_t
+    {
+        /// Highest-priority entries first.
+        HOTTEST = 0,
+        /// Next eviction candidates first.
+        COLDEST,
+        /// A uniformly random sample of entries in random order
+        RANDOM,
+    };
+
+    /// The sub-queue which `iterate` walks, reported for its segments in the `split_queue` and `slru_queue`
+    /// columns of `filesystemCache`. Each wrapper sets its own field for the sub-queue it walks, so they combine,
+    /// e.g. a split cache with the SLRU policy reports both.
+    struct ObservedQueue
+    {
+        /// `Data` or `System`, the same as `system.filesystem_cache.segment_type`; empty if the cache is not split.
+        std::optional<std::string_view> split_queue;
+        /// `Protected` or `Probationary`; empty if the policy is not SLRU.
+        std::optional<std::string_view> slru_queue;
+    };
+
+    /// Returns the file segments of the queue, selected by their priority.
+    /// It copies the selected queue entries under the priority lock first, and reads their file segments,
+    /// which needs the key locks, after it is released.
+    /// `query_max_elements`: Upper bound on returned rows
+    /// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
+    /// `query_order`: Defines the order on returned rows
+    /// `cancellation_flag`: if not `nullptr`, the walk stops once it is set, and the result is incomplete.
+    std::vector<FileSegmentSummaryInfo> observeFilesystemCache(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        const std::atomic<bool> * cancellation_flag = nullptr);
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
@@ -518,10 +557,31 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
+    /// Whether `observeFilesystemCache` may return the file segment of a queue entry with this state.
+    /// During an SLRU upgrade/downgrade, both the old (`Moving` or `Evicting`) and the new (`PreActive`) entry of a segment
+    /// are in the queues: both may be copied, and `observeFilesystemCache` returns only the current entry of the segment.
+    static bool isObservable(Entry::State state)
+    {
+        switch (state)
+        {
+            case Entry::State::Active:
+            case Entry::State::PreActive:
+            case Entry::State::Evicting:
+            case Entry::State::Moving:
+                return true;
+            case Entry::State::Invalidated:
+            case Entry::State::Removed:
+                return false;
+        }
+    }
+
     /// Guard protecting this priority queue's structure (add/remove/move of entries), so
     /// operations on different queues do not contend. Overridden by `LRUFileCachePriority` to
     /// return a redirected guard, and by the Overcommit/Split wrappers to throw.
     virtual CachePriorityGuard & getPriorityGuard() const { return priority_guard; }
+
+    /// `observeFilesystemCache` checks the cancellation flag once per this many entries: a cancelled query only has to stop soon.
+    static constexpr size_t observe_check_cancellation_every = 1024;
 
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
@@ -534,6 +594,21 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+
+private:
+    /// Each concrete implementation of IFileCachePriority should know better how to implement this
+    /// Copies the entries of this queue to `result` under the priority lock, without taking any key lock.
+    /// `result` may already hold the entries of previous sub-queues (SLRU's first one, Split's first one):
+    /// `query_max_elements` and `query_max_total_size` apply to all of them together.
+    /// For `RANDOM`, `result.entries` is a reservoir which all sub-queues share.
+    /// `observed_queue` holds the sub-queues chosen by the wrappers above this queue.
+    virtual void iterate(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        ObservedQueue observed_queue,
+        FileSegmentSummaryInfos & result)
+        = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

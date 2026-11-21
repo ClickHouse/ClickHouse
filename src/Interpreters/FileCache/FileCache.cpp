@@ -129,6 +129,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsString system_cache_extensions;
+    extern const FileCacheSettingsUInt64 max_observed_elements;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool use_real_disk_size;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
@@ -301,6 +302,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , boundary_alignment(settings[FileCacheSetting::boundary_alignment])
     , reserve_granularity(settings[FileCacheSetting::reserve_granularity])
     , background_download_max_file_segment_size(settings[FileCacheSetting::background_download_max_file_segment_size])
+    , max_observed_elements(settings[FileCacheSetting::max_observed_elements])
     , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
     , write_cache_per_user_directory(isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
@@ -2708,6 +2710,36 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
     return main_priority->dump();
 }
 
+FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IFileCachePriority::IterationOrder query_order,
+    const std::atomic<bool> * cancellation_flag)
+{
+    assertInitialized();
+
+    /// The overcommit policies keep a queue per user, which the walk over the queue does not reach.
+    const auto type = main_priority->getType();
+    if (type == IFileCachePriority::Type::LRU_OVERCOMMIT || type == IFileCachePriority::Type::SLRU_OVERCOMMIT)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Observing the filesystem cache '{}' is not supported for the overcommit cache policies",
+            getName());
+
+    const size_t limit = max_observed_elements.load(std::memory_order_relaxed);
+    const size_t requested = std::min<UInt64>(query_max_elements, main_priority->getElementsCountApprox());
+    if (requested > limit)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Requested {} file segments from the filesystem cache '{}', which is more than its `max_observed_elements` ({})",
+            requested,
+            getName(),
+            limit);
+
+    return main_priority->observeFilesystemCache(
+        std::min<UInt64>(query_max_elements, limit), query_max_total_size, query_order, cancellation_flag);
+}
+
 IFileCachePriority::Type FileCache::getEvictionPolicyType()
 {
     assertInitialized();
@@ -2841,6 +2873,17 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 new_settings[FileCacheSetting::background_download_max_file_segment_size].value);
 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
+    }
+
+    if (new_settings[FileCacheSetting::max_observed_elements] != actual_settings[FileCacheSetting::max_observed_elements])
+    {
+        max_observed_elements = new_settings[FileCacheSetting::max_observed_elements];
+
+        LOG_INFO(log, "Changed max_observed_elements from {} to {}",
+                actual_settings[FileCacheSetting::max_observed_elements].value,
+                new_settings[FileCacheSetting::max_observed_elements].value);
+
+        actual_settings[FileCacheSetting::max_observed_elements] = new_settings[FileCacheSetting::max_observed_elements];
     }
 
     if (new_settings[FileCacheSetting::reserve_granularity] != actual_settings[FileCacheSetting::reserve_granularity])

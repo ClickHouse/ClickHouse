@@ -1,0 +1,56 @@
+LRU: the same segments as system.filesystem_cache
+10	['DOWNLOADED']	[(NULL,NULL)]
+1	DOWNLOADED	\N	\N
+2	DOWNLOADED	\N	\N
+3	DOWNLOADED	\N	\N
+4	DOWNLOADED	\N	\N
+5	DOWNLOADED	\N	\N
+6	DOWNLOADED	\N	\N
+7	DOWNLOADED	\N	\N
+8	DOWNLOADED	\N	\N
+9	DOWNLOADED	\N	\N
+10	DOWNLOADED	\N	\N
+0
+0
+LRU: ranks and order
+1
+1
+1
+1
+LRU: max_elements
+3
+1
+0
+LRU: max_total_size
+1	1	1
+1	1	1
+0
+LRU: random
+1
+3	1
+3	0
+1
+SLRU: the probationary queue is colder than the protected one
+coldest
+1	Probationary	\N	0	4
+2	Probationary	\N	4	4
+3	Protected	\N	0	4
+4	Protected	\N	4	4
+hottest
+1	Protected	\N	4	4
+2	Protected	\N	0	4
+3	Probationary	\N	4	4
+4	Probationary	\N	0	4
+SplitCache: the system queue is more important than the data one
+1	1
+0
+hottest	System	1
+coldest	Data	1
+1
+['Data']
+['System']
+Access: requires SELECT on system.filesystem_cache
+ACCESS_DENIED
+ACCESS_DENIED
+1
+Errors
