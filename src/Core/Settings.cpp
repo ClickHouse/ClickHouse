@@ -5516,7 +5516,7 @@ Allow using simdjson library in 'JSON*' functions if AVX2 instructions are avail
     DECLARE(Bool, json_extract_named_tuples_as_objects, false, R"(
 Fill named tuples from JSON objects only, in the `JSONExtract` family of functions. When disabled, a JSON array fills a named tuple positionally (the historical behavior), so which array element lands in which named field depends on the tuple's declaration order. Unnamed tuples always fill positionally from arrays regardless of this setting.
 
-This setting applies to JSON passed as a string. Extraction from a column of the `JSON` data type is not affected, for typed and untyped paths alike: it reads the column's subcolumns instead of parsing a JSON document, so it never reaches the code this setting governs. Named tuple *columns* in JSON input formats are governed by the separate [input_format_json_named_tuples_as_objects](/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) setting; this setting covers the extraction functions only.
+This setting applies to JSON passed as a string, and in the same way to a column of the `JSON` data type: a result that contains a tuple is produced from the JSON text of the stored value. A typed path of a `Tuple` type is stored as a tuple and written back as an object, so its extraction does not depend on this setting. Named tuple *columns* in JSON input formats are governed by the separate [input_format_json_named_tuples_as_objects](/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) setting; this setting covers the extraction functions only.
 
 Disabled by default.
 )", 0, \
