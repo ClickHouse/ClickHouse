@@ -164,7 +164,7 @@ void QueryOracle::setOracleOutFile(TopSelect * ts, const String & format) const
 void QueryOracle::finishSettings(SettingValues * svs)
 {
     /// Wait for mutations to finish. Also reset lake time travel: a session-level
-    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms` (or the DeltaLake/Paimon version pins)
+    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms/iceberg_ref` (or the DeltaLake/Paimon version pins)
     /// makes every read see an old snapshot, so an oracle comparing counts before/after an
     /// INSERT gets a false mismatch (and the pinned id is unreplayable - snapshot ids are
     /// random per run). The Iceberg pins trigger on the setting's `changed` flag, so the
@@ -181,6 +181,7 @@ void QueryOracle::finishSettings(SettingValues * svs)
            {"delta_lake_snapshot_start_version", "DEFAULT"},
            {"delta_lake_snapshot_version", "DEFAULT"},
            {"engine_file_truncate_on_insert", "1"},
+           {"iceberg_ref", "DEFAULT"},
            {"iceberg_snapshot_id", "DEFAULT"},
            {"iceberg_timestamp_ms", "DEFAULT"},
            {"lightweight_deletes_sync", "2"},
