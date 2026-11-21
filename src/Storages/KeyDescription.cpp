@@ -1,6 +1,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Columns/ColumnConst.h>
@@ -276,11 +277,15 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
     /// narrower type. Without a Float64 argument both values of the setting compute in Float32.
     const bool geo_distance_deviates = settings[Setting::geo_distance_returns_float64_on_float64_arguments]
         != baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
+    /// least/greatest with an argument that can be NULL: the setting decides whether a NULL argument makes
+    /// the result NULL or is skipped, and the result type is the same either way.
+    const bool least_greatest_deviates = settings[Setting::least_greatest_legacy_null_behavior]
+        != baseline[Setting::least_greatest_legacy_null_behavior];
     /// The settings that change the result type of a key function: the session's expression then has
     /// another type than the stored key, and with it another value for some rows (NULL instead of a
     /// default, a non-truncated date instead of a truncated one).
     const bool types_may_deviate = typeAffectingSettingsDeviate(settings, baseline);
-    if (deviating_functions.empty() && !geo_distance_deviates && !types_may_deviate)
+    if (deviating_functions.empty() && !geo_distance_deviates && !least_greatest_deviates && !types_may_deviate)
         return result;
 
     auto is_carrier = [&](const IFunctionBase & function)
@@ -288,6 +293,8 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
         const auto & name = function.getName();
         if (deviating_functions.contains(name))
             return true;
+        if (least_greatest_deviates && (name == "least" || name == "greatest"))
+            return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type) { return canContainNull(*type); });
         if (!geo_distance_deviates || (name != "geoDistance" && name != "greatCircleDistance" && name != "greatCircleAngle"))
             return false;
         return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type)
