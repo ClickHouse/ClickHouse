@@ -47,6 +47,8 @@ public:
     [[nodiscard]] bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature for `Rotate` (preserves the element type);
