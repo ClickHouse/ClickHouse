@@ -65,7 +65,9 @@ private:
     /// cancellation flag itself rather than having another thread cancel it.
     void throwIfCancelled();
 
-    IColumn::Selector createSelector(const Block & source_block) const;
+    /// With `Id` = `UInt16`, the cluster must have at most 65536 shards.
+    template <typename Id = UInt64>
+    PaddedPODArray<Id> createSelector(const Block & source_block) const;
 
     void writeAsync(const Block & block);
 

@@ -36,13 +36,19 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
+    /// The key getter of these columns, which `JoinProbe::keptKeyGetter` builds in the first key search of a call and keeps
+    /// for the later ones.
+    mutable std::shared_ptr<void> kept_key_getter;
+
+    /// For a key type that builds its keys: `ready_keys` points to the keys that the last prepare step
+    /// (`JoinProbe::PrepareKeysFn`) made for the key search that follows it. They are in `ready_keys_buffer`, or in the kept
+    /// key getter when it packed the keys of the whole block. The buffer only grows. It is a `std::vector` because these
+    /// columns are copied when the probe of a block starts.
+    mutable const void * ready_keys = nullptr;
+    mutable std::vector<UInt64> ready_keys_buffer;
+
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality = false);
-
-    [[nodiscard]] bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
 
     /// A row with a NULL key and a row filtered out by the ON-section mask have the same
     /// effect - the row matches nothing - so the probe loop needs a single skip byte per
@@ -233,13 +239,21 @@ public:
     ALWAYS_INLINE void appendFromBlock(UInt64 ref_word)
     {
 #ifndef NDEBUG
-        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-        /// the head ref of either, whose block is valid for the column-structure assertion.
-        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
+        checkColumnsOfRef(ref_word);
 #endif
         if (record_row_refs)
             lazy_output.addRef(ref_word);
     }
+
+#ifndef NDEBUG
+    /// Checks that the columns of the stored block of `ref_word` fit the added columns.
+    void checkColumnsOfRef(UInt64 ref_word)
+    {
+        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
+        /// the head ref of either, whose block is valid for the column-structure assertion.
+        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
+    }
+#endif
 
     void appendDefaultRow()
     {
@@ -248,9 +262,6 @@ public:
     }
 
     [[nodiscard]] const IColumn & leftAsofKey() const { return *left_asof_key; }
-
-    /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
-    static constexpr bool appendsWholeKey() { return true; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;

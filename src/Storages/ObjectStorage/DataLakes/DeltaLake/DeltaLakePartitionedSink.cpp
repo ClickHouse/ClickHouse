@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 
 #if USE_DELTA_KERNEL_RS
+#include <Columns/ColumnsCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -331,32 +332,13 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         chunk_row_index_to_partition_index[row] = it->getMapped();
     }
 
-    size_t columns_size = columns_to_consume.size();
     size_t partitions_size = partition_id_to_chunk_index.size();
+    auto scattered = scatterColumns(columns_to_consume, partitions_size, chunk_row_index_to_partition_index);
 
     Chunks partition_index_to_chunk;
     partition_index_to_chunk.reserve(partitions_size);
-
-    for (size_t column_index = 0; column_index < columns_size; ++column_index)
-    {
-        const IColumn * column_to_consume = columns_to_consume[column_index];
-        auto partition_index_to_column_split = column_to_consume->scatter(
-            partitions_size,
-            chunk_row_index_to_partition_index);
-
-        /// Add chunks into partition_index_to_chunk with sizes of result columns
-        if (column_index == 0)
-        {
-            for (const auto & partition_column : partition_index_to_column_split)
-                partition_index_to_chunk.emplace_back(Columns(), partition_column->size());
-        }
-
-        for (size_t partition_index = 0; partition_index < partitions_size; ++partition_index)
-        {
-            auto & partition_chunk = partition_index_to_chunk[partition_index];
-            partition_chunk.addColumn(std::move(partition_index_to_column_split[partition_index]));
-        }
-    }
+    for (size_t partition_index = 0; partition_index < partitions_size; ++partition_index)
+        partition_index_to_chunk.emplace_back(std::move(scattered.pieces[partition_index]), scattered.rows[partition_index]);
 
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {

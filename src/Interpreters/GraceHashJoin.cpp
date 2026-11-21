@@ -287,6 +287,14 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
             return flushed;
         });
 }
+
+/// Splits `block` into `num_buckets` blocks by the hash of `key_names`. With `small_bucket_ids`, `num_buckets` must be at most 65536.
+Blocks scatterToBuckets(bool small_bucket_ids, const Names & key_names, const Block & block, size_t num_buckets)
+{
+    if (small_bucket_ids)
+        return JoinCommon::scatterBlockByHash<UInt16>(key_names, block, num_buckets);
+    return JoinCommon::scatterBlockByHash<UInt64>(key_names, block, num_buckets);
+}
 }
 
 GraceHashJoin::GraceHashJoin(
@@ -306,6 +314,7 @@ GraceHashJoin::GraceHashJoin(
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
+    , small_bucket_ids(max_num_buckets <= 65536)
     , external_join_threshold(external_join_threshold_)
     , max_threads(std::max<size_t>(1, max_threads_))
     , left_key_names(table_join->getOnlyClause().key_names_left)
@@ -520,7 +529,7 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     /// number of buckets doesn't change after right table is split to buckets, i.e. read-only access to buckets
     /// so, no need to copy buckets here
     size_t num_buckets = getNumBuckets();
-    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
+    Blocks blocks = scatterToBuckets(small_bucket_ids, left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
@@ -661,13 +670,15 @@ public:
         Buckets buckets_,
         InMemoryJoinPtr hash_join_,
         const Names & left_key_names_,
-        const Names & right_key_names_)
+        const Names & right_key_names_,
+        bool small_bucket_ids_)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
         , left_reader(buckets[current_bucket]->getLeftTableReader())
         , left_key_names(left_key_names_)
         , right_key_names(right_key_names_)
+        , small_bucket_ids(small_bucket_ids_)
     {
     }
 
@@ -731,7 +742,7 @@ public:
             }
 
             // block comes from left_reader, need to join with right table to get the result.
-            Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
+            Blocks blocks = scatterToBuckets(small_bucket_ids, left_key_names, block, num_buckets);
             block = std::move(blocks[current_idx]);
 
             /*
@@ -774,6 +785,7 @@ public:
 
     Names left_key_names;
     Names right_key_names;
+    const bool small_bucket_ids;
 
     std::mutex extra_block_mutex;
     std::list<JoinResultPtr> not_processed_results TSA_GUARDED_BY(extra_block_mutex);
@@ -838,7 +850,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
             bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
 
-        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names, small_bucket_ids);
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
@@ -894,14 +906,14 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
 
         if (leftover.rows() > 0)
         {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, leftover, buckets_snapshot.size());
+            Blocks blocks = scatterToBuckets(small_bucket_ids, right_key_names, leftover, buckets_snapshot.size());
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
             leftovers.emplace_back(std::move(blocks[bucket_index]));
         }
 
         for (const auto & right_block : right_blocks)
         {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
+            Blocks blocks = scatterToBuckets(small_bucket_ids, right_key_names, right_block, buckets_snapshot.size());
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
             leftovers.emplace_back(std::move(blocks[bucket_index]));
         }
@@ -959,7 +971,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
     Block current_block;
 
     {
-        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
+        Blocks blocks = scatterToBuckets(small_bucket_ids, right_key_names, block, buckets_snapshot.size());
         flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
         current_block = std::move(blocks[bucket_index]);
     }
@@ -979,7 +991,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         if (buckets_snapshot.size() != current_buckets.size())
         {
             LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, current_buckets.size());
+            Blocks blocks = scatterToBuckets(small_bucket_ids, right_key_names, current_block, current_buckets.size());
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
             current_block = std::move(blocks[bucket_index]);
             if (!current_block.rows())

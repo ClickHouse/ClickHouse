@@ -104,6 +104,31 @@ void fillUnderBucketLocks(Map & map, size_t num_threads, UInt64 keys_per_thread,
         thread.join();
 }
 
+/// The entry of each bucket in `bucket_cells` spans the buffer of the bucket.
+/// The cell of every key is inside the entry of its bucket, and the entry gives it the offset that `offsetInternal` gives.
+template <typename Map>
+void assertBucketCellsListEveryKey(const Map & map, UInt64 first_key, UInt64 last_key)
+{
+    ASSERT_EQ(map.bucket_cells.size(), Map::NUM_BUCKETS);
+    for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
+    {
+        const auto & entry = map.bucket_cells[bucket];
+        const size_t cells = map.impls[bucket].getBufferSizeInCells();
+        ASSERT_EQ(entry.mask + 1, cells) << "bucket " << bucket;
+        ASSERT_EQ(static_cast<size_t>(entry.cells_end - entry.cells), cells) << "bucket " << bucket;
+        ASSERT_EQ(entry.prefix, map.bucket_cells_prefix[bucket]) << "bucket " << bucket;
+    }
+    for (UInt64 key = first_key; key <= last_key; ++key)
+    {
+        const auto * cell = map.find(key);
+        ASSERT_NE(cell, nullptr) << "key " << key;
+        const auto & entry = map.bucket_cells[Map::getBucketFromHash(map.hash(key))];
+        ASSERT_GE(cell, entry.cells) << "key " << key;
+        ASSERT_LT(cell, entry.cells_end) << "key " << key;
+        ASSERT_EQ(entry.prefix + static_cast<size_t>(cell - entry.cells) + 1, map.offsetInternal(cell)) << "key " << key;
+    }
+}
+
 template <typename Map>
 std::vector<size_t> offsetsByIteration(const Map & map)
 {
@@ -263,6 +288,85 @@ TEST(TwoLevelHashTableBuckets, OffsetsAreValidAgainAfterGrowthAndRecompute)
 
     map->computeBucketPrefix();
     assertOffsetsAreUnique(*map, 1, 40000);
+}
+
+
+TEST(TwoLevelHashTableBuckets, BucketCellsListTheCellOfEveryKey)
+{
+    constexpr UInt64 num_keys = 20000;
+
+    forBucketBits<0, 4, 8>(
+        [&]<size_t bits>()
+        {
+            auto map = std::make_unique<TwoLevelMap<bits>>();
+            ASSERT_TRUE(map->bucket_cells.empty()) << "bits " << bits;
+            for (UInt64 key = 1; key <= num_keys; ++key)
+                insertKeyValue(*map, key, key);
+            map->computeBucketPrefix();
+            assertBucketCellsListEveryKey(*map, 1, num_keys);
+        });
+}
+
+
+TEST(TwoLevelHashTableBuckets, BucketCellsAreValidAgainAfterGrowthAndRecompute)
+{
+    auto map = std::make_unique<TwoLevelMap<4>>();
+    for (UInt64 key = 1; key <= 200; ++key)
+        insertKeyValue(*map, key, key);
+    map->computeBucketPrefix();
+    assertBucketCellsListEveryKey(*map, 1, 200);
+
+    const size_t cells_before = map->getBufferSizeInCells();
+    for (UInt64 key = 201; key <= 40000; ++key)
+        insertKeyValue(*map, key, key);
+    ASSERT_GT(map->getBufferSizeInCells(), cells_before) << "the inserts did not grow any bucket";
+
+    map->computeBucketPrefix();
+    assertBucketCellsListEveryKey(*map, 1, 40000);
+}
+
+
+TEST(TwoLevelHashTableBuckets, RobinHoodBucketsTellsWhichBucketsSwitched)
+{
+    using Map = TwoLevelMap<4>;
+    /// A bucket of 2^16 cells switches to the Robin Hood mode at the insert that makes it more than half full.
+    constexpr size_t keys_before_switch = 1uz << 15;
+
+    auto small = std::make_unique<Map>();
+    ASSERT_EQ(small->robin_hood_buckets, Map::RobinHoodBuckets::None);
+    for (UInt64 key = 1; key <= 5000; ++key)
+        insertKeyValue(*small, key, key);
+    small->computeBucketPrefix();
+    ASSERT_EQ(small->robin_hood_buckets, Map::RobinHoodBuckets::None);
+
+    /// Only the keys of bucket 0, so only that bucket switches.
+    auto mixed = std::make_unique<Map>();
+    size_t keys_in_first_bucket = 0;
+    for (UInt64 key = 1; keys_in_first_bucket <= keys_before_switch; ++key)
+    {
+        if (Map::getBucketFromHash(mixed->hash(key)) != 0)
+            continue;
+        insertKeyValue(*mixed, key, key);
+        ++keys_in_first_bucket;
+    }
+    mixed->computeBucketPrefix();
+    ASSERT_EQ(mixed->robin_hood_buckets, Map::RobinHoodBuckets::Mixed);
+
+    /// Keys in order until every bucket has switched.
+    auto all = std::make_unique<Map>();
+    std::vector<size_t> keys_in_bucket(Map::NUM_BUCKETS, 0);
+    size_t switched_buckets = 0;
+    UInt64 last_key = 0;
+    while (switched_buckets < Map::NUM_BUCKETS)
+    {
+        ++last_key;
+        insertKeyValue(*all, last_key, last_key);
+        if (++keys_in_bucket[Map::getBucketFromHash(all->hash(last_key))] == keys_before_switch + 1)
+            ++switched_buckets;
+    }
+    all->computeBucketPrefix();
+    ASSERT_EQ(all->robin_hood_buckets, Map::RobinHoodBuckets::All);
+    assertBucketCellsListEveryKey(*all, 1, last_key);
 }
 
 
