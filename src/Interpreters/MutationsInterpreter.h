@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <IO/Progress.h>
 
+#include <functional>
 
 namespace DB
 {
@@ -47,7 +48,10 @@ IsStorageTouched isStorageTouchedByMutations(
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception
+    std::function<void()> on_exception,
+    bool unite_row_mask_sets,
+    size_t max_row_mask_set_union_source_rows,
+    size_t max_row_mask_set_union_source_key_bytes
 );
 
 /// Build the WHERE-style filter for a mutation command. The parsed
@@ -105,6 +109,14 @@ public:
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
+        /// Only the background part-mutation caller may enable ordered row-mask action batching.
+        bool batch_row_mask_actions = false;
+        /// Only the background part-mutation caller may unite ready literal row-mask Sets.
+        bool unite_row_mask_sets = false;
+        /// Resource budgets for the additional Sets built by row-mask union.
+        size_t row_mask_set_union_source_rows = 0;
+        size_t row_mask_set_union_source_key_bytes = 0;
+        size_t row_mask_set_union_groups = 0;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
@@ -252,6 +264,13 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    bool canBatchRowMaskActions(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
+    struct RowMaskSetUnion
+    {
+        std::optional<ActionsDAG> immediate = std::nullopt;
+        std::function<std::optional<ActionsDAG>()> after_sets = {};
+    };
+    RowMaskSetUnion tryUniteRowMaskSets(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
     [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 

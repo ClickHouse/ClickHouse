@@ -691,6 +691,10 @@
     M(MutationCommitMilliseconds, "Total time spent for committing mutation results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
     M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
+    M(RowMaskActionBatches, "Number of background mutation pipelines built with ordered row-mask action batching.", ValueType::Number) \
+    M(RowMaskTypedSetUnionBatches, "Number of background mutation pipelines built with a union of ready literal row-mask Sets.", ValueType::Number) \
+    M(RowMaskReadySubquerySetUnionBatches, "Number of background mutation pipelines that united ready subquery row-mask Sets for the part rewrite.", ValueType::Number) \
+    M(RowMaskTypedSetUnionPrechecks, "Number of affected-row precheck pipelines built with a union of ready literal row-mask Sets.", ValueType::Number) \
     M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Microseconds) \
     \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.", ValueType::Number) \

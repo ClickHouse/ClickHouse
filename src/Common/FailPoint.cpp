@@ -432,6 +432,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    PAUSEABLE_ONCE(mt_mutations_interpreter_pause_after_stage_set_resolution) \
     ONCE(disk_set_builder_reach_time_limit) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \

@@ -3,6 +3,7 @@
         <row_mask_limited>
             <max_rows_in_set>1</max_rows_in_set>
             <set_overflow_mode>throw</set_overflow_mode>
+            <enable_sharing_sets_for_mutations>0</enable_sharing_sets_for_mutations>
         </row_mask_limited>
     </profiles>
 </clickhouse>
