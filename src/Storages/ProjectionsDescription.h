@@ -184,9 +184,6 @@ struct ProjectionsDescription : public IHints<>
         const KeyDescription * parent_partition_key,
         const ContextPtr & query_context);
 
-    /// Return common expression for all stored projections
-    [[nodiscard]] ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
-
     bool operator==(const ProjectionsDescription & other) const { return projections == other.projections; }
     bool operator!=(const ProjectionsDescription & other) const { return !(*this == other); }
 

@@ -14,7 +14,7 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf) override;
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
