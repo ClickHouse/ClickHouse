@@ -343,6 +343,11 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    /// Drops our `GET_PART` entry for a merge result that no replica has and nothing can produce,
+    /// provided every part it would have replaced is still intact on this replica. Then the source parts
+    /// become mergeable again. Changes nothing unless it returns `Dropped`.
+    LostMergeResultDrop tryDropFetchOfLostMergeResult(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
     // Return default or custom zookeeper name for table
     const String & getZooKeeperName() const { return zookeeper_info.zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_info.path; }

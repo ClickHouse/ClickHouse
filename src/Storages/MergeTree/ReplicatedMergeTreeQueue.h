@@ -36,6 +36,16 @@ class ReplicatedMergeTreeMergeStrategyPicker;
 
 using PartitionIdsHint = std::unordered_set<String>;
 
+/// Result of dropping our `GET_PART` entry for a merge result that is lost on every replica.
+enum class LostMergeResultDrop : uint8_t
+{
+    Dropped,
+    /// The entry must stay: a condition does not hold, or there is no entry.
+    NotDropped,
+    /// The conditions held, but the entry was busy or the state in ZooKeeper changed. Check again later.
+    RetryLater,
+};
+
 class ReplicatedMergeTreeQueue
 {
 private:
@@ -416,6 +426,16 @@ public:
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper,
                                        const MergeTreePartInfo & part_info,
                                        const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
+
+    /** Remove our `GET_PART` entry (the one with an empty source replica, created by `removePartAndEnqueueFetch`)
+      * for `part_name`, which will never appear. `ops` are committed to ZooKeeper atomically with the removal of the queue node.
+      * In memory, `part_name` is dropped from `virtual_parts` and `current_parts`, and `source_parts` (the local parts it was made of) are put back,
+      * so that they can be merged again.
+      * Returns `NotDropped`, changing nothing, if there is no such entry, and `RetryLater` if it is being executed
+      * or ZooKeeper rejected `ops` because the log, the replicas or `is_lost` changed.
+      */
+    LostMergeResultDrop removeGetPartOfLostMergeResult(
+        zkutil::ZooKeeperPtr zookeeper, const String & part_name, const std::vector<MergeTreePartInfo> & source_parts, Coordination::Requests ops);
 
     /// Wait for the execution of currently executing actions with virtual parts intersecting with part_info
     void waitForCurrentlyExecutingOpsInRange(const MergeTreePartInfo & part_info) const;

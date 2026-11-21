@@ -247,6 +247,12 @@ bool ReplicatedMergeTreePartCheckThread::searchForMissingPartOnOtherReplicas(con
                 return true;
             }
 
+            /// Our own smaller parts are not a reason to hope: if they were going to be merged into the missing part,
+            /// the queue entry that does it would have been found by `onPartIsLostForever`. Counting them here
+            /// made a replica wait forever for a merge result that nobody could produce.
+            if (replica_path == storage.replica_path)
+                continue;
+
             if (part_info.contains(part_on_replica_info))
             {
                 if (part_on_replica_info.min_block == part_info.min_block)
@@ -534,6 +540,22 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
             /// Part is not in ZooKeeper and not on disk (so there's nothing to detach or remove from ZooKeeper).
             /// Probably we cannot execute some entry from the replication queue (so don't need to enqueue another one).
             /// Either all replicas having the part are not active...
+            /// A merge result that was lost while all of its source parts are intact everywhere does not need to be
+            /// replaced. This must come before the search below: replicas that lost the same merge result see each
+            /// other's source parts and would hope for each other to merge them forever.
+            auto drop_outcome = storage.tryDropFetchOfLostMergeResult(storage.getZooKeeper(), part_name);
+            if (drop_outcome == LostMergeResultDrop::Dropped)
+                break;
+            if (drop_outcome == LostMergeResultDrop::RetryLater)
+            {
+                constexpr time_t retry_drop_after_seconds = 30;
+                if (recheck_after)
+                    *recheck_after = retry_drop_after_seconds;
+                else
+                    enqueuePart(part_name, retry_drop_after_seconds);
+                break;
+            }
+
             bool found_something = searchForMissingPartOnOtherReplicas(part_name);
             if (found_something)
                 break;
