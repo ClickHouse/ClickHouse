@@ -84,9 +84,8 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 metric_name_removing_query = builder.getSelectQuery();
             }
 
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
+            /// Step 2 renames new_group back to group.
+            /// Using new_group prevents identifier collision under prefer_column_name_to_alias.
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
