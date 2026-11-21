@@ -330,11 +330,12 @@ function stop_server()
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-      clickhouse stop --force
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
-      clickhouse stop --force
     fi
+    # `clickhouse stop` needs the pid file, which the server removes when its shutdown completes, before its exit
+    # handlers (e.g. the LeakSanitizer check) finish: then wait for the saved pid instead.
+    clickhouse stop --force || timeout 60 tail --pid="$pid" -f /dev/null
 }
 
 function wait_server_ports_free()
