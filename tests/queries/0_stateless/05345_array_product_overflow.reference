@@ -1,0 +1,17 @@
+Integer product beyond the integer range
+1e36
+-1e36
+18446744073709552000
+8e27
+1e40
+2.5822498780869086e120
+1e36
+1e40
+Integer product within the integer range
+9223372030926249000
+-9223372030926249000
+9223372030926249000
+A zero element after the integer range is exceeded
+0
+0
+Decimal product beyond the accumulator range
