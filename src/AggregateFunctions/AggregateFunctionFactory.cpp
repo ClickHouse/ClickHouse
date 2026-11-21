@@ -127,8 +127,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     NullsAction action,
     const DataTypes & argument_types,
     const Array & parameters,
-    AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionProperties & out_properties) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -145,7 +144,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         auto nested_types = getVariantArgumentsConversion(name, action, types_without_low_cardinality, /* including_nested = */ false);
         if (!nested_types.empty())
         {
-            auto nested_function = get(name, action, nested_types, parameters, out_properties, state_variant);
+            auto nested_function = get(name, action, nested_types, parameters, out_properties);
             return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, types_without_low_cardinality, nested_types, parameters);
         }
     }
@@ -169,11 +168,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             [](const auto & type) { return type->onlyNull(); });
 
         /// Functions from Nothing are rewritten to AggregateFunctionNothing, in this case nested_function is nullptr.
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
         return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -275,8 +274,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    bool has_null_arguments,
-    AggregateFunctionStateVariant state_variant) const
+    bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -317,11 +315,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
 
-        AggregateFunctionPtr function;
-        if (state_variant == AggregateFunctionStateVariant::Window && found->window_creator)
-            function = found->window_creator(name, argument_types, parameters, settings);
-        else
-            function = found->creator(name, argument_types, parameters, settings);
+        AggregateFunctionPtr function = found->creator(name, argument_types, parameters, settings);
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
         /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
@@ -374,10 +368,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        /// A state leaves the window function as a value that can be stored, sent, cast or merged with ordinary
-        /// states, and its type name does not tell the window layout apart. So it always uses the ordinary layout.
-        const auto nested_state_variant = combinator->returnsNestedState() ? AggregateFunctionStateVariant::Aggregation : state_variant;
-
         AggregateFunctionPtr combined_function;
         if (combinator->transformsMultipleNestedFunctions())
         {
@@ -388,7 +378,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, nested_state_variant));
+                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -401,12 +391,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         {
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
-            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, nested_state_variant);
-            /// The window layout only makes a window function faster, so use the ordinary layout where the
-            /// combined function cannot work with the window one.
-            if (nested_state_variant != AggregateFunctionStateVariant::Aggregation
-                && !combinator->acceptsNestedFunction(*nested_function, argument_types))
-                nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, AggregateFunctionStateVariant::Aggregation);
+            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 

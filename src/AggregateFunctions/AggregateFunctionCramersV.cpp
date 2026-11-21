@@ -32,27 +32,6 @@ struct CramersVData : CrossTabAggregateData
     }
 };
 
-struct CramersVWindowData : CrossTabPhiSquaredWindowData
-{
-    static const char * getName()
-    {
-        return CramersVData::getName();
-    }
-
-    [[nodiscard]] Float64 getResult() const
-    {
-        if (count < 2)
-            return std::numeric_limits<Float64>::quiet_NaN();
-
-        UInt64 q = std::min(a_marginal_count.size(), b_marginal_count.size());
-
-        if (q <= 1)
-            return std::numeric_limits<Float64>::quiet_NaN();
-
-        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
-    }
-};
-
 }
 
 void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory);
@@ -127,14 +106,7 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
         },
-        documentation,
-        {},
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            assertBinary(name, argument_types);
-            assertNoParameters(name, parameters);
-            return std::make_shared<AggregateFunctionCrossTab<CramersVWindowData>>(argument_types);
-        }
+        documentation
     });
 }
 

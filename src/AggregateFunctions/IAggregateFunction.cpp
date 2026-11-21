@@ -158,11 +158,6 @@ bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunctio
     return getStateType()->equals(*rhs.getStateType());
 }
 
-bool IAggregateFunction::haveSameDefinition(const IAggregateFunction & rhs) const
-{
-    return assert_cast<const DataTypeAggregateFunction &>(*getStateType()).equalsIgnoringVariant(*rhs.getStateType());
-}
-
 void IAggregateFunction::parallelizeMergePrepare(
     AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
 {
@@ -179,19 +174,6 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
 void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
-}
-
-void IAggregateFunction::mergeStateFromDifferentVariant(
-    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
-        "Cannot merge state produced by '{}' ({} state variant)",
-        getName(),
-        toString(getStateVariant()),
-        rhs.getName(),
-        toString(rhs.getStateVariant()));
 }
 
 void IAggregateFunction::mergeImpl(

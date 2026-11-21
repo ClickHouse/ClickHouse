@@ -290,39 +290,6 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        mergeNestedStates(place, rhs, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->merge(nested_place, rhs_nested_place, arena);
-        });
-    }
-
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(canMergeStateFromDifferentVariant(rhs));
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        mergeNestedStates(place, rhs_place, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->mergeStateFromDifferentVariant(nested_place, *rhs_nested, rhs_nested_place, arena);
-        });
-    }
-
-private:
-    template <typename MergeNested>
-    void mergeNestedStates(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena, MergeNested && merge_nested) const
-    {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
 
@@ -357,11 +324,10 @@ private:
             }
 
             if (!zero_size_nested)
-                merge_nested(it->second, elem.second);
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
-public:
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
