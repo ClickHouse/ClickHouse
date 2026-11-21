@@ -8,6 +8,6 @@ task spans:
 local execution	DistributedPlanTask::execute	SERVER	task_id: set	initial_query_id: initiator	plan_hash: set	execute_locally: 1	exchange.outputs: set	query_id: set	query_status: QueryFinish	exception: none
 stateless workers	DistributedPlanTask::execute	SERVER	task_id: set	initial_query_id: initiator	plan_hash: set	execute_locally: 0	exchange.outputs: set	query_id: set	query_status: QueryFinish	exception: none
 ancestors of the task spans:
-local execution	DistributedPlanTask::execute <- query
-stateless workers	DistributedPlanTask::execute <- InterserverIOHTTPHandler <- StatelessWorkerClient::sendTask <- query
+local execution	DistributedPlanTask::execute <- DistributedPlanTask::dispatch <- DistributedPlanExecutor::execute <- query
+stateless workers	DistributedPlanTask::execute <- InterserverIOHTTPHandler <- StatelessWorkerClient::sendTask <- DistributedPlanTask::dispatch <- DistributedPlanExecutor::execute <- query
 spans dispatched by the local execution:	0	0
