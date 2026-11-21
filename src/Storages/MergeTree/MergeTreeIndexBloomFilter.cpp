@@ -165,6 +165,17 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
 namespace
 {
 
+/// A String value that cannot be parsed as the target type (e.g. a `Date` column compared
+/// with a date-and-time string, see the similar handling in `KeyCondition`) must not fail
+/// the whole query during index analysis. Return a Null field instead, so that the caller
+/// excludes the atom from the index condition.
+Field convertFieldSkippingUnparsableDateStrings(const Field & field, const IDataType & type, const IDataType * hint = nullptr)
+{
+    if (field.getType() == Field::Types::String && WhichDataType(type).isDateOrDate32())
+        return tryConvertFieldToType(field, type, hint);
+    return convertFieldToType(field, type, hint);
+}
+
 /// True when the index column is an `Array` and the set holds an empty array. A set column that is
 /// not a `ColumnArray` cannot be inspected, so it counts as holding one.
 bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
@@ -1258,7 +1269,7 @@ static Field convertConstantForArrayIndexFunction(
         return std::move(*enum_value);
 
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
-        return convertFieldToType(value_field, *actual_type, value_type.get());
+        return convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
 
     return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 }
@@ -1298,7 +1309,7 @@ static ColumnPtr createColumnFromConstantArray(
         else if (coerce)
             converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
         else
-            converted = convertFieldToType(f, *actual_type, element_type.get());
+            converted = convertFieldSkippingUnparsableDateStrings(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;
 
@@ -1430,7 +1441,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return true;
                     }
 
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    auto converted_field = convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
 
@@ -1541,7 +1552,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return true;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
 
@@ -1612,7 +1623,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         Field converted_field = element_type
             ? convertConstantForArrayIndexFunction(value_field, value_type, element_type, actual_type)
-            : convertFieldToType(value_field, *actual_type, value_type.get());
+            : convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 

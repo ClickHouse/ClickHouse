@@ -1,0 +1,42 @@
+Date vs a string with a date and time
+1
+0
+1
+1
+1
+0
+0
+1
+1
+String on the left side
+1
+0
+1
+1
+Date32
+1
+1
+0
+1
+1
+1
+Fractional seconds
+1
+1
+0
+1
+Non-constant date column
+1
+1
+1
+1
+Strings without a time still work
+1
+1
+1
+Filtering by a Date key column
+2
+1
+1
+1
+Invalid strings still throw

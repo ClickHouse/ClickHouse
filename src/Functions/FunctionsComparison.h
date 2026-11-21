@@ -1335,9 +1335,44 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
+        /// The type to which the string constant is converted. Usually it is the type of the other argument.
+        /// But a Date/Date32 argument can also be compared with a string containing a date and time:
+        /// then the string is converted to DateTime64, and the arguments are compared through their common type.
+        DataTypePtr string_conversion_type = type_to_compare;
+        Field converted;
 
-        DataTypePtr type_of_converted = type_to_compare;
+        if (WhichDataType(type_to_compare).isDateOrDate32())
+        {
+            converted = tryConvertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
+
+            if (converted.isNull())
+            {
+                /// The string cannot be parsed as Date/Date32, e.g. it contains a date with a time: '2026-01-01 00:00:00'.
+                /// Try to parse it as DateTime64 with the scale 6 - it is enough for fractional seconds up to microseconds,
+                /// and extra digits are ignored by parsing. DateTime64 is used instead of DateTime because parsing
+                /// of the latter clamps values outside the [1970, 2106] years range, while DateTime64 covers
+                /// the whole range of Date32. The default time zone is used, as for a DateTime64 literal.
+                DataTypePtr datetime_type = std::make_shared<DataTypeDateTime64>(6);
+                Field converted_to_datetime = tryConvertFieldToType(string_value, *datetime_type, type_string, params.format_settings);
+
+                if (converted_to_datetime.isNull())
+                {
+                    /// The string is not a date with a time either. Repeat the conversion to Date/Date32 to report the original error.
+                    converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
+                }
+                else
+                {
+                    converted = converted_to_datetime;
+                    string_conversion_type = datetime_type;
+                }
+            }
+        }
+        else
+        {
+            converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
+        }
+
+        DataTypePtr type_of_converted = string_conversion_type;
         if (converted.isNull())
         {
             converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
