@@ -3930,9 +3930,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::recordsTTLSkipFlags() const
 {
     /// `rows_sources` marks every row the merging algorithm emits as kept, so the gather stage has to learn which ones
     /// `TTLTransform` drops after the merge. `TTLAggregationAlgorithm` rebuilds the block without the row positions,
-    /// so a table with a `GROUP BY` TTL records no skip flags.
+    /// so a table with a `GROUP BY` TTL records no skip flags. Without `need_remove_expired_values`, `TTLTransform` runs
+    /// no TTL algorithm and drops no row.
     return global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical
-        && (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
+        && ctx->need_remove_expired_values
         && !global_ctx->metadata_snapshot->hasAnyGroupByTTL();
 }
 
