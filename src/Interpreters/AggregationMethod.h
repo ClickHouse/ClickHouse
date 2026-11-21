@@ -77,6 +77,9 @@ struct AggregationMethodOneNumber
 
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/, const IColumn::SerializationSettings * settings);
+
+    /// The hash table key can be wider than FieldType; returns the FieldType bytes of it.
+    static std::string_view getKeyFieldData(const Key & key);
 };
 
 /// For the case where there is one string key.

@@ -6,6 +6,17 @@
 namespace DB
 {
 template <typename FieldType, typename TData, bool consecutive_keys_optimization, bool nullable>
+std::string_view AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable>::getKeyFieldData(
+    const AggregationMethodOneNumber::Key & key)
+{
+    static_assert(sizeof(FieldType) <= sizeof(Key));
+    const auto * key_holder = reinterpret_cast<const char *>(&key);
+    if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::big)
+        key_holder += sizeof(Key) - sizeof(FieldType);
+    return {key_holder, sizeof(FieldType)};
+}
+
+template <typename FieldType, typename TData, bool consecutive_keys_optimization, bool nullable>
 void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable>::insertKeyIntoColumns(
     const AggregationMethodOneNumber::Key & key,
     std::vector<IColumn *> & key_columns,
@@ -24,12 +35,8 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
     {
         column = static_cast<ColumnFixedSizeHelper *>(key_columns[0]);
     }
-    static_assert(sizeof(FieldType) <= sizeof(Key));
-    const auto * key_holder = reinterpret_cast<const char *>(&key);
-    if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::big)
-        column->insertRawData<sizeof(FieldType)>(key_holder + (sizeof(Key) - sizeof(FieldType)));
-    else
-        column->insertRawData<sizeof(FieldType)>(key_holder);
+    const char * field_data = getKeyFieldData(key).data();
+    column->insertRawData<sizeof(FieldType)>(field_data);
 }
 
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>;
@@ -118,9 +125,14 @@ void AggregationMethodSingleLowCardinalityColumn<SingleColumnMethod>::insertKeyI
     auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0]);
 
     if constexpr (std::is_same_v<Key, std::string_view>)
+    {
         col->insertData(key.data(), key.size());
+    }
     else
-        col->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+    {
+        const auto data = SingleColumnMethod::getKeyFieldData(key);
+        col->insertData(data.data(), data.size());
+    }
 }
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>>;
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false>>;
