@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest
+# Tags: zookeeper, no-fasttest, no-random-detach
 # Tag zookeeper: the disk type is read with `from_zk`.
 # Tag no-fasttest: needs the `encrypted` disk, which requires SSL.
+# Tag no-random-detach: the internal `ATTACH` of `t_policy` runs without `s3_allow_server_credentials_in_user_queries`, so it is rejected and the table stays detached.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

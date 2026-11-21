@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-random-detach
 
 # Test that concurrent partition operations between the same pair of tables
 # in opposite directions do not deadlock due to lock ordering.

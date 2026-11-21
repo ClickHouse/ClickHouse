@@ -1,8 +1,9 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
 -- - no-parallel -- `SYSTEM DROP COLUMNS CACHE` is server-wide
 -- - no-random-settings, no-random-merge-tree-settings -- the read has to be one task, so that the
 --   hit oracle below counts one range
 -- - no-replicated-database -- the cache is per server
+-- - no-random-detach -- the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 
 -- A `Nested` member added by an `ALTER` after the part was written keeps no elements in the part,
 -- only the offsets of the group it shares them with. Reading it therefore does produce data:

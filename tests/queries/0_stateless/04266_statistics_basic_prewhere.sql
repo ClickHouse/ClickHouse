@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: prewhere ordering relies on materialized statistics; a forced DETACH/ATTACH can reset the cached statistics estimator and change the plan shape.
+
 -- Test Basic statistics: Prewhere column ordering and fallback selectivity.
 -- This mirrors the prewhere-ordering coverage that an earlier `nullcount`
 -- prototype (see https://github.com/ClickHouse/ClickHouse/pull/102356) had,

@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- columns_cache_max_bytes_to_write_to_cache is a soft per-query threshold, not a
 -- hard cap: a reader accumulates the entries of the granules it has read and writes
 -- them in one batch, and the batch that crosses the threshold (including the first

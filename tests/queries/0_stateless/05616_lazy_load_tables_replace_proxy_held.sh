@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-random-detach
+# no-random-detach: the reattach of the table the reader uses loads it, so the reader holds the loaded
+# storage rather than the proxy, and the next lookup finds no proxy to keep
 # A database with `lazy_load_tables` replaces the proxy of a loaded table with the loaded storage, but
 # only when nobody holds the proxy: otherwise one query could use the proxy and its table locks while
 # another uses the loaded storage. While a query that loaded the table through the proxy is still

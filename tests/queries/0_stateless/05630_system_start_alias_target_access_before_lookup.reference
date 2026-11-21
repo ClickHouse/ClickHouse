@@ -1,0 +1,21 @@
+alias only
+OK
+alias and target
+POSTGRESQL_CONNECTION_FAILURE
+stop, alias only
+OK
+stop, alias and target
+POSTGRESQL_CONNECTION_FAILURE
+aliases in the chain	17
+chain of 17 aliases, all but the last target
+OK
+OK
+chain of 17 aliases, all targets
+POSTGRESQL_CONNECTION_FAILURE
+POSTGRESQL_CONNECTION_FAILURE
+alias and target without the source grant
+ACCESS_DENIED
+ACCESS_DENIED
+stop, alias and target without the source grant
+ACCESS_DENIED
+ACCESS_DENIED

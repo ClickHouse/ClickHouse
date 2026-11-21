@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 -- no-replicated-database: fails due to additional shard.
 
 DROP TABLE IF EXISTS t_detach_attach_patches SYNC;

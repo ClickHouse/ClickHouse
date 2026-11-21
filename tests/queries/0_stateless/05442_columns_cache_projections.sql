@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- no-parallel: the hit and miss counts below depend on the server-wide columns cache, which
 -- `SYSTEM DROP COLUMNS CACHE` and the admission control of the cache share with other tests.
 

@@ -1,4 +1,5 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-random-detach
+-- no-random-detach: reattaching the table before the query adds reads of index files to the counted query
 -- The check below counts reads of local files; on object storage the posting list is not read through a file
 -- descriptor at all.
 

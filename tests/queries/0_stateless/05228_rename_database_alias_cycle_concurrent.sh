@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-catalog
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-catalog, no-random-detach
 # no-parallel: the PAUSEABLE_ONCE failpoint fires exactly once globally, so a `RENAME DATABASE` from
 #   another parallel test could take the pause meant for this test's rename.
 # no-fasttest: a test that arms a fail point runs alone, and such tests are kept out of the fast test.
@@ -7,6 +7,8 @@
 #   goes through the DDL queue instead of taking the database DDL lock directly.
 # no-shared-catalog: the `Shared` database engine serializes table DDL on its own, so a racing
 #   `CREATE TABLE` waits for the paused rename instead of being rejected by the database DDL lock.
+# no-random-detach: with the random `DETACH`/`ATTACH` before the racing `CREATE TABLE`, the `CREATE`
+#   waits for the paused rename instead of being rejected by the database DDL lock, so it hits the timeout.
 
 # https://github.com/ClickHouse/ClickHouse/issues/116906
 # The dependency check of `RENAME DATABASE` must cover exactly the tables that get renamed. Without

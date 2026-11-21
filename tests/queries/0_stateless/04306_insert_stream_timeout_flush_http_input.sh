@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-flaky-check
+# Tags: no-fasttest, no-parallel, no-flaky-check, no-random-detach
 # no-fasttest: The test waits for a timeout-based flush from an open HTTP request.
 # no-parallel: The partial flush is timing-sensitive; concurrent load can starve the pipeline executor.
 # no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
+# no-random-detach: The partial flush is timing-sensitive; a DETACH/ATTACH before the streaming INSERT disrupts the timing and breaks the open HTTP connection.
 
 set -euo pipefail
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, no-random-detach
 # Tag no-random-settings: relies on predictable per-row execution timing of `sleepEachRow`
+# Tag no-random-detach: reattaching the table before the query keeps `DETACH DATABASE` from being blocked, so there is nothing to kill
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

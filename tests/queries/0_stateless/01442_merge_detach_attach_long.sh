@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug
+# Tags: long, no-debug, no-random-detach
+# no-random-detach: test uses DETACH/ATTACH itself
 
 set -e
 

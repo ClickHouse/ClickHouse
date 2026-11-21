@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest, no-parallel-replicas, no-random-detach
+# no-random-detach: the internal `DETACH`/`ATTACH` adds rows for the master thread of the query
+# to `system.query_thread_log`, and the test counts these rows.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,4 +1,4 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-random-detach
 -- Stop replication queues
 DROP TABLE IF EXISTS wrong_metadata;
 

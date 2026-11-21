@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # The columns cache keeps no tombstone for a removed part: its entries are dropped by
 # `IMergeTreeDataPart::clearCaches`, which runs when the part is finally gone. This test proves
 # that the entries really do go away - both for the parts a merge replaces and for a dropped

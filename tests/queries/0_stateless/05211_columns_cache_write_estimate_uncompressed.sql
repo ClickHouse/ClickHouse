@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 
 -- The columns cache write estimate is made in uncompressed bytes - the amount the cache is charged
 -- for when the data lands in it - and the whole query is charged for it before anything is read.

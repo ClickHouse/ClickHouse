@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach, no-flaky-check
+# no-random-detach: test checks query log
+# no-flaky-check: takes 94-145 s on its own and exceeds the 180 s per-run budget of the flaky check
+# under TSan; this PR only added a tag, the test itself is unchanged
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

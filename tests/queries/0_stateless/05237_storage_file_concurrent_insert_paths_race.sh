@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: concurrent writers fail with `UNKNOWN_TABLE` while another session's query has the table detached
 
 # `engine_file_allow_create_multiple_files` makes a writer pick the next free `data.<n>` name and
 # append it to the storage's path list. Concurrent writers must not choose the same name, and the

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: the `ALTER` runs while the background `INSERT` is in flight, and the reattach the `INSERT`
+# triggers before it takes its table lock leaves a window where the `ALTER` finds no table at all
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
