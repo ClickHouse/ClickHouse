@@ -267,6 +267,18 @@ bool bindMaterializedCTEReference(TableNode & table_node, const IdentifierResolv
         if (isMaterializedCTESubqueryCorrelated(subquery))
             return false;
 
+        /// The temporary table does not keep the totals row, and the totals of a nested query are propagated
+        /// to the result of the subquery, e.g. `SELECT DISTINCT * FROM (SELECT ... GROUP BY ... WITH TOTALS)`.
+        /// Such a subquery is inlined.
+        bool has_totals = false;
+        traverseQueryTree(subquery, Everything{}, [&](const QueryTreeNodePtr & node)
+        {
+            const auto * query_node = node->as<QueryNode>();
+            has_totals |= query_node && query_node->isGroupByWithTotals();
+        });
+        if (has_totals)
+            return false;
+
         /// A temporary table cannot have several columns with the same name, while a subquery can,
         /// e.g. `SELECT g, max(g) AS g ... GROUP BY ALL`. Such a subquery is inlined.
         const auto & projection_columns = subquery->as<QueryNode>()

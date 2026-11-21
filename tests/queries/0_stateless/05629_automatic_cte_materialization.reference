@@ -46,3 +46,24 @@ g	g	g	g
 0
 3	2
 4	1
+-- totals of a nested query: inlined, the totals are kept
+0	2	0	2
+1	2	1	2
+
+0	4	0	4
+-- a reference is filtered by a key of GROUP BY: inlined, so the filter is pushed down below the aggregation
+0
+1	1
+2	1
+-- a reference is filtered by a column of SELECT DISTINCT: inlined
+0
+-- a reference is filtered by a column that is not a key, or the filter cannot be pushed down below LIMIT: materialized
+10
+5
+-- a column is not used by any reference: inlined, the column is not calculated
+0
+1
+2
+0
+-- every column is used by some reference: materialized
+10

@@ -3,7 +3,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/Utils.h>
@@ -127,6 +132,171 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
     return use_count;
 }
 
+/// Do not descend into nested queries.
+struct ExceptSubqueries
+{
+    bool operator()(const QueryTreeNodePtr &, const QueryTreeNodePtr & child) const
+    {
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION;
+    }
+};
+
+NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery)
+{
+    if (const auto * query_node = subquery->as<QueryNode>())
+        return query_node->getProjectionColumns();
+    return subquery->as<UnionNode &>().computeProjectionColumns();
+}
+
+/// Whether a filter by the projection column `column_index` of the resolved subquery of a CTE can be pushed down
+/// below its aggregation or `DISTINCT`: the column is a key of `GROUP BY` or a column of `SELECT DISTINCT`,
+/// and nothing between the aggregation and the result of the subquery depends on the other rows.
+bool canPushFilterIntoSubquery(const QueryTreeNodePtr & subquery, size_t column_index)
+{
+    if (const auto * union_node = subquery->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            if (canPushFilterIntoSubquery(query, column_index))
+                return true;
+        return false;
+    }
+
+    const auto * query_node = subquery->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    if (query_node->hasLimit() || query_node->hasOffset() || query_node->hasLimitBy()
+        || query_node->hasLimitAfter() || query_node->hasLimitUntil()
+        || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube() || query_node->isGroupByWithGroupingSets()
+        || query_node->hasWindow())
+        return false;
+
+    const auto & projection_nodes = query_node->getProjection().getNodes();
+    if (column_index >= projection_nodes.size())
+        return false;
+
+    bool has_aggregate_function = false;
+    bool has_window_function = false;
+    auto find_functions = [&](const QueryTreeNodePtr & node)
+    {
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            has_aggregate_function |= function_node->isAggregateFunction();
+            has_window_function |= function_node->isWindowFunction();
+        }
+    };
+
+    traverseQueryTree(query_node->getProjectionNode(), ExceptSubqueries{}, find_functions);
+    if (query_node->hasHaving())
+        traverseQueryTree(query_node->getHaving(), ExceptSubqueries{}, find_functions);
+
+    if (has_window_function)
+        return false;
+
+    if (query_node->hasOrderBy())
+    {
+        for (const auto & sort_node : query_node->getOrderBy().getNodes())
+            if (sort_node->as<SortNode &>().withFill())
+                return false;
+    }
+
+    if (query_node->hasGroupBy())
+    {
+        for (const auto & key : query_node->getGroupBy().getNodes())
+            if (key->isEqual(*projection_nodes[column_index], {.compare_aliases = false}))
+                return true;
+        return false;
+    }
+
+    return query_node->isDistinct() && !has_aggregate_function;
+}
+
+/// An automatically materialized CTE (see the setting `enable_automatic_cte_materialization`) must not make the query
+/// do more work than inlining it at each reference. It is inlined at all references when:
+/// - a reference is filtered by a column that is a key of the aggregation of the CTE: the filter is pushed down
+///   into an inlined subquery, below the aggregation, and can use the indexes of the tables, while a materialized CTE
+///   is calculated for all keys;
+/// - a column of the CTE is not used by any reference: it is not calculated in an inlined subquery,
+///   while a materialized CTE calculates all of its columns.
+void inlineUnsuitableAutomaticMaterializedCTEs(const QueryTreeNodePtr & node, const MaterializedCTEUseCount & use_count)
+{
+    auto is_candidate = [](const MaterializedCTEPtr & materialized_cte)
+    {
+        return materialized_cte->is_automatic && !materialized_cte->must_inline && materialized_cte->isStorageInitialized();
+    };
+
+    if (std::ranges::none_of(use_count, [&](const auto & entry) { return is_candidate(entry.first); }))
+        return;
+
+    /// The reference to an automatically materialized CTE that is the source of the column, if any.
+    auto get_referenced_cte = [](const ColumnNode & column_node) -> const TableNode *
+    {
+        auto column_source = column_node.getColumnSourceOrNull();
+        const auto * table_node = column_source ? column_source->as<TableNode>() : nullptr;
+        if (table_node && table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->is_automatic)
+            return table_node;
+        return nullptr;
+    };
+
+    auto check_filter = [&](const QueryTreeNodePtr & filter)
+    {
+        traverseQueryTree(filter, ExceptSubqueries{}, [&](const QueryTreeNodePtr & filter_node)
+        {
+            const auto * column_node = filter_node->as<ColumnNode>();
+            const auto * table_node = column_node ? get_referenced_cte(*column_node) : nullptr;
+            if (!table_node || table_node->getMaterializedCTE()->must_inline)
+                return;
+
+            const auto & subquery = table_node->getMaterializedCTESubquery();
+            const auto projection_columns = getSubqueryProjectionColumns(subquery);
+
+            for (size_t column_index = 0; column_index < projection_columns.size(); ++column_index)
+            {
+                if (projection_columns[column_index].name == column_node->getColumnName())
+                {
+                    if (canPushFilterIntoSubquery(subquery, column_index))
+                        table_node->getMaterializedCTE()->must_inline = true;
+                    break;
+                }
+            }
+        });
+    };
+
+    std::unordered_map<const MaterializedCTE *, std::unordered_set<String>> used_columns;
+    std::unordered_map<const MaterializedCTE *, size_t> columns_count;
+
+    traverseQueryTree(node, Everything{}, [&](const QueryTreeNodePtr & current_node)
+    {
+        if (const auto * column_node = current_node->as<ColumnNode>())
+        {
+            if (const auto * table_node = get_referenced_cte(*column_node))
+                used_columns[table_node->getMaterializedCTE().get()].insert(column_node->getColumnName());
+        }
+        else if (const auto * table_node = current_node->as<TableNode>())
+        {
+            if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->is_automatic)
+                columns_count[table_node->getMaterializedCTE().get()] = getSubqueryProjectionColumns(table_node->getMaterializedCTESubquery()).size();
+        }
+        else if (const auto * query_node = current_node->as<QueryNode>())
+        {
+            if (query_node->hasPrewhere())
+                check_filter(query_node->getPrewhere());
+            if (query_node->hasWhere())
+                check_filter(query_node->getWhere());
+        }
+    });
+
+    for (const auto & [materialized_cte, _] : use_count)
+    {
+        if (!is_candidate(materialized_cte))
+            continue;
+
+        if (used_columns[materialized_cte.get()].size() < columns_count[materialized_cte.get()])
+            materialized_cte->must_inline = true;
+    }
+}
+
 class InlineMaterializedCTEsVisitor : public InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>
 {
     using Base = InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>;
@@ -185,6 +355,8 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     /// skip the second traversal and cloneAndReplace entirely.
     if (use_count.empty())
         return;
+
+    inlineUnsuitableAutomaticMaterializedCTEs(node, use_count);
 
     /// A CTE with a single static reference site is inlined, unless that site is inside a recursive member
     /// of a recursive CTE: `RecursiveCTESource` re-executes the recursive members once per recursion step,

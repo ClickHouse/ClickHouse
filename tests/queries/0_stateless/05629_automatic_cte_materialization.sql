@@ -6,16 +6,16 @@ SET enable_materialized_cte = 0;
 
 SELECT '-- aggregation, referenced twice: materialized';
 WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
-SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c;
 
 SELECT '-- the same with the setting disabled: inlined';
 WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
-SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c
 SETTINGS enable_automatic_cte_materialization = 0;
 
 SELECT '-- NOT MATERIALIZED: inlined';
 WITH t AS NOT MATERIALIZED (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
-SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c;
 
 SELECT '-- no aggregation: inlined';
 WITH t AS (SELECT rand64() AS r FROM numbers(10))
@@ -34,7 +34,7 @@ WITH t AS (SELECT rand64() + 0 * row_number() OVER () AS r FROM numbers(10))
 SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
 
 SELECT '-- IN and JOIN references';
-WITH t AS (SELECT rand64() AS r FROM numbers(10) GROUP BY number, r)
+WITH t AS (SELECT rand64() AS r FROM numbers(10) GROUP BY number)
 SELECT count() FROM t WHERE r IN (SELECT r FROM t);
 
 SELECT '-- UNION ALL of references';
@@ -111,3 +111,35 @@ WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b 
 SELECT * FROM b);
 WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b AS (SELECT c, count() AS n FROM a GROUP BY c)
 SELECT * FROM b ORDER BY c;
+
+SELECT '-- totals of a nested query: inlined, the totals are kept';
+WITH t AS (SELECT DISTINCT * FROM (SELECT number % 2 AS n, count() AS c FROM numbers(4) GROUP BY n WITH TOTALS))
+SELECT a.n, a.c, b.n, b.c FROM t AS a LEFT JOIN t AS b ON a.n = b.n ORDER BY a.n;
+
+SELECT '-- a reference is filtered by a key of GROUP BY: inlined, so the filter is pushed down below the aggregation';
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE a.n < 100;
+WITH t AS (SELECT number AS n, count() AS c FROM numbers(10000000) GROUP BY n)
+SELECT * FROM t WHERE n = 1 UNION ALL SELECT * FROM t WHERE n = 2
+ORDER BY n
+SETTINGS max_memory_usage = '256M', max_threads = 4;
+
+SELECT '-- a reference is filtered by a column of SELECT DISTINCT: inlined';
+WITH t AS (SELECT DISTINCT number AS n, rand64() AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE b.n < 100;
+
+SELECT '-- a reference is filtered by a column that is not a key, or the filter cannot be pushed down below LIMIT: materialized';
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.n = b.n WHERE a.r != 0;
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n ORDER BY n LIMIT 5)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE a.n < 100 AND b.n < 100;
+
+SELECT '-- a column is not used by any reference: inlined, the column is not calculated';
+WITH t AS (SELECT number, sum(toUInt64(concat(toString(number), 'x'))) AS unused FROM numbers(3) GROUP BY number)
+SELECT a.number FROM t AS a INNER JOIN t AS b USING (number) ORDER BY a.number;
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- every column is used by some reference: materialized';
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM (SELECT r FROM t) AS a INNER JOIN (SELECT r, c FROM t) AS b ON a.r = b.r;

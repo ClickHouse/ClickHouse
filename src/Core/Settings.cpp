@@ -6775,7 +6775,9 @@ as if it was declared `AS MATERIALIZED`: it is executed once, stored in a tempor
 Only CTEs whose result is usually small compared to its input and expensive to recompute are materialized automatically:
 the subquery (or each branch of a `UNION`) must contain `GROUP BY`, an aggregate function, `DISTINCT`, or a window function, and must not use `WITH TOTALS`.
 A CTE declared as `AS NOT MATERIALIZED` is never materialized. A CTE is also inlined at each reference
-if its subquery is correlated or resolves differently at different references.
+if its subquery is correlated or resolves differently at different references, if the totals of a nested query are propagated to its result,
+if a reference is filtered (`WHERE`, `PREWHERE`) by a column that is a key of its `GROUP BY` or a column of its `SELECT DISTINCT`
+(so the filter is pushed down below the aggregation), or if some of its columns are not used by any reference (so they are not calculated).
 
 Works independently of the setting `enable_materialized_cte`.
 )", 0, \
