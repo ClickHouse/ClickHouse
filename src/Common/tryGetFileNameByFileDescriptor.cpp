@@ -1,4 +1,5 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Common/KernelFileDescriptor.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -14,7 +15,7 @@ namespace DB
 std::optional<String> tryGetFileNameFromFileDescriptor(int fd)
 {
 #ifdef OS_LINUX
-    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
+    std::string proc_path = fmt::format("/proc/self/fd/{}", toKernelFileDescriptor(fd));
     char file_path[PATH_MAX] = {'\0'};
     if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return file_path;

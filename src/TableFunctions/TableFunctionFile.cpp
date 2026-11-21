@@ -1,6 +1,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
+#include <Common/KernelFileDescriptor.h>
 
 #include <Core/Field.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -124,6 +125,10 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             (type == Field::Types::Int64) ? literal->value.safeGet<Int64>() : literal->value.safeGet<UInt64>());
         if (fd < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
+        /// The descriptor comes from outside of the process (e.g. a redirection of the shell): it is a kernel one.
+        fd = fromKernelFileDescriptor(fd);
+        if (fd < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor is too large");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be path or file descriptor", getName());

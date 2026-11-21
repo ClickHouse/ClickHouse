@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Common/KernelFileDescriptor.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -4156,10 +4157,11 @@ void registerStorageFile(StorageFactory & factory)
             else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
+                /// A numeric descriptor comes from outside of the process (e.g. a redirection of the shell): it is a kernel one.
                 if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.safeGet<Int64>());
+                    source_fd = fromKernelFileDescriptor(static_cast<int>(literal->value.safeGet<Int64>()));
                 else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
+                    source_fd = fromKernelFileDescriptor(static_cast<int>(literal->value.safeGet<UInt64>()));
                 else if (type == Field::Types::String)
                     file_source = StorageFile::FileSource::parse(literal->value.safeGet<String>(), factory_args.getLocalContext());
                 else

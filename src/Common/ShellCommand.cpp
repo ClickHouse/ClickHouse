@@ -31,6 +31,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/UDFProcessRegistry.h>
 #include <Common/PipeFDs.h>
+#include <Common/KernelFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/waitForPid.h>
@@ -286,21 +287,22 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
+        /// The numbers in `read_fds` and `write_fds` are descriptors of the command, which are kernel descriptors.
         for (size_t i = 0; i < config.read_fds.size(); ++i)
         {
             auto & fds = *read_pipe_fds[i];
-            auto fd = config.read_fds[i];
+            int fd = fromKernelFileDescriptor(config.read_fds[i]);
 
-            if (fd != dup2(fds.fds_rw[1], fd))
+            if (fd < 0 || fd != dup2(fds.fds_rw[1], fd))
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
         }
 
         for (size_t i = 0; i < config.write_fds.size(); ++i)
         {
             auto & fds = *write_pipe_fds[i];
-            auto fd = config.write_fds[i];
+            int fd = fromKernelFileDescriptor(config.write_fds[i]);
 
-            if (fd != dup2(fds.fds_rw[0], fd))
+            if (fd < 0 || fd != dup2(fds.fds_rw[0], fd))
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
         }
 
