@@ -1242,7 +1242,9 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
     /// not invalidate a watermark either.
     /// `extremes` only adds a separate block of minimums and maximums next to the result and never
     /// changes its rows. `max_table_size_to_drop` / `max_partition_size_to_drop` only guard `DROP` and
-    /// `TRUNCATE`; a replacing refresh zeroes them between its two source hashes. The result limits `max_result_rows` / `max_result_bytes` are deliberately not
+    /// `TRUNCATE`, and `allow_reserved_column_names` only relaxes the validation of column names in
+    /// `CREATE` and `ALTER`; a replacing refresh sets all three between its two source hashes (see
+    /// `StorageMaterializedView::prepareRefresh`). The result limits `max_result_rows` / `max_result_bytes` are deliberately not
     /// here: `StorageView`'s `getViewContext` pins them to zero, so they fold in as a constant for a
     /// plain view, but `StorageMaterializedView::readImpl` and a refresh run under the effective
     /// reader's limits as they are, and a limit there can truncate the result or fail the query.
@@ -1285,6 +1287,7 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
         "extremes",
         "max_table_size_to_drop",
         "max_partition_size_to_drop",
+        "allow_reserved_column_names",
     };
 
     if (settings_not_affecting_rows.contains(setting_name))
