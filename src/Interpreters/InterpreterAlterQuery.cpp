@@ -30,6 +30,7 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -944,6 +945,48 @@ void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
         required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
 }
 
+/** The `DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL` expression and the `TTL` of a column are stored in the
+  * table metadata and later evaluated for every reader: a `SELECT` of an `ALIAS` column is authorized by the
+  * grant on the alias name alone (see `collectReferencedColumnNames`). Storing such an expression is therefore
+  * an act of reading every column it references, and requires `SELECT` on each of them.
+  *
+  * Names are taken from the statement as written: a name that does not resolve to a column of the current
+  * metadata (a column added or renamed by the same statement) is still checked, which fails closed.
+  * SQL user-defined functions are already expanded by `executeToTable` before the access check.
+  */
+void InterpreterAlterQuery::addRequiredAccessForColumnDeclarationExpressions(
+    AccessRightsElements & required_access, const ASTAlterCommand & command, const StoragePtr & storage) const
+{
+    if (!command.col_decl)
+        return;
+
+    const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
+
+    RequiredSourceColumnsVisitor::Data data;
+    for (const auto & expression : {declaration.getDefaultExpression(), declaration.getTTL()})
+        if (expression)
+            RequiredSourceColumnsVisitor(data).visit(expression);
+
+    const NameSet referenced = data.requiredColumns();
+    if (referenced.empty())
+        return;
+
+    const auto & alter = query_ptr->as<const ASTAlterQuery &>();
+    Names column_names(referenced.begin(), referenced.end());
+    std::ranges::sort(column_names);
+
+    /// A subcolumn inherits the grants of its column, as for `SELECT`. Without the storage (an `ON CLUSTER` query
+    /// for a table that this host does not have) the names are checked as written.
+    if (storage)
+    {
+        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+        column_names = metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+            column_names, getContext(), StorageID(alter.getDatabase(), alter.getTable()));
+    }
+
+    required_access.emplace_back(AccessType::SELECT, alter.getDatabase(), alter.getTable(), column_names);
+}
+
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
@@ -970,6 +1013,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
 
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
+
+        if (command.type == ASTAlterCommand::ADD_COLUMN || command.type == ASTAlterCommand::MODIFY_COLUMN)
+            addRequiredAccessForColumnDeclarationExpressions(required_access, command, storage);
     }
 
     return required_access;
