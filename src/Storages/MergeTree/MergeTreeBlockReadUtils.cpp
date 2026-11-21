@@ -273,14 +273,15 @@ bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
 }
 
 /// Whether a skip rule that only one of the objects has can skip @path or, when @with_paths_under, a path under it.
-/// Skipping a path skips the paths under it, and a regexp skips a path it matches partially or fully, as a setting says.
+/// Skipping a path skips the paths under it. A regexp is matched partially, which includes the full match of the other mode.
 bool skipRulesDifferOnPath(const DataTypeObject & lhs, const DataTypeObject & rhs, const String & path, bool with_paths_under)
 {
     auto has_own_rule_on_path = [&](const DataTypeObject & object, const DataTypeObject & other)
     {
         for (const auto & path_to_skip : object.getPathsToSkip())
             if (!other.getPathsToSkip().contains(path_to_skip)
-                && (path.starts_with(path_to_skip) || (with_paths_under && path_to_skip.starts_with(path + "."))))
+                && (path == path_to_skip || path.starts_with(path_to_skip + ".")
+                    || (with_paths_under && path_to_skip.starts_with(path + "."))))
                 return true;
 
         const auto & other_regexps = other.getPathRegexpsToSkip();

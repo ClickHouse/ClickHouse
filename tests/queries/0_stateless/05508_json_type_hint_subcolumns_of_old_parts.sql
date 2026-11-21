@@ -69,6 +69,8 @@ DROP TABLE IF EXISTS t_scalar_sibling_nullable_compact;
 DROP TABLE IF EXISTS t_other_skip_wide;
 DROP TABLE IF EXISTS t_other_skip_compact;
 DROP TABLE IF EXISTS t_own_skip;
+DROP TABLE IF EXISTS t_skip_name_prefix;
+DROP TABLE IF EXISTS t_skip_path_under;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -638,6 +640,18 @@ SYSTEM STOP MERGES t_own_skip;
 ALTER TABLE t_own_skip MODIFY COLUMN j JSON(a String, SKIP c, SKIP REGEXP '^d') SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT j.a.size, j.c, j.d.e, j FROM t_own_skip;
 
+SELECT 'a skipped path skips the paths under it, not the paths that start with its name';
+CREATE TABLE t_skip_name_prefix (id UInt64, j JSON(b String)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_skip_name_prefix VALUES (1, '{"ab" : 42, "b" : "bad"}');
+SYSTEM STOP MERGES t_skip_name_prefix;
+ALTER TABLE t_skip_name_prefix MODIFY COLUMN j JSON(b UInt64, SKIP a) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT j.ab FROM t_skip_name_prefix;
+CREATE TABLE t_skip_path_under (id UInt64, j JSON(b String)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_skip_path_under VALUES (1, '{"a" : {"x" : 5}, "ab" : 42, "b" : "1"}');
+SYSTEM STOP MERGES t_skip_path_under;
+ALTER TABLE t_skip_path_under MODIFY COLUMN j JSON(b UInt64, SKIP a) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT j.a.x, j.ab, j FROM t_skip_path_under;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -704,3 +718,5 @@ DROP TABLE t_scalar_sibling_nullable_compact;
 DROP TABLE t_other_skip_wide;
 DROP TABLE t_other_skip_compact;
 DROP TABLE t_own_skip;
+DROP TABLE t_skip_name_prefix;
+DROP TABLE t_skip_path_under;

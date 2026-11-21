@@ -253,6 +253,9 @@ a path is read and cast as stored when the skip rules change only for other path
 42	2	2
 a path the changed skip rules skip is read from the converted column
 2	\N	\N	{"a":"42"}
+a skipped path skips the paths under it, not the paths that start with its name
+42
+\N	42	{"ab":42,"b":1}
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1
