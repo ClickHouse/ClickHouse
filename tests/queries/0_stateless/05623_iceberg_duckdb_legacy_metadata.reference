@@ -1,0 +1,69 @@
+legacy_v1 v1
+legacy_v1 v2
+1	alpha	10
+2	beta	20
+3	alpha	\N
+2	20
+legacy_v1 no-partition-field-ids
+1	alpha	10
+2	beta	20
+3	alpha	\N
+1	10
+3	\N
+2	20
+legacy_v1 no-partition-field-ids-in-specs
+1	alpha	10
+2	beta	20
+3	alpha	\N
+1	10
+3	\N
+2	20
+legacy_v1 no-snapshot-schema-id
+1	alpha	10
+2	beta	20
+3	alpha	\N
+1	10
+3	\N
+2	20
+legacy_v1 no-optional-manifest-keys
+1	alpha	10
+2	beta	20
+3	alpha	\N
+1	10
+3	\N
+2	20
+legacy_v1 some-partition-field-ids rejected
+legacy_v1 no-matching-partition-spec rejected
+merch_v1
+2	nba	20
+3	mlb	30
+4	nhl	40
+6	nba	60
+2	nba	20
+3	mlb	30
+4	nhl	40
+6	nba	60
+merch_v1 00004-v3-upgraded-v1-null-counts
+2	nba	20
+3	mlb	30
+4	nhl	40
+6	nba	60
+merch_v1 v3-no-snapshot-schema-id
+2	nba	20
+3	mlb	30
+4	nhl	40
+6	nba	60
+row_lineage_stored_columns
+1	a	\N	\N
+2	b	\N	\N
+3	c	\N	\N
+4	d	\N	\N
+1	a	0	1
+2	b	100	1
+3	c	2	7
+4	d	103	9
+5	e	4	2
+1	a	\N	\N
+2	b	\N	\N
+3	c	\N	\N
+4	d	\N	\N

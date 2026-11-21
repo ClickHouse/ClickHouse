@@ -1,0 +1,72 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "3914c1f5-bf97-4265-8c4c-78cd91736b19",
+  "location" : "data/persistent/uuid",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1750772175410,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "uuid",
+      "required" : true,
+      "type" : "uuid"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 3974286791591741252,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3974286791591741252,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3974286791591741252,
+    "timestamp-ms" : 1750772175410,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "2",
+      "added-records" : "10",
+      "added-files-size" : "1102",
+      "changed-partition-count" : "1",
+      "total-records" : "10",
+      "total-files-size" : "1102",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "iceberg-version" : "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)"
+    },
+    "manifest-list" : "data/persistent/uuid/metadata/snap-3974286791591741252-1-69f1c254-2a62-4b99-93db-aa35863e91ff.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1750772175410,
+    "snapshot-id" : 3974286791591741252
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1750772174828,
+    "metadata-file" : "data/persistent/uuid/metadata/00000-e8729e86-fe06-4ffc-835b-283f0d3e9921.metadata.json"
+  } ]
+}
