@@ -11,6 +11,9 @@
 #include <functional>
 #include <libnuraft/nuraft.hxx>
 #include <IO/WriteBuffer.h>
+#include <map>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include <mutex>
@@ -211,6 +214,12 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
+
+    /// Startup-recovery disk role precedence. Higher values win same-index duplicates.
+    size_t recovery_precedence = 0;
+
+    /// Unknown-version move marker kept with an unselected startup recovery copy.
+    std::optional<std::string> recovery_marker_path;
 
     /// Set when the file should be unlinked after the last `shared_ptr` drops.
     /// A false value keeps the file across manager destruction.
@@ -421,8 +430,7 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
-    /// Same-index recovery copies kept on disk at startup but NOT registered in
-    /// `existing_snapshots` (retained-window duplicates + re-point orphans), keyed by log index.
+    /// Same-index recovery copies kept on disk at startup but not registered in `existing_snapshots`.
     /// `detachSnapshotForRemoval` retires them with their index so they age out without a restart.
     std::unordered_map<uint64_t, std::vector<SnapshotFileInfoPtr>> retained_duplicate_snapshots;
     /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by

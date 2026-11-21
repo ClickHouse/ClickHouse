@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -100,6 +101,13 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    /// Unknown-version move marker retained with an unselected startup recovery copy.
+    std::optional<std::string> recovery_marker_path;
+
+    /// Every location a move of this changelog wrote to, guarded by file_mutex. A retained recovery
+    /// copy at one of them was overwritten by this file, so it may have been removed with it.
+    std::vector<std::pair<DiskPtr, std::string>> move_destinations;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;
@@ -171,7 +179,18 @@ struct ChangelogFileDescription
         return path;
     }
 
+    /// Waits for the background operations on this file and rethrows the first error of a move,
+    /// including the error of a move whose operation already expired.
     void waitAllAsyncOperations();
+
+    /// Records the failure of a background move of this file. `file_operations` holds weak pointers,
+    /// so the operation that failed can expire once the background thread proceeds to the next one,
+    /// before `waitAllAsyncOperations` observes it. The error stays here until then, and it is not
+    /// cleared afterwards: the unpublished copy that failed to be removed remains on the destination.
+    void setMoveError(std::exception_ptr e);
+
+    std::mutex move_error_mutex;
+    std::exception_ptr move_error;
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
@@ -685,28 +704,32 @@ private:
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
+    /// Same-range recovery copies retained at startup and removed with the registered range.
+    std::unordered_map<uint64_t, std::vector<ChangelogFileDescriptionPtr>> retained_duplicate_changelogs;
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
 
-    void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
+    void removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies);
 
     /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
     void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
-    void removeAllLogs();
+    void removeAllLogs(bool remove_recovery_copies);
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
     /// Serial startup read: files streamed one by one, each record inserted via addEntryWithLocation.
     /// Fallback for compression, a single in-scope file, streams=0, or forced testing.
-    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from) TSA_REQUIRES(writer_mutex);
+    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from)
+        TSA_REQUIRES(writer_mutex);
 
     /// Parallel metadata read (all in-scope files concurrently) + serial stitch.
     void readChangelogAndInitWriterParallelLocked(
-        uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
-        TSA_REQUIRES(writer_mutex);
+        uint64_t last_commited_log_index,
+        uint64_t start_to_read_from,
+        std::vector<ChangelogFileDescriptionPtr> in_scope_files) TSA_REQUIRES(writer_mutex);
 
     /// Outcome of reading the last in-scope changelog file, as needed by finalizeChangelogsAfterRead.
     /// A trimmed-down, header-visible stand-in for the serial/parallel readers' own (.cpp-local)
@@ -734,7 +757,26 @@ private:
 
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
     /// Queues asynchronous removal; returns the operation so callers can wait for completion.
-    ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// `registered` is set when `changelog` is a retained recovery copy of the range.
+    ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog, ChangelogFileDescriptionPtr registered = nullptr);
+    /// Queues removal of the registered changelog and all retained recovery copies for its range.
+    std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
+        uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
+    /// Moves `description` to the latest log disk before appending to it, and retires every other copy
+    /// of its range, including a move source that could not be removed. Throws if a copy cannot be
+    /// removed.
+    void prepareChangelogForAppend(const ChangelogFileDescriptionPtr & description);
+    /// Waits for removals of changelogs superseded by `writeAt` at `index`. Terminates if one failed:
+    /// appending the rewrite while a superseded changelog may remain would make the changelog inconsistent.
+    void waitSupersededChangelogRemovals(const std::vector<ChangelogFileOperationPtr> & removes, uint64_t index);
+    /// Removes retained recovery copies synchronously: during startup cleanup, before `writeAt`
+    /// rewrites the registered changelog of the range, and before the write thread appends to it. A rewritten changelog can be renamed by a later
+    /// rotation, and a stale copy under the old name would compete with it on restart.
+    void removeRetainedChangelogCopies(uint64_t from_log_index, ChangelogFileDescription & registered);
+    /// Whether a retained recovery copy of the range occupies `path` on `disk`. A move there would
+    /// overwrite it, and it may be the only complete copy of the range: for example, when the
+    /// selected copy has a torn tail.
+    bool isOccupiedByRetainedCopy(uint64_t from_log_index, const DiskPtr & disk, const std::string & path) const;
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;
