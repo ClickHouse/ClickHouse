@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <array>
+#include <set>
 #include <unistd.h>
 
 #include <Common/Epoll.h>
@@ -82,6 +83,30 @@ TEST(Epoll, ReservationLeavesNoTraceInTheDescriptorSet)
         epoll.remove(pipe.readEnd());
         EXPECT_TRUE(epoll.empty());
     }
+}
+
+/// Every reported entry must read back from a buffer only the wait writes, also under MemorySanitizer,
+/// where `epoll_wait` comes from glibc-compatibility and the kernel's writes are invisible unless unpoisoned.
+TEST(Epoll, ReportsManyReadyDescriptorsAtOnce)
+{
+    std::array<Pipe, 32> pipes;
+    DB::Epoll epoll{DB::EpollNesting::Leaf};
+    std::set<int> expected;
+    for (const auto & pipe : pipes)
+    {
+        epoll.add(pipe.readEnd());
+        pipe.signal();
+        expected.insert(pipe.readEnd());
+    }
+
+    std::array<epoll_event, 2 * pipes.size()> events; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the wait writes it
+    const size_t ready = epoll.getManyReady(static_cast<int>(events.size()), events.data(), 10000);
+    ASSERT_EQ(ready, pipes.size());
+
+    std::set<int> reported;
+    for (size_t i = 0; i < ready; ++i)
+        reported.insert(events[i].data.fd);
+    EXPECT_EQ(reported, expected);
 }
 
 #endif
