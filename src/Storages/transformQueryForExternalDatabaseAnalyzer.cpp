@@ -1,5 +1,6 @@
 #include <Formats/FormatSettings.h>
 #include <memory>
+#include <unordered_set>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -234,33 +235,40 @@ std::optional<ColumnWithTypeAndName> renderLeaves(const ColumnPtr & column, cons
     return ColumnWithTypeAndName{result, result_type, ""};
 }
 
-bool holdsEnumConstant(const QueryTreeNodePtr & node)
+using QueryTreeNodeRawPtrSet = std::unordered_set<const IQueryTreeNode *>;
+
+bool isAppliedLocally(const QueryTreeNodePtr & node, const QueryTreeNodeRawPtrSet & empty_sets)
 {
+    if (empty_sets.contains(node.get()))
+        return true;
+
     if (const auto * constant_node = node->as<ConstantNode>())
         if (holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
             return true;
 
     for (const auto & child : node->getChildren())
-        if (child && holdsEnumConstant(child))
+        if (child && isAppliedLocally(child, empty_sets))
             return true;
     return false;
 }
 
-/// A constant that still holds an `Enum` value would reach the external database as its number; a conjunct with one is applied locally only.
+/// A constant that still holds an `Enum` value would reach the external database as its number, and an `IN` of `empty_sets`
+/// has no SQL form; a conjunct with either is applied locally only.
 /// Returns whether anything was removed: the external database then returns rows that the local filter drops,
 /// so the `LIMIT` must not be pushed down.
-bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
+bool removeConjunctsAppliedLocally(QueryTreeNodePtr & filter, const ContextPtr & context, const QueryTreeNodeRawPtrSet & empty_sets)
 {
     auto throw_if_strict = [&]
     {
         if (context->getSettingsRef()[Setting::external_table_strict_query])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
     };
+    auto applied_locally = [&](const QueryTreeNodePtr & node) { return isAppliedLocally(node, empty_sets); };
 
     auto * function = filter->as<FunctionNode>();
     if (!function || function->getFunctionName() != "and")
     {
-        if (holdsEnumConstant(filter))
+        if (applied_locally(filter))
         {
             throw_if_strict();
             filter = {};
@@ -270,7 +278,7 @@ bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
     }
 
     auto & conjuncts = function->getArguments().getNodes();
-    if (std::erase_if(conjuncts, holdsEnumConstant) == 0)
+    if (std::erase_if(conjuncts, applied_locally) == 0)
         return false;
     throw_if_strict();
 
@@ -298,7 +306,7 @@ public:
         : set_params(set_params_)
     {}
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto * function_node = node->as<FunctionNode>())
         {
@@ -325,9 +333,12 @@ public:
         }
     }
 
+    /// The `IN` functions whose set has no member of the key type.
+    QueryTreeNodeRawPtrSet empty_sets;
+
 private:
     /// A constant that holds an `Enum` or a date-time value is written in the domain its operand is compared in.
-    void renderConstants(FunctionNode & function_node) const
+    void renderConstants(FunctionNode & function_node)
     {
         auto & arguments = function_node.getArguments().getNodes();
         if (arguments.size() != 2 || !std::ranges::all_of(arguments, hasResultType))
@@ -336,8 +347,11 @@ private:
         const auto & name = function_node.getFunctionName();
         if (name == "in" || name == "notIn")
         {
-            if (auto set = renderInSet(arguments[0], arguments[1]))
+            bool empty_set = false;
+            if (auto set = renderInSet(arguments[0], arguments[1], empty_set))
                 arguments[1] = std::move(set);
+            else if (empty_set)
+                empty_sets.insert(&function_node);
         }
         else if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
             || name == "lessOrEquals" || name == "greaterOrEquals")
@@ -362,7 +376,7 @@ private:
     }
 
     /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them.
-    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
+    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, bool & empty_set) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
         if (!constant_node)
@@ -404,7 +418,8 @@ private:
         DataTypePtr set_lhs_type = lhs_tuple_type ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
 
         auto set = getSetElementsForConstantValue(set_lhs_type, constant_node->getColumn(), constant_node->getResultType(), set_params);
-        if (set.empty() || set.front().column->empty())
+        empty_set = set.empty() || set.front().column->empty();
+        if (empty_set)
             return nullptr;
 
         Tuple members;
@@ -478,7 +493,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         }
-        if (query_node->hasPrewhere() && removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context))
+        if (query_node->hasPrewhere() && removeConjunctsAppliedLocally(query_node->getPrewhere(), context, visitor.empty_sets))
             allow_limit = false;
         if (query_node->hasWhere())
         {
@@ -486,7 +501,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
         }
-        if (query_node->hasWhere() && removeConjunctsHoldingEnumConstants(query_node->getWhere(), context))
+        if (query_node->hasWhere() && removeConjunctsAppliedLocally(query_node->getWhere(), context, visitor.empty_sets))
             allow_limit = false;
     }
 

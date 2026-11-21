@@ -471,6 +471,13 @@ TEST(TransformQueryForExternalDatabase, DateTimeConstantInColumnTimeZone)
         "SELECT create_time FROM test.table WHERE ((1, 2), create_time) IN (((1, 2), toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')))",
         R"(SELECT "create_time" FROM "test"."table" WHERE ((1, 2), "create_time") IN (((1, 2), '2019-01-01 01:02:03')))",
         LiteralEscapingStyle::PostgreSQL);
+    /// The only member is before 1970 in UTC and does not fit `DateTime`: the set is empty, so the `IN` is applied locally.
+    checkNewAnalyzer(state, {"a", "create_time"},
+        "SELECT a FROM test.table WHERE create_time NOT IN (toDateTime64('1970-01-01 00:00:00', 0, 'Asia/Tokyo')) AND a = 1",
+        R"(SELECT "a", "create_time" FROM "test"."table" WHERE "a" = 1)");
+    checkNewAnalyzer(state, {"a", "create_time"},
+        "SELECT a FROM test.table WHERE NOT ((a, create_time) IN ((1, toDateTime64('1970-01-01 00:00:00', 0, 'Asia/Tokyo')))) OR a = 2",
+        R"(SELECT "a", "create_time" FROM "test"."table")");
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
