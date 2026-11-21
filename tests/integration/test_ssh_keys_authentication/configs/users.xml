@@ -24,5 +24,8 @@
                  </ssh_key>
             </ssh_keys>
         </lucy>
+        <larry>
+            <password>password</password>
+        </larry>
     </users>
 </clickhouse>
