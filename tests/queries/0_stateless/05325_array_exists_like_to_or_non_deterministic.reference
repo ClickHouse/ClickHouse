@@ -1,0 +1,14 @@
+-- deterministic haystack, rewritten
+SELECT or(like(toString(__table1.number), \'%1%\'), like(toString(__table1.number), \'%2%\')) AS `arrayExists(lambda(tuple(x), like(toString(number), x)), [\'%1%\', \'%2%\'])`\nFROM numbers(3) AS __table1
+-- non-deterministic haystack, not rewritten
+SELECT arrayExists(lambda(tuple(x), like(toString(rand()), x)), _CAST([\'%1%\', \'%2%\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), like(toString(rand()), x)), [\'%1%\', \'%2%\'])`\nFROM numbers(3) AS __table1
+SELECT arrayExists(lambda(tuple(x), ilike(concat(\'a\', randomString(2)), x)), _CAST([\'a%\', \'%b\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), ilike(concat(\'a\', randomString(2)), x)), [\'a%\', \'%b\'])`\nFROM numbers(3) AS __table1
+SELECT count() AS `count()`\nFROM numbers(3) AS __table1\nWHERE arrayExists(lambda(tuple(_a), like(toString(modulo(rand(), 2)), _a)), _CAST([\'0\', \'1\'], \'Array(String)\'))
+-- stateful haystack, not rewritten
+SELECT arrayExists(lambda(tuple(x), like(toString(timeSeriesTagsToGroup(array(tuple(\'n\', toString(__table1.number))))), x)), _CAST([\'%1%\', \'%2%\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), like(toString(timeSeriesTagsToGroup([(\'n\', toString(number))])), x)), [\'%1%\', \'%2%\'])`\nFROM numbers(3) AS __table1
+-- haystack with observable side effects, not rewritten
+SELECT arrayExists(lambda(tuple(x), like(toString(sleep(0)), x)), _CAST([\'%1%\', \'%2%\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), like(toString(sleep(0)), x)), [\'%1%\', \'%2%\'])`\nFROM numbers(3) AS __table1
+-- `now` is constant within a query, rewritten
+SELECT or(like(toString(plus(toDate(now()), __table1.number)), \'%1%\'), like(toString(plus(toDate(now()), __table1.number)), \'%2%\')) AS `arrayExists(lambda(tuple(x), like(toString(plus(toDate(now()), number)), x)), [\'%1%\', \'%2%\'])`\nFROM numbers(3) AS __table1
+-- `rand() % 2` is always 0 or 1, so every row matches
+0
