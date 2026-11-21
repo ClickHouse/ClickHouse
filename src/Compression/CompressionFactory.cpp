@@ -392,6 +392,7 @@ CompressionCodecFactory::CompressionCodecFactory()
 #if USE_PCO
     registerCodecPco(*this);
 #endif
+    registerCodecWallaby(*this);
 
     default_codec = get("ZSTD", 3);
 }

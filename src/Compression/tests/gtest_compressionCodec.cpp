@@ -1,7 +1,9 @@
 #include "config.h"
 
+#include <Common/Hex.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/FFOR.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -27,6 +29,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <random>
@@ -541,9 +544,10 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
-    /// Gorilla and ALP can only be applied to floating point columns
+    /// Gorilla, ALP and Wallaby can only be applied to floating point columns
     const auto & codec_statement = std::get<0>(GetParam()).codec_statement;
-    const bool codec_is_float_point = codec_statement.contains("Gorilla") || codec_statement.contains("ALP");
+    const bool codec_is_float_point
+        = codec_statement.contains("Gorilla") || codec_statement.contains("ALP") || codec_statement.contains("Wallaby");
     const WhichDataType which(std::get<1>(GetParam()).data_type.get());
     const bool data_is_float = which.isFloat();
     if (codec_is_float_point && !data_is_float)
@@ -844,7 +848,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("ALP(STD), ZSTD"),
     Codec("ALP(RD)"),
     Codec("ALP(RD), LZ4"),
-    Codec("ALP(RD), ZSTD")
+    Codec("ALP(RD), ZSTD"),
+    Codec("Wallaby"),
+    Codec("Wallaby, LZ4"),
+    Codec("Wallaby, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -948,7 +955,10 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(std::numbers::e_v<Float32>))),
@@ -972,7 +982,10 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-std::numbers::e_v<Float32>))),
@@ -1032,7 +1045,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(std::numbers::e_v<Float32>))),
@@ -1056,7 +1072,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-std::numbers::e_v<Float32>))),
@@ -3070,6 +3089,456 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTrailingBytesAfterValidPayload)
     source.insert(source.end(), trailing_bytes.begin(), trailing_bytes.end());
 
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, stream size mismatch");
+}
+
+class WallabyTest : public ::testing::Test
+{
+protected:
+    static CompressionCodecPtr codecFor(size_t float_width)
+    {
+        if (float_width == sizeof(Float32))
+            return makeCodec("Wallaby", std::make_shared<DataTypeFloat32>());
+        return makeCodec("Wallaby", std::make_shared<DataTypeFloat64>());
+    }
+
+    /// Compresses the values (plus optional trailing bytes that do not form a whole value) with the codec,
+    /// checks the bit-exact round trip and returns the compressed block including the generic header.
+    template <typename FloatType>
+    static std::vector<char> compressAndCheck(const std::vector<FloatType> & values, size_t trailing_bytes = 0)
+    {
+        auto codec = codecFor(sizeof(FloatType));
+        std::vector<char> source(values.size() * sizeof(FloatType) + trailing_bytes);
+        if (!values.empty())
+            memcpy(source.data(), values.data(), values.size() * sizeof(FloatType));
+        for (size_t i = 0; i < trailing_bytes; ++i)
+            source[values.size() * sizeof(FloatType) + i] = static_cast<char>(0xA0 + i);
+        const UInt32 source_size = static_cast<UInt32>(source.size());
+
+        std::vector<char> compressed(codec->getCompressedReserveSize(source_size));
+        const UInt32 compressed_size = codec->compress(source.data(), source_size, compressed.data());
+        EXPECT_LE(compressed_size, compressed.size());
+        compressed.resize(compressed_size);
+
+        /// Exactly sized buffers: an access outside of them is visible to the sanitizers.
+        std::vector<char> decompressed(source.size());
+        const UInt32 decompressed_size = codec->decompress(compressed.data(), compressed_size, decompressed.data());
+        EXPECT_EQ(decompressed_size, source_size);
+        EXPECT_TRUE(source == decompressed) << "The round trip is not bit-exact for " << values.size() << " values";
+        return compressed;
+    }
+
+    /// Decompresses a possibly malformed block. Returns true if it throws; any outcome but a crash or
+    /// an out-of-bounds access is acceptable for a block that is not truncated.
+    static bool decompressThrows(const std::vector<char> & compressed, UInt32 uncompressed_size)
+    {
+        auto codec = codecFor(sizeof(Float64));
+        std::vector<char> decompressed(uncompressed_size);
+        try
+        {
+            codec->decompress(compressed.data(), static_cast<UInt32>(compressed.size()), decompressed.data());
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    static UInt32 uncompressedSizeOf(const std::vector<char> & compressed)
+    {
+        return unalignedLoadLittleEndian<UInt32>(compressed.data() + 5);
+    }
+
+    /// The bytes of a series of values made by the generator, plus optional trailing bytes.
+    template <typename FloatType, typename Generator>
+    static std::vector<char> seriesBytes(size_t count, Generator && generator, size_t trailing_bytes = 0)
+    {
+        std::vector<char> bytes(count * sizeof(FloatType) + trailing_bytes);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const FloatType value = static_cast<FloatType>(generator(i));
+            memcpy(bytes.data() + i * sizeof(FloatType), &value, sizeof(FloatType));
+        }
+        for (size_t i = 0; i < trailing_bytes; ++i)
+            bytes[count * sizeof(FloatType) + i] = static_cast<char>(0xA0 + i);
+        return bytes;
+    }
+
+    template <typename FloatType>
+    static FloatType fromBits(UInt64 bits)
+    {
+        if constexpr (sizeof(FloatType) == 4)
+            return std::bit_cast<FloatType>(static_cast<UInt32>(bits));
+        else
+            return std::bit_cast<FloatType>(bits);
+    }
+
+    /// Series of different nature: every front-end, predictor and kind of token gets exercised.
+    template <typename FloatType>
+    static std::vector<std::vector<FloatType>> series(size_t size)
+    {
+        std::vector<std::vector<FloatType>> res;
+        std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+        auto add = [&](auto && generator)
+        {
+            std::vector<FloatType> values(size);
+            for (size_t i = 0; i < size; ++i)
+                values[i] = static_cast<FloatType>(generator(i));
+            res.push_back(std::move(values));
+        };
+        add([](size_t) { return 42.5; });                                                            /// constant
+        add([&](size_t) { return static_cast<Float64>(rng() % 100000) / 100; });                     /// decimals
+        add([&](size_t i) { return std::round(5000 + 1000 * std::sin(static_cast<Float64>(i) / 50) + static_cast<Float64>(rng() % 100)) / 100; }); /// smooth decimals
+        add([&](size_t) { return static_cast<Float64>(rng() % 60000) / 6000; });                     /// averages: a rational grid
+        add([&](size_t) { return static_cast<Float64>(rng() % 100000) * 0.1; });                     /// decimals made by a multiplication
+        add([&](size_t i) { return static_cast<Float64>(1700000000000 + i * 1000); });              /// integers with a common factor
+        add([&](size_t i) { return std::sin(static_cast<Float64>(i) / 300); });                      /// smooth, full precision
+        add([&](size_t) { return std::bit_cast<Float64>(rng()); });                                  /// random bits
+        add([&](size_t i) { return static_cast<Float64>((i / 700) % 5); });                          /// long runs
+        add([&](size_t) { return rng() % 50 == 0 ? static_cast<Float64>(rng() % 1000) / 10 : 0.0; }); /// sparse
+        add([&](size_t) { return static_cast<Float64>(rng() % 300) / 8; });                          /// few distinct binary fractions
+        add([&](size_t) { return static_cast<Float64>(static_cast<Int64>(rng() % 2000001) - 1000000) / 1000; }); /// both signs
+        return res;
+    }
+};
+
+TEST_F(WallabyTest, RoundTripOfSeries)
+{
+    for (size_t size : {1, 2, 3, 100, 1000, 8192, 16384})
+    {
+        for (const auto & values : series<Float64>(size))
+            compressAndCheck(values);
+        for (const auto & values : series<Float32>(size))
+            compressAndCheck(values);
+    }
+}
+
+TEST_F(WallabyTest, RoundTripOfSizesAndTails)
+{
+    /// Around the chunk size, with the trailing bytes of an incomplete value.
+    for (size_t size : {0, 1, 5, 16383, 16384, 16385, 32768, 40000})
+    {
+        for (size_t tail : {0, 1, 3, 7})
+        {
+            /// An empty block is never written, and the generic part of a codec refuses to decompress it.
+            if (size == 0 && tail == 0)
+                continue;
+            std::vector<Float64> values64(size);
+            std::vector<Float32> values32(size);
+            for (size_t i = 0; i < size; ++i)
+            {
+                values64[i] = static_cast<Float64>(i % 1000) / 100;
+                values32[i] = static_cast<Float32>(i % 1000) / 100;
+            }
+            compressAndCheck(values64, tail);
+            compressAndCheck(values32, tail % sizeof(Float32));
+        }
+    }
+}
+
+TEST_F(WallabyTest, RoundTripOfSpecialValues)
+{
+    auto check = [&]<typename FloatType>(FloatType)
+    {
+        using Limits = std::numeric_limits<FloatType>;
+        const std::vector<FloatType> special = {
+            FloatType(0), -FloatType(0), Limits::infinity(), -Limits::infinity(), Limits::quiet_NaN(), -Limits::quiet_NaN(),
+            Limits::signaling_NaN(), Limits::min(), -Limits::min(), Limits::max(), Limits::lowest(), Limits::denorm_min(),
+            -Limits::denorm_min(), Limits::epsilon(), FloatType(1) / FloatType(3), FloatType(1e15), FloatType(-1e15),
+            fromBits<FloatType>(0x7FF0000000000001ULL), fromBits<FloatType>(0xFFF8000000001234ULL), fromBits<FloatType>(0x7FC12345ULL),
+        };
+
+        /// Only the special values.
+        compressAndCheck(special);
+
+        /// Sprinkled over decimals, rare and frequent, at the start and at the end.
+        std::mt19937_64 rng(1); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+        for (size_t period : {2, 7, 100, 3000})
+        {
+            std::vector<FloatType> values(10000);
+            for (size_t i = 0; i < values.size(); ++i)
+                values[i] = i % period == 0 || i + 3 >= values.size()
+                    ? special[rng() % special.size()]
+                    : static_cast<FloatType>(static_cast<Float64>(rng() % 10000) / 100);
+            compressAndCheck(values);
+        }
+
+        /// A value that is not reproduced by the decimal grid of its neighbors, at every distance from it.
+        for (int distance : {1, 2, 3, 100, 100000})
+        {
+            std::vector<FloatType> values(5000);
+            for (size_t i = 0; i < values.size(); ++i)
+            {
+                values[i] = static_cast<FloatType>(static_cast<Float64>(i % 977) / 100);
+                if (i % 5 == 0)
+                    for (int step = 0; step < distance && step < 200; ++step)
+                        values[i] = std::nextafter(values[i], Limits::infinity());
+            }
+            compressAndCheck(values);
+        }
+    };
+    check(Float64{});
+    check(Float32{});
+}
+
+TEST_F(WallabyTest, CompressesWhatItIsMadeFor)
+{
+    std::mt19937_64 rng(7); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    const size_t size = 8192;
+    auto bytesOf = [&](auto && generator)
+    {
+        std::vector<Float64> values(size);
+        for (size_t i = 0; i < size; ++i)
+            values[i] = generator(i);
+        return compressAndCheck(values).size();
+    };
+
+    /// A constant block is a few bytes; incompressible data takes its own size plus the headers.
+    EXPECT_LT(bytesOf([](size_t) { return 3.14; }), 32u);
+    EXPECT_LE(bytesOf([&](size_t) { return std::bit_cast<Float64>(rng()); }), size * sizeof(Float64) + 10);
+
+    /// Uniform decimals with two digits in [0, 1000): log2(100000) = 16.6 bits per value.
+    EXPECT_LT(bytesOf([&](size_t) { return static_cast<Float64>(rng() % 100000) / 100; }), size * 17 / 8);
+    /// Decimals produced by a multiplication are not correctly rounded decimals, yet they cost the same.
+    EXPECT_LT(bytesOf([&](size_t) { return static_cast<Float64>(rng() % 100000) * 0.01; }), size * 17 / 8);
+    /// Averages over 60 samples of decimals with two digits: a grid of 1/6000. log2(60000) = 15.9 bits.
+    EXPECT_LT(bytesOf([&](size_t) { return static_cast<Float64>(rng() % 60000) / 6000; }), size * 17 / 8);
+    /// A few distinct values, whatever they are: a dictionary. 16 values: 4 bits.
+    EXPECT_LT(bytesOf([&](size_t) { return std::sqrt(static_cast<Float64>(rng() % 16 + 2)); }), size * 5 / 8);
+    /// Long runs take almost nothing.
+    EXPECT_LT(bytesOf([](size_t i)
+    {
+        const size_t step = i / 1000;
+        return static_cast<Float64>(step) * 1.5;
+    }), 150u);
+    /// A linear trend with a small noise: the differences are coded, not the values.
+    EXPECT_LT(bytesOf([&](size_t i) { return static_cast<Float64>(i * 1000 + rng() % 8); }), size * 4 / 8);
+    /// Rare values among zeros.
+    EXPECT_LT(bytesOf([&](size_t) { return rng() % 100 == 0 ? static_cast<Float64>(rng() % 1000) : 0.0; }), size / 8);
+}
+
+TEST_F(WallabyTest, TruncatedDataIsRejected)
+{
+    for (const auto & values : series<Float64>(3000))
+    {
+        const auto compressed = compressAndCheck(values, 3);
+        const UInt32 uncompressed_size = uncompressedSizeOf(compressed);
+        const size_t header_size = 9;
+        /// Every prefix of a short block, and a sample of the prefixes of a long one.
+        const size_t step = compressed.size() > 600 ? compressed.size() / 300 : 1;
+        for (size_t size = header_size; size < compressed.size(); size += step)
+        {
+            std::vector<char> truncated(compressed.begin(), compressed.begin() + size);
+            EXPECT_TRUE(decompressThrows(truncated, uncompressed_size)) << "A block truncated to " << size << " bytes of " << compressed.size();
+        }
+        /// Trailing garbage is not accepted either.
+        std::vector<char> extended = compressed;
+        extended.push_back('\0');
+        EXPECT_TRUE(decompressThrows(extended, uncompressed_size));
+    }
+}
+
+TEST_F(WallabyTest, CorruptedDataDoesNotCrash)
+{
+    /// The decoder must survive any input: it either throws or produces some values.
+    std::mt19937_64 rng(3); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    size_t thrown = 0;
+    size_t total = 0;
+    for (const auto & values : series<Float64>(2500))
+    {
+        const auto compressed = compressAndCheck(values);
+        const UInt32 uncompressed_size = uncompressedSizeOf(compressed);
+        const size_t header_size = 9;
+        if (compressed.size() <= header_size)
+            continue;
+        for (size_t attempt = 0; attempt < 300; ++attempt)
+        {
+            std::vector<char> corrupted = compressed;
+            const size_t flips = 1 + rng() % 3;
+            for (size_t i = 0; i < flips; ++i)
+            {
+                /// Mostly the beginning, where the headers are.
+                const size_t range = attempt % 2 ? corrupted.size() - header_size : std::min<size_t>(corrupted.size() - header_size, 64);
+                corrupted[header_size + rng() % range] ^= static_cast<char>(1 << (rng() % 8));
+            }
+            thrown += decompressThrows(corrupted, uncompressed_size);
+            ++total;
+        }
+    }
+    /// Many of the flipped bits are detected: the headers are dense and the final state of the entropy decoder is checked.
+    EXPECT_GT(thrown, 0u);
+    EXPECT_GT(total, 0u);
+}
+
+TEST_F(WallabyTest, MalformedHeaders)
+{
+    const std::vector<Float64> values(100, 1.5);
+    const auto compressed = compressAndCheck(values);
+    const UInt32 uncompressed_size = uncompressedSizeOf(compressed);
+    const size_t header_size = 9;
+
+    auto with = [&](UInt8 first_byte)
+    {
+        std::vector<char> changed = compressed;
+        changed[header_size] = static_cast<char>(first_byte);
+        return changed;
+    };
+    const UInt8 head = static_cast<UInt8>(compressed[header_size]);
+    EXPECT_EQ(head, 0x12);                                           /// version 2, Float64
+    EXPECT_TRUE(decompressThrows(with(0x11), uncompressed_size));    /// an unknown version
+    EXPECT_TRUE(decompressThrows(with(0x52), uncompressed_size));    /// a reserved bit
+    EXPECT_TRUE(decompressThrows(with(0x02), uncompressed_size));    /// Float32 chunks do not match the sizes
+    EXPECT_TRUE(decompressThrows(with(0x32), uncompressed_size));    /// a verbatim block of a wrong size
+
+    /// The block without its payload.
+    EXPECT_TRUE(decompressThrows(std::vector<char>(compressed.begin(), compressed.begin() + header_size), uncompressed_size));
+
+    /// The float width is stored in the block: an instance for the other width decompresses it.
+    std::vector<char> decompressed(uncompressed_size);
+    auto codec32 = codecFor(sizeof(Float32));
+    EXPECT_EQ(codec32->decompress(compressed.data(), static_cast<UInt32>(compressed.size()), decompressed.data()), uncompressed_size);
+    EXPECT_EQ(0, memcmp(decompressed.data(), values.data(), uncompressed_size));
+}
+
+/// Blocks that the encoder made when the format (version 2) was fixed. They pin the format independently of the
+/// encoder, whose choices are free to change: the decoder has to read these bytes the same way, or the version in
+/// the first byte of the block has to change. Every block is also checked to be rejected without its last byte.
+TEST_F(WallabyTest, FixedPayloads)
+{
+    auto check = [](const char * name, std::string_view payload_hex, const std::vector<char> & expected)
+    {
+        SCOPED_TRACE(name);
+        auto codec = codecFor(sizeof(Float64));
+        const size_t header_size = ICompressionCodec::getHeaderSize();
+        ASSERT_EQ(payload_hex.size() % 2, 0u);
+        std::vector<char> block(header_size + payload_hex.size() / 2);
+        block[0] = static_cast<char>(codec->getMethodByte());
+        unalignedStoreLittleEndian<UInt32>(&block[1], static_cast<UInt32>(block.size()));
+        unalignedStoreLittleEndian<UInt32>(&block[5], static_cast<UInt32>(expected.size()));
+        for (size_t i = 0; i < payload_hex.size() / 2; ++i)
+            block[header_size + i] = static_cast<char>(unhex2(payload_hex.data() + 2 * i));
+
+        std::vector<char> decompressed(expected.size());
+        ASSERT_EQ(codec->decompress(block.data(), static_cast<UInt32>(block.size()), decompressed.data()), expected.size());
+        EXPECT_TRUE(decompressed == expected);
+
+        std::vector<char> truncated(block.begin(), block.end() - 1);
+        unalignedStoreLittleEndian<UInt32>(&truncated[1], static_cast<UInt32>(truncated.size()));
+        EXPECT_TRUE(decompressThrows(truncated, static_cast<UInt32>(expected.size())));
+    };
+
+    /// One value repeated: a chunk of the constant mode.
+    check("constant",
+        "12011f85eb51b81e0940",
+        seriesBytes<Float64>(16, [](size_t) { return 3.14; }));
+
+    /// Decimals with two digits: the division front-end.
+    check("decimals",
+        "12262161770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float64>(64, [](size_t i) { return static_cast<Float64>((i * 37) % 1000) / 100; }));
+
+    /// Products with 0.01, which are not correctly rounded decimals: the multiplication front-end.
+    check("multiplied",
+        "122a2161770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float64>(64, [](size_t i) { return static_cast<Float64>((i * 37) % 1000) * 0.01; }));
+
+    /// `Float32` decimals, reconstructed in single precision.
+    check("decimals32",
+        "02b62061770ccac4dd0828a20f00040004103d22f5010a00000000b27c4ad800",
+        seriesBytes<Float32>(64, [](size_t i) { return static_cast<Float32>((i * 37) % 1000) / 10.0f; }));
+
+    /// Irrational numbers: bit patterns.
+    check("roots",
+        "12a6a7067aefd9ffb0431e409b7e9edcfb74d13106a6184012215de7bf53efbeda163717964530b8ba33dca1a5ff95b12586"
+        "bc48aad29564aa969b5d05373605000d804208a3a4a8b051c537e81eb0e688e0feb6b56d8b02380054022001000400aa90e1"
+        "ca7f011200000000d5efa3929b0d8b7e9e300c011e001617b124fb360e633fb2e57e3107484b4c7ca922c634dab45a8c03c4"
+        "4f70d2a02b0c974ea68e5378660018bffb4fa26a71647a63ee276d8b96760e28d2ea934e00cd06031822574682a3b8379e11"
+        "610585fb8578f51f0dbc0d4be145c6201cba4103310f5330114908f48dd380970f15f0a1160226a934604622057c287e80c4"
+        "d40b30ee110126541740e9c50188fb19000000000091d9cc3d55743cb73e",
+        seriesBytes<Float64>(48, [](size_t i) { return std::sqrt(static_cast<Float64>(i + 2)); }));
+
+    /// `Float32` bit patterns of both signs: their differences are taken modulo 2^32.
+    check("signs32",
+        "020200b1f7be030662981f2b9a008000c0403f524247f9022c00400200d5c154720975f89d511e0035476d000000294c226b"
+        "30139a103f26a04b3547ed294c62ebae6c9308ce000080830d89d7d4b21f2b9a294ca2ad5b9edf0faa43c8ad6b30939ff0b4"
+        "0c64b8b4d4889a10bf294cc2fd207f0a93c826a0cbe3f8759891d14977d435476d9e1fda51e3dca1fb64294ce227f2e44709"
+        "5d2f23eaebaeecc3655563aef1b222f493084ec4f5f80255fba2ea46000000294c02",
+        seriesBytes<Float32>(48, [](size_t i)
+        {
+            const Float32 root = static_cast<Float32>(std::sqrt(static_cast<Float64>(i + 2)));
+            return i % 3 == 0 ? -root : root;
+        }));
+
+    /// Decimals with a NaN, an infinity and a negative zero among them: exceptions.
+    check("specials",
+        "122621e1720ccac4cb33000414d1070009000354d2e55b3125d1c95b5d22b2b5b85d8b023000000000000002001ab17b0a50"
+        "00000000050007001500170025002700000000000000f87f000000000000f07f000000000000f87f000000000000f07f0000"
+        "00000000f87f000000000000f07f36d72c3daf0c49a135aebd074a5f6c442b",
+        seriesBytes<Float64>(48, [](size_t i)
+        {
+            if (i % 16 == 5)
+                return std::bit_cast<Float64>(0x7ff8000000000000ULL);
+            if (i % 16 == 7)
+                return std::bit_cast<Float64>(0x7ff0000000000000ULL);
+            if (i % 16 == 9)
+                return std::bit_cast<Float64>(0x8000000000000000ULL);
+            return static_cast<Float64>((i * 37) % 1000) / 100;
+        }));
+
+    /// Plateaus: differences with zero runs.
+    check("runs",
+        "12a690e00b7c008202000004001474f95e80010000001008e4fa0730",
+        seriesBytes<Float64>(96, [](size_t i)
+        {
+            const size_t step = i / 24;
+            return static_cast<Float64>(step) * 1.5;
+        }));
+
+    /// A trend of `Float32` integers: differences of a higher order.
+    check("trend32",
+        "0236608189011c92710000800000111f6000000300000000f4207a103d881e440fa207d183e841f4207a103d881e440f",
+        seriesBytes<Float32>(64, [](size_t i) { return static_cast<Float32>(1000 + 3 * i + (i * i) % 5); }));
+
+    /// 16 distinct irrational values: dictionary symbols.
+    check("dictionary",
+        "1202f0050000000000c0ff8169ed0c316066d8577c0071ed0c316066d8573437447620774557cd9e5e1426794a7fb979377e"
+        "214b1c9e45edbbd7c995f1918b0bb1f27ad855e1c71675eeaae01323591a3cd7756b5121b88cd490c0051b7255b941b3afc5"
+        "900fe79ff40c97c4c23a85106cd0fe6af6e007000c00289b510e6b6840031ad0804692240f00cb1f9802d30f4ce13f1005a2"
+        "40149802c98f0120000000867ad1235d5ba556ed1a618f265e7b499d55246c818b9be6348c0d114bdcde225c7b506878ef71"
+        "9c470d3afdbc614bd247b6def65baa191ea9cd9b97ade79229a1798c93d05830702e9b6334234bfd257cf2ae0d1cb99b6f6c"
+        "5743bb8724dc212f50a6bffa5409733231dacbeea47a994b5cd7264fad5dc1de57c1ce509b1200",
+        seriesBytes<Float64>(400, [](size_t i) { return std::sqrt(static_cast<Float64>((i * 7) % 16 + 2)); }));
+
+    /// A walk with small steps on a grid of tenths: many tokens, with contexts.
+    {
+        std::vector<Float32> walk(512);
+        UInt32 state = 12345;
+        Int32 position = 1000;
+        for (Float32 & value : walk)
+        {
+            state = state * 1103515245U + 12345U;
+            position += static_cast<Int32>((state >> 16) % 7) - 3;
+            value = static_cast<Float32>(position) / 10.0f;
+        }
+        check("walk32",
+            "02b64001f6000c6a00004001803a78898fad22f8079400240000b22bf9fc05b99f53669e5036a622364bb5d69e71af5e98ee"
+            "a797d86a5725e457e9cbca440620ac79267f0addd2af895d02ef8e53f7d97fb09a2b3e8db3f96b794a2fb5d4acc46a24d5ab"
+            "a18d81ea41a2e2d95a3ae659680038c5913f4b8fa1dadfc2399190e317ac84d8b6471e54d2116cd0d2e1e26599fb58009648"
+            "6741e82192a57a6169037367e44db9cd3264493067c32a0018e4bd3a8875efe60c6493f662dbd119368998a22401882caf73"
+            "e3e3efeae1feea6d9b10",
+            seriesBytes<Float32>(walk.size(), [&](size_t i) { return walk[i]; }));
+    }
+
+    /// Random bit patterns: the block is stored verbatim.
+    check("noise",
+        "32157c4a7fb979379e2af894fe72f36e3c3f74df7d2c6da6da54f029fde5e6dd78696c747c9f6015177ee8befb58da4cb593"
+        "64097b12548453a8e053facbcdbbf1",
+        seriesBytes<Float64>(8, [](size_t i) { return std::bit_cast<Float64>(0x9E3779B97F4A7C15ULL * (i + 1)); }));
+
+    /// Three bytes that do not make a whole value after the values.
+    check("tail",
+        "1226b1201bc8c041500010002040000c000800000000008846a0a1a2",
+        seriesBytes<Float64>(5, [](size_t i) { return static_cast<Float64>(i) / 4; }, 3));
 }
 
 }

@@ -2985,6 +2985,18 @@ The payload of each compression block is a standalone [`.pco`](https://github.co
 This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`, except as an alternative of [`FirstApplicable`](#firstapplicable), e.g. `FirstApplicable(PCO, ZSTD(3))`.
 </Note>
 
+### Wallaby {#wallaby}
+
+<ExperimentalBadge/>
+
+`Wallaby` — Lossless compression for `Float32` and `Float64` columns that combines the integerization of floating-point values with entropy coding. For every chunk of up to 16384 values, the codec turns the values into integers in the cheapest of several ways: as numerators of a common denominator (decimals such as `12.34`, but also other grids, such as averages of decimals over 60 samples), as multiples of a constant (decimals produced by a multiplication, such as `x * 0.01`, which are not correctly rounded decimals), or as their bit patterns with the common trailing zeros removed. The integers are then predicted from the previous ones (differences of order up to 7, so smooth and monotonic series cost little), and the residuals are coded with an entropy coder (tANS) whose alphabet is fitted to the chunk: frequent exact values get dictionary symbols, the others fall into logarithmic or fixed-width bins, and runs of repeated values are single symbols. Values that do not fit the chosen representation (`NaN`, infinities, a minority of other precision) are stored separately, so the codec is lossless for every bit pattern. Constant chunks collapse to a single value, and incompressible data is stored as is with one byte of overhead per block.
+
+Compared with `ALP`, which bit-packs the integers, `Wallaby` is slower but compresses better, most notably on data with a skewed or clustered distribution, repeated values, or a smooth trend. Compared with `PCO`, it finds the integer representation more reliably on blocks of a few thousand values and describes its entropy model more compactly.
+
+<Note>
+This codec is experimental and requires `SET enable_wallaby_codec = 1` to use.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
