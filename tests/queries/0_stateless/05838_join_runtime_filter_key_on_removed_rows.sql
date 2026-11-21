@@ -117,6 +117,17 @@ CREATE TABLE rtup (k Tuple(FixedString(3), Decimal64(9))) ENGINE = MergeTree ORD
 INSERT INTO rtup VALUES (('ok', 1));
 SELECT count() FROM ptup JOIN g ON ptup.id = g.id JOIN rtup ON ptup.t = rtup.k WHERE ptup.b + g.flag = 2;
 
+-- The cast to the common type clamps a date out of range, so a date key of another type keeps its runtime filter.
+SELECT count() FROM pd JOIN g ON pd.id = g.id JOIN rdt ON pd.dt = rdt.k WHERE pd.b + g.flag = 2 SETTINGS date_time_overflow_behavior = 'throw';
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pd JOIN rdt ON pd.dt = rdt.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- An `Enum` converted to an integer keeps its value or wraps around, so the key keeps its runtime filter.
+CREATE TABLE pe (id UInt64, e Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pe SELECT number, if(number % 2 = 0, 'a', 'b') FROM numbers(10);
+CREATE TABLE ri16 (k Int16) ENGINE = MergeTree ORDER BY k;
+INSERT INTO ri16 VALUES (1);
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pe JOIN ri16 ON pe.e = ri16.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
 -- The cast of an `Int32` key to `Float64` cannot throw, so the key keeps its runtime filter.
 CREATE TABLE fi (k Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO fi SELECT number FROM numbers(10);
