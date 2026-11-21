@@ -194,8 +194,13 @@ public:
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
+    /** Same as readBig, but the caller allows to overwrite `padding` bytes after `to + n`,
+      * so a codec that writes past the end of its output (LZ4) can decompress straight to `to`.
+      */
+    [[nodiscard]] virtual size_t readBigWithPadding(char * to, size_t n, size_t /*padding*/) { return readBig(to, n); }
+
     /** Reads n bytes with readBig, if there are less - throws an exception. */
-    void readBigStrict(char * to, size_t n);
+    void readBigStrict(char * to, size_t n, size_t padding = 0);
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
