@@ -153,6 +153,8 @@ private:
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     const size_t max_joined_block_bytes = 0;
+    const size_t min_joined_block_rows = 0;
+    const size_t min_joined_block_bytes = 0;
     const bool joined_block_split_single_row = false;
     const bool parallel_non_joined_rows_processing = true;
     std::vector<JoinAlgorithm> join_algorithms;
@@ -346,6 +348,8 @@ public:
         HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const;
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
+    size_t minJoinedBlockRows() const { return min_joined_block_rows; }
+    size_t minJoinedBlockBytes() const { return min_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }

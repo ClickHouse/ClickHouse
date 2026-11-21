@@ -73,6 +73,8 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
@@ -218,6 +220,8 @@ TableJoin::TableJoin(
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
+    , min_joined_block_rows(settings[Setting::min_joined_block_size_rows])
+    , min_joined_block_bytes(settings[Setting::min_joined_block_size_bytes])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
@@ -254,6 +258,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
+    , min_joined_block_rows(settings.min_joined_block_size_rows)
+    , min_joined_block_bytes(settings.min_joined_block_size_bytes)
     , joined_block_split_single_row(settings.joined_block_split_single_row)
     , parallel_non_joined_rows_processing(settings.parallel_non_joined_rows_processing)
     , join_algorithms(settings.join_algorithms)
