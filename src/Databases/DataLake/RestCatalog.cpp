@@ -877,6 +877,12 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, std:
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
+    /// Some catalog implementations (e.g. Snowflake Polaris) support token exchange
+    /// where client_secret contains a pre-issued token (PAT/JWT) and client_id is not required.
+    /// In this case we must NOT send client_id at all, otherwise server returns 400.
+    if (client_id.empty() && !client_secret.empty())
+        LOG_DEBUG(log, "Sending OAuth token request without client_id");
+
     /// TODO:
     /// 1. support oauth2-server-uri
     /// https://github.com/apache/iceberg/blob/918f81f3c3f498f46afcea17c1ac9cdc6913cb5c/open-api/rest-catalog-open-api.yaml#L183C82-L183C99
