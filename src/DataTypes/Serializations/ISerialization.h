@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -121,11 +122,10 @@ public:
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
-    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
-    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
-    /// Default: identity.
-    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+    /// Create an empty column of `type` in the layout this serialization deserializes into. Each layer composes on
+    /// top of the nested one, so this reproduces the serialization's kind stack (Sparse/Replicated/Detached) and any
+    /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
+    virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
@@ -367,6 +367,8 @@ public:
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -516,7 +518,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;

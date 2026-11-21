@@ -321,7 +321,13 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
     dump_mapping(buffer, "Alias name to expression node", aliases.alias_name_to_expression_node);
     dump_mapping(buffer, "Alias name to function node", aliases.alias_name_to_lambda_node);
     dump_mapping(buffer, "Alias name to table expression node", aliases.alias_name_to_table_expression_node);
-    dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
+    if (!cte_name_to_query_node.empty())
+    {
+        buffer << "CTE name to query node table size: " << cte_name_to_query_node.size() << '\n';
+        for (const auto & [cte_name, cte_nodes] : cte_name_to_query_node)
+            for (const auto & cte_node : cte_nodes)
+                buffer << " { '" << cte_name << "' : " << cte_node->formatASTForErrorMessage() << " }\n";
+    }
     dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
 
     dump_list(buffer, "Nodes with duplicated aliases size ", aliases.nodes_with_duplicated_aliases);

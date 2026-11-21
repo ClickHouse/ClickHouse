@@ -165,6 +165,7 @@ private:
     std::atomic<size_t> current_row_index{0};
     std::atomic<bool> fully_initialized{false};
     std::atomic<size_t> active_fetchers{0};
+    std::atomic<bool> logged_missing_snapshot_metadata{false};
 
     /// Cached results accumulated during iteration
     mutable SharedMutex files_mutex;

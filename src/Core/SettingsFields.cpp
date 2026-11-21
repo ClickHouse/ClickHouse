@@ -266,7 +266,7 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
     {
         static_assert(std::is_floating_point_v<T>);
         String str;
-        readStringBinary(str, in);
+        readStringBinaryGrowing(str, in);
         *this = ::DB::parseFromString<T>(str);
     }
 }
@@ -358,14 +358,14 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
+        if (d < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value in seconds cannot be negative. Got {}", d);
+        const Float64 microseconds = d * 1000000;
+        if (accurate::greaterOp(microseconds, std::numeric_limits<Int64>::max()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
-#pragma clang diagnostic pop
 
-        return static_cast<Int64>(d * 1000000);
+        return static_cast<Int64>(microseconds);
     }
 
 }
@@ -480,7 +480,7 @@ void SettingFieldString::writeBinary(WriteBuffer & out) const
 void SettingFieldString::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     *this = std::move(str);
 }
 
@@ -575,7 +575,7 @@ void SettingFieldChar::writeBinary(WriteBuffer & out) const
 void SettingFieldChar::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     *this = stringToChar(str);
 }
 
@@ -588,10 +588,87 @@ void SettingFieldURI::writeBinary(WriteBuffer & out) const
 void SettingFieldURI::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     *this = Poco::URI{str};
 }
 
+
+static bool isTriBoolKeyword(const Field & f, std::string_view keyword)
+{
+    return f.getType() == Field::Types::String && f.safeGet<String>() == keyword;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::SettingFieldTriBool(const Field & f) : is_keyword(isTriBoolKeyword(f, keyword))
+{
+    if (!is_keyword)
+        base = SettingFieldBool(f);
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword> & SettingFieldTriBool<Keyword>::operator=(const Field & f)
+{
+    changed = true;
+    is_keyword = isTriBoolKeyword(f, keyword);
+    if (!is_keyword)
+        base = f;
+    return *this;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::operator Field() const
+{
+    return is_keyword ? Field(String(keyword)) : Field(base);
+}
+
+template <typename Keyword>
+String SettingFieldTriBool<Keyword>::toString() const
+{
+    return is_keyword ? String(keyword) : base.toString();
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::parseFromString(const String & str)
+{
+    changed = true;
+    is_keyword = (str == keyword);
+    if (!is_keyword)
+        base.parseFromString(str);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::writeBinary(WriteBuffer & out) const
+{
+    if (is_keyword)
+        writeStringBinary(keyword, out);
+    else
+        base.writeBinary(out);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::readBinary(ReadBuffer & in)
+{
+    changed = true;
+
+    /// A Bool is a varint 0/1 (see `SettingFieldNumber`); the keyword string starts with its length, which is longer.
+    UInt64 x = 0;
+    readVarUInt(x, in);
+    is_keyword = x > 1;
+    if (!is_keyword)
+    {
+        base = SettingFieldBool(x != 0);
+        return;
+    }
+
+    if (x != keyword.size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value of a setting", keyword);
+    String str(x, '\0');
+    in.readStrict(str.data(), x);
+    if (str != keyword)
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value '{}' of a setting", keyword, str);
+}
+
+template struct SettingFieldTriBool<SettingFieldKeywordForce>;
 
 void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
@@ -601,7 +678,7 @@ void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & ou
 String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     return str;
 }
 
@@ -613,7 +690,7 @@ void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
 void SettingFieldTimezone::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     *this = std::move(str);
 }
 
@@ -649,7 +726,7 @@ void SettingFieldCustom::writeBinary(WriteBuffer & out) const
 void SettingFieldCustom::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
     parseFromString(str);
 }
 

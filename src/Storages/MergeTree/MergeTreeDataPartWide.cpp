@@ -237,7 +237,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
 {
     ColumnSize size;
-    if (checksums.empty())
+    if (checksums.empty() || isEmpty())
         return size;
 
     for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))

@@ -103,7 +103,9 @@ struct MergeTreeSettings
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    void loadFromQuery(
+        ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false,
+        bool stored_definition = false);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
@@ -125,8 +127,12 @@ struct MergeTreeSettings
     static bool isPartFormatSetting(const String & name);
 
     static bool isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes);
-    static void resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
-    static void resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    static void resolveDiskSetting(
+        SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false,
+        bool stored_definition = false);
+    static void resolveDiskSetting(
+        SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false,
+        bool stored_definition = false);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

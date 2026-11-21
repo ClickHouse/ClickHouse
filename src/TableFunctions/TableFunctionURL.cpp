@@ -135,6 +135,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         format = configuration.format;
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+
+        /// Resolving the stored `url` against `url_base` replaces it, which could send the stored credentials to another host.
+        if (StorageURL::resolveURLBase(filename, context->getSettingsRef()[Setting::url_base].value) != filename)
+            checkNamedCollectionOverride(*named_collection, "url", context);
     }
     else
     {
@@ -276,6 +280,8 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
+        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
+        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -321,12 +327,6 @@ bool TableFunctionURL::hasStaticStructure() const
 {
     /// ITableFunctionFileLike::hasStaticStructure() is private; replicate its logic for the URL path.
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
-}
-
-void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
-{
-    if (delegate)
-        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(

@@ -1,33 +1,66 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 
 
 namespace DB
 {
 
-/** Mask the value of `<key>=<value>` in a connection string, where the value runs up to the next
-  * ';' or to the end of the string. Only the first occurrence is masked, and nothing is masked if
-  * the key is absent.
-  *
-  * This replaces the regular expressions `AccountKey=.*?(;|$)` and `SharedAccessSignature=.*?(;|$)`
-  * that used to be applied here, so that masking a secret does not require a regex engine.
+/** Hides the secrets of an Azure connection string as the Azure SDK reads it (`Azure::Storage::_internal::ParseConnectionString`,
+  * `contrib/azure/sdk/storage/azure-storage-common/src/storage_credential.cpp`): a key runs to '=' and its value to ';', keys
+  * match exactly, and the last copy of a repeated key wins. Splitting at every ';' first can only hide more than the SDK reads.
+  *   - secret keys:   `AccountName=a;AccountKey=K;SharedAccessSignature=S` -> `AccountName=a;AccountKey=[HIDDEN];SharedAccessSignature=[HIDDEN]`
+  *   - repeated keys: `AccountKey=K1;AccountKey=K2` -> `AccountKey=[HIDDEN];AccountKey=[HIDDEN]`
+  *   - an endpoint is a url, so a query in it is a SAS: `BlobEndpoint=https://h/?sig=S` or `BlobEndpoint=https://u@h/` -> `BlobEndpoint=[HIDDEN]`
+  *   - the whole string is hidden when a '?', '#' or '@' is still shown, or when it has one and holds a url outside the pair
+  *     values (':' or '/' in a key or in a part without '='; no key has them): `https://h/?sig=S` or `https://u:p=s@h/` -> `[HIDDEN]`
+  * Returns whether anything was hidden.
   */
-inline bool maskConnectionStringKey(std::string & str, std::string_view key_with_eq)
+inline bool maskAzureConnectionStringSecrets(std::string & str)
 {
-    size_t key_position = str.find(key_with_eq);
-    if (key_position == std::string::npos)
-        return false;
+    static constexpr std::array<std::string_view, 2> secret_keys = {"AccountKey", "SharedAccessSignature"};
+    auto is_secret_key = [](std::string_view key) { return std::ranges::find(secret_keys, key) != secret_keys.end(); };
 
-    size_t value_begin = key_position + key_with_eq.length();
-    size_t value_end = str.find(';', value_begin);
-    if (value_end == std::string::npos)
-        value_end = str.length();
+    const bool has_url_delimiters = str.find_first_of("?#@") != std::string::npos;
+    bool url_outside_values = false;
+    std::string result;
+    size_t copied = 0;
+    bool masked = false;
+    for (size_t part_begin = 0; part_begin <= str.length();)
+    {
+        const size_t part_end = std::min(str.find(';', part_begin), str.length());
+        const std::string_view part = std::string_view(str).substr(part_begin, part_end - part_begin);
+        const size_t equals = part.find('=');
+        if (part.substr(0, equals).find_first_of(":/") != std::string_view::npos)
+            url_outside_values = true;
+        if (equals != std::string_view::npos
+            && (is_secret_key(part.substr(0, equals)) || part.substr(equals + 1).find_first_of("?@") != std::string_view::npos))
+        {
+            const size_t value_begin = part_begin + equals + 1;
+            result.append(str, copied, value_begin - copied);
+            result.append("[HIDDEN]");
+            copied = part_end;
+            masked = true;
+        }
+        part_begin = part_end + 1;
+    }
 
-    str.replace(value_begin, value_end - value_begin, "[HIDDEN]");
-    return true;
+    if (masked)
+    {
+        result.append(str, copied, std::string::npos);
+        str = std::move(result);
+    }
+
+    if (str.find_first_of("?#@") != std::string::npos || (url_outside_values && has_url_delimiters))
+    {
+        str = "[HIDDEN]";
+        return true;
+    }
+    return masked;
 }
 
 /** Replace the password in a URI of the form `scheme://user:password@host` with `[HIDDEN]`.
@@ -73,6 +106,31 @@ inline bool maskURIPassword(std::string * uri)
     return false;
 }
 
+/** The offset just past the `://` of a value that starts with an RFC 3986 scheme, `npos` otherwise.
+  */
+inline size_t findURIAuthority(std::string_view uri)
+{
+    static constexpr std::string_view SEPARATOR = "://";
+
+    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
+    /// taken from `<cctype>`, which depends on the locale.
+    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
+    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
+
+    if (uri.empty() || !is_letter(uri[0]))
+        return std::string_view::npos;
+
+    size_t scheme_end = 1;
+    while (scheme_end < uri.length()
+           && (is_letter_or_digit(uri[scheme_end]) || uri[scheme_end] == '+' || uri[scheme_end] == '.' || uri[scheme_end] == '-'))
+        ++scheme_end;
+
+    if (uri.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+        return std::string_view::npos;
+
+    return scheme_end + SEPARATOR.length();
+}
+
 /** Mask the userinfo part of a URL: `scheme://anything@rest` becomes `scheme://[HIDDEN]@rest`.
   * Returns whether anything was masked.
   *
@@ -83,26 +141,11 @@ inline bool maskURIPassword(std::string * uri)
   */
 inline bool maskURIUserinfo(std::string & url)
 {
-    static constexpr std::string_view SEPARATOR = "://";
-
-    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
-    /// taken from `<cctype>`, which depends on the locale.
-    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
-    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
-
-    if (url.empty() || !is_letter(url[0]))
-        return false;
-
-    size_t scheme_end = 1;
-    while (scheme_end < url.length()
-           && (is_letter_or_digit(url[scheme_end]) || url[scheme_end] == '+' || url[scheme_end] == '.' || url[scheme_end] == '-'))
-        ++scheme_end;
-
-    if (url.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+    size_t authority_begin = findURIAuthority(url);
+    if (authority_begin == std::string::npos)
         return false;
 
     /// `[^/?#]+@` - the userinfo, greedy, so it ends at the last '@' before the path.
-    size_t authority_begin = scheme_end + SEPARATOR.length();
     size_t authority_end = url.find_first_of("/?#", authority_begin);
     if (authority_end == std::string::npos)
         authority_end = url.length();
@@ -201,6 +244,20 @@ inline bool maskPresignedURLParameters(std::string & url)
     result.append(url, copied, std::string::npos);
     url = std::move(result);
     return true;
+}
+
+/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
+  * presigned-URL query parameters. Returns whether anything was masked.
+  *
+  * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
+  * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
+  * one URL, not a URL embedded in a longer string.
+  */
+inline bool maskURICredentials(std::string & url)
+{
+    bool masked = maskURIUserinfo(url);
+    masked |= maskPresignedURLParameters(url);
+    return masked;
 }
 
 }

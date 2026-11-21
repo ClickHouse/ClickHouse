@@ -10,6 +10,11 @@
 
 #include <Core/SettingsEnums.h>
 
+namespace DB
+{
+class RemoteHostFilter;
+}
+
 namespace DB::S3
 {
 
@@ -43,6 +48,10 @@ struct URI
         bool keep_presigned_query_parameters = true,
         S3UriStyle uri_style = S3UriStyle::AUTO);
     void addRegionToURI(const std::string & region);
+
+    /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
+    /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.
+    bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const;
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);

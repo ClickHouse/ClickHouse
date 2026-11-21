@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,6 +20,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -71,6 +73,18 @@ bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType acc
         return access->isGranted(access_type, target_database, target_table);
 
     return access->isGranted(access_type, target_database, target_table, column_name);
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
+{
+    auto target = tryGetTargetTable();
+    if (!target)
+        return std::nullopt;
+
+    auto sizes = target->tryGetColumnSizes(query_context);
+    if (sizes)
+        std::erase_if(*sizes, [&](const auto & column_size) { return !isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, column_size.first); });
+    return sizes;
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -250,6 +264,26 @@ SinkToStoragePtr StorageAlias::write(
     return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
+void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
+    /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+    }
+
+    getTargetTable()->checkAlterIsPossible(commands, local_context);
+}
+
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -294,11 +328,24 @@ void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
+    /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
+    /// locks; every other engine needs its readers excluded while its data goes away.
+    TableExclusiveLockHolder target_excl_lock;
+    TableLockHolder target_shared_lock;
+    if (target_storage->isMergeTree())
+        target_shared_lock = target_storage->lockForShare(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        target_excl_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_excl_lock);
 }
 
 bool StorageAlias::optimize(

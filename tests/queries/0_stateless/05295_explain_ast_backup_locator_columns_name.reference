@@ -1,0 +1,16 @@
+CreateQuery d  (children 2)
+ Identifier d
+ Storage definition (children 1)
+  Function Backup (children 1)
+   ExpressionList (children 2)
+    Literal \'db\'
+    Function t.COLUMNS (children 1)
+     ExpressionList (children 1)
+      Literal \'[HIDDEN]\'
+CreateQuery d  (children 2)
+ Identifier d
+ Storage definition (children 1)
+  Function Backup (children 1)
+   ExpressionList (children 2)
+    Literal \'db\'
+    Literal \'[HIDDEN]\'

@@ -72,11 +72,9 @@ SELECT 'mapkey correctness';
 SELECT count(), min(id) FROM t_map WHERE attrs[toLowCardinality('entity')] = 'v';
 
 -- Bloom-filter sibling (MergeTreeIndexBloomFilterText.cpp) of the map-key path: a
--- `mapKeys(...)` tokenbf_v1/ngrambf_v1 index. tryGetConstant strips only an outer Nullable,
--- so a LowCardinality(Nullable(String)) key survived as Nullable(String) after
--- removeLowCardinality, failed the raw string-type gate and degraded to a full scan. The key
--- must be stripped of LowCardinality then Nullable (non-null only) before the gate. Each
--- variant must prune to the SAME single granule as the plain-String key.
+-- `mapKeys(...)` tokenbf_v1/ngrambf_v1 index. A LowCardinality(Nullable(String)) key used to fail the
+-- raw string-type gate and degrade to a full scan. Each variant must prune to the SAME single granule
+-- as the plain-String key.
 DROP TABLE IF EXISTS t_map_tokenbf;
 CREATE TABLE t_map_tokenbf (id UInt64, attrs Map(String, String), INDEX idx mapKeys(attrs) TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
@@ -115,9 +113,9 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT 'mapkey tokenbf absent-key empty LC(Nullable), subcolumn';
 SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(Nullable(String))');
 
--- A FixedString needle carries NUL padding that string equality ignores but a tokenizer does not,
--- so a LowCardinality(FixedString) constant must stay wrapped and be declined here rather than
--- reaching the index condition. Results must be complete whether or not an index is consulted.
+-- A FixedString needle carries NUL padding that string equality ignores but a tokenizer does not.
+-- A LowCardinality(FixedString) constant takes the same path as a plain FixedString one, where the
+-- padding is stripped from the search terms. Results must be complete whether or not an index is consulted.
 CREATE TABLE t_fixed_ngrambf (id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
 INSERT INTO t_fixed_ngrambf SELECT number, if(number = 500, 'rareword', 'xxxxword') FROM numbers(1024);
@@ -130,7 +128,8 @@ INSERT INTO t_fixed_text SELECT number, if(number = 500, 'rareword', 'xxxxword')
 SELECT 'text equals LC(FixedString)';
 SELECT count(), min(id) FROM t_fixed_text WHERE s = toLowCardinality(toFixedString('rareword', 12));
 
--- Both absent-key guards must likewise stay unreachable for that needle, in either folding mode.
+-- An all-zero FixedString needle compares equal to the '' an absent key returns, so both absent-key guards
+-- must decline the index for it, in either folding mode.
 SELECT 'mapkey tokenbf absent-key empty LC(FixedString), subcolumn';
 SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(FixedString(3))');
 SET optimize_functions_to_subcolumns = 0;
@@ -144,12 +143,11 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE
 SELECT 'ngrambf hasToken LowCardinality(Nullable)';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE hasToken(s, CAST('rareword', 'LowCardinality(Nullable(String))'))) WHERE explain ILIKE '%Granules: 1/128%';
 
--- `hasToken` rejects a needle holding a token separator, and unwrapping must not extend the index to
--- such a needle: pruning the granule that owes the exception would turn the error into an empty result.
--- A plain-String needle is not unwrapped, so it keeps pruning the granule away.
-SELECT 'tokenbf hasToken separator needle: String prunes, LowCardinality raises';
+-- A `LowCardinality` needle is the same constant as a plain `String` one and takes the same path: the index
+-- prunes every granule for a needle holding a token separator (as in 01781_token_extractor_buffer_overflow).
+SELECT 'tokenbf hasToken separator needle: String and LowCardinality prune alike';
 SELECT count() FROM t_tokenbf WHERE hasToken(s, 'bad needle');
-SELECT count() FROM t_tokenbf WHERE hasToken(s, toLowCardinality('bad needle')); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM t_tokenbf WHERE hasToken(s, toLowCardinality('bad needle'));
 
 DROP TABLE t_fixed_ngrambf;
 DROP TABLE t_fixed_text;

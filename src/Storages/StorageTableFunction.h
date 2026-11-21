@@ -35,6 +35,12 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     StoragePtr getNestedImpl() const
     {
         std::lock_guard lock{nested_mutex};
@@ -88,6 +94,12 @@ public:
     {
         auto storage = nestedIfResolved();
         return storage ? storage->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{};
+    }
+
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->tryGetColumnSizes(query_context) : ColumnSizeByName{};
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override

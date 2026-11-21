@@ -12,6 +12,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -82,7 +83,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -340,8 +340,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr partition_predicate_as_ast_func;
     if (alter && alter->partitions)
     {
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
 
         auto func = makeASTFunction("in");
         func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
@@ -364,8 +365,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
@@ -393,7 +395,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     return predicate_ast;
 }
 
-MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
+/// A mutation reads and rewrites parts, so it needs the real storage rather than the proxy a lazily
+/// loaded table is reached through.
+MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(resolveStorageProxyLoading(storage_))
 {
 }
 
@@ -435,7 +439,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -516,7 +520,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1302,8 +1306,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1358,8 +1366,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
@@ -1732,6 +1740,19 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     }
 
     /// Every column emitted by a non-readonly stage is written into the new part at its current

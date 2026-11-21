@@ -2037,7 +2037,8 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
             : executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
+        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const

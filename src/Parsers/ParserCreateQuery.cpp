@@ -2122,6 +2122,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 For both features, you can specify a different engine for the table.
 If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+A copy of the schema needs the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks, the copy also needs the `SELECT` privilege, because the new table can read the data with those credentials.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
@@ -3236,6 +3238,9 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
+A `DEFINER` that is not the current user requires the `SET DEFINER` grant on that user, both when the view is created and with `MODIFY SQL SECURITY`.
+To change the query of a `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view with [`ALTER TABLE ... MODIFY QUERY`](/reference/statements/alter/view#required-privileges), the same grants are necessary as to declare its SQL security.
+
 ### Examples {#examples}
 ```sql
 CREATE VIEW test_view
@@ -3725,6 +3730,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
+
 **Example**
 
 ```sql
@@ -3780,6 +3790,7 @@ If the table was detached permanently, it won't be reattached at the server star
 ### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
+The user needs the `READ ON FILE` and `WRITE ON FILE` privileges for this query: it reads the directory and moves it to the data path of the new table.
 
 **Syntax**
 

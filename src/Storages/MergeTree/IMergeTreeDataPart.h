@@ -469,7 +469,8 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
+    /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
+    /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
 
     NameSet invalidated_system_columns;

@@ -278,22 +278,31 @@ SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 
 Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Exception code: 179
 
-Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name shadowing the earlier one. The analyzer forbids this ambiguity. 
+Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name, a later definition shadowing the earlier one. The analyzer rejects this ambiguity by default.
 
-Solution: Rename duplicate CTEs to be unique.
+Solution: Rename duplicate CTEs to be unique. As a migration aid, enable `analyzer_compatibility_allow_cte_redefinition = 1` (available since ClickHouse `26.10`) to restore the legacy behavior: a reference binds to the latest definition of the name that is not being resolved at that moment, so a redefinition can read the previous definition and the query body reads the last one.
+
+Limitations: a CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even with the setting enabled. One shape differs from the old analyzer: a CTE declared between two definitions of a name also binds to the last definition, where the old analyzer bound it to the definition visible at its declaration point.
 
 ```sql
 /* ORIGINAL QUERY */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefined
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
 /* FIXED QUERY */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### Ambiguous column identifiers {#ambiguous-column-identifiers}

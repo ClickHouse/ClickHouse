@@ -11,6 +11,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -293,6 +295,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 
 Field ColumnObject::operator[](size_t n) const
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     Object object;
 
     for (const auto & [path, column] : typed_paths)
@@ -447,6 +452,11 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     {
         if (num_non_default == num_rows)
             return;
+
+        /// The indices of the non-default rows of a subcolumn index the bitmap of `num_rows` entries.
+        if (column.size() != num_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Subcolumn of a JSON column has {} rows, but the column has {} rows", column.size(), num_rows);
 
         const size_t num_defaults_in_column = column.getNumberOfDefaultRows();
         if (num_defaults_in_column == num_rows)
@@ -1222,6 +1232,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
+    const size_t shared_data_row_start = shared_data_paths->size();
     for (size_t i = 0; i != num_paths; ++i)
     {
         size_t path_size = 0;
@@ -1240,9 +1251,17 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
 
+        /// `serializeDynamicPathsAndSharedDataIntoArena` writes every path of a row once. A path repeated
+        /// in the row would get several values in a column of a dynamic path, or break the order of shared data.
+        /// Typed paths are deserialized before, so a typed path here would be a second value of it.
+        if (typed_paths.contains(path))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Typed path '{}' in dynamic paths of a serialized value of JSON column", path);
+
         /// Check if we have this path in dynamic paths.
         if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
         {
+            if (dynamic_it->second->size() != current_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate path '{}' in a serialized value of JSON column", path);
             getDynamicSerialization()->deserializeBinary(*dynamic_it->second, in, getFormatSettings());
         }
         /// Try to add a new dynamic path.
@@ -1260,6 +1279,9 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
                     "Attempt to read {} bytes for the value size, but only {} bytes are available",
                     value_size,
                     in.available());
+            if (shared_data_paths->size() > shared_data_row_start && shared_data_paths->getDataAt(shared_data_paths->size() - 1) >= path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths of a serialized value of JSON column are not sorted or have duplicates (at path '{}')", path);
             std::string_view value(in.position(), value_size);
             in.ignore(value_size);
             shared_data_paths->insertData(path.data(), path.size());
@@ -1850,6 +1872,19 @@ void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
+namespace
+{
+
+const ColumnObject & getSourceObjectColumn(const IColumn & source, const ColumnObject & column, std::string_view operation)
+{
+    const auto * source_object = typeid_cast<const ColumnObject *>(&source);
+    if (!source_object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Object, but {}", operation, column.getName(), source.getName());
+    return *source_object;
+}
+
+}
+
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
@@ -1872,8 +1907,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
     };
 
+    /// The later loop over `source_columns` relies on this check.
     for (const auto & source_column : source_columns)
-        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
+        add_dynamic_paths(getSourceObjectColumn(*source_column, *this, "squashing"));
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
@@ -2021,7 +2057,8 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     UnorderedMapWithMemoryTracking<String, size_t> path_to_total_number_of_non_null_values;
     for (const auto & source_column : source_columns)
     {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+        /// The later loops over `source_columns` rely on this check.
+        const auto & source_object = getSourceObjectColumn(*source_column, *this, "merge");
         /// During deserialization from MergeTree we will have statistics from the whole
         /// data part with number of non null values for each dynamic path.
         const auto & source_statistics = source_object.getOrCalculateStatistics();
@@ -2127,7 +2164,7 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
-    const auto & source_object = assert_cast<const ColumnObject &>(source);
+    const auto & source_object = getSourceObjectColumn(source, *this, "dynamic structure");
 
     for (auto & [path, column] : typed_paths)
         column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
@@ -2182,6 +2219,11 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+
+    /// The loops over `source_columns` below rely on this check.
+    for (const auto & source_column : source_columns)
+        getSourceObjectColumn(*source_column, *this, "statistics");
+
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;

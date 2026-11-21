@@ -474,17 +474,31 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
     AccessRightsElements required_access;
-    if (query.type == ASTKillQueryQuery::Type::Query)
-        required_access.emplace_back(AccessType::KILL_QUERY);
-    else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(
-                AccessType::ALTER_UPDATE
-                | AccessType::ALTER_DELETE
-                | AccessType::ALTER_MATERIALIZE_INDEX
-                | AccessType::ALTER_MATERIALIZE_COLUMN
-                | AccessType::ALTER_MATERIALIZE_TTL
-                | AccessType::ALTER_REWRITE_PARTS
-            );
+    /// This switch has no `default:`, so a new Type has to be mapped here to compile.
+    switch (query.type)
+    {
+        case ASTKillQueryQuery::Type::Query:
+            required_access.emplace_back(AccessType::KILL_QUERY);
+            break;
+        case ASTKillQueryQuery::Type::Mutation:
+            required_access.emplace_back(
+                    AccessType::ALTER_UPDATE
+                    | AccessType::ALTER_DELETE
+                    | AccessType::ALTER_MATERIALIZE_INDEX
+                    | AccessType::ALTER_MATERIALIZE_COLUMN
+                    | AccessType::ALTER_MATERIALIZE_TTL
+                    | AccessType::ALTER_REWRITE_PARTS
+                );
+            break;
+        case ASTKillQueryQuery::Type::PartMoveToShard:
+            required_access.emplace_back(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "part_moves_between_shards");
+            required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION | AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
+            break;
+        case ASTKillQueryQuery::Type::Transaction:
+            required_access.emplace_back(AccessType::KILL_TRANSACTION);
+            required_access.emplace_back(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "transactions");
+            break;
+    }
     return required_access;
 }
 

@@ -23,6 +23,8 @@
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
@@ -166,7 +168,7 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto minmax_names = MergeTreeData::getMinMaxColumns(
-        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+        *metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
 
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
@@ -727,7 +729,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     DataTypes minmax_columns_types;
 
     if (minmax_idx_condition)
-        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
+        minmax_columns_types = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data.getSettings()).getTypes();
 
     if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
@@ -825,6 +827,15 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 }
 
 
+static bool hasEffectiveRowPolicy(const IStorage & storage, const ContextPtr & context)
+{
+    auto storage_id = storage.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    auto filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    return filter && !filter->isAlwaysTrue();
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -842,10 +853,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
+    /// 5. A row policy applies: the statistics describe all rows of a part, including the ones the
+    ///    policy hides, so the number of rows left to read after pruning by the query's predicate,
+    ///    which is reported to the client, reveals the values of the hidden rows. The policy is
+    ///    either pushed into this read (possibly from a wrapper such as `Alias`) or belongs to
+    ///    this table and is applied above the read (e.g. for a child of `Merge`).
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
         || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
-        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
+        || query_info.row_level_filter
+        || (!parts.empty() && hasEffectiveRowPolicy(parts.front().data_part->storage, context)))
     {
         return parts;
     }
@@ -949,6 +967,33 @@ static bool partHasStaleTopKIndex(
     return false;
 }
 
+void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings)
+{
+    if (!settings[Setting::force_data_skipping_indices].changed)
+        return;
+
+    const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
+    auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
+
+    if (forced_indices.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
+
+    std::unordered_set<std::string> useful_indices_names;
+    for (const auto & useful_index : skip_indexes.useful_indices)
+        useful_indices_names.insert(useful_index.index->index.name);
+
+    for (const auto & index_name : forced_indices)
+    {
+        if (!useful_indices_names.contains(index_name))
+        {
+            throw Exception(
+                ErrorCodes::INDEX_NOT_USED,
+                "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                backQuote(index_name));
+        }
+    }
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -976,29 +1021,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
-    {
-        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
-        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
-
-        if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
-
-        std::unordered_set<std::string> useful_indices_names;
-        for (const auto & useful_index : skip_indexes.useful_indices)
-            useful_indices_names.insert(useful_index.index->index.name);
-
-        for (const auto & index_name : forced_indices)
-        {
-            if (!useful_indices_names.contains(index_name))
-            {
-                throw Exception(
-                    ErrorCodes::INDEX_NOT_USED,
-                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
-                    backQuote(index_name));
-            }
-        }
-    }
+    if (use_skip_indexes)
+        checkForcedSkipIndexes(skip_indexes, settings);
 
     struct IndexStat
     {
@@ -1154,6 +1178,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         return use_skip_indexes_on_data_read_;
     };
 
+    /// Whether the read drops lightweight-deleted rows: by the deleted mask or by an explicit filter on `_row_exists`.
+    bool query_hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask];
+    if (!query_hides_lightweight_deleted_rows)
+    {
+        auto dag_reads_row_exists = [](const ActionsDAG & dag)
+        {
+            for (const auto * input : dag.getInputs())
+                if (input->result_name == RowExistsColumn::name)
+                    return true;
+            return false;
+        };
+
+        query_hides_lightweight_deleted_rows = (query_info.filter_actions_dag && dag_reads_row_exists(*query_info.filter_actions_dag))
+            || (query_info.prewhere_info && dag_reads_row_exists(query_info.prewhere_info->prewhere_actions))
+            || (query_info.row_level_filter && dag_reads_row_exists(query_info.row_level_filter->actions));
+    }
+
     /// Let's find what range to read from each part.
     {
         auto mark_cache = context->getIndexMarkCache();
@@ -1219,7 +1260,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
 
-            if (!skip_indexes.empty())
+            /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
+            if (!skip_indexes.empty() && !ranges.ranges.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
@@ -1238,6 +1280,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         return std::unexpected(PreformattedMessage::create(
                             "Index {} is not used for part {}. Reason: {}",
                             index->index.name, ranges.data_part->name, check_result.error().text));
+                    }
+
+                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
+                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
+                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
+                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
+                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
+                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
+                    /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
+                    /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
+                    const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
+                            && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
+                        || alter_conversions->hasDeleteMutation();
+                    if (index->isVectorSimilarityIndex() && has_deleted_rows)
+                    {
+                        return std::unexpected(PreformattedMessage::create(
+                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
+                            index->index.name, ranges.data_part->name));
                     }
                     return {};
                 };
@@ -1941,7 +2001,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        /*skip_ranges_analysis=*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

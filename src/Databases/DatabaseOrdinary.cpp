@@ -33,6 +33,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -161,12 +162,20 @@ void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_quer
         /*validate_substitutions=*/true);
 }
 
+String DatabaseOrdinary::getConvertedMergeTreeEngineName(const String & engine_name, bool replicated)
+{
+    if (replicated)
+        return "Replicated" + engine_name;
+    chassert(engine_name.starts_with("Replicated"));
+    return engine_name.substr(strlen("Replicated"));
+}
+
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
     auto engine = make_intrusive<ASTFunction>();
-    String engine_name;
+    const String engine_name = getConvertedMergeTreeEngineName(storage->engine->name, replicated);
 
     if (replicated)
     {
@@ -183,8 +192,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = "Replicated" + storage->engine->name;
     }
     else
     {
@@ -194,8 +201,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = storage->engine->name.substr(strlen("Replicated"));
     }
 
     /// Set new engine for the old query
@@ -446,6 +451,15 @@ static bool isPushSourceEngine(const String & engine_name)
     return push_source_engines.contains(engine_name);
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -463,6 +477,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
     /// metadata could be read without a grant on the target. Load it eagerly, as for views.
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -562,7 +579,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 
@@ -877,7 +894,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };

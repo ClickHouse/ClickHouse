@@ -66,6 +66,7 @@ void GlobalPlannerContext::collectTableExpressionDataForCorrelatedColumns(
     auto * union_node = table_expression_node->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
+    shared_table_expression_data_owners.push_back(planner_context);
     const auto & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {

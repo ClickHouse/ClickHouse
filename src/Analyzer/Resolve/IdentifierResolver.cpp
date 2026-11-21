@@ -363,7 +363,18 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+
+    /// The view source holds the block pushed to a materialized view with the types it was
+    /// converted to; the catalog table may have been altered since. Take the types from it, but
+    /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
+    /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
+    /// The inner query of an ordinary view reads the table itself.
+    if (auto view_source = context->getViewSource();
+        view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+        metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
+
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by

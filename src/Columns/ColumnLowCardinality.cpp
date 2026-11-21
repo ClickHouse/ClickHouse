@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 void throwUnexpectedLowCardinalityIndexType(size_t size)
@@ -30,6 +31,9 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    /// The range path starts to win around 64 rows when there are only a few distinct short keys.
+    constexpr size_t max_rows_to_translate_individually = 64;
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -258,6 +262,22 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     {
         compactIfSharedDictionary();
 
+        if (length <= max_rows_to_translate_individually)
+        {
+            const IColumn & src_indexes = low_cardinality_src->getIndexes();
+            if (start > src_indexes.size() || length > src_indexes.size() - start)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound in "
+                    "ColumnLowCardinality::insertRangeFrom method (size() = {}).", start, length, src_indexes.size());
+
+            std::array<UInt64, max_rows_to_translate_individually> positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `length` entries are written before read
+            for (size_t i = 0; i < length; ++i)
+                positions[i] = src_indexes.getUInt(start + i);
+            getDictionary().uniqueInsertRowsFrom(*low_cardinality_src->getDictionary().getNestedColumn(), {positions.data(), length});
+            for (size_t i = 0; i < length; ++i)
+                idx.insertIndex(positions[i]);
+            return;
+        }
+
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
         auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
@@ -278,7 +298,7 @@ void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t
     idx.insertIndexesRange(*inserted_indexes, 0, length);
 }
 
-static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
+void ColumnLowCardinality::checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
 {
     auto check_for_type = [&](auto type)
     {
@@ -292,14 +312,14 @@ static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
         size_t num_rows = data.size();
         if (num_rows == 0)
             return true;
-        UInt64 max_position = 0;
+        ColumnType max_position = 0;
         for (size_t i = 0; i < num_rows; ++i)
-            max_position = std::max<UInt64>(max_position, data[i]);
+            max_position = std::max(max_position, data[i]);
 
-        if (max_position >= limit)
+        if (static_cast<UInt64>(max_position) >= limit)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                             "Index for LowCardinality is out of range. Dictionary size is {}, "
-                            "but found index with value {}", limit, max_position);
+                            "but found index with value {}", limit, static_cast<UInt64>(max_position));
 
         return true;
     };

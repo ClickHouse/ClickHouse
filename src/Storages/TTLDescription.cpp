@@ -716,7 +716,8 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                         {
                             auto offsets = ColumnArray::ColumnOffsets::create();
                             offsets->getData().push_back(1);
-                            candidates.push_back(ColumnArray::create(element->cloneResized(1), std::move(offsets)));
+                            candidates.push_back(
+                                ColumnArray::create(element->convertToFullColumnIfConst()->cloneResized(1), std::move(offsets)));
                         }
                     }
                     else

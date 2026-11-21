@@ -58,6 +58,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -142,6 +143,9 @@ private:
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
+    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
+
+    template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
@@ -157,7 +161,7 @@ private:
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
@@ -166,7 +170,7 @@ private:
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
 
     friend class ReadFromMerge;
 };

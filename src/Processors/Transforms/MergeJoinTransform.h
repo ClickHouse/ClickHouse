@@ -12,6 +12,7 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -220,6 +221,7 @@ public:
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
     absl::InlinedVector<ColumnPtr, 4> null_maps;
+    SortedKeyRuns key_runs;
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;

@@ -311,8 +311,8 @@ bool traverseDAGFilter(
 
             // Convert each tuple element to the correct type, with the type of the element it comes
             // from: without it a date-family literal is reinterpreted in the key's unit space.
-            const auto * value_tuple_type
-                = typeid_cast<const DataTypeTuple *>(removeNullable(recursiveRemoveLowCardinality(right->result_type)).get());
+            const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
+            const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());

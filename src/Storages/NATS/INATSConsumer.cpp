@@ -81,23 +81,20 @@ void INATSConsumer::unsubscribe(bool finish_queue)
         if (status != NATS_OK)
         {
             if (was_closed)
-                LOG_DEBUG(log, "A subscription of consumer {} was already closed by the NATS client",
-                    static_cast<void *>(this));
+                LOG_DEBUG(log, "A subscription of the consumer was already closed by the NATS client");
             else
-                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
-                    static_cast<void *>(this), natsStatus_GetText(status));
+                LOG_WARNING(log, "Failed to start draining a subscription of the consumer: {}", natsStatus_GetText(status));
             continue;
         }
 
         status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
         if (status != NATS_OK)
-            LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
-                static_cast<void *>(this), natsStatus_GetText(status));
+            LOG_WARNING(log, "A subscription of the consumer did not finish draining: {}", natsStatus_GetText(status));
     }
 
     subscriptions.clear();
 
-    LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
+    LOG_DEBUG(log, "Consumer unsubscribed");
 }
 
 void INATSConsumer::dropBuffered()
@@ -130,8 +127,7 @@ void INATSConsumer::ackConsumed()
     {
         auto status = natsMsg_Ack(msg.get(), nullptr);
         if (status != NATS_OK)
-            LOG_WARNING(log, "Failed to acknowledge a message in consumer {}: {} (server may redeliver it)",
-                static_cast<void *>(this), natsStatus_GetText(status));
+            LOG_WARNING(log, "Failed to acknowledge a message in the consumer: {} (server may redeliver it)", natsStatus_GetText(status));
     }
     consumed_messages.clear();
 }
@@ -166,7 +162,7 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
             auto queue = nats_consumer->loadReceived();
             if (!queue->push(std::move(data)))
             {
-                LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
+                LOG_DEBUG(nats_consumer->log, "Consumer is shutting down, dropping a message");
                 nats_consumer->nackMessage(msg);
             }
         }

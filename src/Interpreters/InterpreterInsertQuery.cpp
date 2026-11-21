@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -204,7 +205,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
+    /// The insert path reads engine facts the proxy of an unloaded table cannot answer.
+    return resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, current_context));
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -721,8 +723,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         return {};
 
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.
-    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
-    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
 
@@ -1083,7 +1084,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
-    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
@@ -1143,11 +1144,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
     /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
     /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
-    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
-    /// structure and format arguments are added so that the nodes do not infer the schema again.
+    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument. The other
+    /// arguments stay as written, so that the nodes take the structure from the insertion table with its `DEFAULT`
+    /// expressions unless the query gives one.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
-        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+        src_storage_cluster->updateQueryToSendIfNeeded(
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, /*add_structure_and_format=*/false);
     }
 
     String query_str;

@@ -1191,6 +1191,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     {
         auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, update_token);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
+        /// The auth headers may carry a token from the OAuth server or values from the database settings.
+        context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(result_headers);
 
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -1786,6 +1788,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
 
     const auto & context = getContext();
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())

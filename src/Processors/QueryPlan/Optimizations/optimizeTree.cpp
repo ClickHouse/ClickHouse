@@ -80,7 +80,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
-        optimization_settings.read_in_order_through_join,
+        optimization_settings.read_in_order_through_join != 0,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
@@ -93,6 +93,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 }
 

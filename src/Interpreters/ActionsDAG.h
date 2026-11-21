@@ -168,7 +168,13 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
@@ -533,6 +539,7 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -544,7 +551,8 @@ public:
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-        const NameSet & cross_type_equivalent_columns);
+        const NameSet & cross_type_equivalent_columns,
+        bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
       *

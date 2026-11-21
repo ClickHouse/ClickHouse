@@ -906,6 +906,7 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         },
         Documentation{

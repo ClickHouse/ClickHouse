@@ -22,6 +22,14 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// The streams of these columns are known only after reading the serialization prefixes:
+    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
+    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+    {
+        return column.getTypeInStorage()->hasDynamicStructure()
+            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
+    }
 }
 
 namespace ErrorCodes
@@ -72,7 +80,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -98,7 +106,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -224,7 +232,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
@@ -394,7 +402,7 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
@@ -705,8 +713,11 @@ void MergeTreeReaderWide::readData(
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
-    /// We need to read prefixes to be able to collect all streams (because of dynamic structure of some columns).
-    deserializePrefixForAllColumns(columns_to_read.size(), 0);
+    /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
+    if (std::ranges::any_of(columns_to_read, [&](const auto & column) { return streamsDependOnPrefixes(column, infos); }))
+        deserializePrefixForAllColumns(columns_to_read.size(), 0);
+
     std::unordered_map<String, std::vector<String>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {

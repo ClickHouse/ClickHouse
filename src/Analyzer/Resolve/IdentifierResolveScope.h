@@ -167,8 +167,8 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node
-    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
+    /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)
+    std::unordered_map<std::string, QueryTreeNodes> cte_name_to_query_node;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
@@ -197,6 +197,9 @@ struct IdentifierResolveScope
       * This way the lookup uses exact comparison, including types.
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
+
+    /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
+    QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)

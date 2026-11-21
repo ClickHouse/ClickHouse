@@ -65,6 +65,22 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+
+/// A fault address above the first page is shown only as an offset inside a loaded object:
+/// the runtime address of the heap, a stack or JIT code must not be published.
+std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
+{
+    if (!shouldShowAddress(addr))
+        return {};
+
+    if (reinterpret_cast<uintptr_t>(addr) < 4096)
+        return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
+
+    auto resolved = StackTrace::resolveAddress(addr);
+    if (!resolved.address)
+        return {};
+    return resolved;
+}
 }
 
 StackTrace::StackTrace()
@@ -85,7 +101,11 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     {
         using namespace std::string_literals;
 
-        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string address;
+        if (info.si_addr == nullptr)
+            address = "NULL pointer";
+        else if (const auto resolved = resolveFaultAddress(info.si_addr))
+            address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -107,10 +127,12 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     if (info.si_addr == nullptr)
         return 0;
 
-    if (shouldShowAddress(info.si_addr))
-        return reinterpret_cast<UInt64>(info.si_addr);
+    /// An offset inside another object cannot be told apart from one inside the executable.
+    const auto resolved = resolveFaultAddress(info.si_addr);
+    if (!resolved || resolved->kind == StackTrace::AddressKind::OtherObject)
+        return std::nullopt;
 
-    return std::nullopt;
+    return reinterpret_cast<UInt64>(resolved->address);
 }
 
 std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
@@ -347,7 +369,7 @@ StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
 
     if (!object)
-        return {virtual_addr, {}, AddressKind::UnknownMapping};
+        return {nullptr, {}, AddressKind::UnknownMapping};
     if (object == symbol_index.thisObject())
         return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
     return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
@@ -813,7 +835,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        if (shouldShowAddress(frame.physical_addr))
+        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
+        if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);

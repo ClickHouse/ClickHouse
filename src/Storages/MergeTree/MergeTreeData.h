@@ -578,6 +578,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool hasBucketedMapSerialization() const override;
+
     bool supportsTTL() const override { return true; }
 
     bool supportsStatistics() const override { return true; }
@@ -625,7 +627,8 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        virtual NameSet getAllUpdatedColumns() const = 0;
+        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
         virtual bool hasDataMutations() const = 0;
@@ -657,6 +660,8 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+        /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
+        void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -701,6 +706,11 @@ public:
 
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    /// Removes the snapshot of this table from the query-scoped snapshot cache of
+    /// `enable_shared_storage_snapshot_in_query`, so that the next `getStorageSnapshot` in the query
+    /// takes a fresh one. Holders of the removed snapshot keep it.
+    void discardSharedStorageSnapshot(const ContextPtr & query_context) const;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
@@ -1111,6 +1121,11 @@ public:
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
+    /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
+    /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
+    /// which checks the user's access to their functions and rejects functions that are not executed in the background.
+    static void checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context);
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
@@ -1423,6 +1438,11 @@ public:
 #endif
         );
 
+#if CLICKHOUSE_CLOUD
+    /// Commands that apply the enabled masking policies on the fly.
+    static MutationCommands getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies);
+#endif
+
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
 
@@ -1462,12 +1482,12 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get expression on columns for which part-level min-max index will be calculated.
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+    static ExpressionActionsPtr getMinMaxExpr(const StorageInMemoryMetadata & metadata,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
     /// Get the columns covered by the part-level min-max index.
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -1931,7 +1951,7 @@ protected:
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+    void checkPartitionKeyAndInitMinMax(const StorageInMemoryMetadata & new_metadata);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
@@ -2175,6 +2195,8 @@ protected:
     std::mutex refresh_parts_mutex;
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
+    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
+    std::atomic_bool refresh_stats_cancelled = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

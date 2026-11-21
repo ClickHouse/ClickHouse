@@ -135,7 +135,6 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;
@@ -245,13 +244,6 @@ private:
 
     /// Multiply the values if the nested column is ColumnString. The code is too complicated.
     ColumnPtr replicateString(const Offsets & replicate_offsets) const;
-
-    /** Non-constant arrays of constant values are quite rare.
-      * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate` (see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
-      * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
-      */
-    ColumnPtr replicateConst(const Offsets & replicate_offsets) const;
 
     /** The following is done by simply replicating of nested columns.
       */
