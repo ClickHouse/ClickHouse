@@ -119,6 +119,7 @@ void registerInputFormatFreeform(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
 void registerOutputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
+void registerInputFormatPCAP(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
 #if USE_HIVE
@@ -168,6 +169,7 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerFreeformSchemaReader(FormatFactory & factory);
 void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
+void registerPCAPSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
@@ -301,6 +303,7 @@ void registerFormats()
     registerInputFormatPuffin(factory);
     registerOutputFormatPuffin(factory);
     registerInputFormatDWARF(factory);
+    registerInputFormatPCAP(factory);
     registerInputFormatOne(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
@@ -345,6 +348,7 @@ void registerFormats()
     registerFreeformSchemaReader(factory);
     registerPuffinSchemaReaders(factory);
     registerDWARFSchemaReader(factory);
+    registerPCAPSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
