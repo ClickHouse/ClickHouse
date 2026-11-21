@@ -584,6 +584,7 @@ SELECT * FROM odbc_t
         },
         xdbcSecretArguments(),
         {
+            .supports_named_collections = true,
             .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
         },
         documentation);
