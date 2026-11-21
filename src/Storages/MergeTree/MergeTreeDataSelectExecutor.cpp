@@ -269,7 +269,7 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     auto probe_part = [&](const RangesInDataPart & part) -> size_t
     {
         return markRangesFromPKRange(
-            part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
+            part, metadata_snapshot, key_condition->getForPart(part.data_part), nullptr, nullptr,
             /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
     };
 
@@ -289,6 +289,9 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     for (size_t window_begin = 0; window_begin < parts.size(); window_begin += num_threads)
     {
         const size_t window_end = std::min(parts.size(), window_begin + num_threads);
+
+        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+            key_condition->prepareForPart(parts[part_index].data_part);
 
         size_t indexes_to_load = 0;
         if (num_threads > 1)

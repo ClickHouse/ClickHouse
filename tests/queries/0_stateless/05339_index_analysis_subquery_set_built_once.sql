@@ -5,6 +5,7 @@
 -- must be executed once, not once per thread.
 
 DROP TABLE IF EXISTS t_subquery_set_built_once;
+DROP TABLE IF EXISTS t_subquery_set_built_once_statistics;
 
 CREATE TABLE t_subquery_set_built_once
 (
@@ -72,13 +73,45 @@ WHERE x IN (SELECT number FROM numbers(10))
 SETTINGS use_constant_folding_in_index_analysis = 1, optimize_use_projections = 1, max_threads = 8, max_threads_for_indexes = 8,
     log_comment = '05339_planned_set';
 
-SYSTEM FLUSH LOGS query_log;
+-- Deciding whether to load the statistics analyzes the primary key of the parts on several threads.
+CREATE TABLE t_subquery_set_built_once_statistics (p UInt8, x UInt64 STATISTICS(basic))
+ENGINE = MergeTree PARTITION BY p ORDER BY x
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', use_primary_key_cache = 0, prewarm_statistics_cache = 0;
+
+INSERT INTO t_subquery_set_built_once_statistics SELECT number % 8, number FROM numbers(1000)
+SETTINGS materialize_statistics_on_insert = 1;
+
+-- Unloads the primary index and the statistics of the parts.
+DETACH TABLE t_subquery_set_built_once_statistics;
+ATTACH TABLE t_subquery_set_built_once_statistics;
+
+-- The implicit projection makes index analysis run while the query is planned.
+SELECT count() FROM t_subquery_set_built_once_statistics
+WHERE x < 100000 AND x + p IN (SELECT number FROM numbers(20) WHERE NOT ignore(sleep(0.1)))
+SETTINGS use_constant_folding_in_index_analysis = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+    max_threads = 8, max_threads_for_indexes = 8, use_statistics = 1, use_statistics_for_part_pruning = 1,
+    min_marks_per_part_to_load_statistics = 2, optimize_move_to_prewhere = 0, use_query_condition_cache = 0,
+    log_comment = '05339_statistics';
+
+SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT log_comment, ProfileEvents['SleepFunctionCalls']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05339_primary_key', '05339_skip_index', '05339_skip_index_on_data_read', '05339_text_index_map',
-    '05339_primary_key_drops_all', '05339_primary_key_drops_all_on_data_read', '05339_primary_key_drops_all_per_part_stats') AND type = 'QueryFinish'
+    '05339_primary_key_drops_all', '05339_primary_key_drops_all_on_data_read', '05339_primary_key_drops_all_per_part_stats', '05339_statistics')
+    AND type = 'QueryFinish'
 ORDER BY log_comment;
+
+-- The probe analyzes the parts on several threads, and their per-partition conditions leave too few marks to load the statistics.
+SELECT DISTINCT message_format_string
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND log_comment = '05339_statistics' AND type = 'QueryFinish')
+    AND message_format_string IN (
+        'Analyzing the primary key of parts in {} threads to decide whether to load statistics',
+        'Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key')
+ORDER BY message_format_string;
 
 -- The per-partition conditions use the set to prune.
 SELECT log_comment, read_rows < 500
@@ -87,3 +120,4 @@ WHERE current_database = currentDatabase() AND log_comment IN ('05339_primary_ke
 ORDER BY log_comment;
 
 DROP TABLE t_subquery_set_built_once;
+DROP TABLE t_subquery_set_built_once_statistics;
