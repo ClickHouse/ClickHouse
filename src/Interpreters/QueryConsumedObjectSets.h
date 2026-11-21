@@ -47,7 +47,7 @@ struct QueryConsumedObjectSets
         /// then fails closed for the table rather than risk an unsound comparison.
         bool has_metadata = false;
 
-        auto asTuple() const { return std::tie(path, read_source_index, etag, etag_is_strong, size, last_modified, has_metadata); }
+        [[nodiscard]] auto asTuple() const { return std::tie(path, read_source_index, etag, etag_is_strong, size, last_modified, has_metadata); }
         bool operator<(const Object & rhs) const { return asTuple() < rhs.asTuple(); }
         bool operator==(const Object & rhs) const { return asTuple() == rhs.asTuple(); }
     };
