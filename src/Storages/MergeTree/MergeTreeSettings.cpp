@@ -351,7 +351,7 @@ switch to `with_types` (or `with_missing_columns`) to enable the corresponding f
 )", 0, \
         {"25.11", "basic", "with_types", "Change to the newer format allowing custom string serialization"}, \
         {"25.10", "basic", "basic", "New setting"}) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_dictionaries", R"(
 Controls the serialization format for top-level `String` columns.
 
 This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
