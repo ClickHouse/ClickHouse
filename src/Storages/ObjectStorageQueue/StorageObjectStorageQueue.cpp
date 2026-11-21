@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -812,6 +813,18 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage->getStorageID());
 
     size_t processing_threads_num = metadata->getTableMetadata().processing_threads_num;
+
+    if (commit_once_processed
+        && metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED
+        && !metadata->useBucketsForProcessing())
+    {
+        QueryPlanResourceHolder resources;
+        if (auto lock = storage->lockCommittingSelect(context))
+        {
+            resources.custom_resources.push_back(std::move(lock));
+            pipeline.addResources(resources);
+        }
+    }
 
     createIterator(nullptr);
 
@@ -2024,6 +2037,49 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
         shutdown_called);
+}
+
+namespace
+{
+class CommittingSelectLockHolder : public ICustomResourceHolder
+{
+public:
+    explicit CommittingSelectLockHolder(std::function<void()> release_) : release(std::move(release_)) {}
+    ~CommittingSelectLockHolder() override { release(); }
+
+private:
+    std::function<void()> release;
+};
+}
+
+std::shared_ptr<ICustomResourceHolder> StorageObjectStorageQueue::lockCommittingSelect(const ContextPtr & local_context)
+{
+    auto state = committing_select_lock;
+    const String query_id{local_context->getCurrentQueryId()};
+    std::unique_lock lock(state->mutex);
+    /// The same query may read the table several times; waiting for itself would never end.
+    if (state->locked && state->owner_query_id == query_id)
+        return nullptr;
+    while (state->locked)
+    {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is shutting down", getStorageID());
+        if (local_context->isCurrentQueryKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for another committing SELECT");
+        state->cv.wait_for(lock, std::chrono::milliseconds(100));
+    }
+    state->locked = true;
+    state->owner_query_id = query_id;
+
+    return std::make_shared<CommittingSelectLockHolder>([state]
+    {
+        {
+            std::lock_guard release_lock(state->mutex);
+            state->locked = false;
+            state->owner_query_id.clear();
+        }
+        state->cv.notify_one();
+    });
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
