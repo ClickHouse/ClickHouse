@@ -1866,7 +1866,10 @@ namespace
             static PosOrError jodaMicrosecondOfSecond(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 microsecond = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, microsecond)))
+                /// 'S' is the fractional second with exactly `repetitions` digits of scale: the value is
+                /// a fraction, not a padded integer, so reading the two-digit minimum the other fields
+                /// use swallows the next character and overflows into the seconds (issue #104716).
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, microsecond)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMicrosecond(microsecond))
                 return cur;
             }
