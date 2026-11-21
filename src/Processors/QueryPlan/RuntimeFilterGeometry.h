@@ -11,6 +11,8 @@ class WriteBuffer;
 /// First plan version that can carry runtime filter exchanges (step version 1 of `BuildRuntimeFilter`),
 /// the `MergeRuntimeFilters` step and the `join_runtime_filter_exact_bytes_limit` plan setting.
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES = 20;
+/// First plan version whose `BuildRuntimeFilter` step also carries local build keys.
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LOCAL_RUNTIME_FILTER_KEY = 21;
 
 /// Sizing and self-disabling parameters of a runtime filter. Partials merge only when their geometry
 /// matches, and a receiver checks each arrived state against the plan's geometry.

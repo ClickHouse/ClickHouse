@@ -1,5 +1,10 @@
+#include <algorithm>
 #include <memory>
+#include <string_view>
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -20,6 +25,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -98,9 +104,12 @@ struct RuntimeFilterId
     String key;
 };
 
+/// Prefix of `runtimeFilterName`, by which `collectRuntimeFilterKeys` recognizes the `__applyFilter` label.
+static constexpr std::string_view runtime_filter_name_prefix = "_runtime_filter_";
+
 static String runtimeFilterName(UInt64 structural_hash)
 {
-    return "_runtime_filter_" + std::to_string(structural_hash);
+    return String(runtime_filter_name_prefix) + std::to_string(structural_hash);
 }
 
 /// Add the const String argument for `__applyFilter`. Its VALUE is the per-plan-build rendezvous
@@ -288,6 +297,27 @@ static size_t countHashTableKeys(const JoinStepLogical & join_step)
     return count;
 }
 
+/// Build steps on a join input, ignoring intervening expression and filter steps.
+static VectorWithMemoryTracking<BuildRuntimeFilterStep *> getBuildStepChain(QueryPlan::Node * input)
+{
+    VectorWithMemoryTracking<BuildRuntimeFilterStep *> chain;
+    for (auto * node = input; node && node->children.size() == 1; node = node->children.front())
+    {
+        if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+            chain.push_back(build_step);
+        else if (!typeid_cast<const ExpressionStep *>(node->step.get()) && !typeid_cast<const FilterStep *>(node->step.get()))
+            break;
+    }
+    return chain;
+}
+
+/// Do not add a second set of filters to a shipped build side.
+static bool hasRuntimeFilterBuilders(QueryPlan::Node * build_node)
+{
+    return std::ranges::any_of(getBuildStepChain(build_node),
+        [](const BuildRuntimeFilterStep * build_step) { return !build_step->getFilterKey().empty(); });
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -308,6 +338,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// runtime filter in this scenario.
     if (node.children[0]->step->getOutputHeader()->empty() ||
         node.children[1]->step->getOutputHeader()->empty())
+        return false;
+
+    if (hasRuntimeFilterBuilders(node.children[1]))
         return false;
 
     /// Check if join can do runtime filtering on left table
@@ -743,6 +776,115 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
         else
             break;
     }
+
+    if (!read_step)
+        return;
+
+    /// Shipped plans may already have the filters in `PREWHERE`.
+    if (const auto & prewhere_info = read_step->getPrewhereInfo())
+        for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+}
+
+/// Collect every `__applyFilter` rendezvous key in the DAG.
+static void collectRuntimeFilterKeys(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<String> & keys)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base
+            || node.function_base->getName() != "__applyFilter" || node.children.empty())
+            continue;
+        const auto * label = node.children.front();
+        /// `is_runtime_filter_id` is not serialized, so recognize the label by its name.
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type)
+            || !label->result_name.starts_with(runtime_filter_name_prefix))
+            continue;
+        keys.emplace(String(label->column->getDataAt(0)));
+    }
+}
+
+static void collectRuntimeFilterKeys(const IQueryPlanStep & step, UnorderedSetWithMemoryTracking<String> & keys)
+{
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
+        collectRuntimeFilterKeys(expression_step->getExpression(), keys);
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(&step))
+        collectRuntimeFilterKeys(filter_step->getExpression(), keys);
+    else if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & prewhere_info = source_step->getPrewhereInfo())
+            collectRuntimeFilterKeys(prewhere_info->prewhere_actions, keys);
+    }
+}
+
+bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool track_key_range)
+{
+    /// Keep a local build only beside an optimized join whose probe subtree uses the same unique key.
+    /// Make all other deserialized local builds inert so normal optimization can rebuild them if needed.
+    /// Exchange builds are never paired, but count toward key uniqueness.
+    VectorWithMemoryTracking<QueryPlan::Node *> join_nodes;
+    VectorWithMemoryTracking<BuildRuntimeFilterStep *> steps_to_pair;
+    UnorderedMapWithMemoryTracking<String, size_t> build_steps_per_key;
+    for (VectorWithMemoryTracking<QueryPlan::Node *> stack{&root}; !stack.empty();)
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+        if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !build_step->getFilterKey().empty())
+        {
+            ++build_steps_per_key[build_step->getFilterKey()];
+            if (build_step->needsPairing())
+                steps_to_pair.push_back(build_step);
+        }
+        else if (auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+                 allow_pairing && join_step && join_step->isOptimized() && node->children.size() == 2)
+            join_nodes.push_back(node);
+    }
+
+    bool kept_any = false;
+    for (auto * node : join_nodes)
+    {
+        auto candidates = getBuildStepChain(node->children[1]);
+        std::erase_if(candidates, [&](const BuildRuntimeFilterStep * build_step)
+        {
+            return !build_step->needsPairing() || build_steps_per_key[build_step->getFilterKey()] != 1;
+        });
+        if (candidates.empty())
+            continue;
+
+        UnorderedSetWithMemoryTracking<String> probe_keys;
+        for (VectorWithMemoryTracking<const QueryPlan::Node *> stack{node->children[0]}; !stack.empty();)
+        {
+            const auto * probe_node = stack.back();
+            stack.pop_back();
+            stack.insert(stack.end(), probe_node->children.begin(), probe_node->children.end());
+            collectRuntimeFilterKeys(*probe_node->step, probe_keys);
+        }
+
+        auto & join_step = typeid_cast<JoinStepLogical &>(*node->step);
+        for (auto * build_step : candidates)
+        {
+            if (!probe_keys.contains(build_step->getFilterKey()))
+                continue;
+
+            /// Restore state that is not serialized with the build step.
+            auto & descriptors = join_step.getJoinOperator().shared_runtime_filter_descriptors;
+            if (join_step.getJoinSettings().join_runtime_filter_from_fixed_hash_table
+                && build_step->allowsNotExactFilter()
+                && !std::ranges::contains(descriptors, build_step->getFilterKey(), &SharedRuntimeFilterDescriptor::filter_key))
+                descriptors.push_back(SharedRuntimeFilterDescriptor{
+                    build_step->getFilterKey(), build_step->getFilterColumnName(), build_step->getFilterColumnType()});
+            if (track_key_range)
+                build_step->enableKeyRangeTracking();
+
+            build_step->finishPairing(/*keep_key=*/true);
+            kept_any = true;
+        }
+    }
+
+    for (auto * build_step : steps_to_pair)
+        if (build_step->needsPairing())
+            build_step->finishPairing(/*keep_key=*/false);
+    return kept_any;
 }
 
 }

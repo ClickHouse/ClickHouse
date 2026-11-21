@@ -290,8 +290,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
         return;
     }
 
-    /// Only a transported build serializes its key, so a deserialized local build has none. No lookup
-    /// could find its filter. The join task derives its own local filter when it optimizes its fragment.
+    /// Legacy and unpaired local builds have no filter to look up.
     if (filter_key.empty())
         return;
 
@@ -444,9 +443,8 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(ctx.for_cache_key ? String{} : filter_name, ctx.out);
     writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 
-    /// Step version 1 carries the filter exchange topology and the key. The registry picks version 0
-    /// for a peer whose release predates the transport. Such a peer would run the step as a local
-    /// build, and the filter would silently never arrive. So the topology is refused, not dropped.
+    /// Version 1 adds filter exchanges and their key; version 2 also carries local build keys.
+    /// Refuse to drop exchanges for an older peer, which could not receive the filter.
     if (ctx.step_version < 1)
     {
         if (hasFilterExchanges())
@@ -464,9 +462,9 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
         writeVectorBinary(tree_exchange->source_buckets, ctx.out);
         writeVarUInt(tree_exchange->fan_in, ctx.out);
     }
-    /// The rendezvous key is random per plan build, so a cache key must not contain it. A local build
-    /// sends no key and stays inert on the worker. The worker plans its own local filters.
-    writeStringBinary(hasFilterExchanges() && !ctx.for_cache_key ? filter_key : String{}, ctx.out);
+    /// Random rendezvous keys are excluded from cache keys; version 1 only transports exchange keys.
+    const bool write_key = !ctx.for_cache_key && (ctx.step_version >= 2 || hasFilterExchanges());
+    writeStringBinary(write_key ? filter_key : String{}, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -505,10 +503,13 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         }
 
         readStringBinary(filter_key, ctx.in);
-        /// Only a build with filter exchanges carries its key. A local build must stay inert.
-        if (filter_key.empty() == static_cast<bool>(has_tree_exchange))
+        /// Version 1 requires a key exactly for filter exchanges; version 2 also permits local keys.
+        if (ctx.step_version < 2 && filter_key.empty() == static_cast<bool>(has_tree_exchange))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must carry a rendezvous key exactly when it has filter exchanges");
+        if (has_tree_exchange && filter_key.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep with filter exchanges must carry a rendezvous key");
     }
 
     auto geometry = RuntimeFilterGeometry::fromSettings(ctx.settings);
@@ -531,6 +532,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
+    /// Local builds are paired with their joins; exchange builds register in this task directly.
+    step->needs_pairing = !step->filter_key.empty() && !has_tree_exchange;
     return step;
 }
 
@@ -634,11 +637,14 @@ StepAnalyzer BuildRuntimeFilterStep::makeAnalyzer() const
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 adds the filter exchange topology.
+    /// Version 1 adds the filter exchange topology and the rendezvous key of a build with filter exchanges.
+    /// Version 2 adds the rendezvous key of a local build.
     registry.registerStep(
         "BuildRuntimeFilter",
         BuildRuntimeFilterStep::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LOCAL_RUNTIME_FILTER_KEY}});
 }
 
 }

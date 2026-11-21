@@ -58,6 +58,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -1248,6 +1249,16 @@ void RuntimeFilter::finishInsert()
 
 ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
+    /// The filters access the probe column as one of `filter_column_target_type`. A planner-built probe
+    /// is cast to that type, but a shipped plan pairs the probe with its builder only by key.
+    /// `__applyFilter` receives the probe without `LowCardinality`.
+    if (!recursiveRemoveLowCardinality(values.type)->equals(*recursiveRemoveLowCardinality(filter_column_target_type)))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Runtime filter on type {} cannot look up values of type {}",
+            filter_column_target_type->getName(),
+            values.type->getName());
+
     SharedLockGuard lock(mutex);
     data.build_state.assertCanFind();
 

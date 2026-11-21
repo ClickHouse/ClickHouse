@@ -333,6 +333,10 @@ using Stack = VectorWithMemoryTracking<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
+
+/// Pair deserialized local builds with their optimized joins and make unmatched builds inert.
+/// Returns whether any build kept its key.
+bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool track_key_range);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack,
     QueryPlan::Nodes & nodes,
