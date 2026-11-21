@@ -17,6 +17,7 @@ SELECT arraySort(groupArray(ifNull(toString(x), 'NULL'))) FROM (SELECT if(number
     WHERE x IN (SELECT CAST(NULL, 'Nullable(Bool)') UNION ALL SELECT true) SETTINGS transform_null_in = 1;
 SELECT arraySort(groupArray(number)) FROM numbers(4) WHERE number IN (SELECT true) SETTINGS max_bytes_before_external_set = 1;
 SELECT arraySort(groupArray(number)) FROM remote('127.0.0.2', numbers(4)) WHERE number GLOBAL IN (SELECT true);
+SELECT arraySort(groupArray(number)) FROM numbers(4) WHERE number IN (SELECT anySimpleState(true));
 
 DROP TABLE IF EXISTS t_bool_set;
 CREATE TABLE t_bool_set (b Bool) ENGINE = Set;
