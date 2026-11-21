@@ -174,6 +174,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
+    bool aggregation_in_order_by_current_time;
     bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;

@@ -123,6 +123,25 @@ public:
     [[nodiscard]] bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     [[nodiscard]] bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
+    /// Set by the plan optimization when the input is ordered by the current time (`nowInBlock`, `nowInBlock64`
+    /// or a monotonic function of them): the input is unbounded in the typical case (a streaming query), so every group
+    /// is emitted as soon as the value of the order key changes, instead of being accumulated into a block of
+    /// `max_block_size` groups.
+    ///
+    /// With `unbounded_input` (a `STREAM` read) the streams are merged into one before the aggregation: merging the
+    /// results of several streams in order waits for the next block of every stream, and a stream of an unbounded
+    /// input may receive no data for an indefinite time.
+    void enableFlushOnOrderKeyChange(bool unbounded_input)
+    {
+        flush_on_order_key_change = true;
+        flush_on_order_key_change_single_stream = unbounded_input;
+    }
+    [[nodiscard]] bool isFlushOnOrderKeyChange() const { return flush_on_order_key_change; }
+    /// Set by the planner of streaming queries: the input never ends, so the aggregation can return anything only
+    /// if every group is emitted at the change of the order key (see `enableFlushOnOrderKeyChange`). If the plan
+    /// optimization did not turn it on, building the pipeline throws an exception instead of running a query that
+    /// accumulates the groups indefinitely and returns nothing.
+    void requireFlushOnOrderKeyChange() { flush_on_order_key_change_required = true; }
     /// Set by the plan optimization when the input is read in order of the argument of the single `uniqExact`.
     void applyUniqExactInOrder(SortDescription sort_description, size_t layer_prefix)
     {
@@ -255,6 +274,11 @@ private:
     size_t uniq_exact_in_order_layer_prefix = 0;
     bool uniq_exact_in_order_disjoint_streams = false;
     bool order_decided_before_projections = false;
+    /// See `enableFlushOnOrderKeyChange`.
+    bool flush_on_order_key_change = false;
+    bool flush_on_order_key_change_single_stream = false;
+    /// See `requireFlushOnOrderKeyChange`.
+    bool flush_on_order_key_change_required = false;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     bool should_produce_results_in_order_of_bucket_number;

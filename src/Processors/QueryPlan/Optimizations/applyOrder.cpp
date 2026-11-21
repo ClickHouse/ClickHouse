@@ -19,6 +19,9 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <algorithm>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -42,7 +45,178 @@ struct SortingProperty
 
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
+
+    /// The number of leading columns of `sort_description` that are computed from the current time for every block
+    /// (see `getCurrentTimeOrderDirection`). Such a column does not decrease within a stream whatever the other
+    /// columns are, so any of them can be put first, and a stream sorted by `sort_description` is sorted as well by
+    /// any subset of these columns followed by the rest of the description.
+    size_t current_time_prefix = 0;
 };
+
+/// If `node` is the current time computed for every block (`nowInBlock`, `nowInBlock64`), or a monotonic function of it,
+/// returns the direction of the order of its values in every stream: 1 for ascending and -1 for descending. Otherwise 0.
+///
+/// The time is computed separately for every block by the transform that executes the expression, and the blocks of a
+/// stream are processed in order, so the time does not decrease within a stream. The exception is the system clock set
+/// back, which only makes the rows of the following blocks be counted in the group of a later time (the aggregation
+/// in order does not go back), or produce a group for the same time twice.
+static int getCurrentTimeOrderDirection(const ActionsDAG::Node * node)
+{
+    int direction = 1;
+    while (true)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            node = node->children.at(0);
+            continue;
+        }
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return 0;
+
+        const auto & name = node->function_base->getName();
+        if (name == "nowInBlock" || name == "nowInBlock64")
+        {
+            /// The arguments are the scale and the time zone, which do not change the order.
+            for (const auto * child : node->children)
+                if (child->type != ActionsDAG::ActionType::COLUMN)
+                    return 0;
+            return direction;
+        }
+
+        if (!node->function_base->hasInformationAboutMonotonicity())
+            return 0;
+
+        const ActionsDAG::Node * non_const_child = nullptr;
+        for (const auto * child : node->children)
+        {
+            if (child->type == ActionsDAG::ActionType::COLUMN)
+                continue;
+            if (non_const_child)
+                return 0;
+            non_const_child = child;
+        }
+
+        if (!non_const_child)
+            return 0;
+
+        /// Monotonic on the whole range of the argument.
+        const Field unbounded{};
+        auto monotonicity = node->function_base->getMonotonicityForRange(*non_const_child->result_type, unbounded, unbounded);
+        if (!monotonicity.is_monotonic)
+            return 0;
+
+        if (!monotonicity.is_positive)
+            direction = -direction;
+
+        node = non_const_child;
+    }
+}
+
+/// Updates the sorting property by the actions of an expression or a filter, including the columns of the current time
+/// the actions compute.
+static void applyActionsToSortingProperty(SortingProperty & property, const ActionsDAG & dag, const ActionsDAG::Node * output_to_skip, bool with_current_time)
+{
+    applyActionsToSortDescription(property.sort_description, dag, output_to_skip);
+    property.current_time_prefix = std::min(property.current_time_prefix, property.sort_description.size());
+
+    /// A global order of several streams does not hold together with the current time, which is only ordered within
+    /// every stream. Keep the global order, which is the more useful one.
+    if (!with_current_time || (property.sort_scope == SortingProperty::SortScope::Global && !property.sort_description.empty()))
+        return;
+
+    SortDescription current_time_columns;
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output == output_to_skip)
+            continue;
+
+        int direction = getCurrentTimeOrderDirection(output);
+        if (!direction)
+            continue;
+
+        const auto & name = output->result_name;
+        auto has_name = [&](const SortColumnDescription & column) { return column.column_name == name; };
+        if (std::ranges::any_of(current_time_columns, has_name) || std::ranges::any_of(property.sort_description, has_name))
+            continue;
+
+        current_time_columns.emplace_back(name, direction);
+    }
+
+    if (current_time_columns.empty())
+        return;
+
+    property.current_time_prefix += current_time_columns.size();
+    current_time_columns.insert(
+        current_time_columns.end(),
+        std::make_move_iterator(property.sort_description.begin()),
+        std::make_move_iterator(property.sort_description.end()));
+    property.sort_description = std::move(current_time_columns);
+    property.sort_scope = SortingProperty::SortScope::Stream;
+}
+
+/// Whether the plan reads a table with `STREAM`, which is an unbounded input.
+static bool readsStream(const QueryPlan::Node & node)
+{
+    std::vector<const QueryPlan::Node *> stack{&node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(current->step.get()); reading && reading->getQueryInfo().isStream())
+            return true;
+
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
+/// Turns on the aggregation in order if a key of `GROUP BY` is the current time (see `getCurrentTimeOrderDirection`).
+/// It is useful for streaming queries, which receive the result of every group as soon as the time changes, instead
+/// of at the end of the infinite input.
+static void applyCurrentTimeOrderToAggregation(QueryPlan::Node & node, AggregatingStep & aggregating_step, const SortingProperty & property)
+{
+    if (!property.current_time_prefix || aggregating_step.inOrder() || aggregating_step.explicitSortingRequired()
+        || aggregating_step.isGroupingSets() || aggregating_step.hasUniqExactInOrder())
+        return;
+
+    const auto & params = aggregating_step.getParams();
+    /// The same conditions as in `optimizeAggregationInOrder`.
+    if (params.keys.empty() || params.overflow_row)
+        return;
+
+    std::unordered_set<std::string_view> keys(params.keys.begin(), params.keys.end());
+
+    /// The columns of the current time that are not the keys are skipped, see `SortingProperty::current_time_prefix`.
+    SortDescription order;
+    for (size_t i = 0; i < property.current_time_prefix; ++i)
+        if (keys.contains(property.sort_description[i].column_name))
+            order.push_back(property.sort_description[i]);
+
+    if (order.empty())
+        return;
+
+    const size_t num_current_time_keys = order.size();
+    order.insert(order.end(), property.sort_description.begin() + property.current_time_prefix, property.sort_description.end());
+
+    order = getCollationAwareSortPrefixInColumns(order, params.keys, *aggregating_step.getInputHeaders().front());
+    if (order.size() < num_current_time_keys)
+        return;
+
+    std::unordered_set<std::string_view> used_keys;
+    for (const auto & column : order)
+        used_keys.insert(column.column_name);
+
+    SortDescription group_by_sort_description = order;
+    for (const auto & key : params.keys)
+        if (used_keys.emplace(key).second)
+            group_by_sort_description.push_back(SortColumnDescription(key));
+
+    aggregating_step.applyOrder(std::move(order), std::move(group_by_sort_description));
+    aggregating_step.enableFlushOnOrderKeyChange(readsStream(node));
+}
 
 /// A full sorting merge join emits its result in the order of one of its sorted inputs: `MergeJoinAlgorithm`
 /// walks both inputs with cursors that only move forward, so for an INNER or LEFT join the output rows follow
@@ -158,9 +332,11 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     if (const auto * source_step = dynamic_cast<const ISourceStep*>(parent->step.get()))
         return {source_step->getSortDescription(), SortingProperty::SortScope::Stream};
 
-    if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
         /// TODO: here we can apply aggregation-in-order after some sorting.
+        if (optimization_settings.aggregation_in_order_by_current_time)
+            applyCurrentTimeOrderToAggregation(*parent, *aggregating_step, *properties);
 
         auto sort_description = aggregating_step->getSortDescription();
         if (!sort_description.empty())
@@ -207,7 +383,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent->step.get()))
     {
-        applyActionsToSortDescription(properties->sort_description, expression_step->getExpression());
+        applyActionsToSortingProperty(
+            *properties, expression_step->getExpression(), nullptr, optimization_settings.aggregation_in_order_by_current_time);
         return std::move(*properties);
     }
 
@@ -225,7 +402,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                     expr.dumpDAG());
         }
 
-        applyActionsToSortDescription(properties->sort_description, expr, out_to_skip);
+        applyActionsToSortingProperty(*properties, expr, out_to_skip, optimization_settings.aggregation_in_order_by_current_time);
         return std::move(*properties);
     }
 
@@ -301,9 +478,14 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
+        size_t current_time_prefix = properties->current_time_prefix;
 
         for (size_t i = 1; i < parent->children.size(); ++i)
+        {
             common_sort_description = commonPrefix(common_sort_description, properties[i].sort_description);
+            current_time_prefix = std::min(current_time_prefix, properties[i].current_time_prefix);
+        }
+        current_time_prefix = std::min(current_time_prefix, common_sort_description.size());
 
         if (!common_sort_description.empty())
         {
@@ -316,7 +498,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
             /// children each stream stays sorted by the common prefix.
             auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;
-            return {std::move(common_sort_description), sort_scope};
+            return {std::move(common_sort_description), sort_scope, current_time_prefix};
         }
     }
 

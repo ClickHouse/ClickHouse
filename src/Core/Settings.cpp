@@ -9992,6 +9992,14 @@ The manifest header schema is only a copy of the table schema at the time the ma
 )", 0, \
         {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
         {"26.8", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."}) \
+    DECLARE(Bool, optimize_aggregation_in_order_by_current_time, true, R"(
+Use aggregation in order when a `GROUP BY` key is the current time computed for every block (`nowInBlock`, `nowInBlock64`, or a monotonic function of them, such as `toStartOfMinute(nowInBlock())`).
+
+The value of such a key does not decrease within every stream of data, so the aggregation does not keep a hash table of all groups: it emits the result of every group as soon as the time changes. This is useful for long-running and streaming queries, which return partial results continuously instead of only at the end.
+
+A `GROUP BY` over an unbounded `STREAM` is allowed only if it is aggregated in this way.
+)", 0, \
+        {"26.12", false, true, "New setting."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement. It is not applied to a `FINAL` read that uses vertical `FINAL` (see `enable_vertical_final`), unless a `LIMIT` lets the `DISTINCT` stop reading early or the read is already in order for another reason, such as `ORDER BY`.
 )", 0) \
