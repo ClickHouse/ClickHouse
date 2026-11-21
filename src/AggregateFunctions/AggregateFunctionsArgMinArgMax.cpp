@@ -481,6 +481,7 @@ Both parts the `arg` and the `min` behave as [aggregate functions](/reference/fu
 **See also**
 
 - [Tuple](/reference/data-types/tuple)
+- [argMinMany](/reference/functions/aggregate-functions/argMinMany)
     )";
     FunctionDocumentation::Syntax syntax_argMin = R"(
 argMin(arg, val)
@@ -561,6 +562,7 @@ Both parts the `arg` and the `max` behave as [aggregate functions](/reference/fu
 **See also**
 
 - [Tuple](/reference/data-types/tuple)
+- [argMaxMany](/reference/functions/aggregate-functions/argMaxMany)
     )";
     FunctionDocumentation::Syntax syntax_argMax = R"(
 argMax(arg, val)
