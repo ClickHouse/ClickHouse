@@ -208,8 +208,8 @@ void setup(
 {
     if (enable_global_profiler)
     {
-        getThreadProfileInitMib().setValue(true);
-        getThreadProfileActiveMib().setValue(true);
+        getThreadProfileInitNumericPath().setValue(true);
+        getThreadProfileActiveNumericPath().setValue(true);
     }
 
     setBackgroundThreads(enable_background_threads);
@@ -249,8 +249,8 @@ void verifySetup(
     /// `prof.*` mallctls (including `prof.thread_active_init` / `prof.lg_sample`) only exist when
     /// jemalloc was built with `JEMALLOC_PROF`. When absent, `setup` could not have applied the
     /// corresponding settings either (the writes were no-ops), so there is nothing to verify and
-    /// reading a missing MIB must not abort debug builds.
-    if (bool current_thread_active_init = false; getThreadProfileInitMib().tryGetValue(current_thread_active_init)
+    /// reading a missing numeric path must not abort debug builds.
+    if (bool current_thread_active_init = false; getThreadProfileInitNumericPath().tryGetValue(current_thread_active_init)
         && current_thread_active_init != enable_global_profiler)
         log_warning(config_enable_global_profiler);
     /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
@@ -273,15 +273,15 @@ void verifySetup(
 }
 
 
-const MibCache<bool> & getThreadProfileActiveMib()
+const NumericPathCache<bool> & getThreadProfileActiveNumericPath()
 {
-    static MibCache<bool> thread_profile_active("thread.prof.active");
+    static NumericPathCache<bool> thread_profile_active("thread.prof.active");
     return thread_profile_active;
 }
 
-const MibCache<bool> & getThreadProfileInitMib()
+const NumericPathCache<bool> & getThreadProfileInitNumericPath()
 {
-    static MibCache<bool> thread_profile_init("prof.thread_active_init");
+    static NumericPathCache<bool> thread_profile_init("prof.thread_active_init");
     return thread_profile_init;
 }
 

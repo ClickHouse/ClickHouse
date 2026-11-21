@@ -62,6 +62,11 @@ JEMALLOC_EXPORT int JEMALLOC_NOTHROW	je_mallctlnametomib(const char *name,
     size_t *mibp, size_t *miblenp);
 JEMALLOC_EXPORT int JEMALLOC_NOTHROW	je_mallctlbymib(const size_t *mib,
     size_t miblen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
+/* The names used by ClickHouse (the same as in base/allocator); see numeric_path.c. */
+JEMALLOC_EXPORT int JEMALLOC_NOTHROW	je_mallctl_name_to_numeric_path(const char *name,
+    size_t *numeric_path, size_t *numeric_path_length);
+JEMALLOC_EXPORT int JEMALLOC_NOTHROW	je_mallctl_by_numeric_path(const size_t *numeric_path,
+    size_t numeric_path_length, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 JEMALLOC_EXPORT void JEMALLOC_NOTHROW	je_malloc_stats_print(
     void (*write_cb)(void *, const char *), void *je_cbopaque,
     const char *opts);
