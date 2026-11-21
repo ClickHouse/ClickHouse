@@ -1,0 +1,11 @@
+dst	1
+dst	2
+Row 1:
+──────
+log_comment: 05626_insert_into_source
+columns:     ['default.dst.v','default.src.v1','default.src.v2']
+
+Row 2:
+──────
+log_comment: 05626_insert_into_view
+columns:     ['default.dst.v','default.mv_direct.extra','default.mv_direct.v']

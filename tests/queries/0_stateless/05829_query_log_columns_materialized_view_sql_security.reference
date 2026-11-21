@@ -1,0 +1,46 @@
+dst_definer	1	one
+dst_definer	2	two
+Row 1:
+──────
+log_comment: 05829_insert
+body:        caller
+identity:    user
+tables:      dst_legacy,src
+views:       mv_definer,mv_legacy,mv_none
+columns:     dst_legacy.id,src.id
+
+Row 2:
+──────
+log_comment: 05829_insert
+body:        SELECT id FROM src
+identity:    none
+tables:      dst_none,src
+views:       
+columns:     dst_none.id,src.id
+
+Row 3:
+──────
+log_comment: 05829_insert
+body:        SELECT s.id AS id, l.v AS v FROM src AS s LEFT JOIN lookup AS l ON s.id = l.id
+identity:    definer
+tables:      dst_definer,lookup,src
+views:       
+columns:     dst_definer.id,dst_definer.v,lookup.id,lookup.v,src.id
+
+Row 4:
+──────
+log_comment: 05829_insert_into_view
+body:        caller
+identity:    user
+tables:      mv_definer
+views:       
+columns:     mv_definer.id,mv_definer.v
+
+Row 5:
+──────
+log_comment: 05829_insert_into_view
+body:        INSERT INTO dst_definer VALUES
+identity:    definer
+tables:      dst_definer
+views:       
+columns:     dst_definer.id,dst_definer.v

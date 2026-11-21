@@ -594,11 +594,15 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
     if (insert_query.table_id)
     {
-        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+        Names column_names = sample_block.getNames();
+        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, column_names);
         /// The sink, and with it the access check the storage itself performs, is created later in a
         /// background flush: by then the query has already returned success to the user (with
         /// `wait_for_async_insert = 0`) and the user's privileges may have changed.
         table->checkInsertIsAllowed(query_context);
+        /// The query log row of this INSERT is written before the data is flushed, so the inserted table and its
+        /// columns are recorded here. The flush is logged as a query of its own.
+        query_context->getQueryContext()->addQueryAccessInfo(table->getStorageID(), column_names);
     }
 
     insert_query.columns = make_intrusive<ASTExpressionList>();
