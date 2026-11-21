@@ -198,7 +198,7 @@ TTLTransform::TTLTransform(
             all_data_dropped = true;
 
         algorithms.emplace_back(std::move(algorithm));
-        delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
+        delete_algorithm = static_cast<TTLDeleteAlgorithm *>(algorithms.back().get());
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
@@ -245,6 +245,28 @@ TTLTransform::TTLTransform(
         for (const auto & level : recompute_levels)
             for (const auto & dependent : level)
                 recomputed_columns.insert(dependent.name);
+    }
+
+    /// The rows TTL bound must describe the output rows, but `DELETE WHERE` and `GROUP BY` rules remove rows after it
+    /// is taken, and `GROUP BY` or a column TTL may write a column the rows TTL reads.
+    if (delete_algorithm)
+    {
+        const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
+        bool bound_from_output = !metadata_snapshot_->getRowsWhereTTLs().empty() || !metadata_snapshot_->getGroupByTTLs().empty();
+        for (const auto & column : rows_ttl.expression_columns)
+        {
+            auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column.name);
+            const String name = column_in_storage ? column_in_storage->getNameInStorage() : column.name;
+            bound_from_output |= reset_columns.contains(name) || recomputed_columns.contains(name);
+        }
+
+        const auto & output_header = getOutputPort().getHeader();
+        if (bound_from_output
+            && (output_header.has(rows_ttl.result_column)
+                || std::ranges::all_of(
+                    rows_ttl.expression_columns,
+                    [&](const auto & column) { return output_header.findColumnOrSubcolumnByName(column.name).has_value(); })))
+            delete_algorithm->setBoundFromOutput();
     }
 
     auto add_column_ttl_algorithm = [&](const String & name, const TTLDescription & description)
@@ -346,6 +368,9 @@ void TTLTransform::executeAlgorithms(Block & block)
 
     for (; next_stage < recompute_stages.size(); ++next_stage)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
+
+    if (delete_algorithm)
+        delete_algorithm->updateBound(block);
 }
 
 void TTLTransform::consume(Chunk chunk)

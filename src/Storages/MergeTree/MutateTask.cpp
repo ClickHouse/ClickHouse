@@ -5596,6 +5596,11 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
+    /// The rows TTL bound stays `NEVER` while a row with TTL 0 remains, so a mutation that may delete such rows recalculates it.
+    if (ctx->execute_ttl_type == ExecuteTTLType::NONE && ctx->mutating_pipeline_builder.initialized()
+        && ctx->interpreter->isAffectingAllColumns() && ctx->source_part->ttl_infos.table_ttl.max == MergeTreeDataPartTTLInfo::NEVER)
+        ctx->execute_ttl_type = ExecuteTTLType::RECALCULATE;
+
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {
         /// This mutation contains lightweight delete and we need to count the deleted rows,

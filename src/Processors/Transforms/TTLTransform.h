@@ -46,7 +46,7 @@ protected:
 
 private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
-    const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
     /// If false, only fills default values for `expired_columns`: no TTL algorithm runs and the part keeps its TTL infos.
     /// TODO: move the fill into its own step, build `TTLStep` only when the merge applies TTL, and drop this flag.
