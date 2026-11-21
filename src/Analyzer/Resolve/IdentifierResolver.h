@@ -133,12 +133,14 @@ public:
         const ContextPtr & context,
         const StoragePtr & replaced_storage = nullptr);
 
-    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
+    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table, and for an `Alias` also of the
+    /// tables it points to, unless it is the view source this analysis swaps in (`replaced_storage`).
     static void checkAccessToTableMetadata(
         const StoragePtr & storage,
         const StorageID & storage_id,
         const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
     /// possibly in another database (e.g. `system.functions` for a bare `functions`).

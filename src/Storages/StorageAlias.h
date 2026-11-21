@@ -65,6 +65,10 @@ public:
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
 
+    /// Same, with each hop's access decided by `is_granted(database, table, column_name)`; an empty `column_name` asks for the table.
+    using IsGranted = std::function<bool(const String & database, const String & table, const String & column_name)>;
+    NameSet filterColumnsGrantedThroughChain(const Names & column_names, const IsGranted & is_granted) const;
+
     /// Returns the subset of `column_names` the current user can read with `SELECT` through every table this alias
     /// resolves through. Each name is decided separately at each table, as `read` decides it on each hop: a subcolumn is
     /// checked against its column unless that table has a grant or revoke on the exact subcolumn name (see
