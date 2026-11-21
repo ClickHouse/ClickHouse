@@ -1,0 +1,115 @@
+-- IN in the predicate, in an assignment, with several columns, the same subquery twice
+84	5256	5	1
+5	0	5
+6	0	6
+7	0	7
+8	0	8
+9	0	9
+10	1	10
+11	1	11
+12	1	12
+13	1	13
+14	1	14
+15	0	15
+16	0	16
+17	0	17
+18	0	18
+19	0	19
+30	30	y
+31	31	y
+32	32	y
+33	33	y
+34	34	y
+(DELETE WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1
+(UPDATE v = k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))) WHERE k < 20)	1
+(DELETE WHERE (k, s) IN (SELECT untuple(arrayJoin(_CAST([...], \'Array(Tuple(UInt64, String))\')))))	1
+(UPDATE s = \'y\' WHERE (k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))) OR (v IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))))	1
+(UPDATE _row_exists = 0 WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1
+(UPDATE v = 1000 WHERE k = 99)	1
+2	1
+-- exists
+0	1
+1	101
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+(UPDATE v = v + 1 WHERE _CAST(1, \'UInt8\'))	1
+(UPDATE v = v + 10 WHERE _CAST(0, \'UInt8\'))	1
+(UPDATE v = v + 100 WHERE (k = 1) AND _CAST(1, \'UInt8\'))	1
+(UPDATE v = v WHERE 1)	1
+-- The same result as the subquery executed by the mutation
+3	x	\N	0
+4	4	4	1
+5	5	5	1
+1
+(DELETE WHERE s IN (SELECT arrayJoin(_CAST([...], \'Array(UInt8)\'))))
+(UPDATE v = v + 1 WHERE n NOT IN (SELECT arrayJoin(_CAST([...], \'Array(Nullable(UInt64))\'))))
+(UPDATE v = v + 10 WHERE k IN (SELECT arrayJoin(_CAST([], \'Array(UInt8)\'))))
+(UPDATE v = v WHERE 1)
+-- Kept as a subquery
+1140	30	1	110
+(UPDATE v = v + 1 WHERE k IN (SELECT toUInt8(k + 100) FROM default.t_large_src))	1
+(UPDATE v = v + 10 WHERE (e IN (SELECT tuple() FROM numbers(2000000))) AND (k = 199))	1
+(UPDATE v = v + 100 WHERE (k IN (SELECT number FROM numbers(2000000))) AND (k = 199))	1
+(UPDATE v = v + 1000 WHERE k IN (SELECT x FROM default.t_variant_src))	1
+-- Kept as a subquery: Dynamic, JSON and QBit results
+1	101
+2	10
+(UPDATE v = v + 1 WHERE k IN (SELECT d FROM default.t_dynamic_src))	1
+(UPDATE v = v + 10 WHERE s IN (SELECT j FROM default.t_json_src))	1
+(UPDATE v = v + 100 WHERE q IN (SELECT q FROM default.t_qbit_src))	1
+-- Kept as a subquery: a NaN and a decimal of more than 76 digits
+1	1111
+2	31111
+(UPDATE v = v + 1 WHERE f IN (SELECT f FROM default.t_kept_values_src))	1
+(UPDATE v = v + 10 WHERE f32 IN (SELECT f32 FROM default.t_kept_values_src))	1
+(UPDATE v = v + 100 WHERE b IN (SELECT b FROM default.t_kept_values_src))	1
+(UPDATE v = v + 1000 WHERE x IN (SELECT x FROM default.t_kept_values_src))	1
+(UPDATE v = v + 10000 WHERE f IN (SELECT arrayJoin(_CAST([1.5], \'Array(Float64)\'))))	1
+(UPDATE v = v + 10000 WHERE f32 IN (SELECT arrayJoin(_CAST([1.5], \'Array(Float32)\'))))	1
+(UPDATE v = v + 10000 WHERE b IN (SELECT arrayJoin(_CAST([1.5], \'Array(BFloat16)\'))))	1
+-- The same subquery is executed once, and pulling stops at the limit
+2	1
+(UPDATE v = 1 WHERE (k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))) OR (v IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))))	1
+(DELETE WHERE k IN (SELECT number + throwIf(number >= 1000000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1))	1
+(DELETE WHERE e IN (SELECT tuple() FROM numbers(2000000) WHERE throwIf(number >= 1000000) = 0 SETTINGS max_block_size = 8192, max_threads = 1))	1
+(DELETE WHERE k IN (SELECT number + throwIf(number >= 1200000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1))	1
+(DELETE WHERE [...] IN (SELECT range(1000001)))	1
+-- Subqueries that differ only in their aliases are different subqueries
+[0,1]
+[0,1]
+2	2
+-- An array result up to the limit is executed on the initiator
+[0,1,2]	1
+[3]	0
+(UPDATE v = 1 WHERE a IN (SELECT arrayJoin(_CAST([[0, 1, 2]], \'Array(Array(UInt32))\'))))	1
+(UPDATE v = v WHERE 1)	1
+-- Decimal, DateTime64 and Time64 results keep their values
+1	1970-01-01 00:00:00.000000001	-01:00:00.500	19999999.98	111
+2	1950-01-01 00:00:00.000000000	100:00:00.125	1.5	111
+3	\N	00:00:01.000	2.5	0
+0	5
+-- Subqueries that name an alias defined outside them are kept
+1	11
+2	110
+(UPDATE v = v + 1 WHERE ((toUInt64(1) AS a) = 1) AND (k IN (SELECT a)))	1
+(UPDATE v = v + 10 WHERE ((toUInt64(1) AS a) = 1) AND exists((SELECT 1 WHERE a = 1)))	1
+(UPDATE v = v + 100 WHERE (tupleElement((CAST(tuple(2), \'Tuple(x UInt64)\')) AS a, \'x\') = 2) AND (k IN (SELECT a.x)))	1
+-- ReplicatedMergeTree
+0	1
+1	1
+2	1
+3	2
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+(UPDATE v = 1 WHERE _CAST(1, \'UInt8\'))	1
+(UPDATE v = 2 WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1
