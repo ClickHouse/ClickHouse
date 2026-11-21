@@ -103,6 +103,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool s3_use_adaptive_timeouts;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
@@ -110,6 +111,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace S3
@@ -141,6 +143,18 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (useGCSRewrite(error))
         return false;
 
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+    {
+        /// Check if query is timeout.
+        auto query_start_time = query_context->getClientInfo().initial_query_start_time;
+        auto max_execution_time = query_context->getSettingsRef()[Setting::max_execution_time].totalSeconds();
+        auto now = time(nullptr);
+        if (query_start_time > 0 && query_start_time < now
+            && max_execution_time > 0 && now > query_start_time + max_execution_time)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Query timeout during S3 request retrying. Elapsed: {} seconds, maximum: {}", now - query_start_time, max_execution_time);
+    }
+
     return error.ShouldRetry();
 }
 
@@ -168,6 +182,20 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     }
     else
         res = std::min<uint64_t>(config.initial_delay_ms * backoff_limited_pow, config.max_delay_ms);
+
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+    {
+        /// Sleep should not exceed max_execution_time
+        auto query_start_time = query_context->getClientInfo().initial_query_start_time;
+        uint64_t max_execution_time = query_context->getSettingsRef()[Setting::max_execution_time].totalSeconds();
+        auto now = time(nullptr);
+        if (query_start_time > 0 && query_start_time < now && max_execution_time > 0)
+        {
+            uint64_t elapsed = now - query_start_time;
+            uint64_t remain_secs = max_execution_time - std::min(elapsed, max_execution_time);
+            res = std::min(res, remain_secs * 1000);
+        }
+    }
 
     LOG_TEST(log, "Next retry in {} ms", res);
     return res;
