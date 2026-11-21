@@ -176,7 +176,7 @@ def test_covered_by_broken_copy(started_cluster):
 
 
 def test_mismatched_copy_is_kept(started_cluster):
-    tables = ["t_incomplete", "t_relinked"]
+    tables = ["t_incomplete", "t_relinked", "t_unprefixed"]
     try:
         paths = {table: setup_broken_part(table) for table in tables}
         # The copy misses a file.
@@ -191,6 +191,15 @@ def test_mismatched_copy_is_kept(started_cluster):
                 "bash",
                 "-c",
                 f"cp {copy}/key.bin {copy}/key.bin.new && mv -f {copy}/key.bin.new {copy}/key.bin",
+            ],
+            user="root",
+        )
+        # The copy matches, but has no prefix, like a part detached by the user.
+        node1.exec_in_container(
+            [
+                "mv",
+                f"{paths['t_unprefixed']}detached/broken_all_0_0_0",
+                f"{paths['t_unprefixed']}detached/all_0_0_0",
             ],
             user="root",
         )
