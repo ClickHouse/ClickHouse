@@ -25,7 +25,7 @@ void ExpandedASTBudget::charge(size_t added_elements, size_t refunded_elements)
     used_elements -= std::min(refunded_elements, used_elements);
     if (used_elements > max_elements)
         throw Exception(ErrorCodes::TOO_BIG_AST,
-            "AST is too big after the expansion of WITH elements. Maximum: {}", max_elements);
+            "AST is too big after the expansion of {}. Maximum: {}", expansion, max_elements);
 }
 
 ASTPtr ExpandedASTBudget::clone(const ASTPtr & ast)

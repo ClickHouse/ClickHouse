@@ -1,0 +1,132 @@
+alias	direct	1	3
+alias	direct	2	100
+alias	file	1	3
+alias	file	2	100
+alias	s3cluster	1	3
+alias	s3cluster	2	100
+alias	input	1	3
+alias	input	2	100
+alias_of_alias	direct	1	21
+alias_of_alias	direct	2	100
+alias_of_alias	file	1	21
+alias_of_alias	file	2	100
+alias_of_alias	s3cluster	1	21
+alias_of_alias	s3cluster	2	100
+alias_of_alias	input	1	21
+alias_of_alias	input	2	100
+narrow_alias	direct	1	45
+narrow_alias	direct	2	100
+narrow_alias	file	1	45
+narrow_alias	file	2	100
+narrow_alias	s3cluster	1	45
+narrow_alias	s3cluster	2	100
+narrow_alias	input	1	45
+narrow_alias	input	2	100
+materialized	direct	1	102
+materialized	direct	2	100
+materialized	file	1	102
+materialized	file	2	100
+materialized	s3cluster	1	102
+materialized	s3cluster	2	100
+materialized	input	1	102
+materialized	input	2	100
+ephemeral	direct	1	102
+ephemeral	direct	2	100
+ephemeral	file	1	102
+ephemeral	file	2	100
+ephemeral	s3cluster	1	102
+ephemeral	s3cluster	2	100
+ephemeral	input	1	102
+ephemeral	input	2	100
+lambda_body	direct	1	[3]
+lambda_body	direct	2	[100]
+lambda_body	file	1	[3]
+lambda_body	file	2	[100]
+lambda_body	s3cluster	1	[3]
+lambda_body	s3cluster	2	[100]
+lambda_body	input	1	[3]
+lambda_body	input	2	[100]
+lambda_parameter	direct	1	[2]
+lambda_parameter	direct	2	[100]
+lambda_parameter	file	1	[2]
+lambda_parameter	file	2	[100]
+lambda_parameter	s3cluster	1	[2]
+lambda_parameter	s3cluster	2	[100]
+lambda_parameter	input	1	[2]
+lambda_parameter	input	2	[100]
+lambda_capture	direct	1	[9]
+lambda_capture	direct	2	[100]
+lambda_capture	file	1	[9]
+lambda_capture	file	2	[100]
+lambda_capture	s3cluster	1	[9]
+lambda_capture	s3cluster	2	[100]
+lambda_capture	input	1	[9]
+lambda_capture	input	2	[100]
+lambda_capture_member	direct	1	[9]
+lambda_capture_member	direct	2	[100]
+lambda_capture_member	file	1	[9]
+lambda_capture_member	file	2	[100]
+lambda_capture_member	s3cluster	1	[9]
+lambda_capture_member	s3cluster	2	[100]
+lambda_capture_member	input	1	[9]
+lambda_capture_member	input	2	[100]
+expression_alias	direct	1	0	10
+expression_alias	direct	2	0	100
+expression_alias	file	1	0	10
+expression_alias	file	2	0	100
+expression_alias	s3cluster	1	0	10
+expression_alias	s3cluster	2	0	100
+expression_alias	input	1	0	10
+expression_alias	input	2	0	100
+expression_alias_in_lambda	direct	1	0	11
+expression_alias_in_lambda	direct	2	0	100
+expression_alias_in_lambda	file	1	0	11
+expression_alias_in_lambda	file	2	0	100
+expression_alias_in_lambda	s3cluster	1	0	11
+expression_alias_in_lambda	s3cluster	2	0	100
+expression_alias_in_lambda	input	1	0	11
+expression_alias_in_lambda	input	2	0	100
+expression_alias_of_unread_column	direct	1	0	1
+expression_alias_of_unread_column	direct	2	0	100
+expression_alias_of_unread_column	file	1	0	1
+expression_alias_of_unread_column	file	2	0	100
+expression_alias_of_unread_column	s3cluster	1	0	1
+expression_alias_of_unread_column	s3cluster	2	0	100
+expression_alias_of_unread_column	input	1	0	1
+expression_alias_of_unread_column	input	2	0	100
+column_list	direct	1	10	0	11	1
+column_list	direct	2	20	0	100	200
+column_list	file	1	10	0	11	1
+column_list	file	2	20	0	100	200
+column_list	s3cluster	1	10	0	11	1
+column_list	s3cluster	2	20	0	100	200
+column_list	input	1	10	0	11	1
+column_list	input	2	20	0	100	200
+collision	direct	1	5	6
+collision	direct	2	5	100
+collision	file	1	5	6
+collision	file	2	5	100
+collision	s3cluster	1	5	6
+collision	s3cluster	2	5	100
+collision	input	1	5	6
+collision	input	2	5	100
+dict_get	direct	1	42
+dict_get	direct	2	100
+dict_get	file	1	42
+dict_get	file	2	100
+dict_get	s3cluster	1	42
+dict_get	s3cluster	2	100
+diamond	direct	1	33
+diamond	direct	2	100
+diamond	file	1	33
+diamond	file	2	100
+diamond	s3cluster	1	33
+diamond	s3cluster	2	100
+diamond	input	1	33
+diamond	input	2	100
+TOO_BIG_AST
+TOO_BIG_AST
+UNKNOWN_IDENTIFIER
+alias_of_other_default	1	0	8	14
+alias_of_other_default	2	0	100	14
+UNKNOWN_IDENTIFIER

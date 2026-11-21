@@ -36,6 +36,13 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 /// argument of `dictGet`/`joinGet` and the right operand of `IN` name a dictionary, table or set unless they are a column.
 NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column);
 
+/// Replaces each read of a column of `insertion_columns` that is not in `written_columns`, in the `DEFAULT`s of
+/// `structure_hint`, with the value the insertion table computes for that column. Nothing is replaced when these `DEFAULT`s
+/// or the values define an expression alias.
+void inlineUnwrittenColumnsInStructureHint(
+    ColumnsDescription & structure_hint, const ColumnsDescription & insertion_columns, const Names & written_columns,
+    const ContextPtr & context);
+
 /// Removes the `DEFAULT` of each column of `structure_hint` that reads a column of `insertion_columns` by a name the hint
 /// gives to other insertion table columns.
 void removeMisboundDefaultsFromStructureHint(
