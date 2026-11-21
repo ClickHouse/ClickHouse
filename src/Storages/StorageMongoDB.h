@@ -132,26 +132,32 @@ public:
         size_t num_streams) override;
 
 private:
+    /// The visitors set `is_superset` when the filter may also match rows that the `WHERE` drops, so that the remote
+    /// limit cannot be applied.
     std::optional<bsoncxx::document::value> visitWhereConstant(
         const ContextPtr & context,
         const ConstantNode * const_node,
-        const JoinNode * join_node);
+        const JoinNode * join_node,
+        bool & is_superset);
 
     std::optional<bsoncxx::document::value> visitWhereFunction(
         const ContextPtr & context,
         const FunctionNode * func,
-        const JoinNode * join_node);
+        const JoinNode * join_node,
+        bool & is_superset);
 
     std::optional<bsoncxx::document::value> visitWhereFunctionArguments(
         const ColumnNode * column_node,
         const ConstantNode * const_node,
         const FunctionNode * func,
-        bool invert_comparison);
+        bool invert_comparison,
+        bool & is_superset);
 
     std::optional<bsoncxx::document::value> visitWhereNode(
         const ContextPtr & context,
         const QueryTreeNodePtr & where_node,
-        const JoinNode * join_node);
+        const JoinNode * join_node,
+        bool & is_superset);
 
     bsoncxx::document::value buildMongoDBQuery(
         const ContextPtr & context,

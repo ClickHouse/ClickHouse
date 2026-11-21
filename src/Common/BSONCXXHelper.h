@@ -6,6 +6,8 @@
 #include <Common/Base64.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/JSONBuilder.h>
+#include <Common/NaNUtils.h>
+#include <Core/AccurateComparison.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
 extern const int TYPE_MISMATCH;
 extern const int NOT_IMPLEMENTED;
+extern const int CANNOT_CONVERT_TYPE;
 }
 
 namespace BSONCXXHelper
@@ -247,7 +250,21 @@ static T BSONElementAsNumber(const bsoncxx::types::bson_value::view & value, con
         case bsoncxx::type::k_int64:
             return static_cast<T>(value.get_int64().value);
         case bsoncxx::type::k_double:
-            return static_cast<T>(value.get_double().value);
+        {
+            const auto number = value.get_double().value;
+            if constexpr (is_integer<T>)
+            {
+                T converted{};
+                if (!isFinite(number) || !accurate::convertNumeric<Float64, T, false>(std::trunc(number), converted))
+                    throw Exception(
+                        ErrorCodes::CANNOT_CONVERT_TYPE,
+                        "Cannot convert BSON double {} to an integer for column {}: value is non-finite or out of range",
+                        number,
+                        name);
+                return converted;
+            }
+            return static_cast<T>(number);
+        }
         case bsoncxx::type::k_string:
             return parse<T>(std::string_view(value.get_string().value));
         default:
