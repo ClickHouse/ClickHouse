@@ -164,6 +164,9 @@ struct QueryGraph
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
 
+    /// The relations of each class in `column_equivalences` that has one type (see `isClassOfOneType`).
+    VectorWithMemoryTracking<BitSet> connecting_class_relations;
+
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
@@ -191,9 +194,15 @@ struct QueryGraph
     void buildColumnEquivalences();
 
     /// Check if two relation sets are transitively connected through column equivalences
-    /// (i.e., there exists at least one equivalence class with members in both sets).
+    /// (i.e., there exists at least one equivalence class of one type, see `isClassOfOneType`, with members in both sets).
     bool areTransitivelyConnected(const BitSet & left, const BitSet & right) const;
 };
+
+/// Whether the columns of an equivalence class have one type up to `Nullable` and `LowCardinality`. Only such a class is
+/// transitive: `Int32` 0 equals `Enum8('a' = 0)`, which equals the `String` 'a', which equals `Enum8('a' = 1)`, which
+/// equals `Int32` 1. So only such a class connects two relations in the join order search, and only it gives a join an
+/// added condition (see `cleanupJoinPredicates`); a join of two relations connected otherwise would have no condition.
+bool isClassOfOneType(const EquivalenceClasses<JoinActionRef>::Class & columns);
 
 struct QueryPlanOptimizationSettings;
 
