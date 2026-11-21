@@ -1,0 +1,41 @@
+before	[1,3]
+-- a column the policy reads cannot be dropped or renamed
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- other columns are free
+after	[1,3]
+-- a type change and CLEAR keep the column, so they are allowed
+after modify	[1,3]
+after clear	[]
+after reinsert	[4]
+-- IF EXISTS on a missing column stays a no-op even if a stale policy mentions it
+-- but a policy that does not resolve blocks real column changes until it is fixed
+UNKNOWN_IDENTIFIER
+-- a subquery over another table does not bind our columns
+subquery policy after rename	[1]
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- table-qualified names count
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a subcolumn counts as a use of its column
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- so does a Nested child
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a column read inside a SQL function body
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- the policy pins an ALIAS column, the alias pins its base column
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ILLEGAL_COLUMN
+alias policy after base rename	[1]
+-- a column bound only inside a folded constant counts too
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a virtual column of the table resolves, so other columns are free
+virtual column policy	[1]
+-- a standalone scalar subquery reads no column of the table
+scalar subquery policy	[1]
+-- a database-wide policy counts too
+ALTER_OF_COLUMN_IS_FORBIDDEN

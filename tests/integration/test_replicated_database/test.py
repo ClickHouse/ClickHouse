@@ -2700,3 +2700,41 @@ def test_rename_with_different_local_database_names(started_cluster):
 
     for node, db in mounts:
         node.query(f"DROP DATABASE {db} SYNC")
+
+
+def test_row_policy_on_replica_does_not_block_replay(started_cluster):
+    # row policies are local to a server: a replica refuses its own ALTER of a column its policy reads,
+    # but applies the ALTER that another replica committed, and the DDL after it
+    db_name = "row_policy_replay"
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    main_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'replica1')"
+    )
+    # no automatic recovery: it would copy the metadata and hide a refused replay
+    dummy_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'replica2') "
+        "SETTINGS max_retries_before_automatic_recovery = 0"
+    )
+    main_node.query(
+        f"CREATE TABLE {db_name}.t (id UInt32, tenant UInt32, note String) ENGINE = MergeTree ORDER BY id"
+    )
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    dummy_node.query(
+        f"CREATE ROW POLICY p ON {db_name}.t FOR SELECT USING tenant = 1 AND note != '' TO ALL"
+    )
+
+    assert "ALTER_OF_COLUMN_IS_FORBIDDEN" in dummy_node.query_and_get_error(
+        f"ALTER TABLE {db_name}.t DROP COLUMN tenant"
+    )
+
+    main_node.query(f"ALTER TABLE {db_name}.t DROP COLUMN tenant")
+    main_node.query(f"ALTER TABLE {db_name}.t RENAME COLUMN note TO comment")
+    main_node.query(f"ALTER TABLE {db_name}.t ADD COLUMN extra UInt8")
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    columns = f"SELECT groupArray(name) FROM (SELECT name FROM system.columns WHERE database = '{db_name}' AND table = 't' ORDER BY position)"
+    assert dummy_node.query(columns) == "['id','comment','extra']\n"
+
+    dummy_node.query(f"DROP ROW POLICY p ON {db_name}.t")
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE {db_name} SYNC")

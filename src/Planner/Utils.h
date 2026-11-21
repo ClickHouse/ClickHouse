@@ -119,6 +119,9 @@ NameSet checkAccessRights(
     const Names & column_names,
     const ContextPtr & query_context);
 
+/// a filter that is a standalone subquery such as `USING (SELECT 1)` becomes `notEquals(<subquery>, 0)`
+ASTPtr wrapStandaloneSubqueryFilter(ASTPtr filter_expression);
+
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
 /// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,

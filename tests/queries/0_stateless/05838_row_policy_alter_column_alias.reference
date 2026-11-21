@@ -1,0 +1,14 @@
+before	[1,3]
+before other database	[1,4]
+-- the policy of the target guards an ALTER through the alias
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- the policy of an alias guards an ALTER of its target, and resolves against the name of the alias
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- so does a database-wide policy of another alias of the target
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- other columns are free
+after	[1,3]
+after other database	[1,4]

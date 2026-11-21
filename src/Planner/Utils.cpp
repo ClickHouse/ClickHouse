@@ -738,11 +738,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
     checkAccessRights(storage, storage_id, storage_snapshot, Names(column_names.begin(), column_names.end()), query_context);
 }
 
-QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
-        const ContextPtr & query_context,
-        bool view_source_in_subqueries,
-        bool check_access_rights)
+ASTPtr wrapStandaloneSubqueryFilter(ASTPtr filter_expression)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
@@ -761,6 +757,16 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
+    return filter_expression;
+}
+
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context,
+        bool view_source_in_subqueries,
+        bool check_access_rights)
+{
+    filter_expression = wrapStandaloneSubqueryFilter(std::move(filter_expression));
 
     /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
     /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
