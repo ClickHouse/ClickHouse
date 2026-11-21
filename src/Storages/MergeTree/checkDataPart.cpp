@@ -681,7 +681,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     try
     {
         ReadSettings read_settings;
-        /// Bypass the OS page cache: wrong data in it must not make a healthy part look broken.
         if (isCheckedWithDirectIO(*data_part))
         {
             read_settings.local_fs_settings.direct_io_threshold = 1;
