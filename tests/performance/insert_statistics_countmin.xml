@@ -24,6 +24,8 @@
         <allow_statistics>1</allow_statistics>
         <max_insert_threads>1</max_insert_threads>
         <max_partitions_per_insert_block>1000</max_partitions_per_insert_block>
+        <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
+        <async_insert>0</async_insert>
     </settings>
 
     <substitutions>

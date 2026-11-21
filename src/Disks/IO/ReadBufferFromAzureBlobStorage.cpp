@@ -193,7 +193,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
-        size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        size_t to_read_bytes = std::min<size_t>(total_size - offset, data_capacity);
         /// The response may run past the right bound - e.g. the whole object in answer to a ranged
         /// request at offset 0 - and nothing past the bound may reach the caller.
         if (read_until_position)
@@ -285,7 +285,10 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
-    BufferBase::set(data_ptr, bytes_read, 0);
+    if (use_external_buffer)
+        BufferBase::set(data_ptr, bytes_read, 0);
+    else
+        BufferBase::setPaddedStorage(tmp_buffer, 0, bytes_read, 0);
 
     offset += bytes_read;
 
@@ -500,11 +503,12 @@ void ReadBufferFromAzureBlobStorage::setAccessConditions(Azure::Storage::Blobs::
 
 void ReadBufferFromAzureBlobStorage::checkReturnedGeneration(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const
 {
-    /// A response without an `ETag` cannot be checked, the same as in `ReadBufferFromS3`.
-    if (expected_etag.empty() || !details.ETag.HasValue())
+    if (expected_etag.empty())
         return;
 
-    const String returned_etag = quotedETag(details.ETag.ToString());
+    /// A pinned read sent `If-Match`, so a conforming endpoint always answers with an `ETag`;
+    /// `getETag` reports an answer without one.
+    const String returned_etag = quotedETag(AzureBlobStorage::getETag(details.ETag, path));
     if (returned_etag != expected_etag)
         throw Exception(
             ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,

@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -263,7 +264,8 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 {
     size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
-    if (!cut_to || length <= cut_to + hysteresis || isValidIdentifier(name))
+    /// `cut_to + hysteresis` could overflow for a huge `cut_to`, turning short names into names "cut" to that width.
+    if (!cut_to || length <= cut_to || length - cut_to <= hysteresis || isValidIdentifier(name))
         return {name, length};
 
     /// We cut characters in the middle and insert filler there.
@@ -279,7 +281,7 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 
     /// Skip a character that straddles the suffix boundary so it does not exceed the remaining space.
     if (suffix_bytes_begin < name.size() && UTF8::computeWidth(data, suffix_bytes_begin) < suffix_start_width)
-        suffix_bytes_begin += UTF8::seqLength(data[suffix_bytes_begin]);
+        suffix_bytes_begin += std::min<size_t>(UTF8::seqLength(data[suffix_bytes_begin]), name.size() - suffix_bytes_begin);
 
     /// A tab can become wider at its new position after the prefix and filler.
     /// Drop leading suffix characters until the suffix fits at that position.

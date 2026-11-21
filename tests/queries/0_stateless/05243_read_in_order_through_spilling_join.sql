@@ -63,7 +63,7 @@ SELECT groupArray(trim(explain)) FROM (
     SELECT events.t, payloads.payload FROM events
     LEFT JOIN payloads ON events.id = payloads.id
     ORDER BY events.t LIMIT 3
-    SETTINGS join_algorithm = 'parallel_hash'
+    SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel'
 ) WHERE explain LIKE '%ReadType%';
 
 SELECT '-- LIMIT over the spilled join reads only a prefix of the left table';
@@ -122,7 +122,7 @@ SELECT '-- Concurrent build: parallel_hash switches to MergeJoin from multiple t
 SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray(materialize(t)) FROM (
     SELECT events.t AS t FROM events INNER JOIN payloads ON events.id = payloads.id
     ORDER BY events.t
-    SETTINGS join_algorithm = 'parallel_hash', max_threads = 8
+    SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 8
 );
 
 SELECT '-- The spilled results match the non-spilled hash join (INNER/LEFT x ALL/ANY)';
