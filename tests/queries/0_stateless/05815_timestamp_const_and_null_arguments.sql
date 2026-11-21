@@ -18,3 +18,11 @@ SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT timestamp(nfs) FROM (SELECT arrayJoin([CAST('2025-01-01' AS Nullable(FixedString(10))), NULL]) AS nfs) ORDER BY ALL
 SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT timestamp(ns, '01:00:00') FROM (SELECT arrayJoin([CAST('2025-01-01' AS Nullable(String)), NULL]) AS ns) ORDER BY ALL;
+
+-- An equality after `timestamp` in the same WHERE is filtered first and makes its argument constant.
+SET query_plan_merge_filters = 1, optimize_constant_columns_after_filter = 1;
+SET short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT t FROM values('d String, t String', ('2023-01-01', '12:00:00'), ('2023-01-01', '13:00:00'), ('2024-01-01', '13:00:00'))
+WHERE timestamp(d, t) > '2000-01-01' AND d = '2023-01-01' ORDER BY ALL;
+SELECT d FROM values('d String, t String', ('2023-01-01', '12:00:00'), ('2023-01-01', '13:00:00'), ('2024-01-01', '13:00:00'))
+WHERE timestamp(d, t) > '2000-01-01' AND t = '13:00:00' ORDER BY ALL;
