@@ -30,3 +30,13 @@ SELECT depname,
    min(salary) OVER (PARTITION BY depname, empno order by enroll_date) AS depminsalary
 FROM  empsalary
 order by depsalary;
+
+
+-- The windows are planned for one thread, while the source is read with two (also under memory pressure).
+
+SELECT depname,
+   sum(salary) OVER (PARTITION BY depname order by empno) AS depsalary,
+   min(salary) OVER (PARTITION BY depname, empno order by enroll_date) AS depminsalary
+FROM (SELECT * FROM empsalary SETTINGS max_threads = 2, max_threads_min_free_memory_per_thread = 0)
+order by depsalary
+SETTINGS max_threads = 1;
