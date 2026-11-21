@@ -66,12 +66,14 @@
     <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_unclustered)</query>
 
     <!--
-        The set build alone (a 10-row probe) and `DISTINCT` over a 33-byte key, in long runs of equal rows; and a set
-        build with a NULL map (a state that skips rows, never scanned) in runs of 4 rows over 2048 keys.
+        The set build alone (a 10-row probe) and `DISTINCT` over a 33-byte key, in long runs of equal rows; and set
+        builds with a NULL map (states that skip rows, never scanned): runs of 4 rows over 2048 keys, and runs of 4096
+        rows in which every other row is NULL.
     -->
     <query>SELECT count() FROM numbers(10) WHERE (number, reinterpretAsUUID(sipHash128(number))) IN (SELECT (k, u) FROM t_in_clustered) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM (SELECT DISTINCT intDiv(number, 4096) AS k, k + 1 AS b, k + 2 AS c, k + 3 AS d, k % 7 AS e FROM numbers_mt(200000000))</query>
     <query>SELECT count() FROM numbers(10) WHERE (number, number, number, number, toNullable(toUInt8(number % 7))) IN (SELECT intDiv(number, 4) % 2048 AS k, k + 1, k + 2, k + 3, if(number % 1000 = 0, NULL, toUInt8(k % 7)) FROM numbers_mt(20000000)) SETTINGS transform_null_in = 0</query>
+    <query>SELECT count() FROM numbers(10) WHERE (number, number, number, number, toNullable(toUInt8(number % 7))) IN (SELECT intDiv(number, 4096) AS k, k + 1, k + 2, k + 3, nullIf(toUInt8(if(number % 2 = 1, 0, k % 7 + 1)), 0) FROM numbers_mt(20000000)) SETTINGS transform_null_in = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS t_in_clustered</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_in_unclustered</drop_query>
