@@ -71,6 +71,9 @@ SELECT * FROM values('a Nullable(BFloat16), o Int64, b Int64', (0.7, 0, 2), (0.7
 ORDER BY a WITH FILL FROM 0.7 TO 1, o, b WITH FILL FROM 2
 SETTINGS max_block_size = 1;
 
+SELECT * FROM values('a Int64, b Float32', (0, 0.7), (1, 0.5))
+ORDER BY a WITH FILL, b WITH FILL FROM 0.7;
+
 SELECT * FROM values('a Int64, o Int64, b Float32', (1, 2, 100000000), (1, 0, 100000016), (1, -1, 100000008), (2, 0, 100000032))
 ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 15 STALENESS 15;
 

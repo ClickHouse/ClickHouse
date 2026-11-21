@@ -1005,39 +1005,45 @@ void FillingTransform::insertFromFillingRow(
         other_column->insertDefault();
 
     filling_row_inserted = true;
-    rememberFillingRowInResult();
-}
-
-/// The value of the filling row in the i-th fill column as it is inserted into the result.
-Field FillingTransform::fillingValueInResult(size_t i)
-{
-    const Field & value = filling_row[i];
-    if (value.isNull())
-        return fill_column_defaults[i];
-    if (!fill_column_rounding[i])
-        return value;
-
-    /// A Float32 or BFloat16 column rounds the Float64 value of the filling row.
-    IColumn & column = *fill_column_rounding[i];
-    column.insert(value);
-    Field rounded = column[0];
-    column.popBack(1);
-    return rounded;
-}
-
-void FillingTransform::rememberFillingRowInResult()
-{
-    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        filling_row_in_result[i] = fillingValueInResult(i);
+    last_result_row_not_remembered = true;
 }
 
 /// Whether the filling row, as it is inserted into the result, has the values of `other`.
 bool FillingTransform::fillingRowEquals(const FillingRow & other)
 {
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        if (!equals(fillingValueInResult(i), other[i]))
-            return false;
+    {
+        const Field & value = filling_row[i];
+        if (value.isNull())
+        {
+            if (!equals(fill_column_defaults[i], other[i]))
+                return false;
+        }
+        else if (!equals(value, other[i]))
+        {
+            if (!fill_column_rounding[i])
+                return false;
+
+            /// A Float32 or BFloat16 column rounds the Float64 value of the filling row.
+            IColumn & column = *fill_column_rounding[i];
+            column.insert(value);
+            const bool equal = equals(column[0], other[i]);
+            column.popBack(1);
+            if (!equal)
+                return false;
+        }
+    }
     return true;
+}
+
+void FillingTransform::rememberLastResultRow(const MutableColumnRawPtrs & filling_columns)
+{
+    if (!last_result_row_not_remembered)
+        return;
+
+    last_result_row_not_remembered = false;
+    for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
+        filling_columns[i]->get(filling_columns[i]->size() - 1, filling_row_in_result[i]);
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -1144,6 +1150,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
 
     /// A filling row that is already in the result is not inserted again.
+    rememberLastResultRow(res_fill_columns);
     if (should_insert_first && fillingRowEquals(filling_row_in_result))
     {
         should_insert_first = false;
@@ -1190,6 +1197,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     if (filling_row_changed)
         filling_row_inserted = false;
 
+    rememberLastResultRow(res_fill_columns);
     return true;
 }
 
@@ -1284,6 +1292,7 @@ void FillingTransform::transformRange(
         logDebug("--- new range ---", range_end);
         for (size_t i = 0, size = filling_row_in_result.size(); i < size; ++i)
             filling_row_in_result[i] = Field();
+        last_result_row_not_remembered = false;
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
@@ -1341,6 +1350,7 @@ void FillingTransform::transformRange(
         if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
             /// A filling row that is already in the result is not inserted again.
+            rememberLastResultRow(res_fill_columns);
             if (fillingRowEquals(filling_row_in_result))
                 filling_row_inserted = true;
             else
@@ -1410,7 +1420,9 @@ void FillingTransform::transformRange(
 
         /// The original row copied below holds the values of the filling row, so the filling row is in the result.
         if (fillingRowEquals(next_row))
-            rememberFillingRowInResult();
+            last_result_row_not_remembered = true;
+        else
+            rememberLastResultRow(res_fill_columns);
 
         logDebug("filling_row after", filling_row);
 
@@ -1419,6 +1431,8 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
+
+    rememberLastResultRow(res_fill_columns);
 
     /// save sort prefix of last row in the range, it's used to generate suffix
     last_range_sort_prefix.clear();

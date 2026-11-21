@@ -92,9 +92,8 @@ private:
         const MutableColumnRawPtrs & other_columns,
         const Block & interpolate_block);
 
-    Field fillingValueInResult(size_t i);
-    void rememberFillingRowInResult();
     bool fillingRowEquals(const FillingRow & other);
+    void rememberLastResultRow(const MutableColumnRawPtrs & filling_columns);
 
     const SortDescription sort_description;
     const SortDescription fill_description; /// Contains only columns with WITH FILL.
@@ -107,6 +106,9 @@ private:
     bool filling_row_inserted = false;
     /// The last value of the filling row put into the result, as a generated row or as an equal original row.
     FillingRow filling_row_in_result;
+    /// The last row of the result (or the original row about to be copied) holds a value of the filling row
+    /// that `filling_row_in_result` does not have yet.
+    bool last_result_row_not_remembered = false;
     /// The value inserted for a NULL in the filling row, for each fill column.
     Row fill_column_defaults;
     /// An empty column of the type of each Float32 or BFloat16 fill column, nullptr for the other fill columns.
