@@ -868,8 +868,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
-    /// A full exact set means the switch from it threw and the caller went on inserting. It holds the keys of the rows it
-    /// took, so retry.
+    /// A full exact set means the switch from it threw and the caller went on inserting. It holds the keys it took, so retry.
     if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_); exact_filter && exact_filter->isFull())
         switchFromExactFilter(filter_, nullptr);
 

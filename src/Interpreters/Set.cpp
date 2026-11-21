@@ -396,7 +396,6 @@ void NO_INLINE Set::insertFromBlockImplCase(
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
 
-        /// Checked only for a new key, so rows with keys the set has cost nothing more.
         if (emplace_result.isInserted() && method.data.size() > max_keys)
         {
             if constexpr (build_filter)
