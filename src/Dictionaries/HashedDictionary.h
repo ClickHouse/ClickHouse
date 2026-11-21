@@ -247,7 +247,7 @@ private:
     {
         if constexpr (!sharded_)
             return 0;
-        return StringViewHash()(key) % configuration.shards;
+        return intHashCRC32(StringViewHash()(key)) % configuration.shards;
     }
 
     UInt64 getShard(UInt64 key) const { return sharded() ? getShard<true>(key) : 0; }
