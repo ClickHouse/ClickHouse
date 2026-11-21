@@ -2551,6 +2551,8 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , map_columns_read_by_keys(info.map_columns_read_by_keys)
+    , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -3266,6 +3268,7 @@ Chunk StorageFileSource::generate()
 
             input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setMapColumnsReadByOneSide(map_columns_read_by_keys, map_columns_read_by_values);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -3659,6 +3662,12 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 bool ReadFromFile::supportsMinMaxFromStatistics() const
@@ -4367,6 +4376,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

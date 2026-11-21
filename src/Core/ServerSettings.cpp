@@ -1,6 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/FilesystemIsolation.h>
@@ -1461,6 +1462,8 @@ reading that folder, the materialized view `system._<log>_mv_<hash>` and the `Sh
 `system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
 come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
 The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
+The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
+The `smt_order_by` and `smt_partition_by` keys of the log's configuration replace the keys of the table.
 
 The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
 and `<shared_log_pipeline><endpoint>` in the server configuration.
@@ -2487,7 +2490,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
