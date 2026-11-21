@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -534,6 +535,9 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(holder.key_columns, holder.materialized_columns);
+
     size_t rows = columns.at(0)->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
@@ -754,6 +758,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     }
 
     const auto * null_map = non_member_rows ? &assert_cast<const ColumnUInt8 &>(*non_member_rows).getData() : nullptr;
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
 
     if (disk_set)
     {
