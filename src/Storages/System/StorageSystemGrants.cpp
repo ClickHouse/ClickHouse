@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControl.h>
@@ -16,6 +18,7 @@
 #include <Access/User.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <IO/WriteBufferFromString.h>
 #include <algorithm>
@@ -61,7 +64,15 @@ bool canFilterGrantees(const ActionsDAG::Node & predicate)
     if (name == "equals")
         return (isGranteeName(lhs) && isStringConstant(rhs)) || (isGranteeName(rhs) && isStringConstant(lhs));
     if (name == "in")
-        return isGranteeName(lhs) && rhs.type == ActionsDAG::ActionType::COLUMN && rhs.result_type->getTypeId() == TypeIndex::Set;
+    {
+        if (!isGranteeName(lhs) || rhs.type != ActionsDAG::ActionType::COLUMN || !rhs.column)
+            return false;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(&rhs.column->getDataColumn());
+        /// A concurrent insert into a `Set` table can change the final predicate after this
+        /// prefilter has discarded an entity. Only prune with sets that are fixed for the query.
+        return column_set && column_set->getData() && !column_set->getData()->isMutableDuringQuery();
+    }
     return false;
 }
 
