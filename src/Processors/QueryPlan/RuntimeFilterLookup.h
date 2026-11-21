@@ -567,6 +567,8 @@ struct RuntimeFilterIndexAnalysisDescriptor
     /// The probe key is `_part_starting_offset + _part_offset` (the global row index of the read), not a column.
     /// `key_column_name` is then only a display name.
     bool is_global_row_index = false;
+    /// The cast between the key and the filter, nullptr if there is none.
+    FunctionBasePtr key_cast;
 };
 using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 

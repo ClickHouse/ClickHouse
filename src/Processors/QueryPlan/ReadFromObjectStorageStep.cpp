@@ -442,10 +442,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_file_pruning.push_back(descriptor);
 }
 
 void ReadFromObjectStorageStep::createIterator()
