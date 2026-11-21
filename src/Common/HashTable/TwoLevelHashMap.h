@@ -14,11 +14,11 @@ template
     template <typename ...> typename ImplTable = HashMapTable,
     size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
+class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>, BITS_FOR_BUCKET>
 {
 public:
-    using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
-    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
+    using Impl = ImplTable<Key, Cell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>;
+    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, Impl, BITS_FOR_BUCKET>;
     using LookupResult = typename Impl::LookupResult;
 
     using Base::Base;

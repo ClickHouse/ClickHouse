@@ -21,6 +21,11 @@ extern const size_t POPULATE_THRESHOLD;
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = alignof(std::max_align_t);
 
+/// The number of bytes that `Allocator` currently holds in anonymous mappings created directly with `mmap`
+/// (large hash table buffers backed by transparent huge pages), bypassing jemalloc.
+/// They are not included in the jemalloc statistics, so `MemoryWorker` adds them to its measurements.
+size_t getAllocatorDirectlyMappedBytes();
+
 /// The allocators refuse anything of this size or larger: such an allocation can never succeed,
 /// and a size that large is a sign of an overflow in the computation of the size.
 static constexpr size_t MAX_ALLOCATION_SIZE = 0x8000000000000000ULL;

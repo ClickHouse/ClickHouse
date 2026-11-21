@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
+#include <Common/Allocator.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OSThreadNiceValue.h>
@@ -728,7 +729,9 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
             jemalloc_stats_refreshed = true;
-            usage.resident = resident_mib.getValue();
+            /// Large hash table buffers mapped directly with `mmap` are not included in jemalloc's statistics,
+            /// see `getAllocatorDirectlyMappedBytes`. The cgroup memory usage includes them.
+            usage.resident = resident_mib.getValue() + static_cast<Int64>(getAllocatorDirectlyMappedBytes());
             break;
 #else
             [[fallthrough]];
@@ -754,7 +757,7 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// `allocated` is used only to correct `total_memory_tracker`. `MemoryTracker` does not count
     /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
     /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
-    usage.allocated = __sanitizer_get_current_allocated_bytes();
+    usage.allocated = __sanitizer_get_current_allocated_bytes() + getAllocatorDirectlyMappedBytes();
 #elif USE_JEMALLOC
     /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
     /// handed out to the application even if their pages are not touched yet, while the resident
@@ -765,7 +768,8 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// behind them.
     if (!jemalloc_stats_refreshed)
         epoch_mib.setValue(0);
-    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
+    /// Buffers mapped directly by `Allocator` are tracked by `MemoryTracker` but are not part of `stats.allocated`.
+    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue() + static_cast<Int64>(getAllocatorDirectlyMappedBytes()));
 #else
     usage.allocated = usage.resident;
 #endif
