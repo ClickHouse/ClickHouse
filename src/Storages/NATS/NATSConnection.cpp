@@ -81,6 +81,12 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         natsOptions_SetSecure(options.get(), true);
         loadNATSCertificates(options.get(), configuration);
     }
+    else if (configuration.secure_explicitly_set)
+    {
+        /// Must precede `natsOptions_SetURL` and `natsOptions_SetServers`, which enable TLS for a `tls://` address
+        /// unless it was disabled explicitly.
+        natsOptions_SetSecure(options.get(), false);
+    }
 
     // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
     const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
