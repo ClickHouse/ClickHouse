@@ -1,0 +1,5 @@
+<test>
+    <query>WITH CAST(range(4096) AS Array(UInt8)) AS elem SELECT arrayWithConstant(number % 3, materialize(elem)) FROM numbers(1000) FORMAT Null</query>
+    <query>WITH CAST(range(4096) AS Array(UInt64)) AS elem SELECT arrayWithConstant(number % 3, materialize(elem)) FROM numbers(1000) FORMAT Null</query>
+    <query>WITH CAST(range(4096) AS Array(UInt256)) AS elem SELECT arrayWithConstant(number % 3, materialize(elem)) FROM numbers(1000) FORMAT Null</query>
+</test>
