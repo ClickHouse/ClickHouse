@@ -355,7 +355,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                     max_size,
                     max_elements,
                     size_ratio,
-                    description);
+                    description,
+                    /* probationary_state */ nullptr,
+                    /* protected_state */ nullptr,
+                    /* lend_unused_protected_capacity */ true);
             };
             break;
         }

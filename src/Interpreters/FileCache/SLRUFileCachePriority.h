@@ -11,6 +11,8 @@ namespace DB
 /// There are two queues: "protected" and "probationary".
 /// All cache entries which have been accessed only once, would lie in probationary queue.
 /// When entry is accessed more than once, it would go to the protected queue.
+/// While the protected queue does not use all of its share, the probationary queue borrows
+/// the rest (see `lendProtectedCapacity`). The limits of the two queues always add up to the two shares.
 class SLRUFileCachePriority : public IFileCachePriority
 {
 public:
@@ -23,7 +25,8 @@ public:
         double size_ratio_,
         const std::string & description_ = "none",
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
+        bool lend_unused_protected_capacity_ = false);
 
     Type getType() const override { return Type::SLRU; }
 
@@ -154,18 +157,45 @@ protected:
         protected_queue.setCacheUsage(usage);
     }
 
+    void holdImpl(size_t size, size_t elements, const CacheStateGuard::Lock &) override
+    {
+        chassert(!elements);
+        pending_take_back_size += size;
+    }
+
+    void releaseImpl(size_t size, size_t elements) override
+    {
+        chassert(!elements);
+        pending_take_back_size -= size;
+    }
+
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
 
     std::string description;
     double size_ratio;
+    /// Copies share the queue sizes but not the limits, so only a priority that is never copied may move limits.
+    const bool lend_unused_protected_capacity;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
     SharedEvictionCursor promotion_cursor{EvictionCursor::Promotion};
 
+    /// Lent capacity reserved by growing protected entries (see `collectEvictionInfo`), keyed by `take_back_queue_id`.
+    std::atomic<size_t> pending_take_back_size = 0;
+    const size_t take_back_queue_id;
+
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
+
+    void lendProtectedCapacity(size_t size, size_t elements, const CacheStateGuard::Lock & lock);
+    bool canFitInProbationary(size_t size, size_t elements, const CacheStateGuard::Lock & lock) const;
+    size_t getLendableSize(const CacheStateGuard::Lock & lock) const;
+    size_t getLendableElements(const CacheStateGuard::Lock & lock) const;
+    size_t getLentSize(const CacheStateGuard::Lock & lock) const;
+    size_t getLentElements(const CacheStateGuard::Lock & lock) const;
+    /// Moves lent capacity back to protected for an entry which grows by `size`, as far as probationary has it free.
+    void takeBackLentCapacity(size_t size, const CacheStateGuard::Lock & lock);
 
     /// With `wait_for_priority_lock` false, returns false as soon as a walk finds a writer
     /// holding or waiting for the priority guard, instead of queueing behind it.

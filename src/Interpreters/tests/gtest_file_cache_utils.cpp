@@ -50,3 +50,19 @@ TEST(FileCacheUtils, RoundUpToMultipleOverflow)
     /// `num = SIZE_MAX - 1`, `multiple = 4`: the next multiple of 4 above `num` is past SIZE_MAX.
     EXPECT_THROW(FileCacheUtils::roundUpToMultiple(SIZE_MAX - 1, 4), std::overflow_error);
 }
+
+TEST(FileCacheUtils, GetRatio)
+{
+    EXPECT_EQ(FileCacheUtils::getRatio(5, 0.5), 3u);
+    EXPECT_EQ(FileCacheUtils::getRatio(5, 0.0), 0u);
+    EXPECT_EQ(FileCacheUtils::getRatio(5, 1.0), 5u);
+
+    /// `static_cast<double>` rounds these limits up, down, and past the range of `long`.
+    const size_t totals[] = {9007199254740995ULL, 9007199254740993ULL, SIZE_MAX};
+    for (const size_t total : totals)
+    {
+        EXPECT_EQ(FileCacheUtils::getRatio(total, 0.0), 0u);
+        EXPECT_EQ(FileCacheUtils::getRatio(total, 1.0), total);
+    }
+    EXPECT_EQ(FileCacheUtils::getRatio(SIZE_MAX, 0.75), 13835058055282163712ULL);
+}

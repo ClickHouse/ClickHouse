@@ -9,6 +9,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -318,22 +319,19 @@ void FileCacheSettings::validate()
     if (policy == FileCachePolicy::SLRU || policy == FileCachePolicy::SLRU_OVERCOMMIT)
     {
         /// The same rounding as in `SplitFileCachePriority` and `SLRUFileCachePriority`.
-        auto get_ratio = [](size_t total, double ratio)
-        {
-            return static_cast<size_t>(std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
-        };
+        using FileCacheUtils::getRatio;
 
         const size_t max_size = settings[FileCacheSetting::max_size];
         const double ratio = settings[FileCacheSetting::slru_size_ratio];
-        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), get_ratio(size, 1 - ratio)); };
+        auto get_smallest_queue_size = [&](size_t size) { return std::min(getRatio(size, ratio), size - getRatio(size, ratio)); };
 
         size_t smallest_queue_size = get_smallest_queue_size(max_size);
         if (settings[FileCacheSetting::use_split_cache])
         {
             const double system_ratio = settings[FileCacheSetting::split_cache_ratio];
             smallest_queue_size = std::min(
-                get_smallest_queue_size(get_ratio(max_size, 1 - system_ratio)),
-                get_smallest_queue_size(get_ratio(max_size, system_ratio)));
+                get_smallest_queue_size(max_size - getRatio(max_size, system_ratio)),
+                get_smallest_queue_size(getRatio(max_size, system_ratio)));
         }
 
         if (settings[FileCacheSetting::max_file_segment_size] > smallest_queue_size)
