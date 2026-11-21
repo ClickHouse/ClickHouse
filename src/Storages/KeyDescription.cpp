@@ -1,10 +1,18 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Columns/ColumnConst.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -18,15 +26,302 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+    extern const SettingsBool cast_keep_nullable;
+    extern const SettingsBool geo_distance_returns_float64_on_float64_arguments;
+    extern const SettingsBool function_json_value_return_type_allow_nullable;
+    extern const SettingsBool least_greatest_legacy_null_behavior;
+    extern const SettingsBool h3togeo_lon_lat_result_order;
+    extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool array_count_legacy_uint32_result;
+    extern const SettingsBool to_start_of_interval_preserves_argument_type;
+    extern const SettingsUInt64 function_date_trunc_return_type_behavior;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int BAD_ARGUMENTS;
+}
+
+ContextPtr createKeyExpressionContext(const ContextPtr & context)
+{
+    /// A storage key expression type must be stable and independent of the transient session settings
+    /// that happen to be set when someone (re)builds the metadata. A few settings change the RESULT
+    /// TYPE (or, for h3togeo_lon_lat_result_order, the tuple element LAYOUT) of a key expression:
+    ///   - enable_extended_results_for_datetime_functions: toStartOf*/toMonday/... on Date32/DateTime64
+    ///     return an extended type (Date32/DateTime64) instead of the canonical Date/DateTime;
+    ///   - cast_keep_nullable: CAST(nullable AS T) returns Nullable(T) instead of the canonical T;
+    ///   - geo_distance_returns_float64_on_float64_arguments: geoDistance/greatCircleDistance/
+    ///     greatCircleAngle over Float64 arguments return Float64 instead of Float32;
+    ///   - function_json_value_return_type_allow_nullable: JSON_VALUE returns Nullable(String) instead
+    ///     of the canonical String;
+    ///   - function_date_trunc_return_type_behavior: dateTrunc over Date32/DateTime64 returns the
+    ///     extended type instead of the canonical Date/DateTime;
+    ///   - array_count_legacy_uint32_result: arrayCount returns UInt32 instead of UInt64;
+    ///   - to_start_of_interval_preserves_argument_type: toStartOfInterval returns the type of its argument
+    ///     instead of a type chosen by the interval unit;
+    ///   - least_greatest_legacy_null_behavior: least/greatest with a NULL argument returns
+    ///     Nullable(T) (the NULL is ignored) instead of the legacy short-circuited type;
+    ///   - h3togeo_lon_lat_result_order: h3ToGeo returns Tuple(longitude, latitude) instead of the
+    ///     canonical Tuple(latitude, longitude) - same top-level type but the two Float64 elements are
+    ///     swapped, so it silently reorders the produced key column rather than aborting with a Bad cast;
+    ///   - geotoh3_argument_order: geoToH3 reads its two coordinate arguments as (longitude, latitude)
+    ///     instead of the canonical (latitude, longitude) - the result type is always UInt64, so, like
+    ///     h3togeo_lon_lat_result_order, it silently changes the produced key values rather than the type;
+    ///   - allow_lossy_numeric_supertype and use_variant_as_common_type: the two knobs that decide how
+    ///     if/multiIf/ifNull/coalesce/array/map resolve branches with no lossless common type (they are
+    ///     the only arguments getLeastSupertype/getLeastSupertypeOrVariant take besides the types), so
+    ///     e.g. if(c, dec, f64) over Decimal64 and Float64 resolves as Float64, as
+    ///     Variant(Decimal(18, 3), Float64), or raises NO_COMMON_TYPE depending on them.
+    /// If a CREATE/ALTER runs with any of them at a value that differs from the server baseline, the
+    /// recomputed KeyDescription::data_types diverge from the column the storage actually produces for
+    /// the key (which is analyzed elsewhere with the baseline), aborting the next write with a Bad cast
+    /// or (for h3togeo_lon_lat_result_order and geotoh3_argument_order) silently changing the key values. For the two
+    /// supertype knobs the recorded type can also be one the baseline cannot resolve at all, which makes
+    /// the table fail to attach on reload rather than only failing the write.
+    /// Pin exactly these type-affecting settings to the baseline so the key type is deterministic. This
+    /// is not a general "make everything session-independent" guarantee: only the settings listed above
+    /// are neutralized. New type-affecting settings must be added here explicitly.
+    ///
+    /// The baseline is the server's current global settings (default/system profile, including any
+    /// `compatibility`), read from the global context. It is intentionally NOT the built-in literals.
+    /// This exactly matches the context the reload path already resolves key types under (table load
+    /// creates the storage with the global/default-profile context), so pinning to it keeps recompute
+    /// consistent with a fresh reload while stripping only transient per-query/session overrides (the
+    /// divergence this fixes). Pinning to the built-in literals instead would recompute a different type
+    /// than the reload path for a table under a non-default `compatibility` (e.g.
+    /// geo_distance_returns_float64_on_float64_arguments or function_date_trunc_return_type_behavior
+    /// differ across versions), turning an upgrade into a Bad-cast read failure for existing parts.
+    ///
+    /// Note: resolved key/index types are not persisted per table; every recompute (CREATE/ALTER/reload)
+    /// derives them from the AST under the then-current global profile, on master too. Truly pinning to
+    /// the profile a table was CREATED under would require persisting a per-table baseline (or the
+    /// resolved types) in metadata, a separate metadata-format change beyond this session-override fix.
+    if (!context)
+        return context;
+
+    /// Values to pin to: the server baseline. getGlobalContext throws LOGICAL_ERROR when there is no global context.
+    const auto global_context = context->getGlobalContext();
+    const auto & baseline = global_context->getSettingsRef();
+    const bool ext_dt = baseline[Setting::enable_extended_results_for_datetime_functions];
+    const bool keep_null = baseline[Setting::cast_keep_nullable];
+    const bool geo = baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
+    const bool json_null = baseline[Setting::function_json_value_return_type_allow_nullable];
+    const bool least_greatest_legacy = baseline[Setting::least_greatest_legacy_null_behavior];
+    const bool h3togeo_lon_lat = baseline[Setting::h3togeo_lon_lat_result_order];
+    const bool lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
+    const bool variant_as_common_type = baseline[Setting::use_variant_as_common_type];
+    const bool array_count_legacy = baseline[Setting::array_count_legacy_uint32_result];
+    const bool interval_preserves_type = baseline[Setting::to_start_of_interval_preserves_argument_type];
+    const UInt64 date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
+    const GeoToH3ArgumentOrder geotoh3_order = baseline[Setting::geotoh3_argument_order];
+
+    const auto & settings = context->getSettingsRef();
+    if (static_cast<bool>(settings[Setting::enable_extended_results_for_datetime_functions]) == ext_dt
+        && static_cast<bool>(settings[Setting::cast_keep_nullable]) == keep_null
+        && static_cast<bool>(settings[Setting::geo_distance_returns_float64_on_float64_arguments]) == geo
+        && static_cast<bool>(settings[Setting::function_json_value_return_type_allow_nullable]) == json_null
+        && static_cast<bool>(settings[Setting::least_greatest_legacy_null_behavior]) == least_greatest_legacy
+        && static_cast<bool>(settings[Setting::h3togeo_lon_lat_result_order]) == h3togeo_lon_lat
+        && static_cast<bool>(settings[Setting::allow_lossy_numeric_supertype]) == lossy_numeric_supertype
+        && static_cast<bool>(settings[Setting::use_variant_as_common_type]) == variant_as_common_type
+        && static_cast<bool>(settings[Setting::array_count_legacy_uint32_result]) == array_count_legacy
+        && static_cast<bool>(settings[Setting::to_start_of_interval_preserves_argument_type]) == interval_preserves_type
+        && static_cast<UInt64>(settings[Setting::function_date_trunc_return_type_behavior]) == date_trunc
+        && settings[Setting::geotoh3_argument_order].value == geotoh3_order)
+        return context;
+
+    auto key_context = Context::createCopy(context);
+    key_context->setSetting("enable_extended_results_for_datetime_functions", Field(ext_dt));
+    key_context->setSetting("cast_keep_nullable", Field(keep_null));
+    key_context->setSetting("geo_distance_returns_float64_on_float64_arguments", Field(geo));
+    key_context->setSetting("function_json_value_return_type_allow_nullable", Field(json_null));
+    key_context->setSetting("least_greatest_legacy_null_behavior", Field(least_greatest_legacy));
+    key_context->setSetting("h3togeo_lon_lat_result_order", Field(h3togeo_lon_lat));
+    key_context->setSetting("allow_lossy_numeric_supertype", Field(lossy_numeric_supertype));
+    key_context->setSetting("use_variant_as_common_type", Field(variant_as_common_type));
+    key_context->setSetting("array_count_legacy_uint32_result", Field(array_count_legacy));
+    key_context->setSetting("to_start_of_interval_preserves_argument_type", Field(interval_preserves_type));
+    key_context->setSetting("function_date_trunc_return_type_behavior", Field(date_trunc));
+    key_context->setSetting("geotoh3_argument_order", SettingFieldGeoToH3ArgumentOrder(geotoh3_order).toString());
+    return key_context;
+}
+
+/// Whether the function, or the body of a lambda it stands for, is or calls a carrier. A lambda body is a
+/// separate DAG held by its FunctionCapture (FunctionExpression once constant-folded), not a child node.
+static bool callsAnyOf(const IFunctionBase & function, const std::function<bool(const IFunctionBase &)> & is_carrier)
+{
+    if (is_carrier(function))
+        return true;
+
+    const ActionsDAG * body = nullptr;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        body = &capture->getActionsDAGForSemanticAnalysis();
+    else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        body = &expression->getActionsDAGForSemanticAnalysis();
+    if (!body)
+        return false;
+
+    auto calls_none = [&](const IFunctionBase & inner) { return !callsAnyOf(inner, is_carrier); };
+    for (const auto & node : body->getNodes())
+        if (!allNodeFunctions(node, calls_none))
+            return true;
+    return false;
+}
+
+/// Whether the session sets any of the settings that change the result TYPE of a key expression differently
+/// from the server baseline. The same list as in createKeyExpressionContext, without the two value-only ones.
+static bool typeAffectingSettingsDeviate(const Settings & settings, const Settings & baseline)
+{
+    return settings[Setting::enable_extended_results_for_datetime_functions] != baseline[Setting::enable_extended_results_for_datetime_functions]
+        || settings[Setting::cast_keep_nullable] != baseline[Setting::cast_keep_nullable]
+        || settings[Setting::geo_distance_returns_float64_on_float64_arguments] != baseline[Setting::geo_distance_returns_float64_on_float64_arguments]
+        || settings[Setting::function_json_value_return_type_allow_nullable] != baseline[Setting::function_json_value_return_type_allow_nullable]
+        || settings[Setting::least_greatest_legacy_null_behavior] != baseline[Setting::least_greatest_legacy_null_behavior]
+        || settings[Setting::allow_lossy_numeric_supertype] != baseline[Setting::allow_lossy_numeric_supertype]
+        || settings[Setting::use_variant_as_common_type] != baseline[Setting::use_variant_as_common_type]
+        || settings[Setting::array_count_legacy_uint32_result] != baseline[Setting::array_count_legacy_uint32_result]
+        || settings[Setting::to_start_of_interval_preserves_argument_type] != baseline[Setting::to_start_of_interval_preserves_argument_type]
+        || settings[Setting::function_date_trunc_return_type_behavior] != baseline[Setting::function_date_trunc_return_type_behavior];
+}
+
+static bool resultTypeFollowsSession(const ActionsDAG::Node & node, const ContextPtr & context);
+
+/// The same for the body of a lambda, which is a separate DAG (see callsAnyOf).
+static bool lambdaBodyTypeFollowsSession(const IFunctionBase & function, const ContextPtr & context)
+{
+    const ActionsDAG * body = nullptr;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        body = &capture->getActionsDAGForSemanticAnalysis();
+    else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        body = &expression->getActionsDAGForSemanticAnalysis();
+    if (!body)
+        return false;
+
+    return std::ranges::any_of(body->getNodes(), [&](const ActionsDAG::Node & node) { return resultTypeFollowsSession(node, context); });
+}
+
+/// Whether the function of a key expression node, resolved again in the query session over the very same
+/// (stored) argument types, returns another type than the one the key was built with. This is what a
+/// type-affecting setting does: with `cast_keep_nullable = 1` the session's `toUInt32OrDefault(x)` over a
+/// Nullable(UInt32) column is Nullable(UInt32) and NULL for a NULL row, while the stored key is UInt32 and 0.
+/// Such functions cannot be listed by name (every CAST-like function, `JSON_VALUE`, `least`, `if`, ...),
+/// so the type itself is compared. Only the node's own function is checked here: a divergence in an
+/// argument is found on the argument's node and propagated by the caller.
+static bool resultTypeFollowsSession(const ActionsDAG::Node & node, const ContextPtr & context)
+{
+    if (!allNodeFunctions(node, [&](const IFunctionBase & function) { return !lambdaBodyTypeFollowsSession(function, context); }))
+        return true;
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    /// A function that is not in the factory (a lambda capture, an internal function) takes no session setting.
+    auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
+    if (!resolver)
+        return false;
+
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto * child : node.children)
+    {
+        /// Only constants take part in type deduction (e.g. the type name argument of CAST).
+        ColumnPtr column = child->column && isColumnConst(*child->column) ? child->column : nullptr;
+        arguments.emplace_back(std::move(column), child->result_type, child->result_name);
+    }
+
+    try
+    {
+        return !resolver->build(arguments)->getResultType()->equals(*node.result_type);
+    }
+    catch (const Exception &)
+    {
+        /// The session cannot resolve the function over these types at all (e.g. NO_COMMON_TYPE once
+        /// allow_lossy_numeric_supertype is turned off), so it certainly does not mean the stored key.
+        /// The error belongs to a query that uses this expression, not to every query over the table.
+        return true;
+    }
+}
+
+NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context)
+{
+    NameSet result;
+    if (!context)
+        return result;
+
+    /// Hand-maintained, like date_time_parsing_functions in KeyCondition: the functions whose produced
+    /// VALUE follows a session setting, paired with the setting that drives them. A function
+    /// is a carrier only while the query session deviates from the server baseline the key was built
+    /// under (see createKeyExpressionContext); when the two agree the key and the query mean the same.
+    const auto & baseline = context->getGlobalContext()->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
+    std::unordered_set<std::string_view> deviating_functions;
+    if (settings[Setting::h3togeo_lon_lat_result_order] != baseline[Setting::h3togeo_lon_lat_result_order])
+        deviating_functions.insert("h3ToGeo");
+    if (settings[Setting::geotoh3_argument_order].value != baseline[Setting::geotoh3_argument_order].value)
+        deviating_functions.insert("geoToH3");
+    /// One FunctionGeoDistance behind three names. The setting only matters when an argument is Float64:
+    /// it then picks Float32 arithmetic, so the value is rounded rather than merely returned under a
+    /// narrower type. Without a Float64 argument both values of the setting compute in Float32.
+    const bool geo_distance_deviates = settings[Setting::geo_distance_returns_float64_on_float64_arguments]
+        != baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
+    /// least/greatest with an argument that can be NULL: the setting decides whether a NULL argument makes
+    /// the result NULL or is skipped, and the result type is the same either way.
+    const bool least_greatest_deviates = settings[Setting::least_greatest_legacy_null_behavior]
+        != baseline[Setting::least_greatest_legacy_null_behavior];
+    /// The settings that change the result type of a key function: the session's expression then has
+    /// another type than the stored key, and with it another value for some rows (NULL instead of a
+    /// default, a non-truncated date instead of a truncated one).
+    const bool types_may_deviate = typeAffectingSettingsDeviate(settings, baseline);
+    if (deviating_functions.empty() && !geo_distance_deviates && !least_greatest_deviates && !types_may_deviate)
+        return result;
+
+    auto is_carrier = [&](const IFunctionBase & function)
+    {
+        const auto & name = function.getName();
+        if (deviating_functions.contains(name))
+            return true;
+        if (least_greatest_deviates && (name == "least" || name == "greatest"))
+            return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type) { return canContainNull(*type); });
+        if (!geo_distance_deviates || (name != "geoDistance" && name != "greatCircleDistance" && name != "greatCircleAngle"))
+            return false;
+        return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type)
+        {
+            WhichDataType which(removeLowCardinalityAndNullable(type));
+            return !which.isNumber() || which.isFloat64();
+        });
+    };
+
+    /// Actions are linearized children-first, so one pass propagates the taint from a carrier function
+    /// to every subexpression computed from it, up to the key column itself.
+    auto calls_none = [&](const IFunctionBase & function) { return !callsAnyOf(function, is_carrier); };
+    std::unordered_set<const ActionsDAG::Node *> tainted;
+    for (const auto & action : key_expr.getActions())
+    {
+        const auto * node = action.node;
+        bool is_tainted = !allNodeFunctions(*node, calls_none) || (types_may_deviate && resultTypeFollowsSession(*node, context));
+        for (const auto * child : node->children)
+            is_tainted = is_tainted || tainted.contains(child);
+
+        if (is_tainted)
+        {
+            tainted.insert(node);
+            result.insert(node->result_name);
+        }
+    }
+    return result;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -38,6 +333,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
     , sort_order_id(other.sort_order_id)
+    , canonicalize_key_types(other.canonicalize_key_types)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -73,6 +369,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     additional_columns = other.additional_columns;
     sort_order_id = other.sort_order_id;
+    canonicalize_key_types = other.canonicalize_key_types;
     return *this;
 }
 
@@ -83,7 +380,7 @@ void KeyDescription::recalculateWithNewAST(
     const ContextPtr & context,
     const std::optional<Names> & hint_columns)
 {
-    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, hint_columns);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, canonicalize_key_types, hint_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
@@ -91,7 +388,7 @@ void KeyDescription::recalculateWithNewColumns(
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context)
 {
-    *this = getKeyFromAST(definition_ast, new_columns, virtuals, context, additional_columns);
+    *this = getKeyFromAST(definition_ast, new_columns, virtuals, context, additional_columns, canonicalize_key_types);
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
@@ -163,11 +460,13 @@ KeyDescription KeyDescription::getKeyFromAST(
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
     const NamesAndTypesList & additional_columns,
+    bool canonicalize_key_types,
     const std::optional<Names> & hint_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
     result.additional_columns = additional_columns;
+    result.canonicalize_key_types = canonicalize_key_types;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
     checkExpressionDoesntContainSubqueries(*key_expression_list);
 
@@ -179,19 +478,20 @@ KeyDescription KeyDescription::getKeyFromAST(
             result.reverse_flags.size(), result.expression_list_ast->children.size());
 
     {
+        auto key_context = canonicalize_key_types ? createKeyExpressionContext(context) : context;
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
         /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into `columns`
         /// and `virtuals`, so by default a typo may be resolved to any of them; a caller that accepts less
         /// narrows the suggestions down.
-        TreeRewriter tree_rewriter(context);
+        TreeRewriter tree_rewriter(key_context);
         if (hint_columns)
             tree_rewriter.setHintColumns(*hint_columns);
         auto syntax_result = tree_rewriter.analyze(expr, all_columns);
         /// In expression we also need to store source columns
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+        result.expression = ExpressionAnalyzer(expr, syntax_result, key_context).getActions(false);
         /// In sample block we use just key columns
-        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+        result.sample_block = ExpressionAnalyzer(expr, syntax_result, key_context).getActions(true)->getSampleBlock();
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)

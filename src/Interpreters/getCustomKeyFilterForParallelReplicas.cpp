@@ -1,5 +1,6 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 
 #include <Core/Settings.h>
 
@@ -27,8 +28,10 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 ASTPtr getCustomKeyFilterForParallelReplica(
@@ -43,6 +46,33 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
+        /// The sampling filter built below is positiveModulo(custom_key, N) = replica_num, so a nullable
+        /// custom key makes it NULL for NULL keys and those rows are silently dropped on every replica.
+        /// Type it in the caller's own context, not canonicalized (same reason as the range branch below).
+        DataTypePtr custom_key_type;
+        try
+        {
+            KeyDescription custom_key_description = KeyDescription::getKeyFromAST(
+                custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
+            if (custom_key_description.data_types.size() == 1)
+                custom_key_type = custom_key_description.data_types[0];
+        }
+        catch (const Exception & e)
+        {
+            /// getKeyFromAST also applies storage-key rules this filter does not need: physical column names only
+            /// (not `db.t.id` or an alias column), no subqueries, no Variant/Dynamic/JSON result. A key refused by
+            /// one of them is left to the analyzer to resolve or to reject.
+            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER && e.code() != ErrorCodes::BAD_ARGUMENTS
+                && e.code() != ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY)
+                throw;
+        }
+
+        if (custom_key_type && isNullableOrLowCardinalityNullable(custom_key_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid custom key column type: {}. A nullable custom key would silently drop rows with NULL keys",
+                custom_key_type->getName());
+
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, make_intrusive<ASTLiteral>(replicas_count));
 
@@ -54,7 +84,14 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
-    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context);
+    /// Validate the type of the custom key in the caller's own context: the filter AST built below
+    /// (custom_key >= lo, custom_key < hi) is executed later in that same query context, so the type
+    /// this validation accepts must match the type the expression actually produces. Do NOT canonicalize
+    /// here, otherwise e.g. cast_keep_nullable=1 with CAST(x AS UInt32) over Nullable(x) would be
+    /// validated as plain UInt32 and accepted, while the runtime filter still yields Nullable and
+    /// silently drops NULL rows on every replica.
+    KeyDescription custom_key_description
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 

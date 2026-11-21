@@ -32,6 +32,7 @@
 #include <Parsers/IASTHash.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #if CLICKHOUSE_CLOUD
@@ -654,8 +655,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             }
 
             ASTPtr query = sampling.filter_function;
-            auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false));
+            /// The sampling key is a part of the primary key, and its type (the size of the universe above)
+            /// is the one the key was built with under the server baseline. Analyze the filter the same way:
+            /// under a session setting that changes the type of the sampling expression (e.g.
+            /// `cast_keep_nullable = 1` makes `toUInt32OrDefault(x)` nullable) the filter would be NULL for
+            /// some rows, and they would fall out of every sample.
+            auto key_context = createKeyExpressionContext(context);
+            auto syntax_result = TreeRewriter(key_context).analyze(query, available_real_columns);
+            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, key_context).getActionsDAG(false));
         }
     }
 

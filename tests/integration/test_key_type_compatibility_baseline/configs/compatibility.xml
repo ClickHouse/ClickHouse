@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- 24.1 baseline: geo_distance_returns_float64_on_float64_arguments = 0 (Float32 geo key),
+                 function_date_trunc_return_type_behavior = 1 (canonical Date/DateTime for dateTrunc). -->
+            <compatibility>24.1</compatibility>
+        </default>
+    </profiles>
+</clickhouse>
