@@ -6,12 +6,14 @@ DROP TABLE IF EXISTS right;
 DROP TABLE IF EXISTS right_mixed;
 DROP TABLE IF EXISTS right_long;
 DROP TABLE IF EXISTS right_sparse;
+DROP TABLE IF EXISTS right_no_stats;
 
 CREATE TABLE left (k Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right (k Int64, s1 String, s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_mixed (k Int64, s1 String, s2 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_long (k Int64, s1 String, s2 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 CREATE TABLE right_sparse (k Int64, s1 Nullable(String), s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
+CREATE TABLE right_no_stats (k Int64, s1 String, s2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
 
 SET materialize_statistics_on_insert = 1;
 
@@ -22,6 +24,7 @@ INSERT INTO right VALUES (7, 'dup', NULL);
 INSERT INTO right_mixed SELECT number + 7, if(number % 2 = 0, repeat('a', 20), toString(number)), toString(number) FROM numbers(5);
 INSERT INTO right_long SELECT number + 7, repeat('z', 30), repeat('w', 30) FROM numbers(5);
 INSERT INTO right_sparse SELECT number + 7, if(number % 10 = 0, 'abcd', NULL), if(number % 10 = 0, 'efgh', NULL) FROM numbers(10);
+INSERT INTO right_no_stats SELECT number + 7, if(number % 2 = 0, repeat('a', 20), toString(number)), if(number % 3 = 0, NULL, repeat('b', number * 5)) FROM numbers(5);
 
 SET join_algorithm = 'hash';
 
@@ -61,6 +64,12 @@ SETTINGS log_comment = 'rs_high_min_bytes_strings';
 SELECT 'sparse_nullable_strings', (SELECT sum(cityHash64(tuple(*))) FROM left l INNER JOIN right_sparse r ON l.k = r.k SETTINGS enable_hash_join_row_store = 1)
     = (SELECT sum(cityHash64(tuple(*))) FROM left l INNER JOIN right_sparse r ON l.k = r.k SETTINGS enable_hash_join_row_store = 0)
 SETTINGS log_comment = 'rs_sparse_nullable_strings';
+
+-- Without statistics the average size is unknown, so the columns are stored, values of up to 15 bytes inline and longer ones out of line.
+-- The payload is only the `String` columns, so a row store is built only if they are admitted.
+SELECT 'unknown_size_strings', (SELECT sum(cityHash64(r.s1, r.s2)) FROM left l INNER JOIN right_no_stats r ON l.k = r.k SETTINGS enable_hash_join_row_store = 1)
+    = (SELECT sum(cityHash64(r.s1, r.s2)) FROM left l INNER JOIN right_no_stats r ON l.k = r.k SETTINGS enable_hash_join_row_store = 0)
+SETTINGS log_comment = 'rs_unknown_size_strings';
 
 -- Unmatched rows read back as `''` and `NULL`.
 SELECT 'left', (SELECT sum(cityHash64(tuple(*))) FROM left l LEFT JOIN right r ON l.k = r.k SETTINGS enable_hash_join_row_store = 1)
@@ -102,6 +111,7 @@ SELECT 'grace_hash_spilled spilled', ProfileEvents['ExternalJoinWritePart'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'rs_grace_hash_spilled' AND type = 'QueryFinish';
 
+DROP TABLE right_no_stats;
 DROP TABLE right_sparse;
 DROP TABLE right_long;
 DROP TABLE right_mixed;
