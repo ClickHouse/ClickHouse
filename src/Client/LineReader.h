@@ -90,7 +90,7 @@ public:
     /// Whether the reader is currently in AI-chat mode (entered by a leading `?`): the next
     /// line read should be sent to the AI agent rather than executed as SQL. Only the
     /// interactive replxx reader supports this; other readers are never in AI mode.
-    virtual bool inAIMode() const { return false; }
+    [[nodiscard]] virtual bool inAIMode() const { return false; }
 
     /// Whether the input is an inline AI-chat line (the interactive `?` / `??` command). Such a
     /// line is a natural-language question, not SQL: it has no SQL delimiter, and SQL identifier

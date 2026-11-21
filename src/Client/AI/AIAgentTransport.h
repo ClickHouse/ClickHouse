@@ -5,6 +5,7 @@
 #include <vector>
 #include <Client/AI/AIConfiguration.h>
 #include <Core/Names.h>
+#include <base/types.h>
 #include <ai/ai.h>
 
 namespace DB
@@ -30,7 +31,7 @@ struct AIAgentStep
     String error; /// non-empty when the step failed
     ai::Usage usage;
 
-    bool ok() const { return error.empty(); }
+    [[nodiscard]] bool ok() const { return error.empty(); }
 };
 
 /// A backend that can run one step of the agent conversation:
@@ -43,7 +44,7 @@ public:
     virtual AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) = 0;
 
     /// Human-readable description of the backend, e.g. `anthropic (claude-sonnet-4-5)`.
-    virtual String description() const = 0;
+    [[nodiscard]] virtual String description() const = 0;
 };
 
 /// Talks to an AI provider directly through the ai-sdk-cpp client, using native tool calling.
@@ -53,7 +54,7 @@ public:
     AIClientTransport(ai::Client client_, const AIConfiguration & config_);
 
     AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) override;
-    String description() const override;
+    [[nodiscard]] String description() const override;
 
 private:
     ai::Client client;
@@ -77,7 +78,7 @@ public:
     static bool isAvailable(const ScalarQueryExecutor & executor);
 
     AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) override;
-    String description() const override;
+    [[nodiscard]] String description() const override;
 
     /// The name the agent recognizes to report a malformed tool call block back to the model.
     static constexpr auto malformed_tool_call_name = "__malformed_tool_call__";

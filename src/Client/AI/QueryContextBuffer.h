@@ -56,19 +56,19 @@ public:
 
     /// The sequence number of the latest entry ever opened, 0 when there was none. The numbers are
     /// not reused after `dropFinishedEntries`, so an entry opened later is always newer.
-    UInt64 latestSeqno() const;
+    [[nodiscard]] UInt64 latestSeqno() const;
 
     /// Forget the finished entries, keeping the open one (the query that is running). Called when
     /// the client connects to the server again: the queries of the previous session, possibly on
     /// another server, are not the context of the new one.
     void dropFinishedEntries();
 
-    bool empty() const { return entries.empty(); }
+    [[nodiscard]] bool empty() const { return entries.empty(); }
 
     /// Render the entries with seqno > since_seqno as text for the model.
     /// Entries initiated by the AI agent are skipped when `skip_ai_initiated` is set
     /// (the agent has already seen them as its own tool results).
-    String format(UInt64 since_seqno, bool skip_ai_initiated) const;
+    [[nodiscard]] String format(UInt64 since_seqno, bool skip_ai_initiated) const;
 
 private:
     std::deque<Entry> entries;

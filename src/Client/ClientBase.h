@@ -215,7 +215,7 @@ protected:
     /// The test hints (`-- { serverError ... }`, `-- { echo }`, `-- { retry ... }`) in the text of a query.
     /// None for a query of the AI agent: the hints make the client repeat the query, change the settings
     /// and print the query text unsanitized, none of which the validation of the agent's queries covers.
-    TestHint parseTestHint(std::string_view text) const;
+    [[nodiscard]] TestHint parseTestHint(std::string_view text) const;
 
     void clearTerminal();
     void showClientVersion();

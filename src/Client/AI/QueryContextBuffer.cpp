@@ -49,7 +49,7 @@ public:
 
     LineSampleWriteBuffer() : WriteBufferFromPointer(data, sizeof(data)) {}
 
-    std::string_view sample() const { return full ? std::string_view(data, sizeof(data)) : std::string_view(data, offset()); }
+    [[nodiscard]] std::string_view sample() const { return full ? std::string_view(data, sizeof(data)) : std::string_view(data, offset()); }
 
 private:
     void nextImpl() override

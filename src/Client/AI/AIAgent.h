@@ -33,9 +33,9 @@ public:
     void reset();
 
     /// A short status line for the bare `?` command.
-    String status() const;
+    [[nodiscard]] String status() const;
 
-    bool schemaAccessEnabled() const { return config.enable_schema_access; }
+    [[nodiscard]] bool schemaAccessEnabled() const { return config.enable_schema_access; }
 
 private:
     AIConfiguration config;
@@ -81,7 +81,7 @@ private:
     /// expand a byte fivefold.
     static constexpr size_t max_recent_context_bytes = 32 * 1024;
 
-    String systemPrompt() const;
+    [[nodiscard]] String systemPrompt() const;
     void refreshToolSet();
     void pushUserMessage(const String & text);
     void trimHistory();

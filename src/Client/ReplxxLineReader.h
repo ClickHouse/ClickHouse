@@ -60,7 +60,7 @@ public:
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
 
-    bool inAIMode() const override { return ai_mode; }
+    [[nodiscard]] bool inAIMode() const override { return ai_mode; }
 
     void addQueryToHistory(const String & query) override;
 
@@ -68,7 +68,7 @@ private:
     InputStatus readOneLine(const String & prompt) override;
 
     /// The prompt shown while in AI-chat mode: the display name plus a magenta `:?`.
-    std::string aiModePrompt() const;
+    [[nodiscard]] std::string aiModePrompt() const;
 
     /// Run a history-recall action (navigation, search, restore) while keeping AI-chat mode in
     /// sync with the entries. Entries for AI questions are stored with a `? ` prefix; the

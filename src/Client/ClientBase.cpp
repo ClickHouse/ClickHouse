@@ -5178,9 +5178,9 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
         {
             if (current_value == 0 || current_value > limit)
-                client_context->setSetting(String(name), limit);
+                client_context->setSetting(name, limit);
             else
-                client_context->setSetting(String(name), current_value);
+                client_context->setSetting(name, current_value);
         };
         /// The execution-time limits only look like whole seconds: they are `Seconds` settings
         /// backed by microseconds, and `0.5` is a value a session can legitimately hold. Compared
@@ -5191,11 +5191,11 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         {
             const Int64 limit_microseconds = static_cast<Int64>(limit_seconds) * 1'000'000;
             if (current_microseconds == 0 || current_microseconds > limit_microseconds)
-                client_context->setSetting(String(name), limit_seconds);
+                client_context->setSetting(name, limit_seconds);
             else
                 /// The effective value can be stricter than the local one (see above), and the local one
                 /// is what the query carries, so the effective one is pinned explicitly.
-                client_context->setSetting(String(name), static_cast<Float64>(current_microseconds) / 1'000'000);
+                client_context->setSetting(name, static_cast<Float64>(current_microseconds) / 1'000'000);
         };
         tighten_seconds("max_execution_time", current[Setting::max_execution_time].totalMicroseconds(), max_execution_time_limit);
         tighten_seconds(

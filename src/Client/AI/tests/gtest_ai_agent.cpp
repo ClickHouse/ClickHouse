@@ -38,7 +38,7 @@ public:
         return result;
     }
 
-    String description() const override { return "mock"; }
+    [[nodiscard]] String description() const override { return "mock"; }
 
     /// The messages passed to each model call. The transport outlives the agent in the tests
     /// (the agent owns a raw observer pointer stored by the test), so this is safe to inspect.
@@ -86,10 +86,12 @@ struct AgentWithMock
     explicit AgentWithMock(std::vector<AIAgentStep> steps, const AIAgentHooks & hooks = {}, size_t max_steps = 4)
     {
         auto owned = std::make_unique<MockTransport>(std::move(steps));
-        transport = owned.get();
+        MockTransport * observer = owned.get();
         AIConfiguration config;
         config.max_steps = max_steps;
         agent = std::make_unique<AIAgent>(config, std::move(owned), hooks, buffer, output, /*use_colors=*/ false);
+        /// Assigned after the ownership has moved to the agent, which lives as long as this object.
+        transport = observer;
     }
 };
 
