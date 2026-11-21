@@ -1,0 +1,37 @@
+{
+  "name": "@clickhouse/wasm-parser",
+  "version": "0.0.0",
+  "description": "Experimental ClickHouse SQL parser as WebAssembly. The JS API is unstable. Not published to npm; consume the CI tarball.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "node": "./src/full-node.mjs",
+      "browser": "./src/full-browser.mjs",
+      "default": "./src/full-browser.mjs"
+    },
+    "./slim": {
+      "types": "./src/index.d.ts",
+      "node": "./src/slim-node.mjs",
+      "browser": "./src/slim-browser.mjs",
+      "default": "./src/slim-browser.mjs"
+    }
+  },
+  "types": "./src/index.d.ts",
+  "files": [
+    "README.md",
+    "parser.wasm",
+    "parser-no-formatting-no-dcl.wasm",
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node test.mjs --wasm-dir ."
+  }
+}
