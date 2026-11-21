@@ -80,8 +80,8 @@ SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1),
 FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k);
 
 -- With `transform_null_in = 0` a `Bool` key converts even when the probe has its type: a byte other than 0
--- and 1 is `true`. The same holds for a `UInt8` probe, which the type comparison does not tell from a `Bool`
--- one. With `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis compares them.
+-- and 1 is `true`. With `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis compares
+-- them. A `UInt8` probe is compared by its value in both modes: `2` is not `true`.
 SELECT reinterpret(materialize(toUInt8(2)), 'Bool') IN (SELECT true), materialize(toUInt8(2)) IN (SELECT true);
 
 {% endfor %}

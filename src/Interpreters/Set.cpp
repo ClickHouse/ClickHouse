@@ -17,7 +17,11 @@
 #include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -636,6 +640,68 @@ Columns Set::getSetElements() const
     return result;
 }
 
+static bool holdsBool(const DataTypePtr & type)
+{
+    const DataTypePtr type_without_nullable = removeNullable(type);
+    return isBool(type_without_nullable) || isSimpleAggregateFunctionOfBool(*type_without_nullable);
+}
+
+/// A cast into `Bool` turns every nonzero number into `true`; one into `UInt8`, which stores `Bool`, keeps the value or fails.
+static bool isNumberForBoolKey(const DataTypePtr & key_type, const DataTypePtr & probe_type)
+{
+    const DataTypePtr probe_value_type = removeLowCardinalityAndNullable(probe_type);
+    const WhichDataType which(probe_value_type);
+    return (which.isInteger() || which.isFloat()) && !holdsBool(probe_value_type) && holdsBool(key_type);
+}
+
+/// A cast of a `Variant` converts each alternative into the key type, so the number alternatives are converted again here.
+static ColumnPtr convertNumberAlternativesForBoolKey(
+    const ColumnWithTypeAndName & probe, const DataTypePtr & key_type, ColumnPtr converted, InternalCastFunctionCache * cache)
+{
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(probe.type.get());
+    if (!variant_type || !holdsBool(key_type))
+        return converted;
+
+    const auto & variant_column = assert_cast<const ColumnVariant &>(*probe.column);
+    const size_t num_variants = variant_column.getNumVariants();
+    Columns alternatives(num_variants);
+    std::vector<const UInt8 *> alternative_values(num_variants);
+    std::vector<const UInt8 *> alternative_null_maps(num_variants);
+    bool has_alternatives = false;
+    for (ColumnVariant::Discriminator global = 0; global != num_variants; ++global)
+    {
+        const ColumnPtr & alternative = variant_column.getVariantPtrByGlobalDiscriminator(global);
+        const DataTypePtr & alternative_type = variant_type->getVariant(global);
+        if (alternative->empty() || !isNumberForBoolKey(key_type, alternative_type))
+            continue;
+
+        alternatives[global] = castColumnAccurateOrNull({alternative, alternative_type, ""}, std::make_shared<DataTypeUInt8>(), cache);
+        const auto & alternative_nullable = assert_cast<const ColumnNullable &>(*alternatives[global]);
+        alternative_values[global] = assert_cast<const ColumnUInt8 &>(alternative_nullable.getNestedColumn()).getData().data();
+        alternative_null_maps[global] = alternative_nullable.getNullMapData().data();
+        has_alternatives = true;
+    }
+
+    if (!has_alternatives)
+        return converted;
+
+    auto result = IColumn::mutate(std::move(converted));
+    auto & result_nullable = assert_cast<ColumnNullable &>(*result);
+    auto & values = assert_cast<ColumnUInt8 &>(result_nullable.getNestedColumn()).getData();
+    auto & null_map = result_nullable.getNullMapData();
+    for (size_t row = 0, num_rows = variant_column.size(); row < num_rows; ++row)
+    {
+        const auto global = variant_column.globalDiscriminatorAt(row);
+        if (global == ColumnVariant::NULL_DISCRIMINATOR || !alternatives[global])
+            continue;
+        const size_t offset = variant_column.offsetAt(row);
+        values[row] = alternative_values[global][offset];
+        null_map[row] = alternative_null_maps[global][offset];
+    }
+
+    return result;
+}
+
 ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
 {
     /// The constant columns to the left of `IN` are not supported directly, so they are materialized. The key
@@ -657,6 +723,8 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
     else
     {
         const DataTypePtr key_type_without_nullable = removeNullable(key_type);
+        const DataTypePtr target_type
+            = isNumberForBoolKey(key_type, probe.type) ? std::make_shared<DataTypeUInt8>() : key_type_without_nullable;
         ColumnPtr values;
 
         /// A value the key type cannot represent is simply not a member - which is what the literal `IN` list
@@ -667,15 +735,16 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         /// be one that `accurateCastOrNull` can produce. When the probe already has the key type (up to
         /// `Nullable`), no value can fail to fit, so the cheap path is kept: an exact-type cast is a no-op,
         /// and that is the common `x IN set_table` case. With `transform_null_in = 0` a `Bool` key is the
-        /// exception, because the cast to `Bool` turns every byte other than 0 into `true`: `equals` also holds
-        /// for a `UInt8` probe, and a `Bool` probe can hold such a byte too, e.g. from `reinterpret`. With
-        /// `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis does, which matches a
-        /// `Bool` member only against the byte 1 (see `KeyCondition::tryPrepareSetColumnsForIndex`).
-        const bool converts_bool_key = !transform_null_in && isBool(key_type_without_nullable);
-        const bool cast_is_no_op = removeNullable(probe.type)->equals(*key_type_without_nullable) && !converts_bool_key;
+        /// exception, because the cast to `Bool` turns every byte other than 0 into `true`, and a `Bool` probe
+        /// can hold such a byte, e.g. from `reinterpret`. With `transform_null_in = 1` the probe keeps its bytes,
+        /// as primary-key analysis does, which matches a `Bool` member only against the byte 1 (see
+        /// `KeyCondition::tryPrepareSetColumnsForIndex`).
+        const bool converts_bool_key = !transform_null_in && holdsBool(target_type);
+        const bool cast_is_no_op = removeNullable(probe.type)->equals(*target_type) && !converts_bool_key;
         if (canBeAccurateCastOrNullTarget(key_type) && !cast_is_no_op)
         {
-            const ColumnPtr converted = castColumnAccurateOrNullSkipNulls(probe, key_type_without_nullable, cast_cache.get());
+            const ColumnPtr converted = convertNumberAlternativesForBoolKey(
+                probe, key_type, castColumnAccurateOrNullSkipNulls(probe, target_type, cast_cache.get()), cast_cache.get());
             const auto & converted_nullable = assert_cast<const ColumnNullable &>(*converted);
             values = converted_nullable.getNestedColumnPtr();
             /// The NULLs of the conversion are the values that did not fit. Even when the set can hold a
@@ -684,7 +753,7 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         }
         else
         {
-            values = castColumnAccurateSkipNulls(probe, key_type_without_nullable, cast_cache.get());
+            values = castColumnAccurateSkipNulls(probe, target_type, cast_cache.get());
         }
 
         /// The NULLs of the probe, kept in the null map of a `Nullable` or the discriminators of a `Variant`,
