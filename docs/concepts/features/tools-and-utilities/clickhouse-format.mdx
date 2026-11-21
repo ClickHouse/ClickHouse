@@ -112,7 +112,8 @@ $ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', midd
 ```
 
 ```sql title="Response"
-SELECT concat(
+SELECT
+    concat(
         first_name, ' ', middle_name,
         ' ', last_name
     )
