@@ -84,7 +84,7 @@ public:
     /// object its own copy.
     static ThreadFuzzer & instance();
 
-    bool isEffective() const;
+    [[nodiscard]] bool isEffective() const;
     void setup() const;
 
     static void stop();
@@ -110,7 +110,7 @@ private:
     ThreadFuzzer();
 
     void initConfiguration();
-    bool needsSetup() const;
+    [[nodiscard]] bool needsSetup() const;
 
     static void signalHandler(int);
 };

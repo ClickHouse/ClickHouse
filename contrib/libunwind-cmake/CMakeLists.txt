@@ -36,6 +36,11 @@ target_compile_definitions(unwind PUBLIC -D_LIBUNWIND_IS_NATIVE_ONLY)
 # We should enable optimizations (otherwise it will be too slow in debug)
 # and disable sanitizers (otherwise infinite loop may happen)
 target_compile_options(unwind PRIVATE -O3 -fno-exceptions -funwind-tables -fno-sanitize=all $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++ -fno-rtti>)
+# CFI does not interfere with unwinding. Without it, the callbacks that libunwind passes through checked indirect calls,
+# such as `findUnwindSectionsByPhdr` to `dl_iterate_phdr`, carry no CFI type and fail the check.
+if (ENABLE_CFI)
+    target_compile_options(unwind PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=cfi>)
+endif ()
 
 target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 

@@ -90,8 +90,11 @@ UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
 #endif
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <dlfcn.h>
 #include <unistd.h>
+
+#if defined(OS_DARWIN)
+#    include <dlfcn.h>
+#endif
 
 #include <algorithm>
 #include <csignal>
@@ -135,8 +138,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_DLSYM;
     extern const int CANNOT_FORK;
+    extern const int CANNOT_DLSYM;
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
@@ -262,21 +265,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
-#endif
-
-    if (!real_vfork)
-        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
-
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
@@ -339,11 +327,22 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
-    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+#if defined(OS_DARWIN)
+    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
+    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+    if (!real_vfork)
+        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
+    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+#else
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     if (0 == pid)
     {
         /// We are in the freshly created process.
@@ -394,6 +393,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     res->pid = pid;
 

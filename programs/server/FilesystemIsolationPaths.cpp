@@ -163,6 +163,7 @@ public:
         addDataPaths();
         addDisks();
         addKeeper();
+        addDistributedCache();
         addLogs();
         addCertificates();
         addKerberosProfiles();
@@ -412,7 +413,7 @@ private:
     }
 
     /// Every key `name` and `name[N]` under `prefix`.
-    std::vector<std::string> getMultipleKeys(const std::string & prefix, const std::string & name) const
+    [[nodiscard]] std::vector<std::string> getMultipleKeys(const std::string & prefix, const std::string & name) const
     {
         std::vector<std::string> result;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -645,7 +646,7 @@ private:
 
     /// The directory of the filesystem caches with relative paths, as in `getCache` in `RegisterDiskCache.cpp`. An
     /// empty `filesystem_caches_path` is the same as none.
-    fs::path getCachesBase() const
+    [[nodiscard]] fs::path getCachesBase() const
     {
         const std::string value = getPathSetting(config, "filesystem_caches_path", "");
         return value.empty() ? data_path / "caches" : absolute(value, data_path);
@@ -708,6 +709,38 @@ private:
         }
     }
 
+    /// The working directory of every `<distributed_cache_server>` section, which the instance of the server creates
+    /// at startup, and the cache inside it. The certificates are read again when the configuration is reloaded, which
+    /// happens after the filesystem is isolated, and the client registry is initialized after it as well. The
+    /// distributed cache is only in ClickHouse Cloud, but its configuration is respected in every build, so that the
+    /// collector is the same everywhere.
+    void addDistributedCache()
+    {
+        /// The default of the `path` setting of the distributed cache server, for a section that does not name one.
+        constexpr auto default_path = "/var/lib/clickhouse-distributed-cache/";
+
+        for (const auto & section : getMultipleKeys("", "distributed_cache_server"))
+        {
+            /// As the settings of the distributed cache server read it, rather than with `getPathSetting`: this setting
+            /// keeps the whitespace around the value, and the directory is created with exactly this string.
+            const fs::path server_path = absolute(config.getString(section + ".path", default_path), runtime_directory);
+            add(server_path, Access::ReadWrite, fmt::format("`{}.path`", section));
+
+            /// The cache of the section, as `FileCacheSettings::loadFromConfig` resolves it: a relative path is joined
+            /// to the working directory as it is written, so it can leave it, and the default one can be a link
+            /// elsewhere. `planMounts` drops it when a mount of the working directory covers it already.
+            const std::string cache_key = section + ".cache.path";
+            add(config.has(cache_key) ? absolute(config.getString(cache_key), server_path) : server_path / "cache",
+                Access::ReadWrite, fmt::format("`{}`", cache_key));
+
+            for (const auto * name : {"tls_certificate_path", "tls_key_path"})
+                addKeyLocation(fmt::format("{}.{}", section, name), Access::ReadOnly, runtime_directory);
+        }
+
+        /// A single section, as the registry of the clients takes it, rather than one per server.
+        addKeyLocation("distributed_cache_client.certificate_chain_path", Access::ReadOnly, runtime_directory);
+    }
+
     /// With the targets of the links, as a log file can be a link to another directory.
     /// The paths of the logs are relative to the directories that `BaseDaemon::initialize` opens them in: `stderr` and
     /// `stdout` in `startup_directory`, and the logs and the pid file after it has changed to `logDirectory`.
@@ -724,7 +757,7 @@ private:
 
     /// The directories a configuration file is loaded in: `startup_directory` at the startup, and `runtime_directory`
     /// when it is reloaded.
-    std::vector<fs::path> configLoadDirectories() const
+    [[nodiscard]] std::vector<fs::path> configLoadDirectories() const
     {
         if (startup_directory == runtime_directory)
             return {startup_directory};
@@ -733,7 +766,7 @@ private:
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
     /// changes to that directory, or to `/tmp` without a log.
-    fs::path logDirectory() const
+    [[nodiscard]] fs::path logDirectory() const
     {
         if (!is_daemon)
             return startup_directory;
@@ -744,7 +777,7 @@ private:
     /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
     /// relative to `logDirectory`, or `cores` in `path`. If it cannot create it, it falls back to the directory of the
     /// log, which is visible anyway.
-    fs::path coreDirectory() const
+    [[nodiscard]] fs::path coreDirectory() const
     {
         const std::string core_path = config.getString("core_path", "");
         return core_path.empty() ? data_path / "cores" : absolute(core_path, logDirectory());

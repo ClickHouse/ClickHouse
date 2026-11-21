@@ -250,11 +250,6 @@ int platformTruncate(const std::string & path, UInt64 size)
     return 0;
 }
 
-int platformOpenReadWrite(const std::string & path)
-{
-    return platformOpenFile(path, _O_RDWR, 0);
-}
-
 int platformOpenFile(const std::string & path, int flags, int mode)
 {
     const int fd = ::_wopen(pathFromString(path).c_str(), flags | _O_BINARY, mode);
@@ -498,11 +493,6 @@ int platformUnlockFile(int fd)
 int platformTruncate(const std::string & path, UInt64 size)
 {
     return ::truncate(path.c_str(), static_cast<off_t>(size));
-}
-
-int platformOpenReadWrite(const std::string & path)
-{
-    return ::open(path.c_str(), O_RDWR);
 }
 
 int platformOpenDirectory(const std::string & path)

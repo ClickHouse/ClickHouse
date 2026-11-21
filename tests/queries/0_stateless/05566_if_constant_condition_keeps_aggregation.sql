@@ -25,6 +25,9 @@ SELECT count(), sum(c) FROM (SELECT if(1, b, arrayJoin([b, b])) AS k, count() AS
 
 -- Controls: an aggregate of a subquery is not this query's, and an aggregate in the branch taken is still folded to.
 SELECT count() FROM (SELECT if(1, toUInt32(5), (SELECT max(a) FROM t_if_const_agg)) FROM t_if_const_agg);
+SELECT count() FROM (SELECT 1 FROM t_if_const_agg AS t ORDER BY if(1, toNullable(t.a), (SELECT max(n.a) FROM t_if_const_agg AS n WHERE n.a = t.a))) SETTINGS allow_correlated_subqueries = 1;
+SELECT sum(if(0, (SELECT max(n.a) FROM t_if_const_agg AS n WHERE n.a = t.a), toNullable(t.b))) FROM t_if_const_agg AS t SETTINGS allow_correlated_subqueries = 1;
+SELECT count() FROM (SELECT 1 FROM t_if_const_agg AS t ORDER BY if(1, toNullable(t.a), (SELECT arrayJoin([n.a]) FROM t_if_const_agg AS n WHERE n.a = t.a))) SETTINGS allow_correlated_subqueries = 1;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT if(1, max(a), toUInt32(5)) FROM t_if_const_agg) WHERE explain ILIKE '%function_name: if,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT if(1, a, b) FROM t_if_const_agg) WHERE explain ILIKE '%function_name: if,%';
 

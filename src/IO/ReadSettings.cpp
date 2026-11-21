@@ -59,6 +59,10 @@ void ReadSettings::disableCaches()
     page_cache_settings.cache.reset();
     filesystem_cache_settings.enable_log = false;
     enable_filesystem_read_prefetches_log = false;
+    /// The mmap cache is keyed by path + offset + length only, so a rewritten file at the same
+    /// path and length would be served from the previous mapping.
+    local_fs_settings.mmap_threshold = 0;
+    local_fs_settings.mmap_cache = nullptr;
 }
 
 void ReadSettings::useForSmallRemoteRead(size_t buffer_size)

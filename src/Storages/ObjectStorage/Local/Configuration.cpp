@@ -6,6 +6,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {

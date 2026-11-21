@@ -11,6 +11,7 @@ bool isCrashed();
 #if !defined(OS_WINDOWS)
 
 #include <csignal>
+#include <exception>
 
 #include <base/defines.h>
 #include <Common/Logger_fwd.h>
@@ -131,6 +132,7 @@ public:
     explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
     void run() override;
 
+    /// Also returns, by rethrowing it, when building the symbol index in this thread has failed (see `run`).
     bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
@@ -145,6 +147,8 @@ private:
     std::mutex terminate_request_mutex;
     std::condition_variable terminate_request_cv;
     size_t terminate_requested = 0;
+    /// The failure to build the symbol index at the start of `run`, for the main thread to rethrow.
+    std::exception_ptr symbol_index_exception;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 

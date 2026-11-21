@@ -47,7 +47,7 @@ public:
             created_directories.insert(pathToGenericString(*snapshot_path));
     }
 
-    std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
+    [[nodiscard]] std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
     {
         /// The whole resolution happens in generic UTF-8 strings, including the starting point:
         /// `path.string()` is native-format on Windows, so `B\\C` would stop matching the `B/`
@@ -83,7 +83,7 @@ public:
         return NormalizedPath{pathFromString(resolved)};
     }
 
-    bool isCreatedByTransaction(const NormalizedPath & path) const
+    [[nodiscard]] bool isCreatedByTransaction(const NormalizedPath & path) const
     {
         return created_directories.contains(pathToGenericString(path));
     }

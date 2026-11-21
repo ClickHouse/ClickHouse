@@ -109,17 +109,17 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use i != 0 with single disk reservation. It's a bug");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override
     {
@@ -174,16 +174,16 @@ public:
 
     void next() override { ++entry; }
 
-    bool isValid() const override { return entry != fs::directory_iterator(); }
+    [[nodiscard]] bool isValid() const override { return entry != fs::directory_iterator(); }
 
-    String path() const override
+    [[nodiscard]] String path() const override
     {
         if (entry->is_directory())
             return pathToGenericString(dir_path / entry->path().filename() / "");
         return pathToGenericString(dir_path / entry->path().filename());
     }
 
-    String name() const override { return pathToGenericString(entry->path().filename()); }
+    [[nodiscard]] String name() const override { return pathToGenericString(entry->path().filename()); }
 
 private:
     fs::path dir_path;

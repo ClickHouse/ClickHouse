@@ -67,7 +67,7 @@ public:
         : DatabaseTablesSnapshotIterator(std::move(base))
     {
     }
-    UUID uuid() const override { return table()->getStorageID().uuid; }
+    [[nodiscard]] UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
 DatabaseAtomic::DatabaseAtomic(

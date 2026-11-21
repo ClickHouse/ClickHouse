@@ -486,7 +486,16 @@ void readArchivedCompletionTimes(
 
         RelativePathWithMetadata file(history_path + file_name);
         auto buf = createReadBuffer(file, object_storage, context, log, read_settings);
-        auto input = FormatFactory::instance().getInput("Parquet", *buf, header, context, DEFAULT_BLOCK_SIZE, format_settings);
+        auto input = FormatFactory::instance().getInput(
+            "Parquet",
+            *buf,
+            header,
+            context,
+            DEFAULT_BLOCK_SIZE,
+            format_settings,
+            /*parser_shared_resources=*/nullptr,
+            /*format_filter_info=*/nullptr,
+            object_storage->isRemote());
         QueryPipeline pipeline(std::move(input));
         PullingPipelineExecutor executor(pipeline);
         Block block;
