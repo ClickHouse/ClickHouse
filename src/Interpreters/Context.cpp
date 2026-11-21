@@ -141,6 +141,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
