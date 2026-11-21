@@ -168,9 +168,9 @@ static bool callsAnyOf(const IFunctionBase & function, const std::function<bool(
 
     const ActionsDAG * body = nullptr;
     if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
-        body = &capture->getAcionsDAG();
+        body = &capture->getActionsDAGForSemanticAnalysis();
     else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
-        body = &expression->getAcionsDAG();
+        body = &expression->getActionsDAGForSemanticAnalysis();
     if (!body)
         return false;
 
@@ -204,9 +204,9 @@ static bool lambdaBodyTypeFollowsSession(const IFunctionBase & function, const C
 {
     const ActionsDAG * body = nullptr;
     if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
-        body = &capture->getAcionsDAG();
+        body = &capture->getActionsDAGForSemanticAnalysis();
     else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
-        body = &expression->getAcionsDAG();
+        body = &expression->getActionsDAGForSemanticAnalysis();
     if (!body)
         return false;
 
