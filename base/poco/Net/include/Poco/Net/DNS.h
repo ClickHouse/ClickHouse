@@ -34,6 +34,13 @@ namespace Net
     /// This class provides an interface to the
     /// domain name service.
     ///
+    /// In ClickHouse, host names and addresses are resolved with c-ares
+    /// (`/etc/hosts` and the DNS servers of `/etc/resolv.conf`), not with
+    /// `getaddrinfo` and `getnameinfo`, so the plugins of the Name Service Switch
+    /// of the libc are not used. Of the hint flags, `DNS_HINT_AI_ADDRCONFIG`,
+    /// `DNS_HINT_AI_NUMERICHOST`, `DNS_HINT_AI_V4MAPPED` and `DNS_HINT_AI_ALL`
+    /// are respected, and the canonical name is always returned.
+    ///
     /// Starting with POCO C++ Libraries release 1.9.0,
     /// this class also supports Internationalized Domain Names (IDNs).
     ///
@@ -71,8 +78,7 @@ namespace Net
 #endif
         );
         /// Returns a HostEntry object containing the DNS information
-        /// for the host with the given name. HintFlag argument is only
-        /// used on platforms that have getaddrinfo().
+        /// for the host with the given name.
         ///
         /// Note that Internationalized Domain Names must be encoded
         /// using Punycode (see encodeIDN()) before calling this method.
@@ -97,8 +103,7 @@ namespace Net
 #endif
         );
         /// Returns a HostEntry object containing the DNS information
-        /// for the host with the given IP address. HintFlag argument is only
-        /// used on platforms that have getaddrinfo().
+        /// for the host with the given IP address.
         ///
         /// Throws a HostNotFoundException if a host with the given
         /// name cannot be found.

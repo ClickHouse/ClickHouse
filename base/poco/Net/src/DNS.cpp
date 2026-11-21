@@ -17,13 +17,32 @@
 #include "Poco/Net/SocketAddress.h"
 #include "Poco/Environment.h"
 #include "Poco/NumberFormatter.h"
+#include "Poco/NumberParser.h"
 #include "Poco/RWLock.h"
+#include "Poco/String.h"
 #include "Poco/TextIterator.h"
 #include "Poco/TextConverter.h"
 #include "Poco/UTF8Encoding.h"
 #include "Poco/UTF32Encoding.h"
 #include "Poco/Unicode.h"
+#include <algorithm>
+#include <cerrno>
+#include <cstdio>
+#include <exception>
 #include <cstring>
+#include <fstream>
+#include <new>
+#include <optional>
+#include <sstream>
+#include <vector>
+
+#include <ares.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#if !defined(__EMSCRIPTEN__)
+#include <ifaddrs.h>
+#endif
 
 
 #if defined(POCO_HAVE_LIBRESOLV)
@@ -61,90 +80,615 @@ static Poco::RWLock resolverLock;
 #endif
 
 
-HostEntry DNS::hostByName(const std::string& hostname, unsigned
-#ifdef POCO_HAVE_ADDRINFO
-						  hintFlags
-#endif
-						 )
+namespace
 {
-#if defined(POCO_HAVE_LIBRESOLV)
-	Poco::ScopedReadRWLock readLock(resolverLock);
-#endif
 
-#if defined(POCO_HAVE_ADDRINFO)
-	struct addrinfo* pAI;
-	struct addrinfo hints;
-	std::memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = hintFlags;
-	int rc = getaddrinfo(hostname.c_str(), NULL, &hints, &pAI);
-	if (rc == 0)
+
+/// Host names are resolved with c-ares rather than with `getaddrinfo` and `getnameinfo` of the libc,
+/// so that resolution does not depend on the plugins of the Name Service Switch that the libc loads
+/// at run time (they are not available under QEMU-user or in a minimal chroot, and some of them
+/// answer queries from unexpected sources), and so that every lookup is bounded by the timeouts and
+/// attempts of `/etc/resolv.conf`. The sources are `/etc/hosts` and the DNS servers of
+/// `/etc/resolv.conf`, in the order given by the `hosts` line of `/etc/nsswitch.conf`.
+///
+/// A channel is created for every lookup: the bundled c-ares is built without thread support, so a
+/// channel cannot be shared between threads, and a new channel reads the current configuration.
+/// The results are cached by `DNSResolver`, so the cost of creating a channel does not matter.
+class AresChannel
+{
+public:
+	/// `lookups` overrides the sources of the configuration: "f" for the hosts file, "b" for DNS.
+	explicit AresChannel(const char* lookups = nullptr)
 	{
-		HostEntry result(pAI);
-		freeaddrinfo(pAI);
-		return result;
+		struct ares_options options;
+		std::memset(&options, 0, sizeof(options));
+		options.sock_state_cb = &AresChannel::socketStateCallback;
+		options.sock_state_cb_data = this;
+		int optmask = ARES_OPT_SOCK_STATE_CB;
+		if (lookups)
+		{
+			options.lookups = const_cast<char*>(lookups);
+			optmask |= ARES_OPT_LOOKUPS;
+		}
+		int rc = ares_init_options(&_channel, &options, optmask);
+		if (rc == ARES_ENOMEM)
+			throw std::bad_alloc();
+		if (rc != ARES_SUCCESS)
+			throw DNSException("Cannot initialize the DNS resolver", ares_strerror(rc), EAI_FAIL);
 	}
-	else
+
+	~AresChannel()
 	{
-		aierror(rc, hostname);
+		ares_destroy(_channel);
 	}
+
+	AresChannel(const AresChannel&) = delete;
+	AresChannel& operator=(const AresChannel&) = delete;
+
+	ares_channel_t* get()
+	{
+		return _channel;
+	}
+
+	/// Runs the event loop until all the queries of the channel complete.
+	void wait()
+	{
+		rethrowCallbackException();
+		std::vector<ares_fd_events_t> events;
+		while (ares_queue_active_queries(_channel) > 0)
+		{
+			struct timeval tv;
+			struct timeval* timeout = ares_timeout(_channel, nullptr, &tv);
+			if (!timeout && _fds.empty())
+				throw DNSException("The DNS resolver has active queries, but neither sockets nor timeouts to wait for", "", EAI_FAIL);
+
+			int timeout_ms = timeout ? static_cast<int>(tv.tv_sec * 1000 + (tv.tv_usec + 999) / 1000) : -1;
+			int rc = ::poll(_fds.data(), static_cast<nfds_t>(_fds.size()), timeout_ms);
+			if (rc < 0)
+			{
+				if (errno == EINTR)
+					continue;
+				throw NetException("Cannot poll the sockets of the DNS resolver", errno);
+			}
+
+			events.clear();
+			for (const auto& fd : _fds)
+			{
+				unsigned int flags = 0;
+				if (fd.revents & (POLLIN | POLLERR | POLLHUP))
+					flags |= ARES_FD_EVENT_READ;
+				if (fd.revents & POLLOUT)
+					flags |= ARES_FD_EVENT_WRITE;
+				if (flags)
+					events.push_back(ares_fd_events_t{fd.fd, flags});
+			}
+
+			/// With no events, this processes the timeouts.
+			ares_process_fds(_channel, events.data(), events.size(), ARES_PROCESS_FLAG_NONE);
+			rethrowCallbackException();
+		}
+	}
+
+private:
+	/// An exception must not unwind through the frames of c-ares: it would skip its cleanup and leak the socket.
+	/// It is stored and rethrown after the c-ares function returns, and the destructor releases the channel.
+	static void socketStateCallback(void* data, ares_socket_t socket, int readable, int writable)
+	{
+		auto* self = static_cast<AresChannel*>(data);
+		try
+		{
+			auto& fds = self->_fds;
+			auto it = std::find_if(fds.begin(), fds.end(), [socket](const pollfd& fd) { return fd.fd == socket; });
+
+			if (!readable && !writable)
+			{
+				if (it != fds.end())
+					fds.erase(it);
+				return;
+			}
+
+			if (it == fds.end())
+			{
+				fds.push_back(pollfd{socket, 0, 0});
+				it = std::prev(fds.end());
+			}
+			it->events = static_cast<short>((readable ? POLLIN : 0) | (writable ? POLLOUT : 0));
+		}
+		catch (...)
+		{
+			if (!self->_callbackException)
+				self->_callbackException = std::current_exception();
+		}
+	}
+
+	void rethrowCallbackException()
+	{
+		if (_callbackException)
+			std::rethrow_exception(_callbackException);
+	}
+
+	ares_channel_t* _channel = nullptr;
+	std::vector<pollfd> _fds;
+	std::exception_ptr _callbackException;
+};
+
+
+/// Throws the same exceptions that the `getaddrinfo` errors produce, with the `EAI_*` code.
+[[noreturn]] void throwAresError(int status, const std::string& arg)
+{
+	switch (status)
+	{
+	case ARES_ENOTFOUND:
+		throw HostNotFoundException(arg, EAI_NONAME);
+	case ARES_ENODATA:
+#if defined(EAI_NODATA)
+		throw NoAddressFoundException(arg, EAI_NODATA);
 #else
-	struct hostent* he = gethostbyname(hostname.c_str());
-	if (he)
-	{
-		return HostEntry(he);
-	}
+		throw NoAddressFoundException(arg, EAI_NONAME);
 #endif
-	error(lastError(), hostname); // will throw an appropriate exception
-	throw NetException(); // to silence compiler
+	case ARES_ENOMEM:
+		throw std::bad_alloc();
+	case ARES_ETIMEOUT:
+	case ARES_ECONNREFUSED:
+	case ARES_ESERVFAIL:
+	case ARES_EREFUSED:
+		throw DNSException(std::string("Temporary DNS error while resolving: ") + ares_strerror(status), arg, EAI_AGAIN);
+	default:
+		throw DNSException(std::string("Non recoverable DNS error while resolving: ") + ares_strerror(status), arg, EAI_FAIL);
+	}
 }
 
 
-HostEntry DNS::hostByAddress(const IPAddress& address, unsigned
-#ifdef POCO_HAVE_ADDRINFO
-							 hintFlags
-#endif
-							)
+/// Whether the host has IPv4 and IPv6 addresses other than the loopback ones, for `AI_ADDRCONFIG`.
+/// This is the check of the glibc: the addresses of the interfaces that are down count too.
+void configuredAddressFamilies(bool& seenIPv4, bool& seenIPv6)
 {
-#if defined(POCO_HAVE_LIBRESOLV)
-	Poco::ScopedReadRWLock readLock(resolverLock);
-#endif
+	seenIPv4 = false;
+	seenIPv6 = false;
+#if !defined(__EMSCRIPTEN__)
+	struct ifaddrs* addresses = nullptr;
+	if (getifaddrs(&addresses) != 0)
+		throw NetException("Cannot get the addresses of the network interfaces to resolve with AI_ADDRCONFIG", errno);
 
-#if defined(POCO_HAVE_ADDRINFO)
-	SocketAddress sa(address, 0);
-	static char fqname[1024];
-	int rc = getnameinfo(sa.addr(), sa.length(), fqname, sizeof(fqname), NULL, 0, NI_NAMEREQD);
-	if (rc == 0)
+	for (struct ifaddrs* it = addresses; it; it = it->ifa_next)
 	{
-		struct addrinfo* pAI;
-		struct addrinfo hints;
-		std::memset(&hints, 0, sizeof(hints));
-		hints.ai_flags = hintFlags;
-		rc = getaddrinfo(fqname, NULL, &hints, &pAI);
-		if (rc == 0)
+		if (!it->ifa_addr)
+			continue;
+		if (it->ifa_addr->sa_family == AF_INET)
 		{
-			HostEntry result(pAI);
-			freeaddrinfo(pAI);
-			return result;
+			if (reinterpret_cast<const struct sockaddr_in*>(it->ifa_addr)->sin_addr.s_addr != htonl(INADDR_LOOPBACK))
+				seenIPv4 = true;
 		}
-		else
+		else if (it->ifa_addr->sa_family == AF_INET6)
 		{
-			aierror(rc, address.toString());
+			if (!IN6_IS_ADDR_LOOPBACK(&reinterpret_cast<const struct sockaddr_in6*>(it->ifa_addr)->sin6_addr))
+				seenIPv6 = true;
 		}
 	}
-	else
-	{
-		aierror(rc, address.toString());
-	}
-#else
-	struct hostent* he = gethostbyaddr(reinterpret_cast<const char*>(address.addr()), address.length(), address.af());
-	if (he)
-	{
-		return HostEntry(he);
-	}
+	freeifaddrs(addresses);
 #endif
-	int err = lastError();
-	error(err, address.toString()); // will throw an appropriate exception
-	throw NetException(); // to silence compiler
+}
+
+
+/// Parses an IPv4 or IPv6 address literal, including what `IPAddress::tryParse` rejects: the all-zero IPv6
+/// address `::` and a numeric zone index (`fe80::1%2`; it accepts only interface names, such as `fe80::1%eth0`).
+bool tryParseAddressLiteral(const std::string& hostname, IPAddress& address)
+{
+	if (IPAddress::tryParse(hostname, address))
+		return true;
+#if defined(POCO_HAVE_IPv6)
+	const auto percent = hostname.find('%');
+	const std::string addressPart = hostname.substr(0, percent);
+	struct in6_addr address6;
+	if (inet_pton(AF_INET6, addressPart.c_str(), &address6) != 1)
+		return false;
+
+	Poco::UInt32 scope = 0;
+	if (percent != std::string::npos)
+	{
+		const std::string zone = hostname.substr(percent + 1);
+		unsigned index = 0;
+		if (zone.empty()
+			|| !std::all_of(zone.begin(), zone.end(), [](unsigned char c) { return c >= '0' && c <= '9'; })
+			|| !NumberParser::tryParseUnsigned(zone, index))
+			return false;
+		scope = index;
+	}
+	address = IPAddress(&address6, sizeof(address6), scope);
+	return true;
+#else
+	return false;
+#endif
+}
+
+
+/// The lines of the hosts file that contain a name.
+struct HostsFileEntry
+{
+	/// The first name of the first line that contains the name.
+	std::string canonicalName;
+	HostEntry::AddressList addresses;
+};
+
+
+/// Looks up a name in the hosts file as the glibc does: only the lines that contain the name count.
+/// c-ares merges the lines that share a name or an address into one entry, so with
+/// "127.0.0.1 localhost", "::1 localhost" and "127.0.0.1 myhost", it resolves `myhost` to `::1` too,
+/// with `localhost` as the canonical name. The file is the one that c-ares reads.
+/// A missing file contains no names; any other error to read it is thrown, so that the addresses
+/// of a name are never taken from the merged entries of c-ares unchecked.
+std::optional<HostsFileEntry> lookupHostsFile(const std::string& hostname)
+{
+	const char* path = "/etc/hosts";
+	std::FILE* file = std::fopen(path, "re");
+	if (!file)
+	{
+		if (errno == ENOENT)
+			return std::nullopt;
+		throw DNSException(std::string("Cannot open the hosts file ") + path + ": " + std::strerror(errno), hostname, EAI_SYSTEM);
+	}
+
+	std::string content;
+	char buffer[4096];
+	size_t size = 0;
+	while ((size = std::fread(buffer, 1, sizeof(buffer), file)) > 0)
+		content.append(buffer, size);
+	const bool failed = std::ferror(file);
+	const int error = errno;
+	std::fclose(file);
+	if (failed)
+		throw DNSException(std::string("Cannot read the hosts file ") + path + ": " + std::strerror(error), hostname, EAI_SYSTEM);
+
+	std::optional<HostsFileEntry> result;
+	std::istringstream lines(content);
+	std::string line;
+	while (std::getline(lines, line))
+	{
+		line.erase(std::find(line.begin(), line.end(), '#'), line.end());
+		std::istringstream tokens(line);
+		std::string addressString;
+		if (!(tokens >> addressString))
+			continue;
+
+		IPAddress address;
+		if (!IPAddress::tryParse(addressString, address))
+			continue;
+
+		std::string firstName;
+		std::string name;
+		bool matches = false;
+		while (tokens >> name)
+		{
+			if (firstName.empty())
+				firstName = name;
+			if (Poco::icompare(name, hostname) == 0)
+				matches = true;
+		}
+		if (!matches)
+			continue;
+
+		if (!result)
+			result.emplace(HostsFileEntry{firstName, {}});
+		if (std::find(result->addresses.begin(), result->addresses.end(), address) == result->addresses.end())
+			result->addresses.push_back(address);
+	}
+	return result;
+}
+
+
+/// Whether an address returned by c-ares is one of the addresses of the hosts file,
+/// also as an IPv4-mapped IPv6 address (`DNS_HINT_AI_V4MAPPED`).
+bool isListedAddress(const IPAddress& address, const HostEntry::AddressList& listed)
+{
+	for (const auto& candidate : listed)
+	{
+		if (address == candidate)
+			return true;
+#if defined(POCO_HAVE_IPv6)
+		if (address.family() == IPAddress::IPv6 && candidate.family() == IPAddress::IPv4 && address.isIPv4Mapped()
+			&& std::memcmp(static_cast<const char*>(address.addr()) + 12, candidate.addr(), 4) == 0)
+			return true;
+#endif
+	}
+	return false;
+}
+
+
+/// The localhost names of RFC 6761, which c-ares never sends to DNS and always resolves to the loopback addresses.
+bool isLocalhostName(const std::string& hostname)
+{
+	static const std::string suffix = ".localhost";
+	if (Poco::icompare(hostname, "localhost") == 0)
+		return true;
+	return hostname.size() >= suffix.size() && Poco::icompare(hostname, hostname.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+
+/// Reads the values of one `hosts` entry of a configuration file into the sources ("f" for the hosts file,
+/// "b" for DNS), as c-ares does. Unknown values (other NSS modules, actions such as `[NOTFOUND=return]`) are skipped.
+void parseLookups(const std::string& values, const char* separators, std::string& lookups)
+{
+	std::string result;
+	size_t pos = 0;
+	while (pos < values.size())
+	{
+		const size_t end = std::min(values.find_first_of(separators, pos), values.size());
+		const std::string value = Poco::trim(values.substr(pos, end - pos));
+		pos = end + 1;
+
+		char source = 0;
+		for (const char* name : {"dns", "bind", "bind4", "bind6", "resolv", "resolve"})
+			if (Poco::icompare(value, name) == 0)
+				source = 'b';
+		for (const char* name : {"files", "file", "local", "local4", "local6"})
+			if (Poco::icompare(value, name) == 0)
+				source = 'f';
+		if (source && result.find(source) == std::string::npos)
+			result += source;
+	}
+	if (!result.empty())
+		lookups = result;
+}
+
+
+/// Calls `callback` for each trimmed line of a configuration file that does not begin with a comment.
+template <typename Callback>
+void forEachConfigLine(const char* path, Callback&& callback)
+{
+	std::ifstream file(path);
+	std::string line;
+	while (std::getline(file, line))
+	{
+		line = Poco::trim(line);
+		if (!line.empty() && line[0] != '#')
+			callback(line);
+	}
+}
+
+
+/// The sources of host names and their order, as c-ares determines them when it initializes a channel:
+/// `lookup` of `/etc/resolv.conf`, then the `hosts` entries of `/etc/nsswitch.conf`, `/etc/netsvc.conf`
+/// and `/etc/svc.conf` (the last one wins), "fb" by default. c-ares does not expose the result, and
+/// `hostByName` needs it to know which source an answer comes from.
+std::string lookupOrder()
+{
+	std::string lookups = "fb";
+
+	forEachConfigLine("/etc/resolv.conf", [&](const std::string& line)
+	{
+		if (line[0] == ';')
+			return;
+		const size_t end = line.find_first_of(" \t");
+		if (end == std::string::npos)
+			return;
+		const std::string option = line.substr(0, end);
+		if (option != "lookup" && option != "hostresorder")
+			return;
+		std::string value = line.substr(end);
+		value.erase(std::min(value.find_first_of("#;"), value.size()));
+		parseLookups(value, " \t", lookups);
+	});
+
+	forEachConfigLine("/etc/nsswitch.conf", [&](const std::string& line)
+	{
+		const size_t colon = line.find(':');
+		if (colon != std::string::npos && Poco::trim(line.substr(0, colon)) == "hosts")
+			parseLookups(line.substr(colon + 1), " \t", lookups);
+	});
+
+	for (const char* path : {"/etc/netsvc.conf", "/etc/svc.conf"})
+	{
+		forEachConfigLine(path, [&](const std::string& line)
+		{
+			const size_t equals = line.find('=');
+			if (equals != std::string::npos && Poco::trim(line.substr(0, equals)) == "hosts")
+				parseLookups(line.substr(equals + 1), ",", lookups);
+		});
+	}
+
+	return lookups;
+}
+
+
+struct AddrInfoResult
+{
+	int status = ARES_SUCCESS;
+	struct ares_addrinfo* result = nullptr;
+
+	AddrInfoResult() = default;
+	AddrInfoResult(const AddrInfoResult&) = delete;
+	AddrInfoResult& operator=(const AddrInfoResult&) = delete;
+
+	~AddrInfoResult()
+	{
+		if (result)
+			ares_freeaddrinfo(result);
+	}
+
+	static void callback(void* arg, int status, int /*timeouts*/, struct ares_addrinfo* result)
+	{
+		auto* self = static_cast<AddrInfoResult*>(arg);
+		self->status = status;
+		self->result = result;
+	}
+};
+
+
+struct NameInfoResult
+{
+	int status = ARES_SUCCESS;
+	std::string host;
+	/// See `AresChannel::socketStateCallback`.
+	std::exception_ptr exception;
+
+	static void callback(void* arg, int status, int /*timeouts*/, char* node, char* /*service*/)
+	{
+		auto* self = static_cast<NameInfoResult*>(arg);
+		self->status = status;
+		try
+		{
+			if (status == ARES_SUCCESS && node)
+				self->host = node;
+		}
+		catch (...)
+		{
+			self->exception = std::current_exception();
+		}
+	}
+};
+
+
+} // namespace
+
+
+HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
+{
+	int family = AF_UNSPEC;
+	if (hintFlags & DNS_HINT_AI_ADDRCONFIG)
+	{
+		/// As in the glibc: if the host has addresses of only one family, resolve only to this family.
+		bool seenIPv4 = false;
+		bool seenIPv6 = false;
+		configuredAddressFamilies(seenIPv4, seenIPv6);
+		if (seenIPv4 != seenIPv6)
+			family = seenIPv4 ? AF_INET : AF_INET6;
+	}
+
+	IPAddress literal;
+	if (tryParseAddressLiteral(hostname, literal))
+	{
+		if (family != AF_UNSPEC && literal.af() != family)
+		{
+#if defined(EAI_ADDRFAMILY)
+			throw DNSException("Address family for hostname not supported", hostname, EAI_ADDRFAMILY);
+#else
+			throw DNSException("Address family for hostname not supported", hostname, EAI_FAMILY);
+#endif
+		}
+		return HostEntry(hostname, HostEntry::AddressList{literal});
+	}
+
+	if (hintFlags & DNS_HINT_AI_NUMERICHOST)
+		throw HostNotFoundException(hostname, EAI_NONAME);
+
+	struct ares_addrinfo_hints hints;
+	std::memset(&hints, 0, sizeof(hints));
+	hints.ai_family = family;
+	hints.ai_flags = ARES_AI_CANONNAME;
+	if (hintFlags & DNS_HINT_AI_V4MAPPED)
+		hints.ai_flags |= ARES_AI_V4MAPPED;
+	if (hintFlags & DNS_HINT_AI_ALL)
+		hints.ai_flags |= ARES_AI_ALL;
+
+	/// The sources are queried one by one rather than by one c-ares lookup, because the answer of the hosts file
+	/// has to be corrected (see `lookupHostsFile`), and only it: a name can have other addresses in DNS.
+	/// As in c-ares, the next source is tried when a name is not found, and other errors are thrown.
+	const bool localhost = isLocalhostName(hostname);
+	int status = ARES_ENOTFOUND;
+	for (const char source : lookupOrder())
+	{
+		std::optional<HostsFileEntry> hostsFileEntry;
+		if (source == 'f')
+		{
+			/// The same read gives both whether the hosts file has the name and its addresses.
+			/// c-ares answers from the hosts file only for the names that it contains, and for the localhost names.
+			hostsFileEntry = lookupHostsFile(hostname);
+			if (!hostsFileEntry && !localhost)
+				continue;
+		}
+		else if (source != 'b' || localhost)
+			continue;
+
+		const char lookups[] = {source, '\0'};
+		AddrInfoResult response;
+		{
+			AresChannel channel(lookups);
+			ares_getaddrinfo(channel.get(), hostname.c_str(), nullptr, &hints, &AddrInfoResult::callback, &response);
+			channel.wait();
+		}
+
+		status = response.status;
+		if (status == ARES_SUCCESS && (!response.result || !response.result->nodes))
+			status = ARES_ENODATA;
+		if (status == ARES_ENOTFOUND || status == ARES_ENODATA)
+			continue;
+		if (status != ARES_SUCCESS)
+			throwAresError(status, hostname);
+
+		HostEntry::AddressList addresses;
+		for (const struct ares_addrinfo_node* node = response.result->nodes; node; node = node->ai_next)
+		{
+			if (!node->ai_addr)
+				continue;
+			if (node->ai_addr->sa_family == AF_INET)
+			{
+				addresses.push_back(IPAddress(&reinterpret_cast<const struct sockaddr_in*>(node->ai_addr)->sin_addr, sizeof(in_addr)));
+			}
+#if defined(POCO_HAVE_IPv6)
+			else if (node->ai_addr->sa_family == AF_INET6)
+			{
+				const auto* address6 = reinterpret_cast<const struct sockaddr_in6*>(node->ai_addr);
+				addresses.push_back(IPAddress(&address6->sin6_addr, sizeof(in6_addr), address6->sin6_scope_id));
+			}
+#endif
+		}
+
+		/// A name from the hosts file keeps only the addresses of its own lines, in the order of c-ares (RFC 6724).
+		/// Without an entry, this is a localhost name that c-ares resolves to the loopback addresses.
+		if (hostsFileEntry)
+		{
+			const auto& listed = hostsFileEntry->addresses;
+			std::erase_if(addresses, [&listed](const IPAddress& address) { return !isListedAddress(address, listed); });
+			if (addresses.empty())
+			{
+				status = ARES_ENODATA;
+				continue;
+			}
+			return HostEntry(hostsFileEntry->canonicalName, addresses);
+		}
+
+		if (addresses.empty())
+		{
+			status = ARES_ENODATA;
+			continue;
+		}
+
+		/// The canonical name is the target of the last CNAME.
+		std::string name = response.result->name ? response.result->name : hostname;
+		for (const struct ares_addrinfo_cname* cname = response.result->cnames; cname; cname = cname->next)
+		{
+			if (cname->name)
+				name = cname->name;
+		}
+
+		return HostEntry(name, addresses);
+	}
+
+	throwAresError(status, hostname);
+}
+
+
+HostEntry DNS::hostByAddress(const IPAddress& address, unsigned hintFlags)
+{
+	SocketAddress sa(address, 0);
+
+	NameInfoResult response;
+	{
+		AresChannel channel;
+		ares_getnameinfo(channel.get(), sa.addr(), static_cast<ares_socklen_t>(sa.length()),
+			ARES_NI_LOOKUPHOST | ARES_NI_NAMEREQD, &NameInfoResult::callback, &response);
+		channel.wait();
+	}
+
+	if (response.exception)
+		std::rethrow_exception(response.exception);
+
+	if (response.status != ARES_SUCCESS)
+		throwAresError(response.status, address.toString());
+	if (response.host.empty())
+		throwAresError(ARES_ENOTFOUND, address.toString());
+
+	return hostByName(response.host, hintFlags);
 }
 
 
