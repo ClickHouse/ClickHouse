@@ -49,4 +49,8 @@
             GROUP BY bitAnd(number, 17)
         ))
     </query>
+
+    <!-- A set of 32768 keys probed with just over 16 rows per key, which builds its lookup table right before the end. -->
+    <query>SELECT count() FROM numbers_mt(557000) WHERE intHash64(number % 65536) IN (SELECT intHash64(number) FROM numbers(32768))</query>
+    <query>SELECT count() FROM zeros_mt(100000000) WHERE rand64() IN (SELECT intHash64(number) FROM numbers(4000))</query>
 </test>
