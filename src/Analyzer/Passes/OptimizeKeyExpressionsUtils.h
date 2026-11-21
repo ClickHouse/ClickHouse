@@ -3,6 +3,9 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <functional>
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -37,5 +40,10 @@ QueryTreeNodes getGroupByKeys(const QueryNode & query_node);
 /// Returns true if `node`, in an expression computed after `GROUP BY`, is a key, read from the aggregation result.
 /// Under `group_by_use_nulls` the analyzer replaces a key there with a copy converted to `Nullable`, not equal to the key.
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
+
+/// The nodes of `query_node`, outside of its subqueries, for which `is_candidate` holds and that are `GROUP BY` keys read
+/// from the aggregation result (see `isGroupByKeyAfterAggregation`). Collected before a pass rewrites any of them.
+std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodesAfterAggregation(
+    const QueryNode & query_node, const std::function<bool(const QueryTreeNodePtr &)> & is_candidate);
 
 }
