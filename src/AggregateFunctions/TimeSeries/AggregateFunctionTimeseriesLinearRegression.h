@@ -94,8 +94,17 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
         }
 
         /// Chan's parallel merge of two centered-moment aggregates.
+        /// Merging into an empty accumulator must copy `other` instead of running the weighted
+        /// update: the weights are all zero, which recomputes `mean_y` as `c * nb / nb` and rounds
+        /// for values like 0.1, turning a flat series' deriv non-zero (issue #132484).
         void merge(const Summary & other)
         {
+            if (count == 0)
+            {
+                *this = other;
+                return;
+            }
+
             if (other.count == 0)
                 return;
 
