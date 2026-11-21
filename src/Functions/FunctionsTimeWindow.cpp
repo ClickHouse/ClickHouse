@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
 #include <Common/IntervalKind.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -143,6 +144,18 @@ public:
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return type != HOP && type != HOP_START && type != HOP_END; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    /// The bounds of a hopping window are non-decreasing in the time: the end is the start of the hop interval plus the hop,
+    /// and the start is the end minus the window. The `hop` tuple is then non-decreasing in lexicographic order.
+    bool hasInformationAboutMonotonicity() const override { return type == HOP || type == HOP_START || type == HOP_END; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & argument_type, const Field &, const Field &) const override
+    {
+        /// `hopStart(window)` and `hopEnd(window)` only extract an element of a window tuple.
+        if (isTuple(argument_type))
+            return {};
+        return {.is_monotonic = true, .is_always_monotonic = true};
+    }
 
     /// No declarative signature yet. These variants (`tumble`, `tumbleStart`,
     /// `tumbleEnd`, `hop`, `hopStart`, `hopEnd`) return either a `DateTime`
@@ -398,6 +411,43 @@ struct TimeWindowImpl<HOP>
         }
     }
 
+    /// Adds `delta` units of `kind` to a window bound without wrapping around and throws if the result does not fit into `ToType`.
+    /// Together with the monotonic start of the hop interval, this makes the window bounds monotonic functions of the time.
+    template <typename ToType, IntervalKind::Kind kind>
+    static ToType addUnitsChecked(Int64 value, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        Int64 result = 0;
+        bool overflow = false;
+        if constexpr (kind == IntervalKind::Kind::Month)
+            result = time_zone.addMonths(ExtendedDayNum(static_cast<Int32>(value)), delta);
+        else if constexpr (kind == IntervalKind::Kind::Quarter)
+        {
+            /// `addQuarters` multiplies by 3 with wraparound, so count the months here and check the multiplication.
+            Int64 months = 0;
+            overflow = common::mulOverflow(delta, static_cast<Int64>(3), months);
+            if (!overflow)
+                result = time_zone.addMonths(ExtendedDayNum(static_cast<Int32>(value)), months);
+        }
+        else if constexpr (kind == IntervalKind::Kind::Year)
+            result = time_zone.addYears(ExtendedDayNum(static_cast<Int32>(value)), delta);
+        else
+        {
+            /// Weeks are counted in days, as the bounds are `Date`, and the other units in seconds.
+            constexpr Int64 unit = kind == IntervalKind::Kind::Week ? 7
+                : kind == IntervalKind::Kind::Day ? 86400
+                : kind == IntervalKind::Kind::Hour ? 3600
+                : kind == IntervalKind::Kind::Minute ? 60
+                : 1;
+            Int64 shift = 0;
+            overflow = common::mulOverflow(delta, unit, shift) || common::addOverflow(value, shift, result);
+        }
+
+        /// The calendar arithmetic saturates at the ends of the calendar, far outside of the range of `Date`.
+        if (overflow || result < 0 || result > static_cast<Int64>(std::numeric_limits<ToType>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
+        return static_cast<ToType>(result);
+    }
+
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
     executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
@@ -412,29 +462,11 @@ struct TimeWindowImpl<HOP>
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
-            ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
-            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
-            ToType wend_latest;
-
-            /// Subtracting a whole positive window must make the time strictly smaller: equality
-            /// means the span of the window wrapped around to a multiple of 2^32 seconds, which
-            /// would dodge the greater-than check.
-            if (wstart >= wend)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
-
-            do
-            {
-                wend_latest = wend;
-                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
-
-                /// Subtracting a positive hop must make the time strictly smaller, otherwise it wrapped around or saturated.
-                if (wend >= wend_latest)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
-            } while (wend > time_data[i]);
-
-            end_data[i] = wend_latest;
-            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, -window_num_units, time_zone));
+            /// The first window containing the time ends one hop after the start of its hop interval.
+            const Int64 hop_start = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
+            const ToType wend = addUnitsChecked<ToType, kind>(hop_start, hop_num_units, time_zone);
+            end_data[i] = wend;
+            start_data[i] = addUnitsChecked<ToType, kind>(wend, -static_cast<Int64>(window_num_units), time_zone);
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
