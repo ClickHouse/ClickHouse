@@ -97,6 +97,8 @@ ORDER BY event_time_microseconds;
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
+What a query runs under the identity of a `SQL SECURITY DEFINER` or `NONE` view or materialized view is logged as a child row of the query: a read of the view, a read through the materialized view, an insert into it, or its query run on `INSERT` into its source table. In such a row, `is_initial_query = 0`, `initial_query_id` is the query, `user` is the definer (empty for `NONE`), `query` is what ran (the view's query, or the read or write of the materialized view's target), and `tables`, `columns`, `partitions`, `projections` and `used_row_policies` are what it accessed. There is one row per distinct body and place it ran, with the type of the query's final row and no metrics.
+
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
 1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.

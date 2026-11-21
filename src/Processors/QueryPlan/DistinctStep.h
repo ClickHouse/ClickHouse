@@ -121,6 +121,9 @@ public:
     /// This affects only performance, so it is not serialized.
     void coalesceOutput() { coalesce_output = true; }
 
+    /// Never spill to disk: deduplicate in memory only.
+    void disableExternalDistinct() { external_distinct_disabled = true; }
+
 private:
     void updateOutputHeader() override;
 
@@ -142,6 +145,7 @@ private:
     UInt64 bloom_filter_bytes;
     Float64 pass_ratio_threshold_for_disabling_bloom_filter;
     Float64 max_ratio_of_set_bits_in_bloom_filter;
+    bool external_distinct_disabled = false;
 };
 
 }

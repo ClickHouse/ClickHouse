@@ -44,6 +44,7 @@
 #include <Core/Joins.h>
 #include <base/scope_guard.h>
 #include <ranges>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
