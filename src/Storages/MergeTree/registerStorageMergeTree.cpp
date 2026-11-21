@@ -1218,7 +1218,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// Not for a full-definition `ATTACH` either, so an existing table with such an expression stays loadable.
     if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
         && !(*storage_settings)[MergeTreeSetting::allow_suspicious_indices])
-        MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(metadata, nullptr);
+        MergeTreeData::checkKeyExpressionNamesForCollision(metadata, nullptr);
 
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
         MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());

@@ -2297,7 +2297,7 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
 }
 
-void MergeTreeData::checkKeyExpressionsNotNamedLikeColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
+void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
 {
     using Violations = std::vector<std::pair<String, String>>;
     auto get_violations = [](const StorageInMemoryMetadata & metadata)
@@ -7416,7 +7416,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
     if (!is_secondary_replay && !settings[Setting::allow_suspicious_indexes])
-        checkKeyExpressionsNotNamedLikeColumns(new_metadata, &old_metadata);
+        checkKeyExpressionNamesForCollision(new_metadata, &old_metadata);
 
     /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
     const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });

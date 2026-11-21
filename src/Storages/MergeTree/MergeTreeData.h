@@ -1217,7 +1217,7 @@ public:
     /// Throws if an element of the sorting, primary or sampling key or of a skip index is not the column itself but has
     /// the name of a stored column: writes and key analysis address columns by name, so one would be used for the other.
     /// With `old_metadata`, only an element that it does not have already is refused.
-    static void checkKeyExpressionsNotNamedLikeColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
+    static void checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
 
     /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
     /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
