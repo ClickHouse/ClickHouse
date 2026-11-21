@@ -545,8 +545,15 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
     /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
     clearCaches();
 
+    /// The RecentSamples and TimeRanges tables mirror the Samples table. If the Samples table is external, we don't truncate it,
+    /// so we must not truncate these auxiliary tables either, otherwise they would become inconsistent with the Samples table.
+    bool samples_is_inner = isInnerTable(ViewTarget::Samples);
+
     for (auto target_kind : getTargetKinds())
     {
+        if (!samples_is_inner && ((target_kind == ViewTarget::RecentSamples) || (target_kind == ViewTarget::TimeRanges)))
+            continue;
+
         /// We truncate only inner tables here.
         if (isInnerTable(target_kind))
         {
