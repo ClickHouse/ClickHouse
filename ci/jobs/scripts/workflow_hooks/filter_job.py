@@ -50,7 +50,8 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
-# A draft pull request runs only the fast test (and the docker images it runs in).
+# A draft pull request runs only the fast test (and the docker images it runs in), or with the `ci-performance`
+# label only the performance jobs (see `should_skip_job`).
 DRAFT_PR_JOBS = [
     JobNames.FAST_TEST,
     JobNames.DOCKER_BUILDS_ARM,
@@ -629,11 +630,13 @@ REVERT_PR_NOTE = (
 )
 
 DRAFT_PR_SKIP_REASON = (
-    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}'"
+    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}' "
+    f"(or '{Labels.CI_PERFORMANCE}' for the performance jobs)"
 )
 DRAFT_PR_NOTE = (
     "Draft PR: only the fast test runs. Mark the PR ready for review to run the full CI, "
-    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow."
+    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow. The `{Labels.CI_PERFORMANCE}` "
+    "label runs only the performance jobs, also in a draft."
 )
 
 
@@ -1039,7 +1042,9 @@ def should_skip_job(job_name):
 
     # A draft is work in progress: the fast test gives the author quick feedback, and the
     # full CI starts when the PR is marked ready for review (the PR workflow also runs on
-    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
+    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything. The
+    # `ci-performance` label runs the performance jobs and the builds they need (its filter
+    # below), so that a performance change can be measured while the PR is still a draft.
     # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
     # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
     # so a draft backport must still run its full CI.
@@ -1047,6 +1052,7 @@ def should_skip_job(job_name):
         _info_cache.pr_is_draft
         and _info_cache.workflow_name == SMALL_PR_WORKFLOW
         and job_name not in DRAFT_PR_JOBS
+        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
     ):
         _add_draft_note()
         return True, DRAFT_PR_SKIP_REASON
