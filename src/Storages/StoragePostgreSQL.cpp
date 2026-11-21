@@ -902,8 +902,17 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         /// that differ from the server's.
         PostgreSQLSettings postgresql_settings;
 
+        /// The SETTINGS clause overrides the named collection like its key-value arguments do, so it is checked the same way
+        /// when a user gives the definition, but not again for a replayed one, as for the `PostgreSQL` database engine: a key
+        /// that the collection marks `NOT OVERRIDABLE` later must not make the table fail to load, at the startup of the server
+        /// or on a short `ATTACH TABLE`, including that of a table of a `PostgreSQL` database, whose definition comes from the
+        /// stored definition of the database. A definition from a backup is checked like one the user gives.
+        const bool is_replayed_definition
+            = isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) && !args.is_restore_from_backup;
+
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id,
+            is_replayed_definition ? nullptr : args.storage_def->settings);
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 
@@ -1044,7 +1053,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a table follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the table, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the table fails to load with `Override not allowed`. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a table follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the table, so it overrides the same key added to the named collection later. It keeps applying if the collection later marks that key `NOT OVERRIDABLE`: the table still loads at the startup of the server and on a short `ATTACH TABLE`, also as a table of a `PostgreSQL` database, while a definition that a user gives with the same override, such as `CREATE TABLE`, a full `ATTACH TABLE` or a definition restored from a backup, is rejected with `Override not allowed`. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 

@@ -4123,6 +4123,18 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            /// The checks of the engine that need the user, such as its settings constraints. After the access that the query
+            /// needs, which `executeQueryOnCluster` checks too, so that a user who may not create the database gets that error.
+            if (create.storage && create.storage->engine && !create.attach_short_syntax)
+            {
+                const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(create.storage->engine->name);
+                if (features && features->check_definition_fn)
+                {
+                    getContext()->checkAccess(getRequiredAccess());
+                    features->check_definition_fn(*create.storage, getContext());
+                }
+            }
+
             return executeQueryOnCluster(create);
         }
     }
