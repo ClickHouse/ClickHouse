@@ -58,9 +58,11 @@
 
 /// We used to have only ABORT_ON_LOGICAL_ERROR macro, but most of its uses were actually in places where we didn't care about logical errors
 /// but wanted to check exactly if the current build type is debug or with sanitizer. This new macro is introduced to fix those places.
+/// `SANITIZER` is defined only by the `SANITIZE` option. A UBSan check in trap mode needs no runtime and does not
+/// make a sanitizer build.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 #    if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) \
-        || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+        || (defined(UNDEFINED_BEHAVIOR_SANITIZER) && defined(SANITIZER))
 #        define DEBUG_OR_SANITIZER_BUILD
 #    endif
 #endif

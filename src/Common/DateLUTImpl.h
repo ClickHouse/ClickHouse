@@ -1812,7 +1812,19 @@ public:
     {
         if (!offset_is_whole_number_of_minutes_during_epoch)
             return std::nullopt;
-        return ModularDivisor{minuteIntervalDivisor(minutes), offset_is_whole_number_of_minutes_in_lut_range};
+
+        const Int64 divisor = minuteIntervalDivisor(minutes);
+
+        /// Before the epoch the dedicated functions (`toStartOfFifteenMinutes` and the like) round relative to the
+        /// local midnight, which equals the modular result only if every offset in the LUT range is a multiple of
+        /// the divisor. Whole minutes are enough for a one-minute divisor; for a longer one that divides an hour,
+        /// whole hours are. An interval that does not divide an hour has no such function and keeps the fixed grid
+        /// counted from the epoch, as it does after the epoch, so it only needs whole minutes.
+        const bool valid_before_epoch = (divisor == 60 || 3600 % divisor != 0)
+            ? offset_is_whole_number_of_minutes_in_lut_range
+            : offset_is_whole_number_of_hours_in_lut_range;
+
+        return ModularDivisor{divisor, valid_before_epoch};
     }
 
     [[nodiscard]] std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const

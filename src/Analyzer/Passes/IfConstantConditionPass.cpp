@@ -104,7 +104,7 @@ public:
         const auto & dropped_node = arguments[condition_boolean_value ? 2 : 1];
 
         /// Aggregate functions and `arrayJoin` decide the number of rows, so a branch with them must not be dropped.
-        if (hasAggregateFunctionNodes(dropped_node) || hasFunctionNode(dropped_node, "arrayJoin"))
+        if (!isQueryOrUnionNode(dropped_node) && (hasAggregateFunctionNodes(dropped_node) || hasFunctionNode(dropped_node, "arrayJoin")))
             return;
 
         if (node->getResultType()->equals(*argument_node->getResultType()))

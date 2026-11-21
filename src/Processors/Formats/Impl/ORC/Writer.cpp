@@ -3,6 +3,8 @@
 #include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -1105,6 +1107,7 @@ public:
             /// timestamp with more than 999999 nanoseconds is stored with one more second, which the readers subtract.
             /// Between -1 and 0 seconds the stored seconds would be 0 and nothing is subtracted, so store the epoch,
             /// which all readers read the same way (see the documentation of the format).
+            /// Keep in sync with `replaceTimestampsStoredAsEpoch`.
             if (secs == -1 && nano > 999999)
             {
                 secs = 0;
@@ -1350,7 +1353,7 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
     context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
-    context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
+    context->timezone_is_utc = context->timezone_offset->isUTC();
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
     context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
 
@@ -1499,6 +1502,56 @@ void Writer::close()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC postscript is too large: {} bytes", postscript_data.size());
     write(postscript_data);
     write(std::string(1, static_cast<char>(postscript_data.size())));
+}
+
+ColumnPtr replaceTimestampsStoredAsEpoch(const ColumnPtr & column)
+{
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
+    {
+        auto data = replaceTimestampsStoredAsEpoch(const_column->getDataColumnPtr());
+        if (data == const_column->getDataColumnPtr())
+            return column;
+        return ColumnConst::create(data, const_column->size());
+    }
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        auto nested = replaceTimestampsStoredAsEpoch(nullable->getNestedColumnPtr());
+        if (nested == nullable->getNestedColumnPtr())
+            return column;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+    const auto * timestamps = checkAndGetColumn<ColumnDateTime64>(column.get());
+    if (!timestamps)
+        return column;
+
+    const Int64 multiplier = common::exp10_i64(static_cast<int>(timestamps->getScale()));
+    const Int64 nanos_multiplier = common::exp10_i64(9 - static_cast<int>(timestamps->getScale()));
+    /// The seconds are -1 and the nanoseconds are more than 999999, as in `TimestampColumnWriter::add`.
+    auto is_stored_as_epoch = [&](const DateTime64 & timestamp)
+    {
+        const Int64 value = timestamp.value;
+        return value < 0 && value > -multiplier && (value + multiplier) * nanos_multiplier > 999999;
+    };
+    const auto & data = timestamps->getData();
+    if (std::none_of(data.begin(), data.end(), is_stored_as_epoch))
+        return column;
+
+    auto result = IColumn::mutate(column);
+    for (auto & timestamp : assert_cast<ColumnDateTime64 &>(*result).getData())
+    {
+        if (is_stored_as_epoch(timestamp))
+            timestamp = 0;
+    }
+    return result;
+}
+
+void replaceTimestampsStoredAsEpoch(Chunk & chunk)
+{
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = replaceTimestampsStoredAsEpoch(column);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

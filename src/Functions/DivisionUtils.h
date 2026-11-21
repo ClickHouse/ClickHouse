@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>

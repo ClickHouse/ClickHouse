@@ -237,5 +237,9 @@ if (ENABLE_CFI)
     if (SANITIZE)
         message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
     endif()
-    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer: cfi-vcall, cfi-derived-cast")
+    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer")
 endif()
+
+# Reports CFI violations through the UBSan runtime and continues, so that one run finds all of them.
+# Only for finding violations: production builds must trap.
+option (ENABLE_CFI_DIAGNOSTICS "Report CFI violations and continue instead of trapping (requires ENABLE_CFI)" OFF)
