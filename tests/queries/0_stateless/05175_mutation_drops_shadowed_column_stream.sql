@@ -7,11 +7,10 @@
 -- enumerates the streams of the dropped name the same way, so it is covered here as well.
 
 DROP TABLE IF EXISTS t_mutation_drops_offsets;
-CREATE TABLE t_mutation_drops_offsets (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_mutation_drops_offsets (a Array(UInt64), `a.size0` UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1,
     serialization_info_version = 'with_missing_columns';
 
-ALTER TABLE t_mutation_drops_offsets ADD COLUMN `a.size0` UInt64;
 INSERT INTO t_mutation_drops_offsets (a) VALUES ([10, 20, 30]), ([40]);
 
 SELECT 'the array survives DROP COLUMN of the marker column';
@@ -21,11 +20,10 @@ SELECT sum(length(a)) FROM t_mutation_drops_offsets;
 
 -- `RENAME COLUMN` of a marker column resolves the name the same way; the array keeps its offsets.
 DROP TABLE IF EXISTS t_mutation_renames_offsets;
-CREATE TABLE t_mutation_renames_offsets (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_mutation_renames_offsets (a Array(UInt64), `a.size0` UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1,
     serialization_info_version = 'with_missing_columns';
 
-ALTER TABLE t_mutation_renames_offsets ADD COLUMN `a.size0` UInt64;
 INSERT INTO t_mutation_renames_offsets (a) VALUES ([10, 20, 30]), ([40]);
 
 SELECT 'the array survives RENAME COLUMN of the marker column';
@@ -37,11 +35,10 @@ SELECT sum(length(a)) FROM t_mutation_renames_offsets;
 -- A physically written column of the same name keeps its own files and loses them on the drop,
 -- while the array keeps its offsets.
 DROP TABLE IF EXISTS t_mutation_drops_physical;
-CREATE TABLE t_mutation_drops_physical (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_mutation_drops_physical (a Array(UInt64), `a.size0` UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1,
     serialization_info_version = 'with_missing_columns';
 
-ALTER TABLE t_mutation_drops_physical ADD COLUMN `a.size0` UInt64;
 INSERT INTO t_mutation_drops_physical (a, `a.size0`) VALUES ([10, 20, 30], 7), ([40], 8);
 
 SELECT 'the array survives DROP COLUMN of a physically written column';

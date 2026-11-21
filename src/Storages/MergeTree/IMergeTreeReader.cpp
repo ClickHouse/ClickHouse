@@ -501,14 +501,51 @@ String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_co
     return Nested::concatenateName(name_pair.first, name_pair.second);
 }
 
-std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const
+namespace
+{
+
+/// The length of the name of the leaf of the `Nested` column that @required_column, requested as its subcolumn, is read
+/// from: the leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`), and it may be
+/// followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found among the elements of the `Nested`
+/// type in the current metadata. The longest matching element wins: the leaves `x` and `x.y` may coexist, and a read of
+/// `x.y` must not be taken for the subcolumn `y` of the leaf `x`.
+std::optional<size_t> getNestedLeafLength(const NameAndTypePair & required_column)
+{
+    const auto & subcolumn_name = required_column.getSubcolumnName();
+    const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
+
+    std::optional<size_t> leaf_length;
+    for (const auto & element_name : nested_names)
+    {
+        bool is_prefix = subcolumn_name.starts_with(element_name)
+            && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+        if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+            leaf_length = element_name.size();
+    }
+    return leaf_length;
+}
+
+}
+
+std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(
+    const NameAndTypePair & required_column, std::optional<String> * nested_leaf_in_part) const
 {
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
 
+    if (nested_leaf_in_part)
+        nested_leaf_in_part->reset();
+
     if (alter_conversions->isColumnRenamed(name_in_storage))
     {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+
+        if (nested_leaf_in_part && !subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+        {
+            if (auto leaf_length = getNestedLeafLength(required_column))
+                *nested_leaf_in_part = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
+        }
     }
     else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
     {
@@ -517,27 +554,15 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
           * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
           * misses it, so the part is searched for a column that only exists there under its old name
           * and the values are read as defaults while the mutation is pending.
+          * The leaf `x` must not be taken for the leaf `x.y` (see `getNestedLeafLength`), as it could have a
+          * pending rename of its own.
           */
-        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
-        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
-        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
-        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
-        /// of the leaf `x`, which could have a pending rename of its own.
-        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
-
-        std::optional<size_t> leaf_length;
-        for (const auto & element_name : nested_names)
-        {
-            bool is_prefix = subcolumn_name.starts_with(element_name)
-                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
-
-            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
-                leaf_length = element_name.size();
-        }
-
+        auto leaf_length = getNestedLeafLength(required_column);
         if (leaf_length)
         {
             auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
+            if (nested_leaf_in_part)
+                *nested_leaf_in_part = leaf_name;
 
             if (alter_conversions->isColumnRenamed(leaf_name))
             {
@@ -547,6 +572,8 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
 
                 name_in_storage = old_leaf_split.first;
                 subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
+                if (nested_leaf_in_part)
+                    *nested_leaf_in_part = Nested::concatenateName(old_leaf_split.first, old_leaf_split.second);
             }
         }
     }
@@ -559,9 +586,45 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
-std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const
+std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
+    const String & name_in_storage,
+    const String & subcolumn_name,
+    bool requested_as_nested,
+    const std::optional<String> & nested_leaf_in_part) const
 {
     auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
+    const auto & stored_columns = data_part_info_for_read->getColumnsDescription();
+
+    /// The lookup goes through subcolumns because for a wide part the flattened columns of a `Nested` column are
+    /// collected back into one column, whose subcolumns they become. A column of the table must not be answered that
+    /// way by another column: a column named like a subcolumn of another column (`a.size0` next to an `Array` column
+    /// `a`, created by `CREATE TABLE` or added by an older version) may be missing from a part, which then holds the
+    /// subcolumn of the other column under its name. The column's default belongs there, not the sizes of `a`.
+    bool is_missing = false;
+    if (subcolumn_name.empty())
+    {
+        is_missing = !stored_columns.hasPhysical(name_in_part);
+    }
+    else if (!stored_columns.hasPhysical(name_in_part))
+    {
+        /// For the same reason a subcolumn is read only from the column that holds it in the table: a part that does
+        /// not hold a column `a.x` next to a `JSON` column `a` extracts the subcolumn `a.x.y` from the default of `a.x`,
+        /// not from the path `x.y` of `a`. For a wide part a `Nested` column is found here as the column collected from
+        /// its flattened columns.
+        auto parent_in_part = part_columns.tryGetPhysical(name_in_storage);
+        is_missing = !parent_in_part;
+
+        /// A column `a.x` of type `Array` is requested as the subcolumn `x` of a `Nested` column `a` (see
+        /// `Nested::convertToSubcolumns`). Another kind of column `a` of the part, such as a `JSON` column, does not hold it:
+        /// only a `Nested` column collected from the flattened columns, or the flattened column `a.x` itself.
+        /// It is the flattened column of exactly this leaf: a stored column with a shorter name, such as `a.x` for the
+        /// leaf `a.x.y`, is another column of the table, and its subcolumns or paths are not the values of the leaf.
+        if (parent_in_part && requested_as_nested && !isNested(parent_in_part->type))
+            is_missing = !nested_leaf_in_part || !stored_columns.hasPhysical(*nested_leaf_in_part);
+    }
+
+    if (is_missing)
+        return {};
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
     if (auto column_in_part = part_columns.tryGetColumn(options, name_in_part))
@@ -610,13 +673,28 @@ SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndType
 
 IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second);
+    std::optional<String> nested_leaf_in_part;
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column, &nested_leaf_in_part);
+    const bool requested_as_nested = isNested(required_column.getTypeInStorage());
+    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second, requested_as_nested, nested_leaf_in_part);
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     if (!column_in_part)
     {
+        /// A column `a.x` requested as the subcolumn `x` of a `Nested` column `a` is missing from a part that has another
+        /// kind of column `a`, such as a `JSON` column. The streams of the `Nested` column, like its shared sizes `a.size0`,
+        /// must not be looked up in that column, so the column is read as the missing column `a.x` in its own right.
+        if (requested_as_nested && !name_pair.second.empty())
+        {
+            auto parent_in_part = part_columns.tryGetPhysical(name_pair.first);
+            if (parent_in_part && !isNested(parent_in_part->type))
+            {
+                NameAndTypePair missed_column{Nested::concatenateName(name_pair.first, name_pair.second), required_column.type};
+                return {missed_column, IDataType::getSerialization(missed_column)};
+            }
+        }
+
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())

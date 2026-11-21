@@ -306,7 +306,10 @@ private:
 
     /// Returns actual column name in part, which can differ from table metadata.
     [[nodiscard]] String getColumnNameInPart(const NameAndTypePair & required_column) const;
-    [[nodiscard]] std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+    /// @nested_leaf_in_part, when given, receives the name in the part of the flattened column (such as `n.x`) of the leaf of
+    /// a `Nested` column that @required_column is requested from as a subcolumn, or nothing if it is not such a column.
+    [[nodiscard]] std::pair<String, String> getStorageAndSubcolumnNameInPart(
+        const NameAndTypePair & required_column, std::optional<String> * nested_leaf_in_part = nullptr) const;
 
     /// The column and its serialization as they are in the part, both of which can differ from table metadata.
     struct ColumnAndSerializationInPart
@@ -326,7 +329,13 @@ private:
 
     /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
     /// column or subcolumn.
-    [[nodiscard]] std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
+    /// @requested_as_nested tells that the column is a subcolumn of a `Nested` column, whose leaf is stored in the part
+    /// as the flattened column @nested_leaf_in_part (if the requested name matches a leaf).
+    [[nodiscard]] std::optional<NameAndTypePair> tryGetColumnInPart(
+        const String & name_in_storage,
+        const String & subcolumn_name,
+        bool requested_as_nested,
+        const std::optional<String> & nested_leaf_in_part) const;
 
     /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
     /// none for it or when it is not safe to share with the other readers.
