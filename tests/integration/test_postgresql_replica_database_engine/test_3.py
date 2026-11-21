@@ -3891,7 +3891,7 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table, its schema, or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4085,7 +4085,7 @@ def test_fresh_attach_table_refuses_publication_changed_after_snapshot(started_c
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table, its schema, or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4158,7 +4158,7 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(
     )
     assert_logs_contain_with_retry(
         instance,
-        f"replication slot {slot_name}: the publication .{publication}., or a replicated table or its partition ancestry, was changed after the snapshot was exported",
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table, its schema, or its partition ancestry, was changed after the snapshot was exported",
         retry_count=60,
         sleep_time=1,
     )
@@ -4169,6 +4169,68 @@ def test_fresh_attach_table_refuses_partition_attached_after_snapshot(
     cursor.execute(f"DROP PUBLICATION IF EXISTS \"{publication}\"")
     cursor.execute(f"DROP TABLE IF EXISTS {parent}")
     cursor.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_fresh_attach_table_refuses_schema_renamed_after_snapshot(started_cluster):
+    # The schema of a published table is renamed after the snapshot is exported for a user-managed replication slot,
+    # and renamed back. Neither the catalog rows of the publication nor the `pg_class` row of the table change, but
+    # a row committed in between is not in the snapshot and is decoded under the other schema name, which the replicated
+    # table does not match, so the attach must be refused.
+    schema = "fresh_attach_renamed_schema"
+    other_schema = "fresh_attach_renamed_schema_away"
+    table = "fresh_attach_renamed_schema_table"
+    table_uuid = "00000000-0000-0000-0000-000000125968"
+    slot_name = "fresh_attach_renamed_schema_slot"
+    publication = f"postgres_database_{schema}.{table}_ch_publication"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"DROP SCHEMA IF EXISTS {other_schema} CASCADE")
+    cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    cursor.execute(f"CREATE SCHEMA {schema}")
+    cursor.execute(
+        f"CREATE TABLE {schema}.{table} (key integer NOT NULL, value integer, PRIMARY KEY (key))"
+    )
+    cursor.execute(f"INSERT INTO {schema}.{table} VALUES (1, 10)")
+    cursor.execute(
+        f"CREATE PUBLICATION \"{publication}\" FOR TABLE ONLY {schema}.{table}"
+    )
+
+    replication_connection = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        replication=True,
+        auto_commit=True,
+    )
+    snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
+    cursor.execute(f"ALTER SCHEMA {schema} RENAME TO {other_schema}")
+    cursor.execute(f"INSERT INTO {other_schema}.{table} VALUES (2, 20)")
+    cursor.execute(f"ALTER SCHEMA {other_schema} RENAME TO {schema}")
+
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{schema}.{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_replication_slot = '{slot_name}',
+                 materialized_postgresql_snapshot = '{snapshot}',
+                 materialized_postgresql_tables_list_with_schema = 1,
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+    assert_logs_contain_with_retry(
+        instance,
+        f"replication slot {slot_name}: the publication .{publication}., or a replicated table, its schema, or its partition ancestry, was changed after the snapshot was exported",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    drop_replication_slot(replication_connection, slot_name)
+    replication_connection.close()
+    cursor.execute(f"DROP PUBLICATION IF EXISTS \"{publication}\"")
+    cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
 
 
 def test_database_initial_snapshot_retried_after_connection_loss(started_cluster):
