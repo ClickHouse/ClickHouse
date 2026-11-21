@@ -983,10 +983,17 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     auto is_variant_blob_leaf = [&](size_t idx)
     {
         const parq::SchemaElement & element = file_metadata.schema[idx];
-        return isPrimitiveNode(element)
+        const bool is_blob = isPrimitiveNode(element)
             && element.type == parq::Type::BYTE_ARRAY
             && element.repetition_type != parq::FieldRepetitionType::REPEATED
-            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+            && !element.__isset.logicalType
+            && !element.__isset.converted_type;
+        if (!is_blob && group_annotated_variant)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed Parquet variant column {}: `{}` must be an unannotated BYTE_ARRAY leaf",
+                node.getNameForLogging(), element.name);
+        return is_blob;
     };
 
     if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
