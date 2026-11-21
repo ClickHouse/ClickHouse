@@ -1,0 +1,104 @@
+ac	0	1
+ac	1	2
+ac	\N	3
+ac cube	0	1
+ac cube	1	2
+ac cube	\N	3
+ac grouping sets	0	1
+ac grouping sets	1	2
+ac grouping sets	\N	3
+ac having	1	2
+ac having	\N	3
+ac expression	0
+ac expression	1
+ac expression	\N
+ac key of a key	0	0	1
+ac key of a key	0	\N	1
+ac key of a key	1	1	2
+ac key of a key	1	\N	2
+ac key of a key	\N	\N	3
+ac array key	[]	\N	3
+ac array key	[0]	0	1
+ac array key	[0]	\N	1
+ac array key	[1]	1	1
+ac array key	[1]	\N	1
+ac array key	[2]	1	1
+ac array key	[2]	\N	1
+ac legacy	0	1
+ac legacy	1	2
+ac legacy	\N	3
+ac remote	0	2
+ac remote	1	4
+ac remote	\N	6
+ac filter key	0	1
+ac filter key	1	1
+ac filter key	1	1
+ac filter key rollup	0	1
+ac filter key rollup	0	3
+ac filter key rollup	1	1
+ac filter key rollup	1	1
+dg	10	1
+dg	11	1
+dg	12	1
+dg	\N	3
+dg named	x	1
+dg named	y	1
+dg named	z	1
+dg named	\N	3
+dg default	0	2
+dg default	10	1
+dg default	11	1
+dg default	12	1
+dg default	\N	5
+dg key of a key	(10,'x')	10	1
+dg key of a key	(10,'x')	\N	1
+dg key of a key	(11,'y')	11	1
+dg key of a key	(11,'y')	\N	1
+dg key of a key	(12,'z')	12	1
+dg key of a key	(12,'z')	\N	1
+dg key of a key	\N	\N	3
+dg array	[]	1
+dg array	[]	3
+dg array	[1]	1
+dg array	[2,3]	1
+dg low cardinality	x	1
+dg low cardinality	y	1
+dg low cardinality	z	1
+dg low cardinality	\N	3
+dg tuple key	(10,'x')	10	1
+dg tuple key	(11,'y')	11	1
+dg tuple key	(12,'z')	12	1
+dg tuple key rollup	(10,'x')	10	1
+dg tuple key rollup	(11,'y')	11	1
+dg tuple key rollup	(12,'z')	12	1
+dg tuple key rollup	\N	\N	3
+qb	0	1
+qb	1	1
+qb	5.477226	1
+qb	\N	3
+qb cosine	0	1
+qb cosine	0.006004	1
+qb cosine	\N	2
+qb other key	1	0	1
+qb other key	1	\N	1
+qb other key	2	1	1
+qb other key	2	\N	1
+qb other key	3	5.477226	1
+qb other key	3	\N	1
+qb other key	\N	\N	3
+qb nullable	0	1
+qb nullable	5.477226	1
+qb nullable	\N	1
+qb nullable	\N	3
+qb column key	0	1
+qb column key	1	1
+qb column key	5.477226	1
+qb correlated	1	0
+qb correlated	2	1
+qb correlated	3	5.477226
+qb correlated key	[0,0,0,0]	5.477226	1
+qb correlated key	[1,2,3,4]	0	1
+qb correlated key	[1,2,3,5]	1	1
+ac explain	2	1	0
+dg explain	0	2
+qb explain	0	3
