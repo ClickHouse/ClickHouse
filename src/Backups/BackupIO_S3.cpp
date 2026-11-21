@@ -492,8 +492,8 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
             /// The native copy below issues its requests with the backup client, so `backup_restore_s3_retry_*`
-            /// already covers it. `dest_client` is used only by the fallback, which uploads to the destination
-            /// with it, so it is cloned with the same settings instead of keeping the ones of the disk.
+            /// already covers it. `dest_client` uploads to the destination in the fallback and checks the copied
+            /// object, so it is cloned with the same settings instead of keeping the ones of the disk.
             auto dest_client = disk_client_factory.getOrCreate(destination_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
             auto create_read_buffer = [&, this]

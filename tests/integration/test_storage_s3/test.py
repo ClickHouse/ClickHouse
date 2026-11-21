@@ -1178,6 +1178,31 @@ def test_request_payer(started_cluster):
     node.query("DROP TABLE t_request_payer_src SYNC")
     node.query("DROP TABLE t_request_payer_restored SYNC")
 
+    # A restore into a disk with `request_payer` from a backup on the same endpoint that is not requester-pays:
+    # the native copy is refused, so the disk's client uploads the object and checks it after the upload.
+    payer_disk = f"{disk}, request_payer = 'requester')"
+    owner_backup = f"S3('{base}/owner_pays/{uuid.uuid4().hex}', {keys})"
+    node.query(
+        f"CREATE TABLE t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {payer_disk} AS SELECT number FROM numbers(100)"
+    )
+    node.query(f"BACKUP TABLE t_request_payer_src TO {owner_backup}")
+    query_id = uuid.uuid4().hex
+    node.query(
+        f"RESTORE TABLE t_request_payer_src AS t_request_payer_restored FROM {owner_backup}",
+        settings={"s3_check_objects_after_upload": 1},
+        query_id=query_id,
+    )
+    assert node.query("SELECT count() FROM t_request_payer_restored") == "100\n"
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node.query(
+            f"SELECT ProfileEvents['S3CopyObject'] > 0 FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        == "1\n"
+    )
+    node.query("DROP TABLE t_request_payer_src SYNC")
+    node.query("DROP TABLE t_request_payer_restored SYNC")
+
     # `<http_forbid_headers>` refuses the header before any request is sent.
     other = started_cluster.instances["s3_non_default"]
     other.query(

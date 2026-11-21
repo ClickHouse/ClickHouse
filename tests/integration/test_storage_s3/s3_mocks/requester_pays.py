@@ -1,5 +1,6 @@
 # Acts as a requester-pays bucket in front of MinIO: a request is forwarded (by a redirect) only if it
 # carries a signed `x-amz-request-payer: requester` header, otherwise it is refused with 403.
+# Keys under `owner_pays/` are served without the header, as by a bucket that is not requester-pays.
 # A forwarded request is first redirected through `/__redirected` of this mock, which records and checks it again;
 # `GET /__requests` returns the recorded requests, `POST /__reset` clears them.
 import http.server
@@ -46,7 +47,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             r"SignedHeaders=([^,]+)", self.headers.get("Authorization", "")
         )
         signed_headers = signed.group(1).split(";") if signed else []
-        if (
+        if "/owner_pays/" not in self.path and (
             self.headers.get("x-amz-request-payer") != "requester"
             or "x-amz-request-payer" not in signed_headers
         ):
