@@ -11701,7 +11701,7 @@ For an Iceberg table, the setting also allows skipping whole data files and the 
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
-The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+With a distributed query plan (`make_distributed_plan = 1`), the granule pruning happens only if the runtime filter reaches the stage that reads the probe side: that stage also executes the JOIN (as with a broadcast join), or `distributed_plan_join_runtime_filters` sends the filter there. Otherwise the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost. A probe side read that finishes before its filter is ready is not pruned either.
 
 The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
 )", 0, \
