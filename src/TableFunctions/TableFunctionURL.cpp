@@ -662,7 +662,7 @@ The query can also be written in parentheses, as a usual subquery, with or witho
 
 For a query body, the `Content-Type` header is set to the content type of the output format (for example, `application/x-ndjson; charset=UTF-8` for `JSONLines`, or `text/csv; charset=UTF-8; header=present` for `CSVWithNames`), unless the `Content-Type` header is specified in `headers(...)`. A constant string body has no format, so no `Content-Type` header is added for it.
 
-:::note
+<Note>
 When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. Specifying an explicit `structure` avoids the extra schema-inference request:
 
 ```sql
@@ -675,7 +675,7 @@ SELECT * FROM url(
 ```
 
 Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
-:::
+</Note>
 
 The body is resolved in the scope of the enclosing query, so it can use `WITH` aliases and common table expressions. It cannot reference columns of the enclosing query:
 
