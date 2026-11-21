@@ -1,0 +1,6 @@
+A confined dictionary reads only the locked table
+100
+An attribute EXPRESSION that reads another table is rejected under the lock
+A source WHERE subquery is rejected under the lock
+The same EXPRESSION is allowed when the collection does not lock the confining keys
+999
