@@ -2,23 +2,18 @@
 sidebarTitle: 'Quickstart'
 slug: /agents/quickstart
 title: 'Quickstart'
-description: 'Build and run your first ClickHouse Agent against a ClickHouse Cloud service'
+description: 'Ask the default ClickHouse Agent, then build your first custom agent'
 keywords: ['AI', 'ClickHouse Cloud', 'agents', 'quickstart', 'agent builder']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge/>
-
-Build a custom agent in the Cloud console and run a natural-language query against your service.
+Start with the default ClickHouse Agent, then build a custom agent when you need reusable instructions, tools, or sharing controls.
 
 ## Prerequisites {#prerequisites}
 
 - A ClickHouse Cloud service you can query.
-- The **Create agent** option in the Agent Builder. If it's missing, ask an org admin to grant agent creation via Admin Settings as detailed in [sharing and access](/agents/sharing-and-access).
 
-## Build the agent {#build-the-agent}
+## Ask the default ClickHouse Agent {#ask-the-default-agent}
 
 <Steps>
 <Step title="Launch ClickHouse Agents" id="launch-agents">
@@ -29,12 +24,29 @@ From your Cloud service, click **ClickHouse agents** in the left sidebar to open
 
 <Frame>
 
-![Cloud service navigation with ClickHouse agents (Beta) selected, showing the launchpad with the Launch ClickHouse agents button](/images/cloud/agent-builder/launch-ch-agents.webp)
+![Cloud service navigation with ClickHouse agents selected, showing the launchpad with the Launch ClickHouse agents button](/images/cloud/agent-builder/launch-ch-agents-ga.png)
 
 </Frame>
 
 </div>
 </Step>
+<Step title="Ask a question" id="ask-a-question">
+
+Open a new conversation. The **ClickHouse Agent** is selected by default. Ask a focused question about a service you can access, for example, *"What are the ten largest tables by row count?"*
+
+If the agent cannot access the service or a query fails, check that you are using the intended Cloud organization and service. Contact an org admin if you need access or a different agent.
+</Step>
+<Step title="Inspect the result" id="inspect-the-result">
+
+Review the response before relying on it. Inspect any SQL, tool output, tables, charts, or files that the agent returns, and ask a follow-up question when you need to verify its assumptions or refine the analysis.
+</Step>
+</Steps>
+
+## Build a custom agent {#build-a-custom-agent}
+
+To create a custom agent, you need the **Create agent** option in the Agent Builder. If it is missing, ask an org admin to grant agent creation via Admin Settings as detailed in [sharing and access](/agents/sharing-and-access).
+
+<Steps>
 <Step title="Create the agent" id="create-the-agent">
 
 In the Agent Builder, click **Create New Agent** at the top of the left panel. Fill in the core fields:
