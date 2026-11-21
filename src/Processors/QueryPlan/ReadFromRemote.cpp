@@ -35,6 +35,7 @@
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ReplicatedTableDelay.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -790,12 +791,13 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
-            if (!replicated_storage)
+            /// The local table can be a view over replicated tables.
+            const auto local_replication = getReplicatedDelay(my_storage, my_context);
+            if (!local_replication.is_replicated)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
             }
-            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+            const UInt64 local_delay = local_replication.max_absolute_delay;
             const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
 
             if (try_results.empty() && local_delay >= max_allowed_delay)
