@@ -29,7 +29,7 @@ class MetaColumn:
 
 
 class LogClusterError(Exception):
-    """A read that did not produce a result."""
+    """A query that did not produce a result."""
 
 
 class LogClusterUnavailable(LogClusterError):
@@ -41,8 +41,9 @@ class LogClusterUnavailable(LogClusterError):
     connection), or the server reported one of the exception codes that
     describe its own load rather than the query - the shared cluster goes
     through minutes-long server-wide memory-pressure windows that fail every
-    query with Code 241. Nothing was read, so this says nothing about the
-    caller or about the commit it reports on.
+    query with Code 241. For an INSERT, no readiness probe got any answer.
+    Nothing was read or written, so this says nothing about the caller or
+    about the commit it reports on.
     """
 
 
@@ -219,6 +220,9 @@ class LogCluster:
         # and its answer timed out. None when the probe succeeded, had no
         # secret, could not connect, or got a gateway answer.
         self.probe_error = None
+        # The exception of the last `is_ready` probe that got no response at
+        # all, not even the headers of a redirect. None otherwise.
+        self._probe_transport_error = None
 
     def close_session(self):
         if self._session:
@@ -227,6 +231,7 @@ class LogCluster:
 
     def is_ready(self):
         self.probe_error = None
+        self._probe_transport_error = None
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
@@ -251,6 +256,7 @@ class LogCluster:
         params = {
             "query": "SELECT 1",
         }
+        answers = []
         try:
             response = requests.post(
                 url=self.url,
@@ -258,9 +264,14 @@ class LogCluster:
                 data="",
                 headers=self._auth,
                 timeout=3,
+                # Runs when the headers of a response arrived, a redirect
+                # included, before its body is read.
+                hooks={"response": lambda r, **kwargs: answers.append(r)},
             )
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            if not answers:
+                self._probe_transport_error = ex
             # A read timeout means the name resolved and the connection was accepted:
             # an outage of the cluster, not a wrong endpoint, which fails to resolve or connect.
             if isinstance(ex, requests.exceptions.ReadTimeout):
@@ -309,6 +320,7 @@ class LogCluster:
 
         response = None
         post_attempted = False
+        unanswered_probes = 0
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` against the same writer endpoint,
             # so it fails during the same pressure spikes as the INSERT itself.
@@ -317,6 +329,11 @@ class LogCluster:
             # before any POST is attempted. Retry it on the same schedule as
             # `select` below does.
             if not self.is_ready():
+                if isinstance(
+                    self._probe_transport_error,
+                    (requests.exceptions.ConnectionError, requests.exceptions.Timeout),
+                ):
+                    unanswered_probes += 1
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -371,6 +388,12 @@ class LogCluster:
             # ready. Say so, otherwise the caller's fail-close assert reports a
             # lost upload with no reason in the log.
             print("ERROR: LogCluster not ready")
+            if unanswered_probes and unanswered_probes == retries:
+                # Not even the constant `SELECT 1` got an answer (no HTTP
+                # response at all), so nothing about this data was rejected.
+                raise LogClusterUnavailable(
+                    f"no readiness probe got an answer, the last one failed with [{self._probe_transport_error}]"
+                )
         return False
 
     EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
