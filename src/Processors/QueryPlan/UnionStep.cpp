@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -125,6 +126,17 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
 
+    /// A `Resize`, not the `Concat` of the narrowing below: the branches can be exchange receivers whose
+    /// senders also feed the other buckets, so every branch must stay consumed. A branch left undemanded
+    /// would block its senders, and with them the same branch in every other bucket.
+    if (resize_to_max_threads && pipeline->getNumStreams() > new_max_threads)
+    {
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
+        pipeline->resize(new_max_threads);
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+    }
+
     /// The `max_streams_for_union_step*` cap only applies to steps built for SQL
     /// `UNION ALL` / `UNION DISTINCT`, and only while no downstream step relies on
     /// per-stream sortedness of the union output. For all other cases the narrowing
@@ -185,6 +197,8 @@ void UnionStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (allow_narrowing)
         flags |= 1;
+    if (resize_to_max_threads && ctx.step_version >= 1)
+        flags |= 2;
     writeIntBinary(flags, ctx.out);
 }
 
@@ -195,18 +209,26 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
-    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+    auto step = std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+    if (flags & 2)
+        step->resizeToMaxThreads();
+    return step;
 }
 
 QueryPlanStepPtr UnionStep::clone() const
 {
-    return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
+    auto step = std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
+    step->resize_to_max_threads = resize_to_max_threads;
+    return step;
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Union", &UnionStep::deserialize);
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0},
+        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_RESIZE_TO_MAX_THREADS}};
+    registry.registerStep("Union", &UnionStep::deserialize, versions);
 }
 
 }
