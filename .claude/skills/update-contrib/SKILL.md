@@ -29,7 +29,14 @@ CVE list). In that mode:
 - if the update needs a change inside a ClickHouse fork that does not exist yet, stop and write the reason to the
   `BLOCKED.md` path named in the prompt instead of improvising;
 - finish by writing the report the prompt asks for (`REPORT.md`) with an explicit "Open concerns" section
-  ("none" when there are none).
+  ("none" when there are none);
+- in the report and the final message, state what was committed locally (branch, commit); do not write "nothing
+  pushed" / "no PR opened" — publishing happens later, after a human review gate, outside this run;
+- commit with the repository's configured identity (the pipeline sets the bot author and signing in the repo
+  config); never pass `-c user.name`, `-c user.email` or `--author` to git;
+- take CVE ids, descriptions and fixed-in versions only from the list in the prompt (the pipeline's CVE tables); do
+  not consult NVD, cveawg.mitre.org, OSV, GitHub advisories or vendor CVE pages, and do not cite ids that are not in
+  that list. Upstream changelogs/commits may be used only to map a listed id to its fixing commit (say "inferred").
 
 ## Background
 
@@ -166,6 +173,12 @@ git checkout -b "bump-${LIB}-${VERSION}"     # pipeline mode: use the branch nam
 
 ### 5. Update the fork (if applicable)
 
+A fork-preparation run hands off to a later ClickHouse bump, so its report starts with a fixed `## Bump still
+required` section — the pointer target (the fork branch head after the fork PR merges, from `git ls-remote`), every
+`contrib/<lib>-cmake/` or `src/` edit the bump needs, and the tests to run — and ends with one line
+`BUILD_RESULT: pass|fail|not-run` (pass = the library target and `clickhouse` both built against the rebased
+branch). Keep that section short and complete; long conflict narratives go below it.
+
 If the library uses a ClickHouse fork and has patches, the new branch `ClickHouse/<new-version>` must exist in the
 fork with the patches rebased onto the upstream tag before the ClickHouse-side bump:
 
@@ -300,8 +313,8 @@ grep -rl "$LIB" tests/queries/0_stateless/ --include='*.sql' --include='*.sh' | 
 
 ### 12. Commit
 
-Use the title format `Bump \`<lib>\` from <old_version> to <new_version>` for straightforward bumps, or a more
-descriptive title if the update has a specific motivation. Stage every affected integration artifact, not just the
+Use the title format `Bump \`<lib>\` from <old_version> to <new_version>` (always both versions), or a more
+descriptive title that still names both versions if the update has a specific motivation. Stage every affected integration artifact, not just the
 submodule pointer (`.gitmodules`, `contrib/<lib>-cmake/`, `src/` fixes, test references). Do not amend or rebase;
 iterative "Fix build" / "Fix darwin" / "Fix MSan" commits are normal.
 
@@ -319,13 +332,34 @@ branch first), and any `rust_vendor` branch.
 Use the PR template at `.github/PULL_REQUEST_TEMPLATE.md`. Keep the description short and structured: one sentence
 of what and why; bullets for CVEs with their applicability; bullets for the ClickHouse-side changes; bullets for
 user-visible behaviour changes (a stored-format change is a compatibility warning); for forks, which patches are
-carried. Never enumerate what did not change. Changelog category for contrib bumps is
-`Build/Testing/Packaging Improvement` with the entry ``Update `<lib>` to <version>.``; use `Bug Fix` only when the
-PR exists to fix a specific user-visible bug.
+carried. Never enumerate what did not change. The title and the changelog entry always name both versions:
+``Bump `<lib>` from <old> to <new>`` and ``Update `<lib>` from <old> to <new>.``. Changelog category for contrib
+bumps is `Build/Testing/Packaging Improvement`; `Critical Bug Fix` only when a CVE or bug the bump fixes actually
+reaches ClickHouse, and that choice is the reviewer's, not the bump's.
 
 ```bash
 gh pr create --draft --title "<title>" --body-file <body.md>
 ```
+
+## Vendored copies (not submodules)
+
+A few libraries are copied into the tree instead of being submodules — currently expat inside
+`base/poco/XML/src` (headers in `base/poco/XML/include/Poco/XML/`). There is no pointer to move; the update is a
+three-way merge of upstream's change into ClickHouse's modified copy:
+
+1. Read the current version from `XML_MAJOR_VERSION`/`XML_MINOR_VERSION`/`XML_MICRO_VERSION` in
+   `base/poco/XML/include/Poco/XML/expat.h`; fetch the old and the new upstream tag (`R_2_9_0`, `R_2_10_0`) into a
+   scratch directory outside the repository.
+2. For each vendored file: `git merge-file <in-tree copy> <old tag file> <new tag file>` (upstream `xcs.c` maps to
+   `xmlxcs.c`); copy files new upstream with the Poco include paths and `extern "C"` guards the other files use.
+3. Re-check ClickHouse's local adaptations after the merge: `EXPAT_POCO` blocks, `XML_ResetHandlerCallDepth`, and the
+   removed debug/accounting code (`getDebugLevel`, `accountingReportStats`, `entityTracking*`, `EXPAT_*_DEBUG`);
+   `git diff <old tag> <in-tree copy>` before the merge is the list to preserve.
+4. Normalise new upstream files to the style check (licence headers with collapsed double spaces like the existing
+   files; trailing whitespace) — `ci/jobs/scripts/check_style` rejects them otherwise.
+5. Build `clickhouse` and run the XML config tests (`clickhouse extract-from-config`, `format('XML')` ones).
+
+`base/poco` itself is never updated; only the vendored expat inside it is.
 
 ## Libraries with known dependency chains
 
@@ -335,7 +369,6 @@ Some libraries require co-bumping dependencies. `contrib/CMakeLists.txt` documen
 - `arrow` requires: `snappy`, `thrift`, `double-conversion`, `xsimd` (and regenerates its flatbuffers bindings)
 - `avro` requires: `snappy`
 - `AMQP-CPP` requires: `libuv`
-- `cassandra` requires: `libuv`
 - `librdkafka` requires: `libgsasl`
 - `libhdfs3` requires: `google-protobuf`, `krb5`, `isa-l`
 - `hive-metastore` requires: `thrift`, `avro`, `arrow`, `libhdfs3`
