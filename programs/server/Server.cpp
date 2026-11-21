@@ -3752,6 +3752,8 @@ try
             /* start_servers= */ true,
             ServerType(ServerType::Type::QUERIES_ALL),
             /* only_introspection_protocols= */ true);
+        for (const auto & server : introspection_servers)
+            introspection_port_names.insert(server.getPortName());
     }
 
     try
@@ -4574,6 +4576,13 @@ void Server::createServers(
 
         if (!config.has(prefix + "port"))
             continue;
+
+        if (!only_introspection_protocols && introspection_port_names.contains(port_name))
+        {
+            LOG_WARNING(&logger(), "Protocol '{}' is served by an introspection listener, which is not reconfigured on config reload. "
+                "Restart the server to apply its configuration", protocol);
+            continue;
+        }
 
         std::vector<std::string> hosts;
         if (config.has(prefix + "host"))
