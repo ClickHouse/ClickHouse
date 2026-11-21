@@ -1,0 +1,1619 @@
+== T01: SEMI subset, drop the looser one ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T02: SEMI identical filters, drop one ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.age = 33
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T03: ANTI subset, drop the stricter one ==
+-- rows  opt=0 --
+-- rows  opt=1 --
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T04: SEMI through thin subquery wrapper ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.age = 33
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.age = 33
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T05: SEMI key permutation in ON (a=b vs b=a) ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table3.uid = __table1.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table3.uid = __table1.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T06: SEMI three-way, only one redundant pair ==
+-- rows  opt=0 --
+2
+3
+5
+-- rows  opt=1 --
+2
+3
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age > 20
+) AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table6.uid AS uid
+    FROM default.users AS __table6
+    WHERE __table6.age > 30
+) AS __table5 ON __table1.uid = __table5.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age > 20
+) AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table6.uid AS uid
+    FROM default.users AS __table6
+    WHERE __table6.age > 30
+) AS __table5 ON __table1.uid = __table5.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T33: SEMI multi-conjunct filters in different order, equivalent => drop one ==
+-- rows  opt=0 --
+2
+-- rows  opt=1 --
+2
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (__table5.active = 1) AND (__table5.age = 33)
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T34: SEMI multi-conjunct strict superset (reordered) => drop the looser one ==
+-- rows  opt=0 --
+2
+-- rows  opt=1 --
+2
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1) AND (__table3.name = \'Bob\')
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (__table5.active = 1) AND (__table5.age = 33)
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1) AND (__table3.name = \'Bob\')
+) AS __table2 ON __table1.uid = __table2.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T35: aliases everywhere (outer table alias, inner table alias, column alias on join key) ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS my_uid
+    FROM default.users AS __table5
+    WHERE __table5.age = 33
+) AS __table4 ON __table1.uid = __table4.my_uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T38: SEMI multi-key ON, drop the looser one ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T39: SEMI multi-key ON, conjuncts reordered and operands flipped, still optimises ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table3.age = __table1.age) AND (__table3.uid = __table1.uid)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table3.age = __table1.age) AND (__table3.uid = __table1.uid)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T07: different right tables, no elimination ==
+-- rows  opt=0 --
+10
+11
+-- rows  opt=1 --
+10
+11
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T08: different right physical columns, no elimination ==
+-- rows  opt=0 --
+-- rows  opt=1 --
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON __table1.uid = __table3.age
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON __table1.uid = __table3.age
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T09: different left key expressions, no elimination ==
+-- rows  opt=0 --
+10
+11
+12
+-- rows  opt=1 --
+10
+11
+12
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON __table1.alt_uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON __table1.alt_uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T10: SEMI mixed with ANTI on same table/key, no elimination ==
+-- rows  opt=0 --
+1
+3
+4
+-- rows  opt=1 --
+1
+3
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T11: incomparable filters, no elimination ==
+-- rows  opt=0 --
+2
+-- rows  opt=1 --
+2
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.active = 1
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.name = \'Bob\'
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.active = 1
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.name = \'Bob\'
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T12: range subsumption is not detected (AST-only check) ==
+-- rows  opt=0 --
+2
+3
+4
+5
+-- rows  opt=1 --
+2
+3
+4
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age > 10
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.age > 20
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age > 10
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.age > 20
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T13: right side has GROUP BY, skip ==
+-- rows  opt=0 --
+1
+2
+3
+4
+5
+-- rows  opt=1 --
+1
+2
+3
+4
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    GROUP BY __table4.uid
+    HAVING sum(__table4.age) > 10
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    GROUP BY __table4.uid
+    HAVING sum(__table4.age) > 10
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T14: right side has DISTINCT, skip ==
+-- rows  opt=0 --
+1
+2
+3
+4
+5
+-- rows  opt=1 --
+1
+2
+3
+4
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT DISTINCT __table4.uid AS uid
+    FROM default.users AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT DISTINCT __table4.uid AS uid
+    FROM default.users AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T15: right side has LIMIT, skip ==
+-- rows  opt=0 --
+1
+2
+3
+4
+5
+-- rows  opt=1 --
+1
+2
+3
+4
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    LIMIT _CAST(10, \'UInt64\')
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    LIMIT _CAST(10, \'UInt64\')
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T16: right side projects a computed column, skip ==
+-- rows  opt=0 --
+-- rows  opt=1 --
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.age AS uid
+    FROM default.users AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.age AS uid
+    FROM default.users AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T17: right side wraps a JOIN, skip ==
+-- rows  opt=0 --
+1
+2
+3
+4
+5
+-- rows  opt=1 --
+1
+2
+3
+4
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    ALL INNER JOIN default.users AS __table5 ON __table4.uid = __table5.uid
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    ALL INNER JOIN default.users AS __table5 ON __table4.uid = __table5.uid
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T18: right side has PREWHERE, must not be ignored ==
+-- rows  opt=0 --
+12
+-- rows  opt=1 --
+12
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users_pre AS __table3
+    WHERE __table3.age > 25
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users_pre AS __table5
+    PREWHERE __table5.age > 35
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users_pre AS __table3
+    WHERE __table3.age > 25
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users_pre AS __table5
+    PREWHERE __table5.age > 35
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T19: right column referenced in SELECT projection ==
+-- rows  opt=0 --
+2	Bob
+5	Eve
+-- rows  opt=1 --
+2	Bob
+5	Eve
+-- query opt=0 --
+SELECT
+    __table1.uid AS `u1.uid`,
+    __table2.name AS `u2.name`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.uid AS `u1.uid`,
+    __table2.name AS `u2.name`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T20: right column referenced in WHERE ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+WHERE __table2.age > 0
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+WHERE __table2.age > 0
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T21: right column referenced in ORDER BY ==
+-- rows  opt=0 --
+2
+5
+-- rows  opt=1 --
+2
+5
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY
+    __table2.name ASC,
+    __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY
+    __table2.name ASC,
+    __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T22: right column referenced in GROUP BY/HAVING ==
+-- rows  opt=0 --
+Bob	1
+Eve	1
+-- rows  opt=1 --
+Bob	1
+Eve	1
+-- query opt=0 --
+SELECT
+    __table2.name AS `u2.name`,
+    count() AS c
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+GROUP BY __table2.name
+HAVING count() > 0
+ORDER BY __table2.name ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table2.name AS `u2.name`,
+    count() AS c
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.age = 33
+) AS __table3 ON __table1.uid = __table3.uid
+GROUP BY __table2.name
+HAVING count() > 0
+ORDER BY __table2.name ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T23: ANTI right column referenced via sibling JOIN ON ==
+-- rows  opt=0 --
+13
+-- rows  opt=1 --
+13
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+) AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 5
+) AS __table4 ON __table1.uid = __table4.uid
+ALL LEFT JOIN default.child_t AS __table6 ON __table6.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+) AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 5
+) AS __table4 ON __table1.uid = __table4.uid
+ALL LEFT JOIN default.child_t AS __table6 ON __table6.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T24: subquery renames a different physical column, must not be confused ==
+-- rows  opt=0 --
+-- rows  opt=1 --
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users_alt AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.id AS uid
+    FROM default.users_alt AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users_alt AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table4.id AS uid
+    FROM default.users_alt AS __table4
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T40: SEMI multi-key vs single-key on same table => different bucket, no elimination ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT __table4.uid AS uid
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON __table1.uid = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T25: SEMI + RIGHT JOIN + SEMI, must NOT drop the OUTER (above-barrier) SEMI ==
+-- rows  opt=0 --
+10	100
+-- rows  opt=1 --
+10	100
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T26: SEMI + FULL JOIN + SEMI, must NOT drop the OUTER (above-barrier) SEMI ==
+-- rows  opt=0 --
+10	100
+-- rows  opt=1 --
+10	100
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T27: ANTI + RIGHT JOIN + ANTI, must NOT drop the INNER (below-barrier) ANTI ==
+-- rows  opt=0 --
+0	100
+0	102
+-- rows  opt=1 --
+0	100
+0	102
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+ANTI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+ANTI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T28: ANTI + FULL JOIN + ANTI, must NOT drop the INNER (below-barrier) ANTI ==
+-- rows  opt=0 --
+0	100
+0	102
+13	0
+-- rows  opt=1 --
+0	100
+0	102
+13	0
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+ANTI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table4.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.uid = 1
+) AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table4 ON __table1.uid = __table4.uid
+ANTI LEFT JOIN default.users AS __table5 ON __table1.uid = __table5.uid
+ORDER BY
+    __table1.oid ASC,
+    __table4.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T29: SEMI + RIGHT JOIN + SEMI, dropping the INNER (below-barrier) SEMI is safe ==
+-- rows  opt=0 --
+10	100
+-- rows  opt=1 --
+10	100
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ALL RIGHT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T30: ANTI + RIGHT JOIN + ANTI, dropping the OUTER (above-barrier) ANTI is safe ==
+-- rows  opt=0 --
+0	100
+0	101
+0	102
+-- rows  opt=1 --
+0	100
+0	101
+0	102
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ANTI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL RIGHT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T31: SEMI + INNER JOIN + SEMI, no barrier, still optimises ==
+-- rows  opt=0 --
+10
+-- rows  opt=1 --
+10
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL INNER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ALL INNER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T32: SEMI + LEFT JOIN + SEMI, no barrier, still optimises ==
+-- rows  opt=0 --
+10
+-- rows  opt=1 --
+10
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL LEFT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ALL LEFT JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T36: SEMI + FULL JOIN + SEMI, dropping the INNER (below-barrier) SEMI is safe ==
+-- rows  opt=0 --
+10	100
+-- rows  opt=1 --
+10	100
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ALL FULL OUTER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T37: ANTI + FULL JOIN + ANTI, dropping the OUTER (above-barrier) ANTI is safe ==
+-- rows  opt=0 --
+0	100
+0	101
+0	102
+13	0
+-- rows  opt=1 --
+0	100
+0	101
+0	102
+13	0
+-- query opt=0 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ANTI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.uid = 1
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT
+    __table1.oid AS oid,
+    __table3.eid AS ek
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table2 ON __table1.uid = __table2.uid
+ALL FULL OUTER JOIN default.extras AS __table3 ON __table1.uid = __table3.uid
+ORDER BY
+    __table1.oid ASC,
+    __table3.eid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T41: SEMI multi-key ON, one equals has an expression on the LHS, drop the looser one ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON ((__table1.uid * 1) = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON ((__table1.uid * 1) = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON ((__table1.uid * 1) = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T42: SEMI multi-key ON, one equals has neither side a right physical column, no elimination ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND ((__table1.age + 1) = (__table2.age + 1))
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND ((__table1.age + 1) = (__table3.age + 1))
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND ((__table1.age + 1) = (__table2.age + 1))
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND ((__table1.age + 1) = (__table3.age + 1))
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T43: SEMI two SAMPLE halves on bare table, must NOT be eliminated ==
+-- rows  opt=0 --
+0
+-- rows  opt=1 --
+0
+-- query opt=0 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN default.s_users AS __table2
+SAMPLE 1 / 2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.s_users AS __table3
+SAMPLE 1 / 2 OFFSET 1 / 2 ON __table1.uid = __table3.uid
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN default.s_users AS __table2
+SAMPLE 1 / 2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.s_users AS __table3
+SAMPLE 1 / 2 OFFSET 1 / 2 ON __table1.uid = __table3.uid
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T44: SEMI two SAMPLE halves wrapped in subqueries, must NOT be eliminated ==
+-- rows  opt=0 --
+0
+-- rows  opt=1 --
+0
+-- query opt=0 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.s_users AS __table3
+    SAMPLE 1 / 2
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.s_users AS __table5
+    SAMPLE 1 / 2 OFFSET 1 / 2
+) AS __table4 ON __table1.uid = __table4.uid
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.s_users AS __table3
+    SAMPLE 1 / 2
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.s_users AS __table5
+    SAMPLE 1 / 2 OFFSET 1 / 2
+) AS __table4 ON __table1.uid = __table4.uid
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T45: ANTI subset, stricter side written FIRST, drop the stricter (covers the symmetric ANTI branch) ==
+-- rows  opt=0 --
+13
+-- rows  opt=1 --
+13
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN default.users AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T46: SEMI three-way in one bucket, the dropped one is later re-encountered (covers the already-removed-skip path) ==
+-- rows  opt=0 --
+2
+-- rows  opt=1 --
+2
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.name = \'Bob\'
+) AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN
+(
+    SELECT __table7.uid AS uid
+    FROM default.users AS __table7
+    WHERE __table7.age = 33
+) AS __table6 ON __table1.uid = __table6.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE __table5.name = \'Bob\'
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+=== T47: SEMI non-deterministic rand() WHERE ===
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (rand() % 2) = 0
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (rand() % 2) = 0
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (rand() % 2) = 0
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (rand() % 2) = 0
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+=== T48: SEMI non-deterministic rand() in left key ===
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid + rand()) = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON (__table1.uid + rand()) = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid + rand()) = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON (__table1.uid + rand()) = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
