@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
@@ -1920,6 +1921,10 @@ void RadixUniqExactRouteTransform::work()
         const auto & values = column_sparse->getValuesPtr();
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
+    /// Only the values of a replicated column that its rows use are routed, once each, as for a `LowCardinality` column
+    /// below: a `String` column with dictionary granules is read this way.
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        column = column_replicated->getUsedValues(0, column_replicated->size());
     column = column->convertToFullIfWrapped();
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.

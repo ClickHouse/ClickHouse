@@ -12,6 +12,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -952,6 +953,19 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         const auto read_through_values = [&](size_t position)
         {
             ArgumentSource & argument = arguments[position];
+            /// A replicated column, which an aggregate that reads replicated arguments consumes as it is, is read through
+            /// its nested column at the indexes of the source rows.
+            if (const auto * replicated = typeid_cast<const ColumnReplicated *>(argument.column))
+            {
+                auto & rows = value_rows[position];
+                rows.resize(total);
+                const auto & indexes = replicated->getIndexes();
+                for (size_t i = 0; i < total; ++i)
+                    rows[i] = static_cast<UInt32>(indexes.getIndexAt(source_rows[i]));
+                argument = {replicated->getNestedColumn().get(), rows.data()};
+                return;
+            }
+
             const auto * sparse = typeid_cast<const ColumnSparse *>(argument.column);
             if (!sparse)
                 return;

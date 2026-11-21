@@ -598,6 +598,8 @@ public:
         bool can_optimize_equal_keys_ranges = true;
         /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
         bool has_low_cardinality_argument = false;
+        /// The same for a replicated `String` column, as a `String` column with dictionary granules is read.
+        bool has_replicated_argument = false;
         /// The arguments are copies of constants with this many rows, added repeatedly to cover the rows (aggregation without keys); 0 otherwise.
         size_t constant_argument_rows = 0;
     };

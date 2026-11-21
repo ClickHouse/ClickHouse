@@ -182,6 +182,9 @@ public:
     /// Floating point is excluded: a repeated `NaN` replaces another `NaN` kept as the result.
     [[nodiscard]] bool ignoresRepeatedValues() const override { return !WhichDataType(removeLowCardinality(this->result_type)).isFloat(); }
 
+    /// The state of a `String` reads the rows of a replicated column through its indexes.
+    [[nodiscard]] bool supportsReplicatedArguments() const override { return std::is_same_v<Data, SingleValueDataString>; }
+
 #if USE_EMBEDDED_COMPILER
     [[nodiscard]] bool isCompilable() const override
     {

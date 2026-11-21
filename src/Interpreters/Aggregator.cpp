@@ -20,6 +20,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -2314,7 +2315,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
-    /// Functions of the same `LowCardinality` argument share its used values.
+    /// Functions of the same `LowCardinality` or replicated argument share its used values.
     std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
 
     /// Adding values
@@ -2331,7 +2332,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
             for (size_t added = 0; added < rows; added += inst->constant_argument_rows)
                 addBatchSinglePlace(0, std::min(inst->constant_argument_rows, rows - added), inst, res + inst->state_offset, arena);
         }
-        else if (inst->has_low_cardinality_argument)
+        else if (inst->has_low_cardinality_argument || inst->has_replicated_argument)
         {
             const IColumn * argument = inst->batch_arguments[0];
             auto it = std::find_if(
@@ -2340,7 +2341,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
                 it = low_cardinality_values.emplace(
                     low_cardinality_values.end(),
                     argument,
-                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+                    inst->has_low_cardinality_argument
+                        ? assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin)
+                        : assert_cast<const ColumnReplicated &>(*argument).getUsedValues(row_begin, row_end - row_begin));
 
             /// The used values in the order of their first occurrence: the state is the same as after adding every row.
             const IColumn * values = it->second.get();
@@ -2478,6 +2481,7 @@ void Aggregator::prepareAggregateInstructions(
         const bool allow_low_cardinality_argument
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
+        bool has_replicated_argument = false;
 
         size_t constant_argument_rows = 0;
         if (params.keys_size == 0 && !aggregate_columns[i].empty())
@@ -2510,8 +2514,20 @@ void Aggregator::prepareAggregateInstructions(
             if (constant_argument_rows)
                 column = column->cloneResized(constant_argument_rows);
 
+            /// A replicated `String` argument keeps its representation when the function reads its used values once each,
+            /// for the same reason and on the same conditions as a `LowCardinality` one below.
+            const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get());
+            const bool replicated_string = replicated && typeid_cast<const ColumnString *>(replicated->getNestedColumn().get());
+            if (allow_low_cardinality_argument && replicated_string && replicated->getNestedColumn()->size() * 2 <= replicated->size())
+                has_replicated_argument = true;
+
+            /// A function that reads replicated arguments through their indexes also gets the column as it is.
+            const bool keep_replicated = has_replicated_argument || (replicated_string && aggregate_functions[i]->supportsReplicatedArguments());
+
             /// Only the converted columns have to be held here, the original ones are held by the caller.
-            auto converted_column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            auto converted_column = keep_replicated
+                ? column->convertToFullColumnIfConst()
+                : column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             if (converted_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.push_back(std::move(converted_column));
@@ -2554,6 +2570,7 @@ void Aggregator::prepareAggregateInstructions(
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
+        aggregate_functions_instructions[i].has_replicated_argument = has_replicated_argument;
         aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
 }
@@ -2671,12 +2688,25 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
+    /// The methods of one `String` key and of fixed-width keys and one `String` read a replicated `String` key through its
+    /// indexes (see `HashMethodPackedString`), so the strings of a column with dictionary granules are not copied into a
+    /// full column. An active top-K heap needs the materialized key columns, which it ranks.
+    const bool reads_replicated_strings_in_place = !top_k_active
+        && (result.type == AggregatedDataVariants::Type::key_packed_string
+            || result.type == AggregatedDataVariants::Type::key_packed_string_two_level
+            || AggregatedDataVariants::isKeysAndPackedString(result.type));
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
+        const auto * replicated_key = typeid_cast<const ColumnReplicated *>(columns.at(keys_positions[i]).get());
         if (all_keys_are_const)
         {
             key_columns[i] = assert_cast<const ColumnConst &>(*columns.at(keys_positions[i])).getDataColumnPtr().get();
+        }
+        else if (reads_replicated_strings_in_place && replicated_key && typeid_cast<const ColumnString *>(replicated_key->getNestedColumn().get()))
+        {
+            key_columns[i] = replicated_key;
         }
         else
         {

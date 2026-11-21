@@ -216,6 +216,10 @@ public:
     /// Frees the insertion cache once no more inserts from other ColumnReplicated are expected.
     void dropInsertionCache();
 
+    /// Returns the values of the nested column that rows `[offset, offset + limit)` refer to, each once, in the order of
+    /// their first row. A function that ignores repeated values gets the same state from them as from every row.
+    ColumnPtr getUsedValues(size_t offset, size_t limit) const;
+
 private:
     struct InsertionCache;
 

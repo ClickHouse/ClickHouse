@@ -1,5 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Formats/FormatSettings.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -1419,9 +1420,23 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     }
 }
 
+namespace
+{
+
+/// The string of row `row_num` of a `ColumnString`, or of a replicated one, as a `String` column with dictionary granules
+/// is read (see `IAggregateFunction::supportsReplicatedArguments`).
+std::string_view stringAt(const IColumn & column, size_t row_num)
+{
+    if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
+        return column_string->getDataAt(row_num);
+    return assert_cast<const ColumnReplicated &>(column).getDataAt(row_num);
+}
+
+}
+
 bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringView();
+    return has() && stringAt(column, row_num) == getStringView();
 }
 
 bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
@@ -1432,7 +1447,7 @@ bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 
 void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
 {
-    changeImpl(assert_cast<const ColumnString &>(column).getDataAt(row_num), arena);
+    changeImpl(stringAt(column, row_num), arena);
 }
 
 void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
@@ -1444,7 +1459,7 @@ void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringView())
+    if (!has() || stringAt(column, row_num) < getStringView())
     {
         set(column, row_num, arena);
         return true;
@@ -1466,7 +1481,7 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
 
 bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringView())
+    if (!has() || stringAt(column, row_num) > getStringView())
     {
         set(column, row_num, arena);
         return true;
