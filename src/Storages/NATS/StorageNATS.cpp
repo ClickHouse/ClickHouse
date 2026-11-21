@@ -1115,6 +1115,10 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel when CPU slots are available, as Kafka and RabbitMQ do.
+    /// Each NATSSource measures its flush deadline from when its own read begins in generateImpl,
+    /// so consumers also make progress when concurrency control limits available slots.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), sources.size()));
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
@@ -1515,7 +1519,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            .secret_settings = NATS::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },
