@@ -1200,6 +1200,44 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    const auto & input_header = *ctx.input_headers.front();
+    if (only_merge)
+    {
+        /// The step merges the states only for an aggregate projection, which is never combined with grouping sets
+        /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
+        if (has_grouping_sets)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
+        /// `AggregatingInOrderTransform` addresses the whole input with a mask built for the keys and the states only.
+        checkDeserializedMergeOnlyInput(keys, aggregates, input_header);
+    }
+    else
+    {
+        checkDeserializedAggregateOutputNames(keys, aggregates);
+        checkDeserializedAggregateArguments(aggregates, input_header);
+    }
+
+    /// `AggregatingInOrderTransform` takes the first columns of `group_by_sort_description` as the ones the input
+    /// is sorted by and looks them up among the keys of its output, and `less` compares the key columns at those positions.
+    if (sort_description_for_merging.size() > group_by_sort_description.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The sort description for merging of a deserialized in-order aggregation has {} columns, "
+            "more than the {} columns of the `GROUP BY` sort description",
+            sort_description_for_merging.size(), group_by_sort_description.size());
+    for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
+        if (sort_description_for_merging[i] != group_by_sort_description[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The sort description for merging of a deserialized in-order aggregation is not a prefix of "
+                "the `GROUP BY` sort description: {} at position {} instead of {}",
+                sort_description_for_merging[i].column_name, i, group_by_sort_description[i].column_name);
+    if (!group_by_sort_description.empty())
+    {
+        NameSet key_names(keys.begin(), keys.end());
+        for (const auto & column : group_by_sort_description)
+            if (!key_names.contains(column.column_name))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The `GROUP BY` sort description of a deserialized in-order aggregation refers to {}, which is not a key",
+                    column.column_name);
+    }
 
     UInt64 stats_key = 0;
     if (has_stats_key)
