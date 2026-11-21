@@ -47,6 +47,19 @@ public:
         bool supported_columns_include_subcolumns_,
         LoggerPtr log_);
 
+    /// Which conditions can be moved for a read with `FINAL`.
+    enum class FinalMode : uint8_t
+    {
+        /// The read is not `FINAL`.
+        None,
+        /// Only deterministic conditions on the sorting key: `FINAL` merges the rows they filter, so they must
+        /// have the same value for all versions of a key.
+        SortingKeyOnly,
+        /// Any deterministic condition: it is applied only to the key ranges that `FINAL` reads without merging,
+        /// and once more after `FINAL`, so it must give the same value both times.
+        NonIntersecting,
+    };
+
     struct FilterActionsOptimizeResult
     {
         UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes;
@@ -61,7 +74,7 @@ public:
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
-        bool is_final,
+        FinalMode final_mode,
         const NameSet & columns_read_before_filter = {},
         const String & top_k_filter_column = {});
 
@@ -152,7 +165,7 @@ private:
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
         bool allow_reorder_prewhere_conditions = false;
-        bool is_final = false;
+        FinalMode final_mode = FinalMode::None;
         bool use_statistics = false;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
@@ -179,7 +192,12 @@ private:
 
     [[nodiscard]] bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    [[nodiscard]] bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
+    /// Whether the expression is deterministic in the scope of the query and, if `only_sorting_key` is set,
+    /// depends only on the sorting key columns.
+    [[nodiscard]] bool isDeterministicExpression(const RPNBuilderTreeNode & node, const ContextPtr & context, bool only_sorting_key) const;
+
+    /// Whether `final_mode` allows moving the condition to PREWHERE.
+    [[nodiscard]] bool canBeAppliedBeforeFinal(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     /// Whether the condition is a substring search on a String column that can be used as
     /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
