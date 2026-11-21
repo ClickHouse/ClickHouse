@@ -208,6 +208,7 @@ static bool hasStatefulDefaultOfMissingColumn(
     const String & column_name,
     const ColumnsDescription & columns,
     const RangesInDataParts & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     NameSet & visited_columns)
 {
@@ -222,7 +223,16 @@ static bool hasStatefulDefaultOfMissingColumn(
     if (!column_default || !column_default->expression)
         return false;
 
-    if (std::ranges::all_of(parts, [&](const auto & part) { return part.data_part->getColumnsDescription().has(name_in_storage); }))
+    auto is_present_in_part = [&](const auto & part)
+    {
+        if (!part.data_part->getColumnsDescription().has(name_in_storage))
+            return false;
+        if (!mutations_snapshot)
+            return true;
+        AlterConversions conversions(mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part), PatchPartsForReader{}, context);
+        return !conversions.isColumnDropped(name_in_storage);
+    };
+    if (std::ranges::all_of(parts, is_present_in_part))
         return false;
 
     TablesWithColumns tables;
@@ -234,7 +244,7 @@ static bool hasStatefulDefaultOfMissingColumn(
     IdentifierNameSet identifiers;
     column_default->expression->collectIdentifierNames(identifiers);
     for (const auto & identifier : identifiers)
-        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, context, visited_columns))
+        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, mutations_snapshot, context, visited_columns))
             return true;
 
     return false;
@@ -347,7 +357,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         NameSet visited_columns;
         for (const auto & column : queried_columns)
         {
-            if (hasStatefulDefaultOfMissingColumn(column, columns, read_from_merge_tree_step->getParts(), context, visited_columns))
+            if (hasStatefulDefaultOfMissingColumn(
+                    column, columns, read_from_merge_tree_step->getParts(), read_from_merge_tree_step->getMutationsSnapshot(), context, visited_columns))
                 return;
         }
     }

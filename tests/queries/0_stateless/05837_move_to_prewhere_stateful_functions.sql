@@ -40,3 +40,17 @@ SELECT tup.x FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a;
 SELECT tup.x FROM t_prewhere_stateful_default WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 
 DROP TABLE t_prewhere_stateful_default;
+
+DROP TABLE IF EXISTS t_prewhere_stateful_dropped;
+CREATE TABLE t_prewhere_stateful_dropped (a UInt64, n UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_stateful_dropped SELECT number, 0 FROM numbers(10);
+SYSTEM STOP MERGES t_prewhere_stateful_dropped;
+SET mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_prewhere_stateful_dropped DROP COLUMN n;
+ALTER TABLE t_prewhere_stateful_dropped ADD COLUMN n UInt64 DEFAULT rowNumberInAllBlocks();
+
+SELECT '-- stateful default of a column dropped by a pending mutation';
+SELECT n FROM t_prewhere_stateful_dropped WHERE a >= 5 ORDER BY a SETTINGS apply_mutations_on_fly = 1;
+SELECT n FROM t_prewhere_stateful_dropped WHERE a >= 5 ORDER BY a SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
+
+DROP TABLE t_prewhere_stateful_dropped;
