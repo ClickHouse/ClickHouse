@@ -60,6 +60,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ddl;
     extern const SettingsUInt64 distributed_connections_pool_size;
     extern const SettingsURI format_avro_schema_registry_url;
     extern const SettingsLoadBalancing load_balancing;
@@ -369,6 +370,10 @@ public:
                         local_context->getAuthenticationValidUntil());
 
                     job_context->setCurrentRoles(local_context->getCurrentRoles(), /*check_grants=*/ false);
+
+                    /// Like the identity above, a restriction the submitting session cannot lift is kept.
+                    if (!local_context->getSettingsRef()[Setting::allow_ddl])
+                        job_context->setSetting("allow_ddl", false);
                     break;
                 }
 
@@ -475,10 +480,14 @@ private:
 
         if (!job.settings_changes.empty())
         {
+            const bool allow_ddl = job_context->getSettingsRef()[Setting::allow_ddl];
             /// In the cluster mode, the settings constraints are checked by the destination cluster.
             if (cluster_name.empty())
                 job_context->checkSettingsConstraints(job.settings_changes, SettingSource::QUERY);
             job_context->applySettingsChanges(job.settings_changes);
+            /// The destination checks the constraints of the job's user, not `allow_ddl = 0` of the INSERT.
+            if (!allow_ddl)
+                job_context->setSetting("allow_ddl", false);
         }
 
         /// After the job's settings, so the database explicitly recorded for the job wins over a
