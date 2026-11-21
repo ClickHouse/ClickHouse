@@ -855,8 +855,11 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
                     if (!with_names)
                         result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.custom.try_detect_header);
                     return result + fmt::format(
-                            ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                            ", allow_variable_number_of_columns={}, skip_trailing_empty_lines={},"
+                            " result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
                             " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                            settings.custom.allow_variable_number_of_columns,
+                            settings.custom.skip_trailing_empty_lines,
                             settings.custom.result_before_delimiter,
                             settings.custom.row_before_delimiter,
                             settings.custom.field_delimiter,
