@@ -393,6 +393,13 @@ public:
     /// left unset.
     void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 
+    /// Whether `buildRange` hashes the rows in batches, rather than with `build` for each row.
+    [[nodiscard]] bool hashesRowsInBatches() const { return layout != Layout::PerRow; }
+
+    /// Sets `skip[i]` for the rows [begin, end) whose hashed bytes are those of the last row before them that is not
+    /// skipped, so that their `build` is that of this row. Requires `hashesRowsInBatches`.
+    void markRepeatedRows(size_t begin, size_t end, UInt8 * skip) const;
+
 private:
     enum class Layout : uint8_t
     {

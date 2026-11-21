@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name,
     bool keep_lowcardinality, Columns & canonical_keys, bool prepare_canonical_keys)
     : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
@@ -23,7 +23,6 @@ JoinOnKeyColumns::JoinOnKeyColumns(
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
     , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
-    , key_sizes(key_sizes_)
 {
     /// The key getters compare the keys bitwise, so negative zeros are replaced by positive zeros in advance.
     /// It scans the whole source block, while a continuation probes only a suffix of it, so it is done once per block.

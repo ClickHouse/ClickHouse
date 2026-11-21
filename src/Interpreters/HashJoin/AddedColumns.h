@@ -48,13 +48,11 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
-    Sizes key_sizes;
-
     /// `canonical_keys` are the key columns of the source block with negative zeros replaced by positive zeros
     /// (see `CanonicalJoinKeys`). If `prepare_canonical_keys`, they are computed and stored there,
     /// otherwise the ones prepared by an earlier dispatch over the same source block are used.
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name,
         bool keep_lowcardinality, Columns & canonical_keys, bool prepare_canonical_keys);
 
     [[nodiscard]] bool isRowFiltered(size_t i) const
