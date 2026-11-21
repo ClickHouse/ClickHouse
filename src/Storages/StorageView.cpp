@@ -69,6 +69,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {

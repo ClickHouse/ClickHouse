@@ -139,11 +139,11 @@ static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 ar
                                                     "url, name of used format (taken from file extension by default), "
                                                     "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
-static const std::unordered_set<std::string_view> required_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
@@ -802,6 +802,7 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
             input_format->setBucketsToRead(buckets_to_read);
 
             if (need_only_count)
@@ -1970,6 +1971,8 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -2040,6 +2043,12 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)

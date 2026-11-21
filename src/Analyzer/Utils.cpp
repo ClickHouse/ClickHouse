@@ -2301,4 +2301,21 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
     return result;
 }
 
+void removeAliasesRecursive(QueryTreeNodePtr & node)
+{
+    if (!node)
+        return;
+
+    node->removeAlias();
+
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY
+        || node_type == QueryTreeNodeType::UNION
+        || node_type == QueryTreeNodeType::LAMBDA)
+        return;
+
+    for (auto & child : node->getChildren())
+        removeAliasesRecursive(child);
+}
+
 }
