@@ -79,16 +79,16 @@ public:
         String format;
 
         /// True only when no `body(...)` argument was given at all.
-        bool empty() const { return !literal && !query; }
+        [[nodiscard]] bool empty() const { return !literal && !query; }
 
-        String getFormatName() const { return format.empty() ? "JSONLines" : format; }
+        [[nodiscard]] String getFormatName() const { return format.empty() ? "JSONLines" : format; }
 
         /// Add the `Content-Type` header of the output format of `query`, unless it is already present.
         void addContentTypeHeaderIfNeeded(HTTPHeaderEntries & request_headers, const ContextPtr & context) const;
 
         /// Build a callback that writes the body into the HTTP request output stream.
         /// Returns nullptr only when no body was specified (see `empty`).
-        std::function<void(WriteBuffer &)> makeCallback(const ContextPtr & context) const;
+        [[nodiscard]] std::function<void(WriteBuffer &)> makeCallback(const ContextPtr & context) const;
     };
 
     static ColumnsDescription getTableStructureFromData(
