@@ -735,40 +735,49 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
         rhs_row = rhs_sparse->getValueIndex(rhs_row_num);
     }
 
-    if (row_indexes)
-    {
-        /// Compares only the listed rows, each through its value, and keeps the rows that compare equal.
-        if (compare_results.empty())
-            compare_results.resize(_size);
-        else if (compare_results.size() != _size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}",
-                compare_results.size(), _size);
-
-        UInt64 * next_index = row_indexes->data();
-        for (auto row : *row_indexes)
-        {
-            int res = values->compareAt(getValueIndex(row), rhs_row, *rhs_column, nan_direction_hint);
-            chassert(res == 1 || res == -1 || res == 0);
-            compare_results[row] = static_cast<Int8>(res * direction);
-            if (res == 0)
-            {
-                *next_index = row;
-                ++next_index;
-            }
-        }
-        row_indexes->resize(next_index - row_indexes->data());
-        return;
-    }
-
     /// Compares every value once: the result of the default value at position 0 holds for all default rows.
     PaddedPODArray<Int8> nested_result;
     values->compareColumn(*rhs_column, rhs_row, nullptr, nested_result, direction, nan_direction_hint);
 
     const auto & offsets_data = getOffsetsData();
-    compare_results.resize(_size);
-    std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
-    for (size_t i = 0; i < offsets_data.size(); ++i)
-        compare_results[offsets_data[i]] = nested_result[i + 1];
+    if (!row_indexes)
+    {
+        compare_results.resize(_size);
+        std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
+        for (size_t i = 0; i < offsets_data.size(); ++i)
+            compare_results[offsets_data[i]] = nested_result[i + 1];
+        return;
+    }
+
+    /// Only the listed rows get results, and the rows that compare equal stay listed. The value of a row is found by
+    /// following the offsets along the list. Sorting lists the rows in ascending order, so the walk takes one pass, and
+    /// a row before the current offset starts a new search.
+    if (compare_results.empty())
+        compare_results.resize(_size);
+    else if (compare_results.size() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}",
+            compare_results.size(), _size);
+
+    const UInt64 * offsets_begin = offsets_data.data();
+    const UInt64 * offsets_end = offsets_begin + offsets_data.size();
+    const UInt64 * offset = offsets_begin;
+    UInt64 * next_index = row_indexes->data();
+    for (auto row : *row_indexes)
+    {
+        if (offset != offsets_begin && *(offset - 1) >= row)
+            offset = std::lower_bound(offsets_begin, offset, row);
+        while (offset != offsets_end && *offset < row)
+            ++offset;
+
+        const Int8 res = nested_result[offset != offsets_end && *offset == row ? offset - offsets_begin + 1 : 0];
+        compare_results[row] = res;
+        if (res == 0)
+        {
+            *next_index = row;
+            ++next_index;
+        }
+    }
+    row_indexes->resize(next_index - row_indexes->data());
 }
 
 int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
