@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <limits>
 #include <string>
 #include <Core/Names.h>
@@ -59,8 +60,6 @@ public:
     ~StorageMergeTree() override;
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
-
-    bool supportsParallelInsert() const override { return true; }
 
     bool supportsStreaming() const override { return true; }
 
@@ -122,10 +121,16 @@ public:
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
+
+    /// Called when the deferred fsync of an inserted part failed, see `DeferredPartsSync`. Its data may not be durable,
+    /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
+    /// so that a retry of the insert writes the data again, even after a restart of the server.
+    void detachPartAfterFailedFsync(const DataPartPtr & part);
 
 private:
 
@@ -188,6 +193,11 @@ private:
     const bool support_transaction;
 
     void loadMutations();
+    /// Reads a `mutation_*.txt` entry, reporting an entry that the owner of a shared directory removed meanwhile.
+    MergeTreeMutationEntry loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
+    /// Removes the mutation entries and the deduplication log, which `dropAllData` leaves alone when the table
+    /// occupies the whole disk (`table_disk`).
+    void removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk) override;
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
@@ -195,6 +205,7 @@ private:
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * The merge runs on this thread for the query of `query_thread_group`, which gets the counters of the merge.
       * Returns true if merge is finished successfully.
       */
     bool merge(
@@ -204,11 +215,16 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
+            const ThreadGroupPtr & query_thread_group,
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately);
+
+    /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
+    /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
+    [[noreturn]] void removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVector & new_parts, Transaction & transaction);
 
     /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
     /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
@@ -221,10 +237,6 @@ private:
     MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
     ActionLock stopMergesAndWaitForPartition(String partition_id);
-
-    /// Allocate block number for new mutation, write mutation to disk
-    /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
 
     /// Result of `prepareMutationEntry`. Holds the block-number reservation
     /// that must outlive the call to `addPreparedMutationEntry`.
@@ -247,6 +259,10 @@ private:
     /// increment `mutation_counters`. Caller must hold
     /// `currently_processing_in_background_mutex`.
     void addPreparedMutationEntry(PreparedMutationEntry prepared);
+
+    /// Register a mutation prepared by `prepareMutationEntry` in the in-memory structures
+    /// and wake up the merge-mutation task. Returns the mutation version.
+    Int64 startMutation(PreparedMutationEntry prepared, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -265,7 +281,8 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions = false,
+        const std::function<void()> & on_wait_for_running_merges = {});
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
@@ -345,11 +362,13 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
+    bool areBackgroundWorkersEnabled() const override { return background_workers_enabled; }
+    bool isReadonlyCommitInFlight() const override { return readonly_commit_in_flight; }
 
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
@@ -358,10 +377,88 @@ private:
     bool isTableReadonly() const;
     void assertNotReadonly() const;
 
+    /// The `table_readonly` setting as it is currently visible in memory, which a settings `ALTER`
+    /// changes before the commit. Only the `ALTER` itself, which decides what the transition is,
+    /// uses this; everything else must use `isTableReadonly`, which reports the durable value.
+    bool isReadonlySettingSet() const;
+
+    /// Starts every background worker that only a writable table runs. Called on startup of a writable
+    /// table and again when `table_readonly` is turned back off, so that a table that was attached
+    /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    /// The statistics refresh and the streaming assignee only read parts; `startup` starts them for
+    /// every table, read-only or not, so they are not part of this set.
+    ///
+    /// Starting allocates and enqueues the scheduling tasks, so it may throw. A started worker
+    /// runs nothing while `background_workers_enabled` is unset, which lets the `table_readonly`
+    /// 1 -> 0 `ALTER` be exception-safe as a unit: `startBackgroundWorkers` runs before the
+    /// metadata commit inside its rollback unit, and `enableBackgroundWorkers` is the only step
+    /// after the commit, a plain flag flip that cannot fail. Starting is idempotent.
+    ///
+    /// `started` receives which assignees the call created, as opposed to found already running,
+    /// updated after each one so that it is accurate even when the call throws partway through.
+    /// `BackgroundJobsAssignee::start` itself is all or nothing, so an assignee whose activation
+    /// threw has no task left behind and is correctly not recorded here.
+    /// The rollback of the `ALTER` passes it to `finishBackgroundWorkers`, which tears down exactly
+    /// those assignees: a table that had no workers before the failed `ALTER` has none after it,
+    /// while the workers of a table that started writable are left as they were.
+    struct StartedBackgroundWorkers
+    {
+        bool operations = false;
+        bool moves = false;
+    };
+    void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
+    void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
+    /// Stops every background task of the table: the periodic refresh tasks, the part loaders, the cleanup
+    /// thread and all assignees. Idempotent. Used after `shutdown_called` is set, both by `shutdown` and by a
+    /// `startup` or an `ALTER` that armed some tasks and then observed a concurrent `shutdown`.
+    void stopAllBackgroundTasks();
+    void enableBackgroundWorkers() noexcept;
+    void disableBackgroundWorkers() noexcept;
+    /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and
+    /// unexpected part loaders to run now instead of after their backoff. Used after a
+    /// `table_readonly` 1 -> 0 commit, and after the rollback of a failed 0 -> 1 commit, whose
+    /// temporary `table_readonly = 1` may have sent a worker that woke up in the commit window into
+    /// its backoff with work pending, or a part loader into staying idle. Best effort, never throws.
+    void wakeupBackgroundWorkers() noexcept;
+
+    /// Whether the started background workers may do work. Every worker entry point
+    /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and
+    /// unexpected part loaders) checks it in addition to `isTableReadonly`, so a worker that wakes up
+    /// while a settings `ALTER` has made the table writable in memory but not yet durably cannot queue
+    /// a merge, mutation, move, disk cleanup, or part detach/removal that would survive a rolled-back
+    /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
+    /// move assignee itself.
+    ///
+    /// Set exactly when the table is durably writable and no `table_readonly` commit is in flight:
+    /// on the startup of a writable table and after the commit of a `table_readonly` 1 -> 0 `ALTER`;
+    /// unset for the whole commit of a 0 -> 1 `ALTER`, from the moment the new value is visible in
+    /// memory, and set again only if that commit fails. So the cleanup thread and the outdated part
+    /// loader of a table that started writable, whose only guard this is, never start modifying the
+    /// disk once the table is durably read-only.
+    std::atomic<bool> background_workers_enabled {false};
+
+    /// Whether a settings `ALTER` that turns `table_readonly` off is between making the new value
+    /// visible in memory and committing it durably. `changeSettings` publishes the new settings
+    /// immediately, but the table becomes durably writable only when `alterTable` returns, and the
+    /// `ALTER` holds `alter_lock`, which does not serialize with the `lockForShare` that the write
+    /// paths take. Without this flag a concurrent `INSERT`, mutation, `TRUNCATE`, `MOVE PARTITION TO
+    /// TABLE` or `REPLACE PARTITION` would pass `assertNotReadonly` inside that window and modify a
+    /// table whose failed commit leaves it read-only. `isTableReadonly` therefore reports the old,
+    /// durable value while it is set, and the `ALTER` itself uses `isReadonlySettingSet` where it
+    /// means the new in-memory value.
+    ///
+    /// Only the 1 -> 0 direction needs this. A 0 -> 1 `ALTER` makes the table look read-only before
+    /// the commit, which merely rejects a concurrent write that a rolled-back commit would have
+    /// allowed: conservative, and never a write to a read-only table.
+    std::atomic<bool> readonly_commit_in_flight {false};
+
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
+    /// Publishes a unique-key merge, so it needs the same reach as `MergePlainMergeTreeTask`:
+    /// the rename runs inside the commit's critical section.
+    friend class UniqueKeyTxnCommit;
     friend class MutatePlainMergeTreeTask;
     friend class MergeTreeCleanupThread;
 
@@ -400,9 +497,9 @@ private:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
@@ -422,7 +519,7 @@ private:
             {}
 
 
-            size_t getNextMinExecutionTimeUsResolution() const
+            [[nodiscard]] size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
@@ -438,7 +535,7 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            [[nodiscard]] bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;

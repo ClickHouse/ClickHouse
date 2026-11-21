@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Core/MergeTreeSerializationEnums.h>
@@ -7,13 +8,23 @@
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
+#include <vector>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -84,14 +95,15 @@ Streams serializeWithBuckets(const DataTypePtr & type, const IColumn & column)
     return streams;
 }
 
-/// Reads `limit` rows out of the serialized streams.
+/// Reads `limit` rows out of the serialized streams, `chunk_size` rows per call (all of them in one call if 0).
 /// `serialization` is either the whole-column serialization or a subcolumn one.
 ColumnPtr deserializeRange(
-    const SerializationPtr & serialization, const DataTypePtr & column_type, const Streams & streams, size_t limit)
+    const SerializationPtr & serialization, const DataTypePtr & column_type, const Streams & streams, size_t limit, size_t chunk_size = 0)
 {
     std::map<String, std::unique_ptr<ReadBufferFromString>> buffers;
 
     ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.read_statistics = true;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         auto name = ISerialization::getSubcolumnNameForStream(path);
@@ -113,7 +125,9 @@ ColumnPtr deserializeRange(
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
     auto column = column_type->createColumn();
-    serialization->deserializeBinaryBulkWithMultipleStreams(*column, limit, settings, state, nullptr);
+    size_t rows_per_call = chunk_size ? chunk_size : limit;
+    for (size_t requested = 0; requested < limit; requested += rows_per_call)
+        serialization->deserializeBinaryBulkWithMultipleStreams(*column, rows_per_call, settings, state, nullptr);
     return std::move(column);
 }
 
@@ -122,6 +136,37 @@ void assertColumnsEqual(const IColumn & expected, const IColumn & actual)
     ASSERT_EQ(expected.size(), actual.size());
     for (size_t row = 0; row != actual.size(); ++row)
         ASSERT_EQ(expected[row], actual[row]) << "at row " << row;
+}
+
+/// The whole `Map` or one of its subcolumns: each one reassembles the buckets on its own.
+struct ReadTarget
+{
+    String name;
+    DataTypePtr type;
+    SerializationPtr serialization;
+};
+
+std::vector<ReadTarget> getReadTargets(const DataTypePtr & type, const std::vector<String> & subcolumns)
+{
+    auto serialization = getBucketedSerialization(type);
+    std::vector<ReadTarget> targets{{"map", type, serialization}};
+    for (const auto & subcolumn : subcolumns)
+        targets.push_back({subcolumn, type->getSubcolumnType(subcolumn), type->getSubcolumnSerialization(subcolumn, serialization)});
+    return targets;
+}
+
+void expectReadError(
+    const SerializationPtr & serialization, const DataTypePtr & column_type, const Streams & streams, size_t limit, int code)
+{
+    try
+    {
+        deserializeRange(serialization, column_type, streams, limit);
+        FAIL() << "Expected an exception with code " << code;
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), code) << e.message();
+    }
 }
 
 }
@@ -158,4 +203,109 @@ TEST(MapBucketedSerialization, ReadKeysSubcolumn)
     /// Ground truth: the keys subcolumn extracted directly from the source column.
     auto expected_keys = type->getSubcolumn("keys", column);
     assertColumnsEqual(*expected_keys, *result);
+}
+
+/// Every bucket stores one size per row, so a bucket stream that ends before the others is a read error for every
+/// reader of the buckets, with the `bucket_indexes` stream and without it (parts written before it existed).
+TEST(MapBucketedSerialization, RejectsBucketsWithDifferentNumberOfRows)
+{
+    auto type = getMapType();
+    constexpr size_t num_rows = 20;
+    auto column = makeTestColumn(type, num_rows);
+    auto streams = serializeWithBuckets(type, *column);
+
+    /// A shorter bucket 1 makes the readers index past its rows, a shorter bucket 0 makes them drop rows.
+    for (size_t bucket = 0; bucket != 2; ++bucket)
+    {
+        SCOPED_TRACE("bucket " + std::to_string(bucket));
+        auto damaged = streams;
+        auto sizes_stream = std::to_string(bucket) + ".size0";
+        ASSERT_TRUE(damaged.contains(sizes_stream));
+        ASSERT_EQ(damaged[sizes_stream].size(), sizeof(UInt64) * num_rows);
+        damaged[sizes_stream].resize(sizeof(UInt64) * num_rows / 2);
+
+        ASSERT_TRUE(damaged.contains("bucket_indexes"));
+        for (const auto & target : getReadTargets(type, {"keys", "values", "size0"}))
+        {
+            SCOPED_TRACE(target.name);
+            expectReadError(target.serialization, target.type, damaged, num_rows, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+
+        damaged.erase("bucket_indexes");
+        for (const auto & target : getReadTargets(type, {"keys", "values"}))
+        {
+            SCOPED_TRACE(target.name + " without bucket_indexes");
+            expectReadError(target.serialization, target.type, damaged, num_rows, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+    }
+}
+
+/// `bucket_indexes` holds one index per key-value pair of the buckets, so a shorter stream is a read error.
+TEST(MapBucketedSerialization, RejectsTruncatedBucketIndexes)
+{
+    auto type = getMapType();
+    constexpr size_t num_rows = 20;
+    auto column = makeTestColumn(type, num_rows);
+    auto streams = serializeWithBuckets(type, *column);
+
+    ASSERT_TRUE(streams.contains("bucket_indexes"));
+    auto & indexes = streams["bucket_indexes"];
+    indexes.resize(indexes.size() / 2);
+
+    for (const auto & target : getReadTargets(type, {"keys", "values"}))
+    {
+        SCOPED_TRACE(target.name);
+        expectReadError(target.serialization, target.type, streams, num_rows, ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+}
+
+/// Indexes that are in range and as many as the key-value pairs, but refer to a bucket of a row more times than it
+/// has pairs in that row, are a read error rather than a read of the pairs of the next row.
+TEST(MapBucketedSerialization, RejectsBucketIndexesThatDoNotMatchBucketSizes)
+{
+    auto type = getMapType();
+    constexpr size_t num_rows = 20;
+    auto column = makeTestColumn(type, num_rows);
+    auto streams = serializeWithBuckets(type, *column);
+
+    /// With 4 buckets an index is one byte.
+    ASSERT_TRUE(streams.contains("bucket_indexes"));
+    auto & indexes = streams["bucket_indexes"];
+    const auto & offsets = assert_cast<const ColumnMap &>(*column).getNestedColumn().getOffsets();
+    ASSERT_EQ(indexes.size(), offsets.back());
+
+    /// Point all indexes of the first row whose pairs are in several buckets to the bucket of its first pair.
+    bool found = false;
+    for (size_t row = 0; row != num_rows && !found; ++row)
+    {
+        auto begin = indexes.begin() + offsets[ssize_t(row) - 1];
+        auto end = indexes.begin() + offsets[ssize_t(row)];
+        char first = *begin;
+        if (std::any_of(begin, end, [first](char index) { return index != first; }))
+        {
+            std::fill(begin, end, first);
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+
+    for (const auto & target : getReadTargets(type, {"keys", "values"}))
+    {
+        SCOPED_TRACE(target.name);
+        expectReadError(target.serialization, target.type, streams, num_rows, ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+/// A valid read that stops at the end of the streams passes the checks: reading 20 rows 7 at a time ends with a call
+/// that gets 6 rows from every stream.
+TEST(MapBucketedSerialization, ReadsInChunks)
+{
+    auto type = getMapType();
+    constexpr size_t num_rows = 20;
+    auto column = makeTestColumn(type, num_rows);
+    auto streams = serializeWithBuckets(type, *column);
+
+    auto serialization = getBucketedSerialization(type);
+    auto result = deserializeRange(serialization, type, streams, num_rows, 7);
+    assertColumnsEqual(*column, *result);
 }

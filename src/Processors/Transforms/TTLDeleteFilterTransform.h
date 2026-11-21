@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -10,14 +11,12 @@
 namespace DB
 {
 
-/// Evaluates TTL delete expressions and produces a UInt8 filter column
-/// without actually filtering the block. The filter column is then used
-/// by the merging algorithm to set skip flags in row sources for vertical merge.
+/// Evaluates TTL delete expressions and attaches the resulting mask to the chunk, without
+/// filtering the block or changing its header. The merging algorithm reads the mask to set skip
+/// flags in row sources for a vertical merge.
 class TTLDeleteFilterTransform final : public ISimpleTransform
 {
 public:
-    static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";
-
     /// Immutable state shared across all per-stream transform instances.
     /// Built once so that every instance references the same `FutureSet`
     /// objects that `CreatingSetStep` fills.
@@ -28,7 +27,7 @@ public:
             TTLExpressions expressions;
             TTLDescription description;
         };
-        std::vector<Entry> entries;
+        VectorWithMemoryTracking<Entry> entries;
         bool all_data_dropped = false;
         time_t current_time = 0;
     };
@@ -45,8 +44,6 @@ public:
     TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
 
     String getName() const override { return "TTLDeleteFilter"; }
-
-    static SharedHeader transformHeader(const SharedHeader & header);
 
 protected:
     void transform(Chunk & chunk) override;

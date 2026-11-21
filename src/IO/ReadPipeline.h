@@ -6,6 +6,7 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
 #include <Common/Logger.h>
+#include <Common/SecretString.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -25,8 +26,10 @@ class IAsynchronousReader;
 class IBackup;
 class LongConnectionLimit;
 class EncryptionHeaderCache;
+class QueryStatus;
 struct AsyncReadCounters;
 
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
@@ -92,7 +95,7 @@ public:
     };
 
     /// Function that finds an encryption key by its fingerprint.
-    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+    using KeyFinderFunc = std::function<SecretString(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     ReadPipeline() = default;
     ReadPipeline(const ReadPipeline &) = default;
@@ -124,7 +127,7 @@ public:
     void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
-    /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(path + etag)`.
+    /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(<storage hash> + path + etag)`.
     void needFilesystemCache(
         FileCachePtr cache,
         FileCacheKey cache_key,
@@ -138,7 +141,7 @@ public:
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
     /// `cache_path_prefix + object.remote_path` derivation.
-    /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
+    /// Used by `StorageObjectStorageSource` where the key is `"s3:<storage hash>:" + path` with `"etag:" + etag`.
     void needMemoryCache(
         String custom_cache_path,
         String custom_file_version,
@@ -150,7 +153,9 @@ public:
     /// @param include_credentials_in_cache_key  When true, object storage credentials are
     ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
     ///        where different users may access the same path with different credentials.
-    void needDistributedCache(bool include_credentials_in_cache_key = false);
+    /// @param include_etag_in_cache_key  When true, `StoredObject::etag_hash` is included in the
+    ///        cache key hash and pins an S3 cache fill, as table engine objects can be rewritten.
+    void needDistributedCache(bool include_credentials_in_cache_key = false, bool include_etag_in_cache_key = false);
 
     /// -- Async prefetch stage --
     void needAsyncPrefetch(
@@ -228,6 +233,7 @@ private:
     struct DistributedCacheStage
     {
         bool include_credentials_in_cache_key = false;
+        bool include_etag_in_cache_key = false;
     };
 
     std::optional<SourceStage> source;
@@ -259,8 +265,9 @@ private:
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.
-    /// `query_id` is captured once on the calling thread before any stage runs.
-    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    /// `query_id` and `query_status` are captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(
+        const std::string & query_id, const QueryStatusPtr & query_status) const;
     std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;

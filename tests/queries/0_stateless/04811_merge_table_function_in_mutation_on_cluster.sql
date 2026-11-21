@@ -79,5 +79,14 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
     SET v = (SELECT max(id) FROM merge(currentDatabase(), '^t_lwu_src$')) + 30 WHERE id = 2;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
 
+-- A `DELETE FROM ... ON CLUSTER` is queued as itself rather than as a rewritten `UPDATE` or
+-- `ALTER`, so it substitutes the database on its own. The source table of the deleted-from database
+-- selects `id = 2` and the one of the session database selects `id = 3`, so the surviving keys say
+-- which of the two the predicate was resolved in.
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
+    WHERE id IN (SELECT id FROM merge(currentDatabase(), '^t_lwu_src$'))
+    SETTINGS lightweight_deletes_sync = 2;
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ORDER BY id;
+
 DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

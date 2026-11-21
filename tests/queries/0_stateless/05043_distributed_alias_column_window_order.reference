@@ -1,0 +1,123 @@
+case 1 wrong results
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+case 2 column count
+Empty	Empty	2024-01-01 00:00:00	1
+Empty	Empty	2024-01-01 00:00:00	2
+Empty	Empty	2024-01-01 00:00:00	1
+case 3 type mismatch
+Empty	2024-01-01 00:00:00	1
+Empty	2024-01-01 00:00:00	2
+Empty	2024-01-01 00:00:00	1
+positional variants
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+USD	Empty	1
+USD	Empty	2
+USD	Empty	1
+1	Empty	USD	1
+1	Empty	USD	2
+1	Empty	USD	1
+Empty	1
+Empty	2
+Empty	1
+alias body shapes
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	2
+EMPTY	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	Empty	EMPTY	USD	1
+Empty	Empty	EMPTY	USD	2
+Empty	Empty	EMPTY	USD	1
+server dependent alias body
+1
+1
+distributed engine table
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	Empty	2024-01-01 00:00:00	1
+Empty	Empty	2024-01-01 00:00:00	2
+Empty	Empty	2024-01-01 00:00:00	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+nested subquery
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	2
+EMPTY	USD	1
+Empty	Empty	1
+Empty	Empty	2
+Empty	Empty	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+deduplicated alias pair
+7	7	7	1
+7	7	7	2
+7	7	7	1
+7	7	1
+7	7	2
+7	7	1
+7	7	7	1
+7	7	7	2
+7	7	7	1
+7	7	2
+7	7	2
+7	7	7	2
+7	7	7	2
+window clauses
+Empty	USD	2
+Empty	USD	2
+Empty	USD	1
+Empty	2	1
+Empty	2	1
+Empty	2
+Empty	2
+parallel replicas
+Empty	USD	1
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	1
+1
+1
+negative controls
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	USD	2024-01-01 00:00:00	1
+Empty	USD	2024-01-01 00:00:00	2
+Empty	USD	1
+Empty	USD
+Empty	USD
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+joined sources
+left	right	1
+left	right	2
+left	right	3
+left	right	4
+left	right	1
+left	right	1
+left	right	2
+left	right	3
+left	right	4
+left	right	1
+7	7	left	right	1

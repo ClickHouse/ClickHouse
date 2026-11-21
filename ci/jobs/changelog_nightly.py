@@ -4,7 +4,7 @@ Maintains one bot branch and one draft PR per release cycle
 (`auto/changelog-X.Y`, "Prepare changelog for X.Y"). Every day the job:
 
 1. Generates raw changelog entries for the pull requests merged into `master`
-   since the previous run, using `tests/ci/changelog.py` inside the
+   since the previous run, using `ci/tools/changelog.py` inside the
    `clickhouse/style-test` container (the same way `create_release.yml` runs
    it). The raw entries are inserted into `CHANGELOG.md` as a block delimited
    by HTML-comment markers, above the first released section, and committed.
@@ -318,7 +318,7 @@ def raw_prs_and_reverts(text):
     ones under a strict-retention category, and the ones whose bullet reads like
     a revert. Returns (all_prs, strict_prs, text_reverts).
 
-    The bullet is only a hint. `tests/ci/changelog.py` renders the author's own
+    The bullet is only a hint. `ci/tools/changelog.py` renders the author's own
     `Changelog entry` under the author's own `Changelog category`, so a revert
     can perfectly well arrive under `Improvement` reading "Disable X again" -
     nothing about the rendered line says revert. Revert-ness is therefore
@@ -1236,8 +1236,9 @@ def prepare_repo():
     #
     # Not `--filter=tree:0`: fetching only the commit graph takes 12 seconds
     # instead of half an hour, but it turns the checkout into a partial clone,
-    # and changelog.py runs its own `git fetch --tags` in the container, which
-    # then hangs (observed in
+    # and the git commands of this job and of changelog.py then fetch missing
+    # objects lazily, which hung changelog.py's own `git fetch --tags`, since
+    # replaced with `--no-fetch` (observed in
     # https://github.com/ClickHouse/ClickHouse/actions/runs/32747225427: the
     # job sat in `Fetching all tags` for five hours until it was killed).
     master_refspec = "'+refs/heads/master:refs/remotes/origin/master'"
@@ -1345,8 +1346,15 @@ def generate_raw_entries(version, from_ref, to_sha):
     # gets logged, only carries the unexpanded expressions): the host shell
     # exports it to the docker CLI and the in-container shell expands it for
     # changelog.py's --gh-user-or-token.
+    # `--no-fetch`: prepare_repo already fetched the master history and the
+    # tags. A `git fetch` in the container has no credentials (actions/checkout
+    # keeps them in a file included only for the host path of `.git`, which
+    # differs from `/wd/.git`) and uses the default refspec, so it fetched
+    # every branch of the repository anonymously. That took 16 minutes on
+    # 2026-11-02 and exceeded GENERATE_TIMEOUT_SEC every night since
+    # 2026-11-03 (e.g. https://github.com/ClickHouse/ClickHouse/actions/runs/44444590723).
     cmd = (
-        f"./tests/ci/changelog.py -v --jobs=5 "
+        f"./ci/tools/changelog.py -v --jobs=5 --no-fetch "
         f'--gh-user-or-token "$GH_TOKEN" '
         f"--from {shlex.quote(from_ref)} --output {shlex.quote(RAW_OUTPUT)} {to_sha}"
     )
@@ -1373,7 +1381,7 @@ def generate_raw_entries(version, from_ref, to_sha):
     message = (
         f"Update changelog for {version}: generate raw entries "
         f"({from_short}..{to_short})\n\n"
-        f"{entries} raw entries generated with tests/ci/changelog.py "
+        f"{entries} raw entries generated with ci/tools/changelog.py "
         f"by the nightly changelog CI job.\n\n"
         f"{STATE_TRAILER} {to_sha}\n"
     )
@@ -1843,7 +1851,7 @@ def edit_raw_entries(version):
                 # runners): writable workspace, network for `gh pr view`.
                 ok = Shell.check(
                     f"CODEX_HOME={shlex.quote(codex_home)} codex exec "
-                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-6.1-sol -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "

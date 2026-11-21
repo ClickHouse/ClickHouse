@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
-#include <base/hex.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/Hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -43,11 +44,13 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SYNTAX_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
@@ -213,6 +216,11 @@ void throwNumberWithoutDigits()
     throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
+void throwIntegerTextOverflow()
+{
+    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -344,6 +352,12 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
+template <typename Vector>
+void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
+}
+
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -358,6 +372,12 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -743,7 +763,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
 
 
 template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
-void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
+NO_INLINE static void readEscapedStringIntoImplSlow(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -782,8 +802,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {
@@ -797,6 +816,30 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
             }
         }
     }
+}
+
+/// Most fields are short: find their end without calling `find_first_symbols`. The rest is a tail call, so this
+/// function needs no stack frame - with pointer authentication, no return address to sign for every field.
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
+{
+    if (buf.hasPendingData())
+    {
+        char * end = buf.position() + std::min<size_t>(buf.available(), 16);
+        for (char * pos = buf.position(); pos < end; ++pos)
+        {
+            if (*pos == '\t' || *pos == '\n')
+            {
+                appendToStringOrVector(s, buf, pos);
+                buf.position() = pos;
+                return;
+            }
+            if (*pos == '\\' || (support_crlf && *pos == '\r'))
+                break;
+        }
+    }
+
+    readEscapedStringIntoImplSlow<Vector, parse_complex_escape_sequence, support_crlf>(s, buf);
 }
 
 template <typename Vector, bool support_crlf>
@@ -1720,8 +1763,9 @@ ReturnType readDateTimeTextFallback(
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if constexpr (throw_exception)
+        if (saturate_on_overflow)
         {
+            /// Use saturating version - makeDateTime saturates out-of-range years
             if (unlikely(year == 0))
                 datetime = 0;
             else
@@ -1729,29 +1773,28 @@ ReturnType readDateTimeTextFallback(
         }
         else
         {
-            if (saturate_on_overflow)
+            /// Use non-saturating version - report out-of-range values instead of clamping them
+            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+            if (!datetime_maybe)
             {
-                /// Use saturating version - makeDateTime saturates out-of-range years
-                if (unlikely(year == 0))
-                    datetime = 0;
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
                 else
-                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-            }
-            else
-            {
-                /// Use non-saturating version - return false for out-of-range values
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
                     return false;
+            }
 
-                if constexpr (!dt64_mode)
+            if constexpr (!dt64_mode)
+            {
+                if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
                 {
-                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                    if constexpr (throw_exception)
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", *datetime_maybe);
+                    else
                         return false;
                 }
-
-                datetime = *datetime_maybe;
             }
+
+            datetime = *datetime_maybe;
         }
     }
     else
@@ -1782,6 +1825,8 @@ ReturnType readDateTimeTextFallback(
             else
                 return false;
         }
+
+        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
 
     }
 
@@ -2094,6 +2139,27 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
+template <typename Allocator>
+void readStringGrowing(std::basic_string<char, std::char_traits<char>, Allocator> & s, size_t size, ReadBuffer & buf)
+{
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", s.size(), size);
+
+        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
+        if (s.capacity() < s.size() + bytes_to_copy)
+            s.reserve(std::min(size, std::max(s.size() + bytes_to_copy, 2 * s.capacity())));
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+    }
+}
+
+template void readStringGrowing<std::allocator<char>>(String & s, size_t size, ReadBuffer & buf);
+template void readStringGrowing<AllocatorWithMemoryTracking<char>>(
+    std::basic_string<char, std::char_traits<char>, AllocatorWithMemoryTracking<char>> & s, size_t size, ReadBuffer & buf);
+
 void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
 {
     size_t size = 0;
@@ -2289,13 +2355,12 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// There are no new bytes to add to memory.
-    /// No need to do extra stuff.
-    if (new_bytes == 0)
+    /// Nothing to append, and `in.position()` may be null.
+    if (additional_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resize(new_bytes);
+    memory.resizeAmortized(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }
@@ -2617,6 +2682,15 @@ namespace
 
 /// Scale `value` to whole seconds and clamp it to the `DateTime` range. The multiplication is bound-checked
 /// with truncating division rather than `common::mulOverflow`, a no-op stub for big-int types.
+/// Whether `value` scaled to whole seconds fits the DateTime range, using the same truncating bound
+bool datetimeSecondsInRange(Int128 value, UInt32 unread_scale)
+{
+    static constexpr Int128 max_seconds = 0xFFFFFFFF;
+    if (value < 0)
+        return false;
+    return value <= max_seconds / DecimalUtils::scaleMultiplier<Int128>(unread_scale);
+}
+
 time_t datetimeSecondsFromNumber(Int128 value, UInt32 unread_scale)
 {
     static constexpr Int128 max_seconds = 0xFFFFFFFF;
@@ -2641,7 +2715,7 @@ bool datetime64TicksFromNumber(DateTime64 & x, Int128 value, UInt32 unread_scale
 }
 
 template <typename ReturnType>
-ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf)
+ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf, bool saturate_on_overflow)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     Decimal128 tmp;
@@ -2661,12 +2735,20 @@ ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf)
         else
             return ReturnType(false);
     }
+    if (!saturate_on_overflow && !datetimeSecondsInRange(tmp.value, unread_scale))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value is out of bounds of type DateTime");
+        else
+            return ReturnType(false);
+    }
+
     x = datetimeSecondsFromNumber(tmp.value, unread_scale);
     return ReturnType(true);
 }
 
 template <typename ReturnType>
-ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf)
+ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf, bool saturate_on_overflow)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     /// Saturating 128-bit read: a plain `readIntText` does not check overflow, so an out-of-range value would
@@ -2676,6 +2758,14 @@ ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf)
         readIntText128Saturating(tmp, buf);
     else if (!readIntText128Saturating<bool>(tmp, buf))
         return ReturnType(false);
+
+    if (!saturate_on_overflow && !datetimeSecondsInRange(tmp, 0))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value is out of bounds of type DateTime");
+        else
+            return ReturnType(false);
+    }
 
     x = datetimeSecondsFromNumber(tmp, 0);
     return ReturnType(true);
@@ -2707,6 +2797,7 @@ ReturnType readDateTime64AsNumberImpl(DateTime64 & x, UInt32 scale, ReadBuffer &
         else
             return ReturnType(false);
     }
+
     return ReturnType(true);
 }
 
@@ -2727,15 +2818,16 @@ ReturnType readDateTime64AsRawValueImpl(DateTime64 & x, ReadBuffer & buf)
         else
             return ReturnType(false);
     }
+
     return ReturnType(true);
 }
 
 }
 
-void readDateTimeAsNumber(time_t & x, ReadBuffer & buf) { readDateTimeAsNumberImpl<void>(x, buf); }
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf) { return readDateTimeAsNumberImpl<bool>(x, buf); }
-void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf) { readDateTimeAsRawValueImpl<void>(x, buf); }
-bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf) { return readDateTimeAsRawValueImpl<bool>(x, buf); }
+void readDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { readDateTimeAsNumberImpl<void>(x, buf, saturate_on_overflow); }
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { return readDateTimeAsNumberImpl<bool>(x, buf, saturate_on_overflow); }
+void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { readDateTimeAsRawValueImpl<void>(x, buf, saturate_on_overflow); }
+bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { return readDateTimeAsRawValueImpl<bool>(x, buf, saturate_on_overflow); }
 
 void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf) { readDateTime64AsNumberImpl<void>(x, scale, buf); }
 bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf) { return readDateTime64AsNumberImpl<bool>(x, scale, buf); }

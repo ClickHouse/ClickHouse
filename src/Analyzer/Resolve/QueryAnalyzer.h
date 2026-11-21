@@ -118,7 +118,11 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_);
+    explicit QueryAnalyzer(
+        bool only_analyze_,
+        bool positional_arguments_already_resolved_ = false,
+        StoragePtr replaced_storage_ = nullptr,
+        bool view_source_in_subqueries_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -161,9 +165,9 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope) const;
 
-    static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
+    void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -173,8 +177,12 @@ private:
 
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
-    static std::string
-    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
+    static std::string rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
@@ -282,6 +290,10 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
+    void replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope);
+
+    void restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node);
+
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
@@ -294,7 +306,7 @@ private:
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
+    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
@@ -312,10 +324,39 @@ private:
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
 
+    /// Same as `ctes_in_resolve_process` but by identity: structural comparison cannot tell identical redefinitions apart.
+    std::unordered_set<const IQueryTreeNode *> cte_definitions_in_resolve_process;
+
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    struct ReplacedTableStorage
+    {
+        StoragePtr replacement;
+        StoragePtr storage;
+        StorageSnapshotPtr storage_snapshot;
+        QueryTreeNodePtr query_node;
+    };
+    std::vector<ReplacedTableStorage> replaced_table_storages;
+
+    [[nodiscard]] const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
+
+    /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
+      * An inlined view keeps behaving as a table expression with that name, exactly as it does without
+      * inlining: `v.c` and `db.v.c` address it, `SELECT *` qualifies its columns with it when they need
+      * qualification, it may repeat in a `FROM` section, an alias of its own does not take the name away,
+      * and it needs no alias where a subquery does. The name is qualifier metadata, not an alias: a user
+      * alias is unique in the `FROM` section, a table name is not.
+      */
+    std::unordered_map<const IQueryTreeNode *, StorageID> table_expression_to_inlined_view_name;
+
+    const StorageID * getInlinedViewName(const IQueryTreeNode * table_expression_node) const
+    {
+        auto it = table_expression_to_inlined_view_name.find(table_expression_node);
+        return it == table_expression_to_inlined_view_name.end() ? nullptr : &it->second;
+    }
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
@@ -345,10 +386,20 @@ private:
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
-    /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
-    std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+    /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants
+    /// the key also holds `Context::isDistributed` of the scope, because their bases capture it.
+    /// See `resolveFunction`.
+    std::map<std::pair<IQueryTreeNode::Hash, bool>, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
+    const bool positional_arguments_already_resolved;
+
+    /// The view source that the interpreter swaps into the query tree after the analysis.
+    const StoragePtr replaced_storage;
+    /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
+    const bool view_source_in_subqueries;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

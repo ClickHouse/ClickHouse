@@ -335,8 +335,7 @@ Delete:
 
 - Anything starting `CI:`, `ci:`, `tests:`, `Fix flaky `, `Disable test`,
   `Bump pytest`, `Update version_date.tsv`, `Switch ... workflow`,
-  `Praktika ...`, `Sync ...`, `Refactor `, `chcache: ` (unless it's a
-  user-relevant build issue).
+  `Praktika ...`, `Sync ...`, `Refactor `.
 - Internal coverage / digest / scheduling / artifact-path tweaks.
 
 ### 5. Per-entry text rewrites
@@ -613,7 +612,7 @@ For each entry, decide if its current category is right. Common moves:
   New Feature or Improvement.
 
 The preferred category order (from `utils/changelog/changelog.py`, which
-wraps `tests/ci/changelog.py`) is:
+wraps `ci/tools/changelog.py`) is:
 
 1. Backward Incompatible Change
 2. New Feature

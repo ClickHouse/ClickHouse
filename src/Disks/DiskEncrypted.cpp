@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -16,9 +17,13 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
 #endif
+
+#include <algorithm>
+#include <filesystem>
 
 
 namespace DB
@@ -53,7 +58,7 @@ namespace
 
     struct Key
     {
-        String plain;
+        SecretString plain;
         std::optional<String> encrypted;
     };
 
@@ -63,6 +68,22 @@ namespace
     {
         Strings config_keys;
         config.keys(config_prefix, config_keys);
+
+        /// The keys are picked by a pattern of their names (`key`, `key[1]`, ...). Look up the bare names,
+        /// so that a configuration tracking the read keys (`ConfigurationWithUsageTracking`, used for
+        /// a definition of a disk) knows that the elements with these names are read even when they are absent.
+        config.has(config_prefix + ".key");
+        config.has(config_prefix + ".key_hex");
+#if CLICKHOUSE_CLOUD
+        config.has(config_prefix + ".key_aws");
+        config.has(config_prefix + ".key_gcp");
+        config.has(config_prefix + ".key_azure");
+        /// The options of a key management service are read only to decrypt a key, so they are read only
+        /// when there is such a key. Look them up as well, so that they are known for a disk that gets
+        /// such a key on a configuration reload.
+        config.has(config_prefix + ".no_sign_request");
+        config.has(config_prefix + ".aws_kms_endpoint");
+#endif
 
         for (const std::string & config_key : config_keys)
         {
@@ -122,7 +143,7 @@ namespace
     }
 
     /// Reads the current encryption key from the configuration.
-    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+    SecretString getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
                                    const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
@@ -132,12 +153,12 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto check_current_key_found = [&](const String & current_key_)
+        auto check_current_key_found = [&](const SecretString & current_key_)
         {
             for (const auto & [_, key] : keys_by_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key.plain;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
                     return key.plain;
@@ -145,7 +166,7 @@ namespace
             for (const auto & key : keys_without_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key.plain;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
                     return key.plain;
@@ -155,12 +176,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = config.getString(key_path);
+            SecretString current_key(config.getString(key_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(config.getString(key_hex_path));
+            SecretString current_key(unhexKey(config.getString(key_hex_path)));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -187,6 +208,16 @@ namespace
         if (!config.has(path))
             return DEFAULT_ENCRYPTION_ALGORITHM;
         return parseAlgorithmFromString(config.getString(path));
+    }
+
+    void checkCustomDiskPathIsInsideWrappedDisk(const String & path)
+    {
+        std::filesystem::path fs_path(path);
+        if (fs_path.is_absolute() || std::ranges::any_of(fs_path, [](const auto & component) { return component == ".."; }))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Path of the encrypted custom disk must be relative to the wrapped disk and must not contain `..`, but got {}",
+                quoteString(path));
     }
 
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
@@ -243,7 +274,7 @@ namespace
                 res->all_keys[fingerprint] = key.plain;
             }
 
-            String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
+            SecretString current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
             res->current_key = current_key;
             res->current_key_fingerprint = calculateKeyFingerprint(current_key);
 
@@ -297,9 +328,9 @@ namespace
         }
 
         void next() override { delegate->next(); }
-        bool isValid() const override { return delegate->isValid(); }
+        [[nodiscard]] bool isValid() const override { return delegate->isValid(); }
 
-        String path() const override
+        [[nodiscard]] String path() const override
         {
             auto delegate_path = delegate->path();
 
@@ -313,7 +344,7 @@ namespace
             return delegate_path.substr(path_prefix.size());
         }
 
-        String name() const override { return delegate->name(); }
+        [[nodiscard]] String name() const override { return delegate->name(); }
 
     private:
         DirectoryIteratorPtr delegate;
@@ -329,17 +360,17 @@ public:
     {
     }
 
-    UInt64 getSize() const override { return reservation->getSize(); }
-    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    [[nodiscard]] UInt64 getSize() const override { return reservation->getSize(); }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override { reservation->update(new_size); }
 
@@ -388,6 +419,15 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
 {
     auto reservation = delegate->reserve(bytes, constraints);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
+ReservationPtr DiskEncrypted::reserveAndGetUnreservedSpace(
+    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
+{
+    auto reservation = delegate->reserveAndGetUnreservedSpace(bytes, constraints, unreserved_space);
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
@@ -475,7 +515,7 @@ void DiskEncrypted::prepareRead(
     pipeline.needDecryption(
         path,
         settings.local_fs_settings.buffer_size,
-        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> SecretString
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
         });
@@ -571,11 +611,24 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr,
+        ContextPtr context,
         const DisksMap & map,
-        bool, bool) -> DiskPtr
+        bool attach,
+        bool custom_disk) -> DiskPtr
     {
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
+
+        if (custom_disk && !attach)
+        {
+            DiskPtr wrapped_disk;
+            String path;
+            getDiskAndPathFromConfig(config, config_prefix, map, wrapped_disk, path);
+
+            checkCustomDiskPathIsInsideWrappedDisk(path);
+            if (!wrapped_disk->isRemote())
+                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
+        }
+
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(skip_access_check);
         return disk;

@@ -9,7 +9,7 @@ SET query_plan_enable_optimizations = 1;
 SET explain_query_plan_default = 'pretty';
 SET join_algorithm = 'grace_hash';
 SET grace_hash_join_initial_buckets = 2;
-SET max_bytes_before_external_join = 0;
+SET max_bytes_before_external_join = '1M';
 SET max_bytes_ratio_before_external_join = 0;
 
 DROP TABLE IF EXISTS ts_join_settings;
@@ -32,7 +32,7 @@ FROM ts_join_settings FINAL;
 
 SET join_algorithm = 'full_sorting_merge';
 SELECT metric_name, tags['n'], arraySort(samples), metric_family, unit, help, type
-FROM ts_join_settings;
+FROM ts_join_settings FINAL;
 
 -- The legacy `ANY` semantics also return each series once with all its samples.
 SET join_algorithm = 'hash';

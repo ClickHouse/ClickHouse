@@ -1,7 +1,6 @@
 import json
 import os
 import shlex
-import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -9,14 +8,10 @@ from ci.jobs.scripts import release_packages
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.s3 import S3
 from ci.praktika.secret import Secret
+from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
-
-# `S3Helper` (boto3) lives under `tests/ci`; it lists the release artifacts in
-# S3 for the artifact-readiness gate. Mirror `create_release.py`'s path setup so
-# the gate talks to S3 through the exact same client CreateRelease uploads with.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tests/ci"))
-from s3_helper import S3Helper  # noqa: E402
 
 # Default branch releases are cut from, and the ref the dispatched CreateRelease
 # runs use. Defined locally (not imported from ci.defs) so the job keeps its
@@ -107,7 +102,8 @@ def _wf_completed(sha: str) -> bool:
     completed (the commit is not a release candidate) rather than as done."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[].status'"
+        f" --jq '.check_runs[].status'",
+        strict=True,
     )
     statuses = [s for s in out.splitlines() if s.strip()]
     if not statuses:
@@ -181,8 +177,19 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     version = _release_version_for_commit(commit_sha)
     with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
     print(f"   signed macOS artifacts expected: {with_signed_macos}")
+    with_illumos = release_packages.commit_has_illumos_build(commit_sha)
+    print(f"   illumos artifacts expected: {with_illumos}")
+    packages = release_packages.commit_packages(commit_sha)
+    print(f"   packages expected: {', '.join(packages)}")
     return release_packages.release_build_artifacts_ready(
-        S3Helper(), release_branch, commit_sha, version, with_signed_macos
+        S3,
+        os.getenv("S3_BUILDS_BUCKET", Settings.S3_ARTIFACT_BUCKET),
+        release_branch,
+        commit_sha,
+        version,
+        packages,
+        with_signed_macos,
+        with_illumos,
     )
 
 

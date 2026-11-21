@@ -35,8 +35,8 @@ public:
 
         explicit operator bool() const { return parent_set != nullptr; }
 
-        const StorageID & getID() const { return id; }
-        const std::vector<StorageID> & getDependencies() const { return dependencies; }
+        [[nodiscard]] const StorageID & getID() const { return id; }
+        [[nodiscard]] const std::vector<StorageID> & getDependencies() const { return dependencies; }
 
     private:
         RefreshSet * parent_set = nullptr;
@@ -52,6 +52,8 @@ public:
 
     RefreshSet();
 
+    /// Caller should then also call notifyDependents, because dependent views need to know when
+    /// their dependencies appear/disappear.
     void emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
 
     /// Finds active refreshable view(s) by database and table name.

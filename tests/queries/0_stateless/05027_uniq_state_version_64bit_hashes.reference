@@ -1,0 +1,12 @@
+AggregateFunction(1, uniq, UInt8)
+AggregateFunction(1, uniq, UInt64, UInt64)
+AggregateFunction(1, uniq, UInt64)
+1001943
+1001943
+AggregateFunction(uniq, UInt64)
+1001943
+1001943
+AggregateFunction(uniq, UInt64)
+1490000
+1490000
+50000

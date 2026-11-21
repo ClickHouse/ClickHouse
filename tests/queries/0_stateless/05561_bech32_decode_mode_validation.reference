@@ -1,0 +1,6 @@
+raw mode decodes a non-SegWit address
+cosmos	751E76E8199196D454941C45D1B3A323F1433BD6
+('','')
+an empty block still validates a constant mode
+0
+a mode that differs between rows is rejected

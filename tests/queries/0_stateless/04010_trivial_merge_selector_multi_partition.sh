@@ -50,7 +50,7 @@ OPTIMIZE TABLE test_trivial_multi_partition;
 
 # Wait until partition 1 is merged into a single active part.
 # With the bug the merge never happens and this loop hangs, catching the regression.
-while true
+while clickhouse_test_time_left
 do
     result=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM system.parts

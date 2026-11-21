@@ -9,6 +9,8 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
+#include <Dictionaries/IDictionary.h>
+
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
 #endif
@@ -34,6 +36,7 @@
 #include <IO/S3/Client.h>
 #endif
 
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -73,6 +76,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace
@@ -495,11 +499,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
+                auto table = iterator->table();
                 if (!table)
                     continue;
 
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip))
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
@@ -541,7 +545,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     }
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
                 {
                     StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -550,30 +554,43 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
                     calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
 
-                    if (!status.is_readonly)
+                    /// `status.is_readonly` is only the transient flag, while `getReplicaDelays`
+                    /// also rejects static storage; `isTableReadOnly()` covers both states.
+                    if (!table_replicated_merge_tree->isTableReadOnly())
                     {
                         try
                         {
                             time_t absolute_delay = 0;
                             time_t relative_delay = 0;
-                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                            {
+                                /// The table can turn readonly between the check above and this
+                                /// call, which then throws before doing any work. That race is not
+                                /// an error of this server, so it must not reach `system.errors`.
+                                Exception::SuppressErrorCodesScope suppress_error_codes;
+                                table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                            }
 
                             calculateMax(max_absolute_delay, absolute_delay);
                             calculateMax(max_relative_delay, relative_delay);
                         }
-                        catch (...)
+                        catch (Exception & e)
                         {
-                            /// The table can transition to readonly between the `status.is_readonly`
-                            /// check above and the call to `getReplicaDelays` (which calls
-                            /// `assertNotReadonly` internally). This is a benign race for a
-                            /// background metrics thread, so do not pollute the error log /
-                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
-                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
-                                ? LogsLevel::debug
-                                : LogsLevel::error;
+                            const bool benign_readonly = e.code() == ErrorCodes::TABLE_IS_READ_ONLY
+                                || e.code() == ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY;
+
+                            /// The same call also talks to Keeper, and those failures are real
+                            /// operational errors that belong in `system.errors`.
+                            if (!benign_readonly)
+                                e.recordToSystemErrors();
+
                             tryLogCurrentException(__PRETTY_FUNCTION__,
                                 "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
-                                level);
+                                benign_readonly ? LogsLevel::debug : LogsLevel::error);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__,
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                         }
                     }
                 }
@@ -684,11 +701,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip))
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {
@@ -749,10 +762,6 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         getContext()->addOrUpdateWarningMessage(
             Context::WarningType::MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
             PreformattedMessage::create(msg));
-        static std::atomic<bool> logged{false};
-        bool expected = false;
-        if (logged.compare_exchange_strong(expected, true))
-            LOG_WARNING(log, "{}", msg);
         return;
     }
 
@@ -1007,19 +1016,70 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
         Duration max_update_delay{0};
         size_t failed_counter = 0;
+        size_t total_count = 0;
+        size_t loaded_count = 0;
+        size_t failed_count = 0;
+        size_t loading_count = 0;
+        size_t total_bytes_allocated = 0;
+        size_t total_element_count = 0;
+        size_t max_query_count = 0;
+
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults())
         {
+            ++total_count;
+
             if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0)
             {
                 max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
             }
             failed_counter += load_result.error_count;
+
+            /// Mirror `system.dictionaries` classification: `*_AND_RELOADING` counts as loaded/failed.
+            using Status = ExternalLoader::Status;
+            switch (load_result.status)
+            {
+                case Status::LOADED:
+                case Status::LOADED_AND_RELOADING:
+                    ++loaded_count;
+                    break;
+                case Status::FAILED:
+                case Status::FAILED_AND_RELOADING:
+                    ++failed_count;
+                    break;
+                case Status::LOADING:
+                    ++loading_count;
+                    break;
+                case Status::NOT_LOADED:
+                case Status::NOT_EXIST:
+                    break;
+            }
+
+            if (auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object))
+            {
+                total_bytes_allocated += dict_ptr->getBytesAllocated();
+                total_element_count += dict_ptr->getElementCount();
+                max_query_count = std::max(max_query_count, dict_ptr->getQueryCount());
+            }
         }
         new_values["DictionaryMaxUpdateDelay"] = {
             std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
         new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Number of errors since last successful loading in all dictionaries."};
+        new_values["DictionaryTotalCount"] = {total_count,
+            "Total number of dictionaries known to the server (regardless of load status)."};
+        new_values["DictionaryLoadedCount"] = {loaded_count,
+            "Number of dictionaries currently in a loaded state (includes the LOADED_AND_RELOADING transient state)."};
+        new_values["DictionaryFailedCount"] = {failed_count,
+            "Number of dictionaries currently in a failed state (includes the FAILED_AND_RELOADING transient state)."};
+        new_values["DictionaryLoadingCount"] = {loading_count,
+            "Number of dictionaries currently being loaded for the first time (excludes reloads of already-loaded or failed dictionaries)."};
+        new_values["DictionaryTotalBytesAllocated"] = {total_bytes_allocated,
+            "Total bytes allocated by all currently loaded dictionaries (sum of `getBytesAllocated` over each dictionary instance)."};
+        new_values["DictionaryTotalElementCount"] = {total_element_count,
+            "Total number of keys stored across all currently loaded dictionaries."};
+        new_values["DictionaryMaxQueryCount"] = {max_query_count,
+            "Maximum query count among loaded dictionaries, counted since each dictionary's last load."};
     }
 
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
@@ -1032,6 +1092,21 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+#define MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION \
+    "Approximate resident set size of pthread stacks, summed from `Rss:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or " \
+    "newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it " \
+    "is summed from the resident pages of the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION \
+    "Approximate virtual size of pthread stacks, summed from `Size:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or newer; absent on older kernels (see " \
+    "the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it is summed from the sizes of the " \
+    "task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION \
+    "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]` in /proc/self/smaps. Refreshed on the heavy-metrics " \
+    "cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in " \
+    "`system.warnings`). On macOS, it counts the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
     /// present between heavy-cadence refreshes. They are emitted only after a
     /// successful sample; in environments where the source cannot be read, or
@@ -1043,42 +1118,24 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
 #if defined(OS_LINUX)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from `Rss:`"
-            " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
-            " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
-            " cadence. Requires Linux 5.17 or newer; absent on older kernels"
-            " (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from `Size:` of"
-            " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
-            " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
-            " newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
-            " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
-            " Requires Linux 5.17 or newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #elif defined(OS_DARWIN)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from the"
-            " resident pages of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from the sizes"
-            " of the task's VM regions tagged `VM_MEMORY_STACK` (excluding the"
-            " inaccessible guard regions). Refreshed on the heavy-metrics"
-            " cadence." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #endif
     }
+
+#undef MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION
 #endif
 }
 
