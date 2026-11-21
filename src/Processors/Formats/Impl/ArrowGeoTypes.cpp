@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/WKT.h>
 #include <Functions/geometryConverters.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -170,14 +171,6 @@ UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncodi
     }
 
     return geo_columns;
-}
-
-/// The whitespace class the WKT grammar (boost::geometry::read_wkt, used by readWKT) treats as
-/// token separators: space, tab, newline, carriage return. Not isWhitespaceASCII, which also
-/// includes \f and \v that read_wkt rejects.
-inline bool isWKTSeparator(char ch)
-{
-    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
 }
 
 inline void skipWKTSeparators(ReadBuffer & in_buffer)
@@ -408,6 +401,20 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
             break;
         type.push_back(current_symbol);
         in_buffer.ignore();
+    }
+
+    skipWKTSeparators(in_buffer);
+    char next_symbol = 0;
+    if (in_buffer.peek(next_symbol) && (next_symbol == 'Z' || next_symbol == 'z' || next_symbol == 'M' || next_symbol == 'm'))
+    {
+        String dimensioned;
+        readStringUntilEOF(dimensioned, in_buffer);
+        dimensioned.insert(0, type + " ");
+        auto normalized = normalizeWKTDimensions(dimensioned);
+        if (!normalized)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: invalid dimension tag");
+        ReadBufferFromString normalized_buffer(*normalized);
+        return parseWKTFormat(normalized_buffer, precise_float_parsing);
     }
 
     /// The keyword is matched case-insensitively with boost::iequals, like readWKT
