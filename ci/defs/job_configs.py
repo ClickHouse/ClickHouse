@@ -1,3 +1,5 @@
+import dataclasses
+
 from praktika import Job
 from praktika.utils import Utils
 
@@ -97,12 +99,16 @@ def dind_containment_env(job_mem):
 
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
-BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host"
+BINARY_DOCKER_OPTIONS = (
+    "+--network=host"
     f"+--memory={Utils.physical_memory() * 95 // 100}"
     f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
     f"+--volume=.:/ClickHouse"
 )
+BINARY_DOCKER_COMMAND = "clickhouse/binary-builder" + BINARY_DOCKER_OPTIONS
+# The builds that need the macOS SDK or Emscripten, which only `clickhouse/binary-builder-darwin-wasm` has.
+DARWIN_WASM_BUILD_TYPES = (BuildTypes.AMD_DARWIN, BuildTypes.ARM_DARWIN, BuildTypes.WASM64)
+DARWIN_WASM_DOCKER_COMMAND = "clickhouse/binary-builder-darwin-wasm" + BINARY_DOCKER_OPTIONS
 
 if Utils.is_arm():
     docker_sock_mount = "--volume=/var/run:/run/host:ro"
@@ -744,6 +750,14 @@ class JobConfigs:
                 )
             )
             if job.parameter == BuildTypes.ARM_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
+    special_build_jobs = [
+        (
+            dataclasses.replace(job, run_in_docker=DARWIN_WASM_DOCKER_COMMAND)
+            if job.parameter in DARWIN_WASM_BUILD_TYPES
             else job
         )
         for job in special_build_jobs
