@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UniqueLock.h>
 #include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -124,7 +125,7 @@ void ReadManager::init(
             {
                 return row_group.need_to_process
                     && std::none_of(row_group.columns.begin(), row_group.columns.end(),
-                        [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
+                        [](const ColumnChunk & column) { return column.offset_index_prefetch || !column.offset_index.page_locations.empty(); })
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
@@ -133,8 +134,8 @@ void ReadManager::init(
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
-    /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
-    /// The distribution is static to make sure no stage gets starved if others eat all the memory.
+    /// E.g. if the budget was shared among all stages, the stages before ColumnData could run far ahead and eat
+    /// all memory, and ColumnData would only make progress through the privileged row group (see is_privileged_task).
     double sum = 0;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
@@ -842,6 +843,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         size_t i = first_incomplete_row_group.load();
         if (row_group_idx != i)
             return false;
+        /// Stages before `ColumnData` handle the whole row group at once. The first incomplete row group
+        /// must be able to pass them even when a later row group holds the stage's memory, otherwise
+        /// it waits for that memory while the later row group waits for it to be delivered.
+        if (stage_idx < ReadStage::ColumnData)
+            return true;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
         /// Must check stage first so that read_ptr is meaningful (we start advancing it in finishRowSubgroupStage).
         /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
@@ -1360,14 +1366,15 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 if (column.use_column_index)
                     reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnData:
@@ -1460,9 +1467,12 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
 void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     row_subgroup.filter.clear(&diff);
-    row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
+    /// The row subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+    row_subgroup.output = decltype(row_subgroup.output)();
+    row_subgroup.columns = decltype(row_subgroup.columns)();
+    row_subgroup.block_missing_values = BlockMissingValues();
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()
@@ -1537,7 +1547,7 @@ ReadManager::ReadResult ReadManager::read()
     while (true)
     {
         {
-            std::unique_lock lock(delivery_mutex);
+            UniqueLock lock(delivery_mutex);
 
             while (true)
             {
@@ -1624,7 +1634,7 @@ ReadManager::ReadResult ReadManager::read()
                 else
                 {
                     /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
-                    delivery_cv.wait_for(lock, std::chrono::seconds(10));
+                    delivery_cv.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(10));
                 }
             }
         }
