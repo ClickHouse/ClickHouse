@@ -852,6 +852,13 @@ size_t ColumnSparse::byteSize() const
     return values->byteSize() + offsets->byteSize() + sizeof(_size);
 }
 
+size_t ColumnSparse::byteSizeOfFullColumn() const
+{
+    /// `values` holds the default once, at position 0, whether or not any row is default.
+    size_t default_size = values->byteSizeAt(0);
+    return values->byteSize() - default_size + getNumberOfDefaultRows() * default_size;
+}
+
 size_t ColumnSparse::byteSizeAt(size_t n) const
 {
     size_t index = getValueIndex(n);

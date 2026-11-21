@@ -150,6 +150,9 @@ public:
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
+    /// Returns the bytes that the column takes once `convertToFullColumnIfSparse` expands it: the non-default values
+    /// as they are, and the default value once per default row.
+    size_t byteSizeOfFullColumn() const;
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
