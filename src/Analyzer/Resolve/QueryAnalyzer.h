@@ -169,6 +169,11 @@ private:
 
     void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
+    /// Returns the nodes stored in `cte_name_to_query_node` for `cte_name`, searching `scope` and its
+    /// parents. These exact nodes are what `tryResolveIdentifierFromCTE` tests against
+    /// `ctes_in_resolve_process`, so they are the only nodes that work as a self-reference guard.
+    static QueryTreeNodes findCTENodeInScopes(const std::string & cte_name, IdentifierResolveScope & scope);
+
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);

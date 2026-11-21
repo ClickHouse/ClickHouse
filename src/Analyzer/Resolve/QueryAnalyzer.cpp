@@ -4038,7 +4038,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
+                            /// Not `resolved_identifier_node`: the guard only sees the map nodes.
+                            auto cte_map_nodes = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
+
+                            for (const auto & cte_map_node : cte_map_nodes)
+                            {
+                                ctes_in_resolve_process.insert(cte_map_node);
+                                cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                            }
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -4048,7 +4055,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             else
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
+                            for (const auto & cte_map_node : cte_map_nodes)
+                            {
+                                ctes_in_resolve_process.erase(cte_map_node);
+                                cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                            }
 
                             checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
@@ -6156,6 +6167,18 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             "ARRAY JOIN requires at least one expression after resolving COLUMNS");
 
     array_join_nodes = std::move(array_join_column_expressions);
+}
+
+QueryTreeNodes QueryAnalyzer::findCTENodeInScopes(const std::string & cte_name, IdentifierResolveScope & scope)
+{
+    for (auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        auto it = current_scope->cte_name_to_query_node.find(cte_name);
+        if (it != current_scope->cte_name_to_query_node.end())
+            return it->second;
+    }
+
+    return {};
 }
 
 void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const
