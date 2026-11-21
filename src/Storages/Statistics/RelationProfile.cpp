@@ -9,9 +9,21 @@ void ColumnStats::addTransformation(ColumnStatsTransformation transformation)
     range_provenance.add(transformation);
 }
 
+namespace
+{
+
+/// Whether facts of `origin` can give a guarantee. Test-only overrides stand in for measured statistics, see
+/// `ColumnStatsOrigin::SyntheticOverride`.
+bool isTrustedOrigin(ColumnStatsOrigin origin)
+{
+    return origin == ColumnStatsOrigin::MeasuredStatistics || origin == ColumnStatsOrigin::SyntheticOverride;
+}
+
+}
+
 std::optional<UInt64> ColumnStats::distinctCount(DistinctCountGuarantee guarantee) const
 {
-    if (ndv_provenance.origin != ColumnStatsOrigin::MeasuredStatistics && ndv_provenance.origin != ColumnStatsOrigin::SyntheticOverride)
+    if (!isTrustedOrigin(ndv_provenance.origin))
         return {};
 
     UInt16 kept_by = 0;
@@ -27,7 +39,7 @@ std::optional<UInt64> ColumnStats::distinctCount(DistinctCountGuarantee guarante
 
 std::optional<ColumnValueRange> ColumnStats::valueRange(ValueRangeGuarantee guarantee) const
 {
-    if (!min_value || !max_value || range_provenance.origin != ColumnStatsOrigin::MeasuredStatistics)
+    if (!min_value || !max_value || !isTrustedOrigin(range_provenance.origin))
         return {};
 
     UInt16 kept_by = 0;

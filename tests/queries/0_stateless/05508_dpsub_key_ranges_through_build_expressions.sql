@@ -1,8 +1,9 @@
 -- DPsub's interesting-order costing reads the key ranges of a build side to estimate how much of a sorted probe side the
 -- runtime filter of a hash join prunes, or a sharded merge join reads. The range of a column does not describe a
--- value-changing function of it, e.g. `negate(k)`: kept under the name of the function, the range of `k` would make DPsub
--- see no overlap with the probe, price the probe of the hash join at nothing and pick hash joins everywhere, where the
--- equivalent build sides with keys over the whole probe range get a merge join.
+-- value-changing function of it, e.g. `negate(k)`: the function keeps the range of `k` under its name, but records that
+-- it may change values, so the range gives no guarantee and DPsub does not use it. Taken as a bound of the keys, it would
+-- make DPsub see no overlap with the probe, price the probe of the hash join at nothing and pick hash joins everywhere,
+-- where the equivalent build sides with keys over the whole probe range get a merge join.
 -- The tables are small; the statistics hints below give the sizes and ranges the plans are chosen for.
 
 SET enable_analyzer = 1;
@@ -74,12 +75,14 @@ SELECT '-- a cast that happens to keep every value: no range either, and the sam
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT toInt64(toInt32(k)) AS nk, v FROM build_wide2) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
 
--- The hinted ranges are not measured statistics, so they do not survive the steps that used to drop every range: a build
--- side read through `GROUP BY`, `ORDER BY ... LIMIT` or `LIMIT` is costed like one with unknown keys, as before.
+-- `GROUP BY`, `ORDER BY ... LIMIT` and `LIMIT` keep the keys of a build side in its range, so the range still bounds
+-- them. Behind these steps the build side is no longer sorted by the key, so a merge join with it would have to sort it;
+-- instead the runtime filter of its hash join reads only the tenth of the probe that its keys cover, which is cheaper than
+-- merging the whole probe with `build_wide` first.
 SELECT '-- a build side over a tenth of the probe range, read directly: its range is used, a merge join reads that tenth';
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, v FROM build_tenth) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
-SELECT '-- the same build side behind GROUP BY, ORDER BY LIMIT and LIMIT: its hinted range is dropped, as with an alias over the whole range';
+SELECT '-- the same build side behind GROUP BY, ORDER BY LIMIT and LIMIT: unsorted, but its range is used, a hash join reads that tenth';
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, any(v) AS v FROM build_tenth GROUP BY k) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
@@ -88,7 +91,7 @@ SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, v FROM build_tenth LIMIT 20000000) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
 
 -- Without the runtime filter, only the sharded merge join reads less of the probe side when the build keys lie in a narrow
--- range, so the merge join is chosen only with the range: the hinted range of a directly read table is still used.
+-- range, so the merge join is chosen only with the range of the build side.
 SELECT '-- a sorted build side over a hundredth of the probe range, runtime filters disabled: a merge join reads that hundredth';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
 WHERE explain LIKE '%Algorithm:%'

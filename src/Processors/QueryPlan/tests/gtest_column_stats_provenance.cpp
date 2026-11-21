@@ -367,10 +367,19 @@ TEST(ColumnStatsProvenance, GuaranteesRequireTheirOrigins)
         auto stats = measuredColumnStats();
         stats.ndv_provenance.origin = origin;
         stats.range_provenance.origin = origin;
-        const bool is_trusted_distinct_count = origin == ColumnStatsOrigin::SyntheticOverride;
-        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::Exact).has_value(), is_trusted_distinct_count);
-        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value(), is_trusted_distinct_count);
-        EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Superset).has_value());
+        /// Hints stand in for measured statistics, so their facts are trusted as if measured, the range as the distinct count.
+        const bool is_trusted = origin == ColumnStatsOrigin::SyntheticOverride;
+        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::Exact).has_value(), is_trusted);
+        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value(), is_trusted);
+        EXPECT_EQ(stats.valueRange(ValueRangeGuarantee::Exact).has_value(), is_trusted);
+        EXPECT_EQ(stats.valueRange(ValueRangeGuarantee::Superset).has_value(), is_trusted);
+        EXPECT_EQ(stats.valueRange(ValueRangeGuarantee::Representative).has_value(), is_trusted);
+
+        /// The transformations limit a trusted origin as they limit a measured one.
+        stats.addTransformation(RowSubset);
+        EXPECT_EQ(stats.valueRange(ValueRangeGuarantee::Superset).has_value(), is_trusted);
+        EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Representative).has_value());
+        EXPECT_FALSE(stats.distinctCount(DistinctCountGuarantee::Exact).has_value());
     }
 }
 
@@ -409,12 +418,6 @@ TEST(ColumnStatsProvenance, FilterOnOtherColumnsKeepsRepresentativeRangeUnlessRo
     ASSERT_TRUE(superset.has_value());
     EXPECT_FALSE(superset->null_fraction.has_value());
 
-    /// The range still encloses the values, so it is kept where only enclosing ranges are.
-    auto enclosing = stats;
-    keepOnlyEnclosingValueRange(enclosing);
-    EXPECT_EQ(enclosing.min_value, stats.min_value);
-    EXPECT_EQ(enclosing.max_value, stats.max_value);
-
     /// Another predicate that reads the column cuts its distribution.
     stats.addTransformation(RowSubset);
     EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Representative).has_value());
@@ -440,12 +443,13 @@ TEST(ColumnStatsProvenance, SyntheticPlannerInputsCarryOverrideProvenance)
     EXPECT_EQ(hinted.column_stats.at("w").ndv_provenance.origin, ColumnStatsOrigin::Unknown);
     EXPECT_EQ(hinted.column_stats.at("w").range_provenance.origin, ColumnStatsOrigin::Unknown);
 
-    /// The hinted distinct count is trusted as if measured. The hinted range gives no guarantee, but stays for the
-    /// readers that do not consult provenance.
+    /// The hinted distinct count and range are trusted as if measured.
     EXPECT_EQ(k.distinctCount(DistinctCountGuarantee::Exact), std::optional<UInt64>(25));
-    EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset).has_value());
-    EXPECT_EQ(k.min_value, Field(Float64{0}));
-    EXPECT_EQ(k.max_value, Field(Float64{99}));
+    const auto hinted_range = k.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(hinted_range.has_value());
+    EXPECT_EQ(hinted_range->min, Field(Float64{0}));
+    EXPECT_EQ(hinted_range->max, Field(Float64{99}));
+    EXPECT_TRUE(hinted.column_stats.at("r").valueRange(ValueRangeGuarantee::Representative).has_value());
 
     const auto randomized = getRandomizedStats(42, 0, "t", *makeHeader());
     ASSERT_EQ(randomized.source, RowEstimateSource::Randomized);
@@ -453,7 +457,7 @@ TEST(ColumnStatsProvenance, SyntheticPlannerInputsCarryOverrideProvenance)
     EXPECT_EQ(randomized.column_stats.at("k").ndv_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
 }
 
-TEST(ColumnStatsProvenance, ExpressionLineageRecordsValueChangingFunctionsAndClearsTheirRanges)
+TEST(ColumnStatsProvenance, ExpressionLineageRecordsValueChangingFunctionsAndRejectsTheirRanges)
 {
     tryRegisterFunctions();
     const auto header = makeHeader();
@@ -494,9 +498,8 @@ TEST(ColumnStatsProvenance, ExpressionLineageRecordsValueChangingFunctionsAndCle
         EXPECT_EQ(range->null_fraction, 0.25);
     }
 
-    /// Value-changing outputs keep the distinct count of their input as an upper bound, but the measured range does not
-    /// describe their values, so it is cleared, also for readers that do not consult the provenance. The NULL fraction
-    /// stays with the provenance that disqualifies it.
+    /// Value-changing outputs keep the distinct count of their input as an upper bound, but the measured range and NULL
+    /// fraction do not describe their values: the facts stay as measured, and the provenance rejects every range guarantee.
     for (const auto * name : {"casted", "collapsed", "chained"})
     {
         SCOPED_TRACE(name);
@@ -504,63 +507,14 @@ TEST(ColumnStatsProvenance, ExpressionLineageRecordsValueChangingFunctionsAndCle
         EXPECT_TRUE(stats.at(name).range_provenance.has(NDVBoundExpression));
         EXPECT_EQ(stats.at(name).range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
         EXPECT_EQ(stats.at(name).num_distinct_values, 50);
-        EXPECT_FALSE(stats.at(name).min_value.has_value());
-        EXPECT_FALSE(stats.at(name).max_value.has_value());
+        EXPECT_EQ(stats.at(name).min_value, Field(UInt64{10}));
+        EXPECT_EQ(stats.at(name).max_value, Field(UInt64{59}));
         EXPECT_EQ(stats.at(name).null_fraction, 0.25);
         EXPECT_TRUE(stats.at(name).distinctCount(DistinctCountGuarantee::UpperBound).has_value());
+        EXPECT_FALSE(stats.at(name).valueRange(ValueRangeGuarantee::Exact).has_value());
         EXPECT_FALSE(stats.at(name).valueRange(ValueRangeGuarantee::Superset).has_value());
+        EXPECT_FALSE(stats.at(name).valueRange(ValueRangeGuarantee::Representative).has_value());
     }
-}
-
-TEST(ColumnStatsProvenance, KeepOnlyEnclosingValueRangeClearsRangesWithoutSupersetGuarantee)
-{
-    /// Each transformation alone, with the measured origin.
-    for (const auto [transformations, enclosing] : std::initializer_list<std::pair<UInt16, bool>>{
-             {0, true},
-             {RowSubset, true},
-             {EstimatedRowCountClamp, false},
-             {NDVBoundExpression, false},
-             {PartialStatisticsCoverage, false},
-             {Unmodeled, false},
-             {RowSubset | Unmodeled, false}})
-    {
-        SCOPED_TRACE(provenance(ColumnStatsOrigin::MeasuredStatistics, transformations).toString());
-        auto stats = measuredColumnStats();
-        stats.null_fraction = 0.25;
-        stats.range_provenance.transformations = transformations;
-        keepOnlyEnclosingValueRange(stats);
-        EXPECT_EQ(stats.min_value.has_value(), enclosing);
-        EXPECT_EQ(stats.max_value.has_value(), enclosing);
-        /// Everything else is untouched: the NULL fraction, the provenance and the distinct count.
-        EXPECT_EQ(stats.null_fraction, 0.25);
-        EXPECT_EQ(stats.range_provenance.transformations, transformations);
-        EXPECT_EQ(stats.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
-        EXPECT_EQ(stats.num_distinct_values, 50);
-    }
-
-    /// A range that was not measured, e.g. a test-only statistics hint, is not enclosing either.
-    for (const auto origin : {ColumnStatsOrigin::Unknown, ColumnStatsOrigin::SyntheticFallback, ColumnStatsOrigin::SyntheticOverride})
-    {
-        SCOPED_TRACE(provenance(origin).toString());
-        auto stats = measuredColumnStats();
-        stats.range_provenance.origin = origin;
-        keepOnlyEnclosingValueRange(stats);
-        EXPECT_FALSE(stats.min_value.has_value());
-        EXPECT_FALSE(stats.max_value.has_value());
-        EXPECT_EQ(stats.range_provenance.origin, origin);
-    }
-
-    /// The distinct-count provenance does not matter for the range.
-    auto stats = measuredColumnStats();
-    stats.ndv_provenance.add(Unmodeled);
-    keepOnlyEnclosingValueRange(stats);
-    EXPECT_TRUE(stats.min_value.has_value());
-
-    /// Without a range there is nothing to clear.
-    ColumnStats without_range{.num_distinct_values = 50, .ndv_provenance = provenance(ColumnStatsOrigin::MeasuredStatistics)};
-    keepOnlyEnclosingValueRange(without_range);
-    EXPECT_FALSE(without_range.min_value.has_value());
-    EXPECT_EQ(without_range.num_distinct_values, 50);
 }
 
 namespace
@@ -951,33 +905,39 @@ TEST(ColumnStatsProvenance, AggregationPreservesPlainKeysAndRejectsGroupingSetsA
     EXPECT_EQ(plain_range->min, Field(UInt64{10}));
     EXPECT_EQ(plain_range->max, Field(UInt64{59}));
 
-    /// Grouping sets and the overflow row add keys the input does not have, so the output keys get no range at all.
+    /// Grouping sets and the overflow row add keys the input does not have, so the range of the output keys gives no
+    /// guarantee. The facts stay as measured.
+    auto expect_no_range_guarantee = [](const ColumnStats & stats)
+    {
+        EXPECT_TRUE(stats.ndv_provenance.has(Unmodeled));
+        EXPECT_TRUE(stats.range_provenance.has(Unmodeled));
+        EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Exact).has_value());
+        EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Superset).has_value());
+        EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Representative).has_value());
+        EXPECT_EQ(stats.min_value, Field(UInt64{10}));
+        EXPECT_EQ(stats.max_value, Field(UInt64{59}));
+        EXPECT_EQ(stats.num_distinct_values, 50);
+    };
+
     auto grouping_sets_step = makeAggregationStep(header, true, false);
     auto grouping_sets = estimateUnaryStepStats(*grouping_sets_step, inputRelationStats());
     ASSERT_TRUE(grouping_sets.has_value());
-    EXPECT_TRUE(grouping_sets->column_stats.at("k").ndv_provenance.has(Unmodeled));
-    EXPECT_TRUE(grouping_sets->column_stats.at("k").range_provenance.has(Unmodeled));
-    EXPECT_FALSE(grouping_sets->column_stats.at("k").min_value.has_value());
-    EXPECT_FALSE(grouping_sets->column_stats.at("k").max_value.has_value());
-    EXPECT_EQ(grouping_sets->column_stats.at("k").num_distinct_values, 50);
+    expect_no_range_guarantee(grouping_sets->column_stats.at("k"));
 
     auto overflow_step = makeAggregationStep(header, false, true);
     auto overflow = estimateUnaryStepStats(*overflow_step, inputRelationStats());
     ASSERT_TRUE(overflow.has_value());
-    EXPECT_TRUE(overflow->column_stats.at("k").ndv_provenance.has(Unmodeled));
-    EXPECT_TRUE(overflow->column_stats.at("k").range_provenance.has(Unmodeled));
-    EXPECT_FALSE(overflow->column_stats.at("k").min_value.has_value());
-    EXPECT_FALSE(overflow->column_stats.at("k").max_value.has_value());
+    expect_no_range_guarantee(overflow->column_stats.at("k"));
 }
 
-/// Limits, sorts with a limit and grouping keys used to come without a value range. They keep one only while it still
-/// encloses the produced values, which depends on what the steps below recorded.
-TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
+/// Limits, sorts with a limit and grouping keys keep the value range as measured and add only what they do to it, so the
+/// guarantees of the range depend on what the steps below recorded.
+TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepRangesWithTheirProvenance)
 {
     const auto header = makeHeader();
 
     /// A filter keeps an enclosing range (`RowSubset`), a generic row-preserving step disqualifies it (`Unmodeled`), and a
-    /// range that was not measured (a statistics hint) was never enclosing.
+    /// statistics hint is trusted as if measured.
     auto filtered_input = [&]
     {
         FilterStep filter(header, makeFilterDAG(header), "__filter", true);
@@ -995,13 +955,14 @@ TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
         return result;
     };
 
-    auto expect_range = [](const std::optional<RelationStats> & result, bool kept, UInt16 recorded)
+    /// The facts stay as measured; the provenance alone decides whether the range encloses the produced values.
+    auto expect_range = [](const std::optional<RelationStats> & result, bool enclosing, UInt16 recorded)
     {
         ASSERT_TRUE(result.has_value());
         const auto & stats = result->column_stats.at("k");
-        EXPECT_EQ(stats.min_value.has_value(), kept);
-        EXPECT_EQ(stats.max_value.has_value(), kept);
-        /// Clearing the range does not change what is recorded about it, or the distinct count.
+        EXPECT_EQ(stats.min_value, Field(UInt64{10}));
+        EXPECT_EQ(stats.max_value, Field(UInt64{59}));
+        EXPECT_EQ(stats.valueRange(ValueRangeGuarantee::Superset).has_value(), enclosing);
         EXPECT_EQ(stats.range_provenance.transformations, recorded);
         EXPECT_EQ(stats.num_distinct_values, 50);
     };
@@ -1012,7 +973,7 @@ TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
         SCOPED_TRACE("limit");
         expect_range(estimateUnaryStepStats(limit, filtered_input()), true, RowSubset);
         expect_range(estimateUnaryStepStats(limit, unmodeled_input()), false, Unmodeled);
-        expect_range(estimateUnaryStepStats(limit, hinted_input()), false, 0);
+        expect_range(estimateUnaryStepStats(limit, hinted_input()), true, 0);
         /// The NULL fraction stays with its provenance.
         EXPECT_EQ(estimateUnaryStepStats(limit, unmodeled_input())->column_stats.at("k").null_fraction, 0.0);
     }
@@ -1023,9 +984,8 @@ TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
         SCOPED_TRACE("sort");
         expect_range(estimateUnaryStepStats(limited_sort, filtered_input()), true, RowSubset);
         expect_range(estimateUnaryStepStats(limited_sort, unmodeled_input()), false, Unmodeled);
-        expect_range(estimateUnaryStepStats(limited_sort, hinted_input()), false, 0);
-        /// A sort without a limit never cleared ranges and still does not: the facts stay for the provenance to judge.
-        expect_range(estimateUnaryStepStats(unlimited_sort, unmodeled_input()), true, Unmodeled);
+        expect_range(estimateUnaryStepStats(limited_sort, hinted_input()), true, 0);
+        expect_range(estimateUnaryStepStats(unlimited_sort, unmodeled_input()), false, Unmodeled);
     }
 
     const auto grouping = makeAggregationStep(header, false, false);
@@ -1034,10 +994,11 @@ TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
         const auto filtered = estimateUnaryStepStats(*grouping, filtered_input());
         expect_range(filtered, true, RowSubset);
         /// The range of a grouping key over a filtered input encloses the keys without being representative of them.
-        EXPECT_TRUE(filtered->column_stats.at("k").valueRange(ValueRangeGuarantee::Superset).has_value());
         EXPECT_FALSE(filtered->column_stats.at("k").valueRange(ValueRangeGuarantee::Representative).has_value());
         expect_range(estimateUnaryStepStats(*grouping, unmodeled_input()), false, Unmodeled);
-        expect_range(estimateUnaryStepStats(*grouping, hinted_input()), false, 0);
+        const auto hinted = estimateUnaryStepStats(*grouping, hinted_input());
+        expect_range(hinted, true, 0);
+        EXPECT_TRUE(hinted->column_stats.at("k").valueRange(ValueRangeGuarantee::Representative).has_value());
     }
 }
 
@@ -1100,10 +1061,12 @@ TEST(ColumnStatsProvenance, MergingAggregatedIsEstimatedLikeTheAggregationItFini
         const auto unmodeled_merge = makeMergeOfPartialStates(*makeAggregationStep(header, grouping_sets, overflow_row));
         const auto stats = estimateUnaryStepStats(*unmodeled_merge, inputRelationStats());
         ASSERT_TRUE(stats.has_value());
-        EXPECT_TRUE(stats->column_stats.at("k").ndv_provenance.has(Unmodeled));
-        EXPECT_TRUE(stats->column_stats.at("k").range_provenance.has(Unmodeled));
-        EXPECT_FALSE(stats->column_stats.at("k").min_value.has_value());
-        EXPECT_FALSE(stats->column_stats.at("k").max_value.has_value());
+        const auto & key = stats->column_stats.at("k");
+        EXPECT_TRUE(key.ndv_provenance.has(Unmodeled));
+        EXPECT_TRUE(key.range_provenance.has(Unmodeled));
+        EXPECT_FALSE(key.valueRange(ValueRangeGuarantee::Superset).has_value());
+        EXPECT_EQ(key.min_value, Field(UInt64{10}));
+        EXPECT_EQ(key.max_value, Field(UInt64{59}));
     }
 
     const auto limited_merge = makeMergeOfPartialStates(*makeAggregationStepWithGroupLimit(header, 1, OverflowMode::ANY));
