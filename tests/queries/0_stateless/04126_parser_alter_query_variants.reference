@@ -17,6 +17,8 @@ ALTER TABLE db.t\n    (MOVE PARTITION 1 TO DISK \'mydisk\')
 ALTER TABLE db.t\n    (MOVE PARTITION 1 TO VOLUME \'myvol\')
 ALTER TABLE db.t\n    (MOVE PARTITION 1 TO TABLE db.u)
 ALTER TABLE db.t\n    (MOVE PART \'part_1_1_0\' TO DISK \'mydisk\')
+ALTER TABLE db.t\n    (MOVE PART \'part_1_1_0\' TO SHARD \'/clickhouse/shard2\')
+ALTER TABLE db.t\n    (MOVE PART \'part_1_1_0\' TO SHARD \'/clickhouse/shard2\')
 --- FETCH / REPLACE / ATTACH PARTITION ---
 ALTER TABLE db.t\n    (FETCH PARTITION 1 FROM \'/from\')
 ALTER TABLE db.t\n    (FETCH PART \'x\' FROM \'/from\')
