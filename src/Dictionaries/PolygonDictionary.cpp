@@ -665,6 +665,8 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
     if (!ptr_polygons)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points");
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
+    /// Each row is a polygon with a single ring, and a multipolygon with a single polygon.
+    offset.polygon_offsets.resize(offset.ring_offsets.size());
     iota<IColumn::Offsets::value_type>(offset.polygon_offsets.data(), offset.polygon_offsets.size(), IColumn::Offsets::value_type(1));
     offset.multi_polygon_offsets.assign(offset.polygon_offsets);
 
