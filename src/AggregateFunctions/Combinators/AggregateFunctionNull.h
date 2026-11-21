@@ -146,6 +146,15 @@ public:
         nested_function->create(nestedPlace(place));
     }
 
+    /// `count` is the number of non-NULL rows: none means no value was seen, and the state stays as created.
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const override
+    {
+        if (count == 0)
+            return;
+        setFlag(place);
+        nested_function->setSumAndCount(nestedPlace(place), sum, count);
+    }
+
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_function->destroy(nestedPlace(place));
