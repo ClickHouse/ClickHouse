@@ -9,6 +9,7 @@ set(DBMS_GATHERUTILS_FUNCTIONS
     createArraySink.cpp
     resizeConstantSize.cpp
     resizeDynamicSize.cpp
+    conditional.cpp # conditional for String sources (Used by if.cpp)
 )
 
 extract_into_parent_list(clickhouse_functions_gatherutils_sources dbms_sources ${DBMS_GATHERUTILS_FUNCTIONS})
