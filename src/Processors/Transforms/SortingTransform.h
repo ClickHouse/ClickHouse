@@ -54,6 +54,23 @@ private:
     SortCursorImpl * last_emitted_cursor = nullptr;
     size_t last_emitted_row = 0;
 
+    /// A column that has the same fixed-size type in every input chunk; `mergeBatchImpl` writes its values in place.
+    struct FixedSizeColumn
+    {
+        size_t position = 0;
+        size_t value_size = 0;
+        /// Data of the column in every input chunk, in the order of `cursors`.
+        VectorWithMemoryTracking<const char *> chunk_data;
+    };
+
+    VectorWithMemoryTracking<FixedSizeColumn> fixed_size_columns;
+    /// Positions of the remaining columns.
+    VectorWithMemoryTracking<size_t> other_columns;
+    /// Output data of `fixed_size_columns` in the current call of `mergeBatchImpl`.
+    VectorWithMemoryTracking<char *> fixed_size_output;
+
+    void initFixedSizeColumns();
+
     template <Mode merge_mode, typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
