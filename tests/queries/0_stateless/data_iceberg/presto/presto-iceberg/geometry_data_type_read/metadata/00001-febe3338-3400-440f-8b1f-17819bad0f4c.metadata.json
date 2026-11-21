@@ -1,0 +1,97 @@
+{
+  "format-version": 3,
+  "table-uuid": "67db7f37-2bd1-473f-980c-234f7e53e116",
+  "location": "file://FILEPATH",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1783537210368,
+  "last-column-id": 1,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "geom",
+          "required": false,
+          "type": "geometry"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.format.default": "PARQUET",
+    "write.delete.mode": "merge-on-read",
+    "write.metadata.previous-versions-max": "100",
+    "write.parquet.compression-codec": "ZSTD",
+    "write.metadata.metrics.max-inferred-column-defaults": "100",
+    "write.metadata.delete-after-commit.enabled": "false",
+    "commit.retry.num-retries": "4",
+    "write.update.mode": "merge-on-read",
+    "read.split.target-size": "134217728"
+  },
+  "current-snapshot-id": 5103338628089250782,
+  "next-row-id": 6,
+  "refs": {
+    "main": {
+      "snapshot-id": 5103338628089250782,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 5103338628089250782,
+      "timestamp-ms": 1783537210368,
+      "summary": {
+        "operation": "append",
+        "presto_query_id": "20260708_190010_00027_33kcw",
+        "added-data-files": "1",
+        "added-records": "6",
+        "added-files-size": "504",
+        "changed-partition-count": "1",
+        "total-records": "6",
+        "total-files-size": "504",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+      },
+      "manifest-list": "file://FILEPATH/metadata/snap.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 6
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1783537210368,
+      "snapshot-id": 5103338628089250782
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1783537107254,
+      "metadata-file": "file://FILEPATH/metadata/00000-551efd3b-464b-439e-9dc2-474b3ccd7dad.metadata.json"
+    }
+  ]
+}

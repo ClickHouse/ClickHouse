@@ -1,0 +1,68 @@
+geography_arrow_logical
+id	Nullable(Int32)					
+source	Nullable(String)					
+geog	Geometry					
+geogs	Array(Geometry)					
+10	9
+0	Point	POINT(-122.4194 37.7749)	1	2	1	1
+1	LineString	LINESTRING(-122.4194 37.7749,-118.2437 34.0522)	1	2	1	1
+2	Polygon	POLYGON((-10 -10,10 -10,10 10,-10 10,-10 -10))	1	2	1	1
+3	MultiPoint	MULTIPOINT((0 0),(10 20),(30 40))	1	2	1	1
+4	MultiLineString	MULTILINESTRING((0 0,5 5),(10 10,20 20))	1	2	1	1
+5	MultiPolygon	MULTIPOLYGON(((0 0,4 0,4 4,0 4,0 0)),((5 5,9 5,9 9,5 9,5 5)))	1	2	1	1
+7	Point	POINT(180 90)	1	2	1	1
+8	Point	POINT(-180 -90)	1	2	1	1
+9	1	1	0
+geography_arrow_plain
+id	Nullable(Int32)					
+source	Nullable(String)					
+geog	Geometry					
+geogs	Array(Geometry)					
+10	9
+0	Point	POINT(-122.4194 37.7749)	1	2	1	1
+1	LineString	LINESTRING(-122.4194 37.7749,-118.2437 34.0522)	1	2	1	1
+2	Polygon	POLYGON((-10 -10,10 -10,10 10,-10 10,-10 -10))	1	2	1	1
+3	MultiPoint	MULTIPOINT((0 0),(10 20),(30 40))	1	2	1	1
+4	MultiLineString	MULTILINESTRING((0 0,5 5),(10 10,20 20))	1	2	1	1
+5	MultiPolygon	MULTIPOLYGON(((0 0,4 0,4 4,0 4,0 0)),((5 5,9 5,9 9,5 9,5 5)))	1	2	1	1
+7	Point	POINT(180 90)	1	2	1	1
+8	Point	POINT(-180 -90)	1	2	1	1
+9	1	1	0
+geography_arrow_null_file
+9	1	0
+10	1	0
+11	1	0
+12	1	0
+9
+10
+11
+12
+9
+0	POINT(-122.4194 37.7749)	POINT(-122.4194 37.7749)	2
+1	LINESTRING(-122.4194 37.7749,-118.2437 34.0522)	LINESTRING(-122.4194 37.7749,-118.2437 34.0522)	2
+2	POLYGON((-10 -10,10 -10,10 10,-10 10,-10 -10))	POLYGON((-10 -10,10 -10,10 10,-10 10,-10 -10))	2
+3	MULTIPOINT((0 0),(10 20),(30 40))	MULTIPOINT((0 0),(10 20),(30 40))	2
+4	MULTILINESTRING((0 0,5 5),(10 10,20 20))	MULTILINESTRING((0 0,5 5),(10 10,20 20))	2
+5	MULTIPOLYGON(((0 0,4 0,4 4,0 4,0 0)),((5 5,9 5,9 9,5 9,5 5)))	MULTIPOLYGON(((0 0,4 0,4 4,0 4,0 0)),((5 5,9 5,9 9,5 9,5 5)))	2
+7	POINT(180 90)	POINT(180 90)	2
+8	POINT(-180 -90)	POINT(-180 -90)	2
+9	\N	\N	0
+10	\N	\N	0
+11	\N	\N	0
+12	\N	\N	0
+geography_arrow_crs
+id	Nullable(Int32)					
+geog	Geometry					
+0	POINT(-122.4194 37.7749)
+1	\N
+geography_parquet_java_karney
+id	Nullable(Int32)					
+geog	Geometry					
+0	POINT(-122.4194 37.7749)
+1	\N
+geometry_arrow
+id	Nullable(Int32)					
+geom	Geometry					
+2
+0	POINT(-122.4194 37.7749)
+1	LINESTRING(0 0,10 10)

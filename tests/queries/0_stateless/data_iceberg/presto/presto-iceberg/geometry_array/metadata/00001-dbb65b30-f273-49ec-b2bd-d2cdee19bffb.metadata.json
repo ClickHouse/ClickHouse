@@ -1,0 +1,102 @@
+{
+    "format-version": 3,
+    "table-uuid": "ca7ac8d2-e840-4491-a869-8452408bf396",
+    "location": "file://FILEPATH",
+    "last-sequence-number": 1,
+    "last-updated-ms": 1785361912023,
+    "last-column-id": 2,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "geom",
+                    "required": false,
+                    "type": {
+                        "type": "list",
+                        "element-id": 2,
+                        "element": "geometry",
+                        "element-required": false
+                    }
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET",
+        "write.delete.mode": "merge-on-read",
+        "write.metadata.previous-versions-max": "100",
+        "write.parquet.compression-codec": "ZSTD",
+        "write.metadata.metrics.max-inferred-column-defaults": "100",
+        "write.metadata.delete-after-commit.enabled": "false",
+        "commit.retry.num-retries": "4",
+        "write.update.mode": "merge-on-read",
+        "read.split.target-size": "134217728"
+    },
+    "current-snapshot-id": 3129129978500355357,
+    "next-row-id": 2,
+    "refs": {
+        "main": {
+            "snapshot-id": 3129129978500355357,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 3129129978500355357,
+            "timestamp-ms": 1785361912023,
+            "summary": {
+                "operation": "append",
+                "presto_query_id": "20260729_215151_00027_82t5d",
+                "added-data-files": "1",
+                "added-records": "2",
+                "added-files-size": "440",
+                "changed-partition-count": "1",
+                "total-records": "2",
+                "total-files-size": "440",
+                "total-data-files": "1",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+            },
+            "manifest-list": "file://FILEPATH/metadata/snap.avro",
+            "schema-id": 0,
+            "first-row-id": 0,
+            "added-rows": 2
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1785361912023,
+            "snapshot-id": 3129129978500355357
+        }
+    ],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1785361909847,
+            "metadata-file": "file://FILEPATH/metadata/00000-c49db315-eb31-4bea-ba05-c412f4335be3.metadata.json"
+        }
+    ]
+}
