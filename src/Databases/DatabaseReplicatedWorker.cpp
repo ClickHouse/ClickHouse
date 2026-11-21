@@ -1,11 +1,10 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 #include <filesystem>
-#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -51,6 +50,7 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_pause_before_initial_query_execution[];
 }
 
 
@@ -162,7 +162,33 @@ void DatabaseReplicatedDDLWorker::shutdown()
     active_node_holder.reset();
     active_node_holder_zookeeper.reset();
 
+    /// Waiters in `tryEnqueueAndExecuteEntry` and `waitForReplicaToProcessAllEntries` (which may outlive the
+    /// shutdown, holding a reference to this worker) check `stop_flag` under `mutex`. Taking it before notifying
+    /// guarantees that each of them either sees the flag or receives the notification.
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & event : log_ptr_waiters)
+            event->set();
+    }
     wait_current_task_change.notify_all();
+}
+
+void DatabaseReplicatedDDLWorker::stopInitialQueries()
+{
+    {
+        std::lock_guard lock{mutex};
+        initial_queries_stopped = true;
+    }
+    wait_current_task_change.notify_all();
+}
+
+void DatabaseReplicatedDDLWorker::waitForForegroundTasks()
+{
+    std::unique_lock lock{mutex};
+    chassert(stop_flag || initial_queries_stopped);
+    if (foreground_tasks)
+        LOG_TRACE(log, "Waiting for {} admitted initial queries", foreground_tasks);
+    foreground_tasks_finished.wait(lock, [&] { return foreground_tasks == 0; });
 }
 
 void DatabaseReplicatedDDLWorker::initializeReplication()
@@ -193,19 +219,12 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity (`czxid`
-    /// of the node) here and forward it to `recoverLostReplica`. Without this, a `DROP`+recreate
-    /// at the same Keeper path between this read and the snapshot read inside
-    /// `getConsistentMetadataSnapshotImpl` can advance both the value and the `czxid` to the new
-    /// database, after which the in-function identity checks compare new-to-new and silently
-    /// substitute metadata from the recreated database during recovery.
-    Coordination::Stat max_log_ptr_stat;
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    UInt64 digest = 0;
+    UInt64 digest;
     String digest_str;
-    UInt64 local_digest = 0;
+    UInt64 local_digest;
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
@@ -235,7 +254,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
 
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
 
         fiu_do_on(FailPoints::database_replicated_delay_recovery,
         {
@@ -366,19 +385,31 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
 
-        if (!processed)
+        if (!processed || stop_flag)
             return false;
     }
 
-    /// Lets now wait for max_log_ptr to be processed
-    Coordination::Stat stat;
+    /// Lets now wait for max_log_ptr to be processed.
+    /// The event is set either by the watch or by `shutdown`, so a stopped worker does not wait for the whole timeout.
     auto event_ptr = std::make_shared<Poco::Event>();
+    {
+        std::lock_guard lock{mutex};
+        if (stop_flag)
+            return false;
+        log_ptr_waiters.insert(event_ptr);
+    }
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        log_ptr_waiters.erase(event_ptr);
+    });
+
+    Coordination::Stat stat;
     auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
 
     if (new_log == toString(max_log_ptr))
         return true;
 
-    return event_ptr->tryWait(timeout_ms);
+    return event_ptr->tryWait(timeout_ms) && !stop_flag;
 }
 
 
@@ -468,7 +499,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->entry = entry;
     task->parseQueryFromEntry(context);
     chassert(!task->entry.query.empty());
-    chassert(!zookeeper->exists(task->getFinishedNodePath()));
+    assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
@@ -480,11 +511,11 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
         {
-            chassert(zookeeper->expired() || current_task <= entry_name);
+            assert(zookeeper->expired() || current_task <= entry_name);
 
-            if (zookeeper->expired() || stop_flag)
+            if (zookeeper->expired() || stop_flag || initial_queries_stopped)
             {
-                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
+                LOG_TRACE(log, "Not enqueueing query: {}", zookeeper->expired() ? "ZooKeeper session expired" : "replication stopped");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
             }
 
@@ -500,7 +531,20 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         if (!processed)
             throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
+
+        /// The predicate above has checked `stop_flag` and `initial_queries_stopped` under `mutex`,
+        /// so `waitForForegroundTasks` will wait for this query.
+        ++foreground_tasks;
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        --foreground_tasks;
+        if (foreground_tasks == 0)
+            foreground_tasks_finished.notify_all();
+    });
+
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_before_initial_query_execution);
 
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
@@ -527,8 +571,7 @@ static bool getRMVCoordinationInfo(
     const ZooKeeperPtr & zookeeper,
     UUID parent_uuid,
     Coordination::Stat & stats,
-    RefreshTask::CoordinationZnode & coordination_znode,
-    ContextPtr context)
+    RefreshTask::CoordinationZnode & coordination_znode)
 {
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
@@ -536,7 +579,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;
@@ -572,7 +615,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
         return false;
 
     LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
@@ -580,7 +623,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the temporary table is created and replicated before the coordination info is updated.
+    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -591,7 +634,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
         return false;
 
     StorageID storage_id{rename_from_table};
@@ -698,8 +741,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        chassert(!zookeeper->exists(fs::path(entry_path) / "try"));
-        chassert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }

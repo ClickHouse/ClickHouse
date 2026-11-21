@@ -5,11 +5,13 @@ import random
 import re
 import sys
 import uuid
+from collections import namedtuple
 from typing import Dict
 from datetime import datetime
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
@@ -87,11 +89,6 @@ def new_backup_name():
 def get_path_to_backup(backup_name):
     name = backup_name.split(",")[1].strip("')/ ")
     return os.path.join(instance.cluster.instances_dir, "backups", name)
-
-
-def read_backup_metadata(backup_name):
-    with open(os.path.join(get_path_to_backup(backup_name), ".backup")) as f:
-        return f.read()
 
 
 def find_files_in_backup_folder(backup_name):
@@ -549,25 +546,6 @@ def test_incremental_backup_overflow():
     assert os.listdir(os.path.join(get_path_to_backup(incremental_backup_name))) == [
         ".backup"
     ]
-
-
-def test_backup_id_in_manifest():
-    create_and_fill_table(n=10)
-
-    # A custom `id` is recorded verbatim as <backup_id> in the manifest.
-    backup_name = new_backup_name()
-    known_id = "my_custom_backup_id"
-    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{known_id}'")
-    assert f"<backup_id>{known_id}</backup_id>" in read_backup_metadata(backup_name)
-
-    # With no `id`, the recorded backup_id defaults to the backup UUID.
-    backup_name2 = new_backup_name()
-    instance.query(f"BACKUP TABLE test.table TO {backup_name2}")
-    manifest = read_backup_metadata(backup_name2)
-    assert (
-        re.search("<backup_id>(.*?)</backup_id>", manifest).group(1)
-        == re.search("<uuid>(.*?)</uuid>", manifest).group(1)
-    )
 
 
 def test_incremental_backup_after_renaming_table():
@@ -1173,7 +1151,7 @@ def test_skip_rmv_backup():
     assert not os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            "data/test/target/",
+            f"data/test/target/",
         )
     )
 
@@ -1181,7 +1159,7 @@ def test_skip_rmv_backup():
     instance.query("SYSTEM REFRESH VIEW restored.view")
     instance.query("SYSTEM WAIT VIEW restored.view")
 
-    assert int(instance.query("SELECT count(*) FROM restored.target")) == size
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
 
 
 def test_rmv_append_backup():
@@ -1205,12 +1183,12 @@ def test_rmv_append_backup():
     assert os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            "data/test/target/",
+            f"data/test/target/",
         )
     )
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
 
-    assert int(instance.query("SELECT count(*) FROM restored.target")) >= size
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
 
 
 def test_temporary_table():
@@ -1496,6 +1474,131 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u2")
 
 
+# Access backups include every entity of a type, so these checks need this module's isolated server.
+def test_restore_row_policy_replace_requires_scoped_drop():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("CREATE USER u2")
+    instance.query("GRANT CREATE ROW POLICY ON test.table TO u2")
+    instance.query(
+        "CREATE ROW POLICY rowpol1 ON test.table AS RESTRICTIVE USING 1 TO ALL"
+    )
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.row_policies TO {backup_name}")
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+
+    restore = f"RESTORE TABLE system.row_policies FROM {backup_name}"
+    select_filter = "SELECT select_filter FROM system.row_policies WHERE short_name = 'rowpol1' AND database = 'test' AND table = 'table'"
+    instance.query(f"{restore} SETTINGS create_access='if-not-exists'", user="u2")
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("GRANT DROP ROW POLICY ON test.another_table TO u2")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == ""
+
+    instance.query(f"{restore} SETTINGS create_access='create'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+    instance.query("GRANT DROP ROW POLICY ON test.table TO u2")
+    instance.query(f"{restore} SETTINGS create_access='replace'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+
+
+@pytest.mark.parametrize(
+    "kind,system_table,target", [("USER", "users", "u1"), ("ROLE", "roles", "r1")]
+)
+def test_restore_access_partial_revoke_cannot_cancel_drop(kind, system_table, target):
+    instance.query(f"CREATE {kind} {target} SETTINGS max_threads = 1")
+    instance.query(f"GRANT DROP {kind} ON * TO {target}")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM {target}")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.{system_table} TO {backup_name}")
+    instance.query(f"ALTER {kind} {target} SETTINGS max_threads = 2")
+
+    # Create the actor after the backup so its grants cannot mask the target's partial revoke.
+    instance.query("CREATE USER u2")
+    instance.query(f"GRANT CREATE {kind} ON {target} TO u2")
+    instance.query(f"GRANT DROP {kind} ON * TO u2 WITH GRANT OPTION")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM u2")
+    restore = f"RESTORE TABLE system.{system_table} FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert f"DROP {kind}" in error
+    assert "max_threads = 2" in instance.query(f"SHOW CREATE {kind} {target}")
+
+    # Ordinary `DROP` is sufficient; the target's grants exclude `DROP` on itself.
+    instance.query(f"GRANT DROP {kind} ON {target} TO u2")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query(f"SHOW CREATE {kind} {target}")
+
+
+def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("INSERT INTO test.table VALUES (1)")
+    instance.query("CREATE ROLE r1 SETTINGS max_threads = 1")
+    instance.query("GRANT SELECT, INSERT ON test.* TO r1 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM r1")
+    instance.query("REVOKE INSERT ON test.table FROM r1")
+    backup_name = new_backup_name()
+    backup_tables = "TABLE system.roles, TABLE test.table"
+    instance.query(f"BACKUP {backup_tables} TO {backup_name}")
+    instance.query("ALTER ROLE r1 SETTINGS max_threads = 2")
+
+    instance.query("CREATE USER u2")
+    instance.query("GRANT CREATE ROLE, DROP ROLE ON r1 TO u2")
+    instance.query("GRANT CREATE TABLE ON test.table TO u2")
+    instance.query("GRANT SELECT, INSERT ON test.* TO u2 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM u2")
+    restore = f"RESTORE TABLE system.roles FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "SELECT" in error
+    assert "WITH GRANT OPTION" in error
+    assert "max_threads = 2" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("GRANT SELECT ON test.table TO u2 WITH GRANT OPTION")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("TRUNCATE TABLE test.table")
+    instance.query("REVOKE INSERT ON test.table FROM u2")
+    restore_with_table = (
+        f"RESTORE {backup_tables} FROM {backup_name} SETTINGS create_access='replace'"
+    )
+    error = instance.query_and_get_error(restore_with_table, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "INSERT" in error
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    instance.query("GRANT INSERT ON test.table TO u2")
+    instance.query(restore_with_table, user="u2")
+    assert instance.query("SELECT * FROM test.table") == "1\n"
+
+
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 
@@ -1532,7 +1635,7 @@ def test_projection():
     create_and_fill_table(n=3)
 
     instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
-    instance.query("INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
 
     assert (
         instance.query(
@@ -2284,9 +2387,7 @@ def test_async_backup_restore_with_max_execution_time_zero():
     backup_name = new_backup_name()
     inst.query("CREATE DATABASE IF NOT EXISTS test")
     inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
-    # The node's 0.5s profile timeout (used below to trigger the bug) also caps this
-    # foreground setup query; disable it so a slow CI lane can't time out the INSERT.
-    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100) SETTINGS max_execution_time = 0")
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
 
     try:
         # Pause backup before it starts so the 500ms profile-level timeout fires.
@@ -2324,11 +2425,7 @@ def test_async_backup_restore_with_max_execution_time_zero():
             TSV([["RESTORED", ""]]),
         )
 
-        # Same: don't let the 0.5s profile timeout cap this foreground verification query.
-        assert (
-            inst.query("SELECT count(), sum(x) FROM test.table SETTINGS max_execution_time = 0")
-            == "100\t4950\n"
-        )
+        assert inst.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     finally:
         inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
         inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")

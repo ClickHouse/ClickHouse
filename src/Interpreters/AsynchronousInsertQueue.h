@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
@@ -11,16 +12,12 @@
 #include <Common/StringWithMemoryTracking.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <future>
 #include <variant>
 
 namespace DB
 {
-
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
@@ -84,7 +81,8 @@ public:
     {
     public:
         ASTPtr query;
-        String query_str;
+        /// Never log it, use `serializeQuery` on `query` instead.
+        String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
         /// Client identity of the originating INSERT query (ClientInfo user names).
@@ -98,7 +96,7 @@ public:
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
-        UInt128 hash{};
+        UInt128 hash;
 
         InsertQuery(
             const ASTPtr & query_,
@@ -116,7 +114,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -251,7 +249,7 @@ private:
         QueueIteratorByKey iterators;
 
         OptionalTimePoint last_insert_time;
-        std::chrono::milliseconds busy_timeout_ms{};
+        std::chrono::milliseconds busy_timeout_ms;
     };
 
     /// Times of the two most recent queue flushes.

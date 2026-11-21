@@ -11,21 +11,12 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/config_with_only_regexp_hosts.xml"]
 )
 node4 = cluster.add_instance(
-    "node4",
-    main_configs=[],
-    user_configs=["configs/allow_server_credentials.xml"],
+    "node4", main_configs=[]
 )  # No `remote_url_allow_hosts` at all.
 node5 = cluster.add_instance(
-    "node5",
-    main_configs=["configs/config_without_allowed_hosts.xml"],
-    user_configs=["configs/allow_server_credentials.xml"],
+    "node5", main_configs=["configs/config_without_allowed_hosts.xml"]
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
-
-if not is_arm():
-    node7 = cluster.add_instance(
-        "node7", main_configs=["configs/config_for_redirect.xml"], with_hdfs=True
-    )
 
 
 @pytest.fixture(scope="module")
@@ -58,6 +49,64 @@ def test_config_with_hosts(start_cluster):
     )
     node1.query("DROP TABLE table_test_1_1")
     node1.query("DROP TABLE table_test_1_2")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+    ],
+)
+def test_azure_host_filter_before_client_creation(start_cluster, query):
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node5.query(container_requests)
+    error = node5.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
+    assert "UNACCEPTABLE_URL" in error
+    # The host check must run before even a container existence probe.
+    assert node5.query(container_requests) == before
+
+
+def test_object_storage_queue_move_destination_host_filter(start_cluster):
+    # The source is on an allowed host (`host:80`), so only the move destination can be rejected. `node1` has no
+    # Keeper, so a rejection with "not allowed" must come from the settings validation, which runs before any
+    # Keeper access.
+    s3_queue = (
+        "CREATE TABLE s3queue_move_host (x UInt8) "
+        "ENGINE = S3Queue('http://host:80/bucket/data/', 'key', 'secret', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_uri = '{}', "
+        "after_processing_move_access_key_id = 'key', after_processing_move_secret_access_key = 'secret'"
+    )
+    azure_queue = (
+        "CREATE TABLE azurequeue_move_host (x UInt8) "
+        "ENGINE = AzureQueue('http://host:80', 'container', '*', 'account', 'YQ==', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_connection_string = "
+        "'DefaultEndpointsProtocol=http;AccountName=account;AccountKey=YQ==;BlobEndpoint=http://host:123/account;', "
+        "after_processing_move_container = 'dst'"
+    )
+
+    try:
+        error = node1.query_and_get_error(s3_queue.format("http://host:123/bucket/"))
+        assert "not allowed" in error, error
+
+        error = node1.query_and_get_error(
+            azure_queue, settings={"azure_sdk_max_retries": 0}
+        )
+        assert "not allowed" in error, error
+
+        # Control: an allowed destination passes the host check and only fails later, on the missing Keeper.
+        error = node1.query_and_get_error(s3_queue.format("http://host:80/bucket/"))
+        assert "not allowed" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS s3queue_move_host SYNC")
+        node1.query("DROP TABLE IF EXISTS azurequeue_move_host SYNC")
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -205,6 +254,34 @@ def test_mysql_dictionary_host_filter(start_cluster):
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_host_filter")
 
 
+def test_mysql_database_host_filter(start_cluster):
+    # node5 denies all hosts; the check runs before any connection attempt.
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('10.0.0.1:3306', 'db', 'u', 'p')"
+    )
+    node5.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nc AS "
+        "host = '10.0.0.1', port = 3306, database = 'db', user = 'u', password = 'p'"
+    )
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nc)"
+    )
+    node5.query("DROP NAMED COLLECTION test_mysql_db_filter_nc")
+
+    # node1's suffix rule would match the whole string, but the connector stops at the NUL; reject it.
+    assert "not allowed" in node1.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('127.0.0.1\\0.allowed.example:1', 'db', 'u', 'p')"
+    )
+    node1.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nul_nc AS "
+        "host = '127.0.0.1\\0.allowed.example', port = 1, database = 'db', user = 'u', password = 'p'"
+    )
+    assert "not allowed" in node1.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nul_nc)"
+    )
+    node1.query("DROP NAMED COLLECTION test_mysql_db_filter_nul_nc")
+
+
 def test_mysql_dictionary_replica_host_filter(start_cluster):
     """MySQL dictionary source with REPLICA(...) syntax should respect RemoteHostFilter."""
     # Covers the replica branch: if (config.has(settings_config_prefix + ".replica"))
@@ -325,69 +402,56 @@ def test_table_function_remote(start_cluster):
     )
 
 
-def test_storage_engine_remote(start_cluster):
-    # The persistent Remote/RemoteSecure engines must enforce remote_url_allow_hosts, like the
-    # remote/remoteSecure table functions: the check runs at CREATE time, before any connection.
-    for engine in ["Remote", "RemoteSecure"]:
-        # Disallowed host: rejected with UNACCEPTABLE_URL.
-        assert "not allowed in configuration file" in node6.query_and_get_error(
-            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-3', system, one)"
-        )
-        # A glob that expands to an allowed and a disallowed host is rejected: every expanded host
-        # is checked, not only the first one.
-        assert "not allowed in configuration file" in node6.query_and_get_error(
-            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-{{1,3}}', system, one)"
-        )
-        # Allowed host, but a disallowed explicit port is still rejected.
-        assert (
-            'URL "localhost:800" is not allowed in configuration file'
-            in node6.query_and_get_error(
-                f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('localhost:800', system, one)"
-            )
-        )
-        # Allowed host: the table is created (system.tables reports it as Distributed).
-        node6.query(
-            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-1', system, one)"
-        )
-        assert (
-            node6.query(
-                "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'test_remote_engine'"
-            ).strip()
-            == "Distributed"
-        )
-        node6.query("DROP TABLE test_remote_engine")
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_redirect(start_cluster):
-    hdfs_api = start_cluster.hdfs_api
-
-    hdfs_api.write_data("/simple_storage", "1\t\n")
-    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
-    node7.query(
-        "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)"
+# The catalog is built lazily on first use, so a query on a table connects to the metastore.
+def hive_catalog_error(node, database, url):
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = DataLakeCatalog('{url}') "
+        "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
+        settings={"allow_experimental_database_hms_catalog": 1},
     )
-    assert "not allowed" in node7.query_and_get_error(
-        "SET max_http_get_redirects=1; SELECT * from table_test_7_1"
-    )
-    node7.query("DROP TABLE table_test_7_1")
+    return node.query_and_get_error(f"SELECT * FROM {database}.`ns.tbl`")
 
 
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_HDFS(start_cluster):
-    assert "not allowed" in node7.query_and_get_error(
-        "CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')"
-    )
-    assert "not allowed" in node7.query_and_get_error(
-        "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
-    )
+def test_hive_catalog_host_filter(start_cluster):
+    url = "thrift://localhost:1"
+    try:
+        # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
+        # uninitialized and allows everything - the same statement gets past the check and fails at
+        # the network instead. Without this arm, a filter that rejected everything would also pass.
+        error = hive_catalog_error(node4, "test_hive_host_filter", url)
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # `node5` declares an empty `remote_url_allow_hosts`, which allows nothing.
+        error = hive_catalog_error(node5, "test_hive_host_filter", url)
+        assert "UNACCEPTABLE_URL" in error, error
+        # The check must run before the connect, so the refusal carries no connection error.
+        assert "Connection refused" not in error, error
+    finally:
+        node4.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+        node5.query("DROP DATABASE IF EXISTS test_hive_host_filter")
 
 
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_schema_inference(start_cluster):
-    # Schema inference in the URL engine must check `remote_url_allow_hosts` before
-    # any connection attempt: the error has to come from the host check, not from
-    # the HTTP layer.
-    error = node7.query_and_get_error("desc url('http://test.com', 'TSVRaw')")
-    assert "not allowed" in error
-    assert error.find("ReadWriteBufferFromHTTPBase") == -1
+def test_hive_catalog_host_filter_rejects_nul(start_cluster):
+    try:
+        # Control: the suffix rule in `config_with_hosts.xml` admits this host, so it gets past the
+        # filter and fails at name resolution instead.
+        error = hive_catalog_error(
+            node1, "test_hive_host_filter_nul", "thrift://hms.allowed.example:1"
+        )
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+        node1.query("DROP DATABASE test_hive_host_filter_nul")
+
+        # The same rule matches the whole string including the NUL, but `getaddrinfo` would stop at the
+        # NUL and connect to 127.0.0.1. The host must be refused before any connection attempt.
+        error = hive_catalog_error(
+            node1, "test_hive_host_filter_nul", "thrift://127.0.0.1\\0.allowed.example:1"
+        )
+        assert "BAD_ARGUMENTS" in error, error
+        assert "Unexpected character" in error, error
+        assert "Connection refused" not in error, error
+    finally:
+        node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")

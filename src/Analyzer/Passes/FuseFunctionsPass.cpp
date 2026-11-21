@@ -52,7 +52,7 @@ bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const Contex
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
         return false;
 
-    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr(context, false);
+    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr();
     for (const auto & projection : metadata->projections)
     {
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -203,12 +203,12 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     if (function_name == "sum")
     {
-        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
         node = createTupleElementFunction(context, sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
         node = createTupleElementFunction(context, sum_count_node, 2);
     }
     else if (function_name == "avg")
@@ -263,7 +263,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
-            chassert(node);
+            assert(node);
             replaceWithSumCount(*node, sum_count_node, context);
         }
     }

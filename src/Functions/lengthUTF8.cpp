@@ -76,7 +76,6 @@ REGISTER_FUNCTION(LengthUTF8)
 {
     FunctionDocumentation::Description description = R"(
 Returns the length of a string in Unicode code points rather than in bytes or characters.
-To calculate the length of a string in bytes, use the [`length`](/reference/functions/regular-functions/array-functions#length) function.
 It assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 

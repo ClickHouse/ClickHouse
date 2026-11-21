@@ -10,16 +10,13 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
-#include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
@@ -35,7 +32,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace DeltaLake
@@ -49,22 +45,23 @@ UInt64 getCurrentTime()
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void exportTable(
-    std::shared_ptr<arrow::Table> table,
+void exportRecordBatch(
+    const arrow::RecordBatch & batch,
     ffi::FFI_ArrowArray & array,
     ffi::FFI_ArrowSchema & schema)
 {
-    auto batch = table->CombineChunksToBatch();
-    if (!batch.ok())
-        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
-
     arrow::Status status = arrow::ExportRecordBatch(
-        **batch,
+        batch,
         reinterpret_cast<ArrowArray *>(&array),
         reinterpret_cast<ArrowSchema *>(&schema));
 
     if (!status.ok())
-        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed to export record batch: {}",
+            status.ToString());
+    }
 }
 
 std::shared_ptr<arrow::Table> getWriteMetadata(
@@ -73,11 +70,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
-        /// Partition values are nullable: Delta commits a JSON null for a null-equivalent
-        /// partition value (SQL NULL or empty string), distinct from the string "null".
         {std::make_shared<DB::DataTypeMap>(
             std::make_shared<DB::DataTypeString>(),
-            std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
+            std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {std::make_shared<DB::DataTypeTuple>(
@@ -148,12 +143,6 @@ const std::string & WriteTransaction::getDataPath() const
 {
     assertTransactionCreated();
     return path_prefix;
-}
-
-const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
-{
-    assertTransactionCreated();
-    return write_schema;
 }
 
 void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
@@ -234,11 +223,9 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
     auto header_column_names = header.getNamesAndTypesList().getNameSet();
     if (write_column_names != header_column_names)
     {
-        /// Reachable from user input (e.g. Nested subcolumns, explicit column subsets),
-        /// so this is a user error, not an internal invariant violation.
         throw DB::Exception(
-            DB::ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "Inserted columns do not match the DeltaLake table schema. Expected: {}, got: {}",
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Header does not match write schema. Expected: {}, got: {}",
             fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
     }
 }
@@ -250,30 +237,61 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array{};
-    ffi::FFI_ArrowSchema schema{};
-    SCOPE_EXIT({
-        if (schema.release)
-            schema.release(&schema);
-    });
-    exportTable(write_metadata, array, schema);
-
-    KernelEngineData engine_data;
-    try
+    /// Metadata too large for one Arrow record batch comes back as several table chunks. Recombining them
+    /// would hit the same 32-bit offset limit, so each record batch is added to the transaction on its own.
+    /// `TableBatchReader` yields nothing for an empty table, which still has to reach the kernel as before.
+    arrow::RecordBatchVector batches;
+    if (write_metadata->num_rows() == 0)
     {
-        /// Takes ownership of `array` (but not`schema`) if successfully called.
-        engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
-            "get_engine_data");
+        auto empty_batch = arrow::RecordBatch::MakeEmpty(write_metadata->schema());
+        if (!empty_batch.ok())
+            throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+                "Failed to create an empty record batch: {}", empty_batch.status().ToString());
+        batches.push_back(*std::move(empty_batch));
     }
-    catch (...)
+    else
     {
-        if (array.release)
-            array.release(&array);
-        throw;
+        arrow::TableBatchReader batch_reader(*write_metadata);
+        while (true)
+        {
+            std::shared_ptr<arrow::RecordBatch> batch;
+            arrow::Status read_status = batch_reader.ReadNext(&batch);
+            if (!read_status.ok())
+                throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+                    "Failed to read a record batch: {}", read_status.ToString());
+            if (!batch)
+                break;
+            batches.push_back(std::move(batch));
+        }
     }
 
-    ffi::add_files(transaction.get(), engine_data.release());
+    for (const auto & batch : batches)
+    {
+        ffi::FFI_ArrowArray array{};
+        ffi::FFI_ArrowSchema schema{};
+        SCOPE_EXIT({
+            if (schema.release)
+                schema.release(&schema);
+        });
+        exportRecordBatch(*batch, array, schema);
+
+        KernelEngineData engine_data;
+        try
+        {
+            /// Takes ownership of `array` (but not`schema`) if successfully called.
+            engine_data = DeltaLake::KernelUtils::unwrapResult(
+                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+                "get_engine_data");
+        }
+        catch (...)
+        {
+            if (array.release)
+                array.release(&array);
+            throw;
+        }
+
+        ffi::add_files(transaction.get(), engine_data.release());
+    }
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),

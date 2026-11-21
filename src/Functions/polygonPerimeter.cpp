@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonPerimeter final : public IFunction
+class FunctionPolygonPerimeter : public IFunction
 {
 public:
     static const char * name;

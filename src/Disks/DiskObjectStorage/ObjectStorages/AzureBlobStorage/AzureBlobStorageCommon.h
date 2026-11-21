@@ -55,13 +55,11 @@ struct Endpoint
 {
     String storage_account_url;
     String account_name;
-    String account_key;
     String container_name;
     String prefix;
     String sas_auth;
     String additional_params;
     std::optional<bool> container_already_exists;
-    std::optional<bool> add_account_name_to_url;
 
     String getContainerEndpoint() const
     {
@@ -69,7 +67,7 @@ struct Endpoint
         if (url.ends_with('/'))
           url.pop_back();
 
-        if (!account_name.empty() && add_account_name_to_url.value_or(true))
+        if (!account_name.empty())
             url += "/" + account_name;
 
         if (!container_name.empty())
@@ -88,7 +86,7 @@ struct Endpoint
     {
         String url = storage_account_url;
 
-        if (!account_name.empty() && add_account_name_to_url.value_or(true))
+        if (!account_name.empty())
             url += "/" + account_name;
 
         if (!sas_auth.empty())
@@ -148,6 +146,8 @@ struct ConnectionParams
 
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    String getConnectionURLWithoutQuery() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;
@@ -164,6 +164,10 @@ BlobClientOptions getClientOptions(
     bool for_disk);
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

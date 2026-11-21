@@ -1,14 +1,9 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Columns/IColumn.h>
-#include <Common/FieldVisitorDump.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <ranges>
-#include <fmt/ranges.h>
-
 
 namespace DB
 {
@@ -16,71 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int LOGICAL_ERROR;
 }
-
-static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary)
-{
-    virtual_row_boundary.clear();
-    if (cursor.rows == 0)
-        return;
-
-    /// A virtual row announces the boundary of the source's next output: remember its sort key.
-    for (const auto * sort_column : cursor.sort_columns)
-        virtual_row_boundary.push_back(sort_column->cut(cursor.getRow(), 1));
-}
-
-static void checkVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary, const SortDescription & description, size_t source_num)
-{
-    if (virtual_row_boundary.empty() || cursor.rows == 0)
-        return;
-
-    size_t row = cursor.getRow();
-    for (size_t i = 0; i < description.size(); ++i)
-    {
-        int cmp = description[i].direction * virtual_row_boundary[i]->compareAt(0, row, *cursor.sort_columns[i], description[i].nulls_direction);
-        if (cmp == 0)
-            continue;
-
-        if (cmp < 0)
-            break;
-
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Virtual row boundary violated in MergingSortedAlgorithm for input {} on sort column '{}' {}: "
-            "the virtual row announced {} but the source then produced {}, which would mis-order the merge",
-            source_num, description[i].column_name, description[i].direction > 0 ? "ASC" : "DESC",
-            applyVisitor(FieldVisitorDump(), (*virtual_row_boundary[i])[0]),
-            applyVisitor(FieldVisitorDump(), (*cursor.sort_columns[i])[row]));
-    }
-
-    virtual_row_boundary.clear();
-}
-
-/// A virtual row announces the boundary of its source's next output,
-/// but only for the sort columns present in its pk block.
-/// Comparing those would make the merge trust a fictional boundary,
-/// so the first merge that sees a virtual row must
-/// have a sort description the row covers completely.
-static void checkVirtualRowCoversSortDescription(const Block & pk_block, const SortDescription & description)
-{
-    for (const auto & column_description : description)
-    {
-        if (!pk_block.has(column_description.column_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Virtual row does not cover sort column '{}'."
-                "Virtual row columns: {}, sort description [{}]",
-                column_description.column_name, pk_block.dumpNames(),
-                fmt::join(description | std::views::transform([](const auto & d) { return d.column_name; }), ", "));
-    }
-}
-
-#ifndef NDEBUG
-constexpr static bool do_debug_checks = true;
-#else
-constexpr static bool do_debug_checks = false;
-#endif
-
 
 MergingSortedAlgorithm::MergingSortedAlgorithm(
     SharedHeader header_,
@@ -132,7 +63,6 @@ void MergingSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
     cursors.emplace_back();
-    virtual_row_boundary.emplace_back();
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -142,9 +72,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!isVirtualRow(input.chunk))
             continue;
 
-        auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
-        if constexpr (do_debug_checks)
-            checkVirtualRowCoversSortDescription(pk_block, description);
+        setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         input.skip_last_row = true;
     }
 
@@ -152,7 +80,6 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
     current_inputs = std::move(inputs);
-    virtual_row_boundary.assign(current_inputs.size(), {});
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
@@ -161,15 +88,6 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-    }
-
-    if constexpr (do_debug_checks)
-    {
-        for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
-        {
-            if (current_inputs[source_num].skip_last_row && !has_collation)
-                rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-        }
     }
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
@@ -192,28 +110,10 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    bool is_virtual_row = isVirtualRow(input.chunk);
-    if (is_virtual_row)
-    {
-        auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
-        if constexpr (do_debug_checks)
-            checkVirtualRowCoversSortDescription(pk_block, description);
-        input.skip_last_row = true;
-    }
-
     removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
-
-    if constexpr (do_debug_checks)
-    {
-        /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
-        if (is_virtual_row && !has_collation)
-            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-        else
-            checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
-    }
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {

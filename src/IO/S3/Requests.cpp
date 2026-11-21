@@ -2,16 +2,32 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
 #include <string_view>
 #include <fmt/format.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
+
 namespace DB::S3
 {
+
+Model::StorageClass getStorageClassForName(const std::string & name)
+{
+    /// An unknown name is sent as is, so it must not break the header line.
+    if (name.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
+    return Model::StorageClassMapper::GetStorageClassForName(name);
+}
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {
@@ -36,7 +52,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
+    std::vector<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -168,7 +184,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(Strings component_names_)
+void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -179,7 +195,7 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
 }
 
 
-static size_t getAttemptFromInfo(const Aws::String & request_info)
+size_t getAttemptFromInfo(const Aws::String & request_info)
 {
     static auto key = Aws::String("attempt=");
 
@@ -206,7 +222,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     }
 }
 
-static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
 {
     auto it = map.find(key);
     if (it == map.end())

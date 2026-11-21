@@ -58,7 +58,7 @@ ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_d
         return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
     };
 
-    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create());
+    auto serialization = std::make_shared<SerializationArray>(std::make_shared<SerializationNumber<UInt8>>());
     ColumnPtr column = ColumnArray::create(ColumnUInt8::create());
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, limit, settings, state, nullptr);

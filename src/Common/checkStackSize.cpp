@@ -49,8 +49,8 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
-    size_t size = 0;
-    void * address = nullptr;
+    size_t size;
+    void * address;
 
 #if defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on
@@ -123,11 +123,13 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Frame address is greater than stack begin address");
 }
 
-[[noreturn]] [[gnu::cold]] NO_INLINE static void throwTooDeepRecursion(const void * stack_begin, const void * frame, size_t used_stack_size, size_t total_stack_size)
+/// The message is sent to the client, so it does not contain the addresses of the stack and the frame,
+/// to not disclose the layout of the address space of the server.
+[[noreturn]] [[gnu::cold]] NO_INLINE static void throwTooDeepRecursion(size_t used_stack_size, size_t total_stack_size)
 {
     throw DB::Exception(DB::ErrorCodes::TOO_DEEP_RECURSION,
-                        "Stack size too large. Stack address: {}, frame address: {}, stack size: {}, maximum stack size: {}",
-                        stack_begin, frame, used_stack_size, total_stack_size);
+                        "Stack size too large. Stack size: {}, maximum stack size: {}",
+                        used_stack_size, total_stack_size);
 }
 
 void checkStackSize()
@@ -165,5 +167,5 @@ void checkStackSize()
 
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (unlikely(stack_size > max_stack_size_allowed))
-        throwTooDeepRecursion(stack_bounds.address, frame_address, stack_size, stack_bounds.max_size);
+        throwTooDeepRecursion(stack_size, stack_bounds.max_size);
 }

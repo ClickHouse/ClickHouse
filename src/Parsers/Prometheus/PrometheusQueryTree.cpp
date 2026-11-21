@@ -258,7 +258,7 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryT
 void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp_scale_)
 {
     String error_message;
-    size_t error_pos = 0;
+    size_t error_pos;
     if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, &error_message, &error_pos))
         return;
 

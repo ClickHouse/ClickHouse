@@ -121,9 +121,7 @@ TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
 TRAP(mbsnrtowcs)
-#if !defined(USE_MUSL)
-TRAP(mbsrtowcs) // musl libc uses it internally in getaddrinfo()
-#endif
+TRAP(mbsrtowcs)
 //TRAP(mbtowc) // Used by Standard C++ library
 TRAP(mcheck)
 TRAP(mprobe)

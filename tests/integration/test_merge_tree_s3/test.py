@@ -8,7 +8,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import generate_values, replace_config
+from helpers.utility import SafeThread, generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -73,9 +73,6 @@ FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
 FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
-# The minmax skip index goes into a single skp_idx.packed archive instead of a
-# separate .idx2 + .mrk2 pair, because packed_skip_index_max_bytes is 1 MiB by default.
-FILES_SAVED_BY_PACKED_SKIP_INDEX = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
@@ -83,16 +80,13 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
-    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
     10
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
-    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
-FILES_OVERHEAD_PER_INVALIDATED_COLUMN = 1
 
 
 def create_table(node, table_name, **additional_settings):
@@ -105,7 +99,6 @@ def create_table(node, table_name, **additional_settings):
         "cleanup_delay_period": 1,
         "cleanup_delay_period_random_add": 0,
         "cleanup_thread_preferred_points_per_iteration": 0,
-        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 
@@ -332,7 +325,7 @@ def test_alter_table_columns(cluster, node_name):
         )
         deleted_in_log = set(
             node.query(
-                "SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
+                f"SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
             )
             .strip()
             .split()
@@ -342,7 +335,7 @@ def test_alter_table_columns(cluster, node_name):
         assert all(obj in deleted_in_log for obj in deleted_objects), (
             deleted_objects,
             node.query(
-                "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+                f"SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
             ),
         )
 
@@ -418,7 +411,7 @@ def test_attach_detach_partition(cluster, node_name):
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 + FILES_OVERHEAD_PER_INVALIDATED_COLUMN)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
     wait_for_delete_empty_parts(node, "s3_test")
@@ -437,7 +430,7 @@ def test_attach_detach_partition(cluster, node_name):
         settings={"allow_drop_detached": 1},
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 0)
 
     check_no_objects_after_drop(cluster)
 
@@ -540,8 +533,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2
-        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -559,8 +551,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2
-        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     node.query("ALTER TABLE s3_test REPLACE PARTITION '2020-01-03' FROM s3_clone")
@@ -575,8 +566,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2
-        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 4,
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     node.query("DROP TABLE s3_clone SYNC")
@@ -588,8 +578,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2
-        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     node.query("ALTER TABLE s3_test FREEZE")
@@ -599,8 +588,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2
-        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     node.query("DROP TABLE s3_test SYNC")
@@ -778,7 +766,7 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
     # Create a dummy file of 2M size to fill the disk space of cache disk
-    node.exec_in_container(
+    out = node.exec_in_container(
         [
             "/usr/bin/dd",
             "if=/dev/zero",
@@ -795,7 +783,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
-    node.exec_in_container(
+    out = node.exec_in_container(
         [
             "/usr/bin/clickhouse",
             "benchmark",

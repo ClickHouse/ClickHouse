@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -29,7 +30,6 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
             {"MultiPartUploadWrite", static_cast<Int8>(EventType::MultiPartUploadWrite)},
             {"MultiPartUploadComplete", static_cast<Int8>(EventType::MultiPartUploadComplete)},
             {"MultiPartUploadAbort", static_cast<Int8>(EventType::MultiPartUploadAbort)},
-            {"Read", static_cast<Int8>(EventType::Read)},
         });
 
     return ColumnsDescription
@@ -39,7 +39,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read'"},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort'"},
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
@@ -85,10 +85,7 @@ void BlobStorageLog::addSettingsForQuery(ContextMutablePtr & mutable_context, IA
     SystemLog<BlobStorageLogElement>::addSettingsForQuery(mutable_context, query_kind);
 
     if (query_kind == IAST::QueryKind::Insert)
-    {
         mutable_context->setSetting("enable_blob_storage_log", false);
-        mutable_context->setSetting("enable_blob_storage_log_for_read_operations", false);
-    }
 }
 
 static std::string_view normalizePath(std::string_view path)
@@ -103,7 +100,7 @@ static std::string_view normalizePath(std::string_view path)
 void BlobStorageLog::prepareTable()
 {
     SystemLog<BlobStorageLogElement>::prepareTable();
-    if (auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(getStorage()))
+    if (auto merge_tree_table = castStorage<MergeTreeData>(getStorage(), DeferredTable::Skip))
     {
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();

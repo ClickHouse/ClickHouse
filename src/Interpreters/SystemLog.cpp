@@ -11,9 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
-#include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -24,7 +22,6 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
@@ -34,7 +31,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
-#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -51,14 +47,11 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -66,7 +59,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -107,20 +99,6 @@ namespace ActionLocks
 
 namespace
 {
-
-/// Flush buffered text-log entries from the application's async logger, if any.
-///
-/// `BaseDaemon::flushTextLogs` is what `clickhouse-server` uses to drain its async log
-/// channels into `system.text_log`. `clickhouse-local`/`clickhouse-client` derive from
-/// `ClientApplicationBase` rather than `BaseDaemon`, so `BaseDaemon::instance()` would
-/// throw `std::bad_cast`; that exception used to escape `SystemLogs::flushAndShutdown`,
-/// leaving the saving threads alive while `~SystemLogQueue` ran `pthread_cond_destroy`,
-/// which hangs while there are waiters.
-void flushAsyncTextLogsIfPossible()
-{
-    if (auto base_daemon = BaseDaemon::tryGetInstance())
-        base_daemon->get().flushTextLogs();
-}
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -237,21 +215,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
         log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
 
-    /// The optional `create_union_system_log_tables` section requests the creation of `all_...`
-    /// tables querying the set of rotated tables (`query_log`, `query_log_0`, `query_log_1`, ...)
-    /// and/or the corresponding tables across all replicas of a cluster. It applies to all
-    /// system log tables and does not allow a different configuration for different logs.
-    if (config.has("create_union_system_log_tables"))
-    {
-        log_settings.union_table_merge_rotated_tables = config.getBool("create_union_system_log_tables.merge_rotated_tables", false);
-        log_settings.union_table_cluster = config.getString("create_union_system_log_tables.cluster", "");
-
-        if (!log_settings.union_table_merge_rotated_tables && log_settings.union_table_cluster.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "If the 'create_union_system_log_tables' section is present in the server configuration,"
-                            " at least one of 'merge_rotated_tables' and 'cluster' has to be specified");
-    }
-
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
 
@@ -321,21 +284,6 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
     return old_ast;
-}
-
-/// Escapes a table name for use inside a regular expression
-/// (the argument of the `merge` table function).
-String escapeStringForRegexp(const String & s)
-{
-    String result;
-    result.reserve(s.size());
-    for (char c : s)
-    {
-        if (!isWordCharASCII(c))
-            result += '\\';
-        result += c;
-    }
-    return result;
 }
 
 }
@@ -444,21 +392,6 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
-bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config)
-{
-#define CHECK_HAS_SYSTEM_LOG(log_type, member, descr) \
-    if (config.has(#member)) \
-        return true;
-
-    LIST_OF_ALL_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #if CLICKHOUSE_CLOUD
-        LIST_OF_CLOUD_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #endif
-#undef CHECK_HAS_SYSTEM_LOG
-
-    return false;
-}
-
 namespace
 {
 constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
@@ -487,7 +420,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     if (names.empty())
     {
         if (text_log)
-            flushAsyncTextLogsIfPossible();
+            BaseDaemon::instance().flushTextLogs();
 
         for (auto * log : getAllLogs())
         {
@@ -495,8 +428,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -533,14 +464,12 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             auto * log = it->second;
 
             if (log == text_log.get())
-                flushAsyncTextLogsIfPossible();
+                BaseDaemon::instance().flushTextLogs();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -584,36 +513,9 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
-    /// Flush crash_log first since it's the most important log during a crash.
-    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
-    /// time budget from the signal handler's 303-second timeout, potentially
-    /// preventing crash_log from being flushed if stack symbolization was slow.
-    /// Use try/catch so that a timeout in one log does not prevent flushing others.
-    if (crash_log)
-    {
-        try
-        {
-            crash_log->handleCrash();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
     auto logs = getAllLogs();
     for (auto & log : logs)
-    {
-        try
-        {
-            if (log != crash_log.get())
-                log->handleCrash();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+        log->handleCrash();
 }
 
 template <typename LogElement>
@@ -625,22 +527,10 @@ SystemLog<LogElement>::SystemLog(
     , WithContext(context_)
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
-    , union_table_id(settings_.queue_settings.database, "all_" + settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
-    , union_table_cluster(settings_.union_table_cluster)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
+    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
 {
-    create_query = getCreateTableQuery()->formatWithSecretsOneLine();
-    if (union_table_merge_rotated_tables || !union_table_cluster.empty())
-        union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
-    chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
-}
-
-template <typename LogElement>
-SystemLog<LogElement>::~SystemLog()
-{
-    Base::stopFlushThread();
+    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>
@@ -699,7 +589,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
-    bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
     try
     {
@@ -744,14 +633,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
-
-        /// Explicitly specify column names to avoid mismatch when the table
-        /// has been altered (e.g. columns added) between prepareTable() and this INSERT.
-        auto columns_ast = make_intrusive<ASTExpressionList>();
-        for (const auto & name : block.getNames())
-            columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
-        insert->columns = std::move(columns_ast);
-
         ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
@@ -773,15 +654,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
-
-        flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
     }
     catch (...)
     {
-        if (is_manual_flush)
-            flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
@@ -871,78 +748,8 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
-            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
-            /// This prevents the old table from wasting CPU on background operations.
-            ///
-            /// `table_readonly` is only supported for `StorageMergeTree`: `StorageReplicatedMergeTree`
-            /// rejects `ALTER TABLE ... MODIFY SETTING table_readonly` with `NOT_IMPLEMENTED`, so issuing
-            /// it for a replicated system log table (configured via a custom `<engine>`) would throw and
-            /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
-            ///
-            /// A `table_readonly` table performs no modifications on disk at all, including TTL drop/delete
-            /// merges. So if a system log table is configured with a TTL (e.g. `event_date + INTERVAL 30 DAY
-            /// DELETE`), marking it readonly would prevent its expired data from ever being reclaimed. Keep
-            /// such tables writable so background TTL still runs. In the default open-source configuration
-            /// most system logs (including `query_log`) have no TTL, so their rotated tables are frozen as
-            /// readonly; only the few logs configured with a TTL stay writable.
-            ///
-            /// Marking the old table read-only is purely an optimization and must never break log rotation.
-            /// The rename has already succeeded above, so if applying the setting throws (for example, a
-            /// transient error, or the table being dropped concurrently), swallow it, log it, and continue
-            /// to create the new table. Letting the exception propagate would abort `flushImpl` and discard
-            /// the current batch of log entries.
-            try
-            {
-                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
-                auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
-
-                bool old_table_has_ttl = false;
-                if (old_table)
-                {
-                    auto old_metadata = old_table->getInMemoryMetadataPtr(getContext(), false);
-                    old_table_has_ttl = old_metadata->hasAnyTTL();
-                }
-
-                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication() && !old_table_has_ttl)
-                {
-                    auto alter_context = Context::createCopy(context);
-                    alter_context->makeQueryContext();
-                    addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
-
-                    auto alter_command = make_intrusive<ASTAlterCommand>();
-                    alter_command->type = ASTAlterCommand::MODIFY_SETTING;
-
-                    auto settings_changes = make_intrusive<ASTSetQuery>();
-                    settings_changes->is_standalone = false;
-                    settings_changes->changes.push_back({"table_readonly", Field(true)});
-                    alter_command->settings_changes = settings_changes.get();
-                    alter_command->children.push_back(settings_changes);
-
-                    auto alter_commands = make_intrusive<ASTExpressionList>();
-                    alter_commands->children.push_back(alter_command);
-
-                    auto alter_query = make_intrusive<ASTAlterQuery>();
-                    alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
-                    alter_query->setDatabase(old_table_id.database_name);
-                    alter_query->setTable(old_table_id.table_name);
-                    alter_query->command_list = alter_commands.get();
-                    alter_query->children.push_back(alter_commands);
-
-                    InterpreterAlterQuery(alter_query, alter_context).execute();
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to mark the rotated system log table as readonly; continuing with rotation");
-            }
-
             /// The required table will be created.
             table = nullptr;
-
-            /// The union table (if configured) pins the structure of the current table,
-            /// so it has to be re-checked after the rotation.
-            union_table_check_pending = true;
-            union_table_broken = false;
         }
         else if (!is_prepared)
             LOG_DEBUG(log, "Will use existing table {} for {}", description, LogElement::name());
@@ -968,95 +775,6 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
-
-    prepareUnionTable();
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::prepareUnionTable()
-{
-    if (union_create_query.empty() || union_table_broken)
-        return;
-
-    try
-    {
-        auto union_table = DatabaseCatalog::instance().tryGetTable(union_table_id, getContext());
-
-        /// The definition is verified at the first flush and after each rotation of the log
-        /// table; on other flushes only recreate the union table if it was dropped by a user.
-        if (!union_table_check_pending && union_table)
-            return;
-
-        const auto & database_engine = DatabaseCatalog::instance().getDatabase(union_table_id.database_name)->getEngineName();
-        if (database_engine != "Atomic" && database_engine != "Replicated" && database_engine != "Shared")
-        {
-            LOG_INFO(
-                log,
-                "Not creating {}: it is only supported for the Atomic, Replicated and Shared database engines,"
-                " while the database {} has the engine {}",
-                union_table_id.getNameForLogs(),
-                backQuoteIfNeed(union_table_id.database_name),
-                database_engine);
-            union_table_broken = true;
-            return;
-        }
-
-        if (union_table)
-        {
-            String existing_create_query = getCreateTableQueryClean(union_table_id, getContext())->formatWithSecretsOneLine();
-            if (existing_create_query == union_create_query)
-            {
-                union_table_check_pending = false;
-                return;
-            }
-
-            LOG_DEBUG(
-                log,
-                "Existing table {} has an obsolete or different definition. Recreating it.\nOld: {}\nNew: {}\n.",
-                union_table_id.getNameForLogs(),
-                existing_create_query,
-                union_create_query);
-        }
-        else
-        {
-            LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
-        }
-
-        auto query_context = Context::createCopy(context);
-        query_context->makeQueryContext();
-        addSettingsForQuery(query_context, IAST::QueryKind::Create);
-        /// Replacing the union table drops the previous one, and users may have created
-        /// dependencies on it; as with the rotation of the log tables, this automatic
-        /// operation must not fail because of them.
-        query_context->setSetting("check_table_dependencies", Field{false});
-        query_context->setSetting("check_referential_table_dependencies", Field{false});
-
-        ASTPtr create_query_ast = getCreateUnionTableQuery();
-        auto & create = create_query_ast->as<ASTCreateQuery &>();
-        /// The union table has no state, so it is always possible to recreate it.
-        /// CREATE OR REPLACE swaps the old and the new table with an atomic exchange
-        /// and also works when the table does not exist.
-        create.create_or_replace = true;
-        create.replace_table = true;
-
-        InterpreterCreateQuery interpreter(create_query_ast, query_context);
-        interpreter.setInternal(true);
-        interpreter.execute();
-
-        union_table_check_pending = false;
-    }
-    catch (...)
-    {
-        /// The log table must keep flushing even if the union table cannot be created
-        /// (for example, the configured cluster does not exist).
-        union_table_broken = true;
-        tryLogCurrentException(
-            log,
-            fmt::format(
-                "Failed to prepare {}. The creation will not be retried until a restart of the server"
-                " or a rotation of the log table",
-                union_table_id.getNameForLogs()));
-    }
 }
 
 template <typename LogElement>
@@ -1066,23 +784,12 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     {
         /// We always want to deliver the data to the original table regardless of the MVs
         mutable_context->setSetting("materialized_views_ignore_errors", true);
-        flush_policy->addInsertSettings(mutable_context);
     }
     else if (query_kind == IAST::QueryKind::Rename)
     {
         /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
         mutable_context->setSetting("check_table_dependencies", Field{false});
         mutable_context->setSetting("check_referential_table_dependencies", Field{false});
-    }
-    else if (query_kind == IAST::QueryKind::Alter)
-    {
-        /// The metadata of the widest system log tables (e.g. `metric_log`, whose columns follow
-        /// the ever-growing set of profile events and metrics) can exceed the default
-        /// `max_query_size`, and `ALTER` validates the size of the resulting metadata against it
-        /// to keep tables loadable by user queries. Loading the metadata at startup parses it
-        /// with an unlimited query size, so the limit must not fail this internal `ALTER`
-        /// (e.g. marking a rotated table as readonly).
-        mutable_context->setSetting("max_query_size", Field{UInt64{0}});
     }
 }
 
@@ -1097,11 +804,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
-    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
-    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
-    if (!flush_policy->shouldSkipAliasColumns())
-        ordinary_columns.setAliases(alias_columns);
+    ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
@@ -1112,22 +815,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
-
-    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
-    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
-    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
-    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
-    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
-    {
-        if (storage->partition_by)
-            storage->partition_by->setParenthesized(false);
-        if (storage->order_by)
-            storage->order_by->setParenthesized(false);
-        if (storage->primary_key)
-            storage->primary_key->setParenthesized(false);
-        if (storage->sample_by)
-            storage->sample_by->setParenthesized(false);
-    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
@@ -1171,85 +858,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
         storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
-
-    return create;
-}
-
-template <typename LogElement>
-ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
-{
-    auto create = make_intrusive<ASTCreateQuery>();
-
-    create->setDatabase(union_table_id.database_name);
-    create->setTable(union_table_id.table_name);
-
-    /// The columns are specified explicitly (instead of being derived from the table function),
-    /// so that the union table always pins the up-to-date structure of the log table: the
-    /// dynamically derived structure could include obsolete columns of the rotated tables.
-    /// Note: unlike the log table itself, no skipping indices - they are not supported for
-    /// tables created over a table function.
-    auto new_columns_list = make_intrusive<ASTColumns>();
-    auto ordinary_columns = LogElement::getColumnsDescription();
-    auto alias_columns = LogElement::getNamesAndAliases();
-    if (!flush_policy->shouldSkipAliasColumns())
-        ordinary_columns.setAliases(alias_columns);
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
-    create->set(create->columns_list, new_columns_list);
-
-    /// The `merge` table function selects the log table itself along with its rotated
-    /// versions (`query_log`, `query_log_0`, `query_log_1`, ...), but not the union table.
-    ASTPtr merge_table_function;
-    if (union_table_merge_rotated_tables)
-        merge_table_function = makeASTFunction(
-            "merge",
-            make_intrusive<ASTLiteral>(table_id.database_name),
-            make_intrusive<ASTLiteral>(fmt::format("^{}(_[0-9]+)?$", escapeStringForRegexp(table_id.table_name))));
-
-    String comment;
-    ASTPtr table_function;
-    if (!union_table_cluster.empty())
-    {
-        /// Reading from the union table should not fail because some of the replicas
-        /// are unavailable. The setting stored in the table definition is overridable:
-        /// it takes effect only when `skip_unavailable_shards` is not set for the query.
-        auto settings = make_intrusive<ASTSetQuery>();
-        settings->is_standalone = false;
-        settings->changes.emplace_back("skip_unavailable_shards", true);
-
-        if (merge_table_function)
-        {
-            table_function = makeASTFunction(
-                "clusterAllReplicas", make_intrusive<ASTLiteral>(union_table_cluster), merge_table_function, settings);
-            comment = fmt::format(
-                "Union of the {} tables (including the rotated versions) across all replicas of the cluster {}.",
-                backQuote(table_id.table_name),
-                backQuote(union_table_cluster));
-        }
-        else
-        {
-            table_function = makeASTFunction(
-                "clusterAllReplicas",
-                make_intrusive<ASTLiteral>(union_table_cluster),
-                make_intrusive<ASTLiteral>(table_id.database_name),
-                make_intrusive<ASTLiteral>(table_id.table_name),
-                settings);
-            comment = fmt::format(
-                "Union of the {} tables across all replicas of the cluster {}.",
-                backQuote(table_id.table_name),
-                backQuote(union_table_cluster));
-        }
-    }
-    else
-    {
-        table_function = merge_table_function;
-        comment = fmt::format(
-            "Union of the {} table and its rotated versions.", backQuote(table_id.table_name));
-    }
-
-    create->set(create->as_table_function, table_function);
-
-    comment += "\n\nIt is safe to drop this table at any time: it will be recreated automatically.";
-    create->set(create->comment, make_intrusive<ASTLiteral>(comment));
 
     return create;
 }

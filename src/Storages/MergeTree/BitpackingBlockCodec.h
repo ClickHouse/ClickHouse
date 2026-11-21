@@ -287,7 +287,7 @@ struct BitpackingBlockCodecImpl<false>
     /// memcpy-ing 16 bytes from the byte stream into four uint32_t words.
     ///
     /// Behavior by Bits:
-    /// - Bits == 0  : no payload is stored/consumed, but all `groups * 4` decoded values are written as zeros.
+    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
     /// - Bits == 32 : values are stored as raw uint32_t; copy groups*4 words and advance by groups*16 bytes.
     /// - Bits 1..31 : use four 64-bit lane accumulators (acc0..acc3) as bit reservoirs.
     ///               Refill by reading one 16-byte chunk (4×uint32_t, 32 bits per lane)
@@ -307,13 +307,9 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (groups == 0) return in;
 
-        /// Bits==0: no payload in the stream, so every decoded value is zero. The zeros must still be
-        /// written: callers may decode into a reused buffer, and SIMDComp's SIMD_nullunpacker32 writes them too.
+        /// Bits==0: no payload in the stream;
         if constexpr (Bits == 0)
-        {
-            std::memset(out, 0, groups * 4 * sizeof(uint32_t));
             return in;
-        }
 
         /// Bits==32: stream stores raw uint32_t values (4 per group / per m128i).
         if constexpr (Bits == 32)
@@ -511,7 +507,7 @@ struct BitpackingBlockCodecImpl<false>
     /// (e.g. 128 integers).
     ///
     /// Special cases:
-    /// - Bits == 0  : no payload is stored/consumed, but all `tail` decoded values are written as zeros.
+    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
     /// - Bits == 32 : values are stored as raw uint32_t, tightly packed (tail * 4 bytes),
     ///               with no 16-byte chunk padding.
     ///
@@ -528,13 +524,9 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (tail == 0) return in;
 
-        /// Bits==0: no stored bits, so every decoded value is zero. The zeros must still be written:
-        /// callers may decode into a reused buffer, and SIMDComp's simdunpack_shortlength writes them too.
+        /// Bits==0: no stored bits;
         if constexpr (Bits == 0)
-        {
-            std::memset(out, 0, tail * sizeof(uint32_t));
             return in;
-        }
 
         /// Bits==32: raw uint32_t values are stored tightly (SIMDComp's special-case behavior).
         if constexpr (Bits == 32)

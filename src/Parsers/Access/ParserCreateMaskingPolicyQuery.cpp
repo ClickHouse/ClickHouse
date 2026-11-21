@@ -203,7 +203,7 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         roles->all = true;
     }
 
-    if (!update_assignments && !alter && !attach_mode)
+    if (!update_assignments && !alter)
         return false;
 
     auto query = make_intrusive<ASTCreateMaskingPolicyQuery>();

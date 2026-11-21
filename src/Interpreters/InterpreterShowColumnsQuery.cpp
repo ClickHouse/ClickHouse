@@ -114,7 +114,7 @@ SELECT
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getInMemoryMetadataPtr(context, false)->virtuals.getSampleBlock(...).getNamesAndTypesList(). We can't easily do that via SQL.
+    // IStorage::getVirtualsList(). We can't easily do that via SQL.
 
     if (query.full)
     {
@@ -183,7 +183,6 @@ BlockIO InterpreterShowColumnsQuery::execute()
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

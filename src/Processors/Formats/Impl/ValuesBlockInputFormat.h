@@ -105,7 +105,7 @@ private:
     size_t approx_bytes_read_for_chunk = 0;
 };
 
-class ValuesSchemaReader final : public IRowSchemaReader
+class ValuesSchemaReader : public IRowSchemaReader
 {
 public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

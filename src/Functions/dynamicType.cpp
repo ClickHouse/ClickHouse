@@ -25,7 +25,7 @@ namespace
 {
 
 /// Return String with type name for each row in Dynamic column.
-class FunctionDynamicType final : public IFunction
+class FunctionDynamicType : public IFunction
 {
 public:
     static constexpr auto name = "dynamicType";
@@ -86,7 +86,7 @@ public:
     }
 };
 
-class FunctionIsDynamicElementInSharedData final : public IFunction
+class FunctionIsDynamicElementInSharedData : public IFunction
 {
 public:
     static constexpr auto name = "isDynamicElementInSharedData";

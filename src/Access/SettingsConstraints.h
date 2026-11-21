@@ -4,7 +4,9 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingSource.h>
+#include <Core/SettingsTierType.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -71,9 +73,9 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & disallowed_values, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
-    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
+    void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & allowed_values, SettingConstraintWritability writability);
+    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
+    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & allowed_values, SettingConstraintWritability & writability) const;
 
     void merge(const SettingsConstraints & other);
 
@@ -82,14 +84,23 @@ public:
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
+
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
+
+    /// Checks whether resetting the specified settings to their defaults violates these constraints.
+    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
+    /// A change equal to the current value is dropped from `changes`.
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
+    void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
@@ -98,8 +109,12 @@ public:
 private:
     enum ReactionOnViolation
     {
+        /// Any violation, an unknown name or an uncastable value throws.
         THROW_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value is dropped.
         CLAMP_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value throws.
+        CLAMP_ON_VIOLATION_THROW_ON_INVALID,
     };
 
     struct Constraint
@@ -156,21 +171,20 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
-    void
-    checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
-
-    bool checkImpl(
-        const Settings & current_settings,
-        SettingChange & change,
-        ReactionOnViolation reaction,
-        SettingSource source,
-        bool ignore_unchanged_settings = false) const;
+    bool checkImpl(const Settings & current_settings,
+                  SettingChange & change,
+                  ReactionOnViolation reaction,
+                  SettingSource source,
+                  bool ignore_unchanged_settings = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+
+    bool isAnyTierRestricted() const;
+
+    /// A checker refusing the change if `allow_feature_tier` disables `tier`, nothing if it allows it.
+    std::optional<Checker> getTierChecker(std::string_view setting_name, SettingsTierType tier) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
 
     std::string_view resolveSettingNameWithCache(std::string_view name) const;

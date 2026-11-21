@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
@@ -50,6 +49,7 @@ class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
+class AccessChangesNotifier;
 struct Settings;
 
 
@@ -114,17 +114,24 @@ public:
     /// Reloads and updates all access entities.
     void reload(ReloadMode reload_mode) override;
 
-    using OnChangedHandler = AccessChangesNotifier::OnChangedHandler;
+    using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
 
-    /// Subscribes for all changes of entities of a given type (see AccessChangesNotifier::subscribeForChanges).
+    /// Subscribes for all changes.
+    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
 
     template <typename EntityClassT>
     scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
 
     /// Subscribes for changes of a specific entry.
+    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
+
+    using OnBatchFinishedHandler = std::function<void()>;
+
+    /// Subscribes for the end of a notification batch (see AccessChangesNotifier::subscribeForBatchFinished).
+    scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const;
 
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const;
 
@@ -195,12 +202,6 @@ public:
     void setSelectFromSystemDatabaseRequiresGrant(bool enable) { select_from_system_db_requires_grant = enable; }
     bool doesSelectFromSystemDatabaseRequireGrant() const { return select_from_system_db_requires_grant; }
 
-    /// Whether `system.user_query_log` is enabled (attached as `StorageSystemUserQueryLog`). Only then is it safe
-    /// to grant SELECT on it implicitly to everyone: the storage filters the rows to the current user. When the
-    /// feature is disabled the name can back a regular table, which must not become world-readable.
-    void setUserQueryLogEnabled(bool enable) { user_query_log_enabled = enable; }
-    bool isUserQueryLogEnabled() const { return user_query_log_enabled; }
-
     void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
     bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
 
@@ -216,6 +217,10 @@ public:
 
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
+
+    /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
+    void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
+    bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
@@ -300,7 +305,6 @@ private:
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
-    std::atomic_bool user_query_log_enabled = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
@@ -312,6 +316,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool readonly_restricts_set_role = false;
 };
 
 }

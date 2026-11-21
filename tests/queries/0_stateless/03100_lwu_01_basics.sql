@@ -12,8 +12,7 @@ ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_shared/', '1')
 ORDER BY id
 SETTINGS
     enable_block_number_column = true,
-    enable_block_offset_column = true,
-    remove_unused_patch_parts = false;
+    enable_block_offset_column = true;
 
 INSERT INTO t_shared SELECT number, number, number FROM numbers(20);
 INSERT INTO t_shared SELECT number, number, number FROM numbers(100, 10);

@@ -55,7 +55,6 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
-void tracingCallback(struct ffi::Event event);
 void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs with very long messages
@@ -368,13 +367,13 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
 /// Returns non virtual column names, and virtual columns names and types.
 static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     const Names & columns,
-    const VirtualColumnsDescription & virtual_columns_description)
+    VirtualsDescriptionPtr virtual_columns_description)
 {
     Names non_virtual_columns;
     NamesAndTypesList virtual_columns;
     for (const auto & column_name : columns)
     {
-        if (auto virtual_column = virtual_columns_description.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        if (auto virtual_column = virtual_columns_description->tryGet(column_name))
             virtual_columns.emplace_back(std::move(*virtual_column));
         else
             non_virtual_columns.push_back(column_name);
@@ -527,7 +526,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
     Names columns_to_read;
     std::tie(columns_to_read, info.requested_virtual_columns) =
-        splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);
+        splitVirtualColumns(requested_columns, storage_snapshot->virtual_columns);
 
     /// Create header for Source with non virtual columns
     /// and add virtual columns at the end of the header.
@@ -601,10 +600,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
+    for (const auto & column : info.columns_description)
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = DeltaLake::getPhysicalName(column.name, physical_names_map);
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
@@ -626,8 +632,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Delta Lake writes are a Beta feature disabled by default. "
-            "To enable them, set allow_delta_lake_writes = 1");
+            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());

@@ -5,8 +5,6 @@
 #include <Core/SettingsFields.h>
 #include <IO/HTTPRequestThrottler.h>
 
-#include <map>
-
 namespace Poco::Util
 {
 class AbstractConfiguration;
@@ -75,9 +73,6 @@ struct S3RequestSettings
 
     void serialize(WriteBuffer & out, ContextPtr context) const;
     static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
-
-    /// Returns all effective request settings as a string map, for observability (e.g. `system.backups`).
-    std::map<String, String> getSettingsRepresentation() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);

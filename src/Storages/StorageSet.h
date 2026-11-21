@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -16,13 +16,11 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : public StorageWithCommonVirtualColumns
+class StorageSetOrJoinBase : public IStorage
 {
     friend class SetOrJoinSink;
 
 public:
-    static VirtualColumnsDescription createVirtuals();
-
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;

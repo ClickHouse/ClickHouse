@@ -4,18 +4,11 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Poco/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
-}
 
 BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
@@ -43,26 +36,6 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t /* file_size */,
-                                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
-                                              WriteMode write_mode)
-{
-    LOG_TRACE(log, "Copying a range of file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
-
-    auto read_buffer = readFile(path_in_backup);
-    read_buffer->seek(offset, SEEK_SET);
-
-    std::unique_ptr<WriteBuffer> write_buffer;
-    auto buf_size = std::min(size, write_buffer_size);
-    if (encrypted_in_backup)
-        write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, write_settings);
-    else
-        write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, write_settings);
-
-    copyData(*read_buffer, *write_buffer, size);
-    write_buffer->finalize();
-}
-
 BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
     , read_settings(read_settings_)
@@ -72,31 +45,22 @@ BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, co
 }
 
 bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents)
-try
 {
     if (!fileExists(file_name))
         return false;
 
-    auto in = readFile(file_name, expected_file_contents.size());
-    actual_file_contents = String(expected_file_contents.size(), ' ');
-    return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
-        && (actual_file_contents == expected_file_contents) && in->eof();
-}
-catch (const Exception &)
-{
-    throw;
-}
-catch (const Poco::Exception & ex)
-{
-    throw Exception(
-        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-        "Failed to check file {} contents: {}", file_name, ex.message());
-}
-catch (const std::exception & ex)
-{
-    throw Exception(
-        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-        "Failed to check file {} contents: {}", file_name, ex.what());
+    try
+    {
+        auto in = readFile(file_name, expected_file_contents.size());
+        actual_file_contents = String(expected_file_contents.size(), ' ');
+        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
+            && (actual_file_contents == expected_file_contents) && in->eof();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 }
 
 void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)

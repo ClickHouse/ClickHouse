@@ -51,7 +51,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
 }
 
-static RuleType ruleType(const String & s)
+RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
@@ -304,7 +304,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (!tags[0].contains('='))  /// NOLINT(readability-static-accessed-through-instance)
+    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";

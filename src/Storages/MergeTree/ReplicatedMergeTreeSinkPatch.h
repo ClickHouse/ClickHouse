@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class ReplicatedMergeTreeSinkPatch final : public ReplicatedMergeTreeSink
+class ReplicatedMergeTreeSinkPatch : public ReplicatedMergeTreeSink
 {
 public:
     ReplicatedMergeTreeSinkPatch(

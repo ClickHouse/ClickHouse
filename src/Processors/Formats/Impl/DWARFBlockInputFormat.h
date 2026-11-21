@@ -17,7 +17,7 @@
 namespace DB
 {
 
-class DWARFBlockInputFormat final : public IInputFormat
+class DWARFBlockInputFormat : public IInputFormat
 {
 public:
     DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_);
@@ -49,6 +49,8 @@ private:
         const llvm::DWARFUnit * dwarf_unit;
         const llvm::DWARFAbbreviationDeclarationSet * abbrevs;
         uint64_t end_offset;
+        /// `.debug_info` truncated at the end of this unit, so that parsing its entries never reads the next unit.
+        llvm::DWARFDataExtractor data;
 
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
@@ -64,7 +66,7 @@ private:
 
         bool eof() const { return offset == end_offset; }
 
-        explicit UnitState(llvm::DWARFUnit * u);
+        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data);
     };
 
     const FormatSettings format_settings;
@@ -105,6 +107,9 @@ private:
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
 
+    void checkAttributeEnd(
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset,
+        const UnitState & unit) const;
     llvm::DWARFFormValue parseAttribute(
         const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
         const UnitState & unit) const;
@@ -121,7 +126,7 @@ private:
         const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };
 
-class DWARFSchemaReader final : public ISchemaReader
+class DWARFSchemaReader : public ISchemaReader
 {
 public:
     explicit DWARFSchemaReader(ReadBuffer & in_);

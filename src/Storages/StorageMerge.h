@@ -51,20 +51,17 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    /// Fails closed: a Merge over a child that opts out (e.g. Distributed) must not let the
-    /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
-    bool supportsOptimizationToSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -138,6 +135,9 @@ private:
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
+    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
+
+    template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
@@ -151,9 +151,8 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
@@ -162,7 +161,7 @@ private:
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -193,16 +192,12 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
-
-    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
-    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
-    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 
@@ -213,6 +208,9 @@ private:
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
+    Names column_names;
+    bool has_database_virtual_column;
+    bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -298,6 +296,12 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
+    void addVirtualColumns(
+        ChildPlan & child,
+        SelectQueryInfo & modified_query_info,
+        QueryProcessingStage::Enum processed_stage,
+        const StorageWithLockAndName & storage_with_lock) const;
+
     QueryPipelineBuilderPtr buildPipeline(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
@@ -313,7 +317,9 @@ private:
         bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-        ContextPtr query_context) const;
+        ContextPtr query_context,
+        bool filter_by_database_virtual_column,
+        bool filter_by_table_virtual_column) const;
 };
 
 }

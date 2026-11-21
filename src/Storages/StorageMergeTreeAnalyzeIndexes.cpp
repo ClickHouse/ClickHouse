@@ -2,11 +2,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
@@ -17,6 +13,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
+#include <Storages/StorageProxy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -38,7 +35,7 @@ namespace ErrorCodes
 ///
 /// MergeTreeAnalyzeIndexSource
 ///
-class MergeTreeAnalyzeIndexSource final : public ISource, WithContext
+class MergeTreeAnalyzeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeAnalyzeIndexSource(
@@ -76,8 +73,6 @@ protected:
 
         if (data_parts.empty())
             return {};
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeAnalyzeIndexSource::generate");
 
         auto ranges = getIndexAnalysis();
         MutableColumns res_columns = header->cloneEmptyColumns();
@@ -127,8 +122,8 @@ protected:
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-        const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr();
+        const auto * merge_tree_data = castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
 
@@ -141,12 +136,12 @@ protected:
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
-            auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+            QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
 
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
             collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
@@ -166,11 +161,10 @@ protected:
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {
                 auto query_tree = subquery->detachQueryTree();
-                createUniqueAliasesIfNecessary(query_tree, execution_context);
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
                 subquery_planner.buildQueryPlanIfNeeded();
 
                 auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -303,12 +297,12 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     std::vector<String> parts_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
-    : StorageWithCommonVirtualColumns(table_id_)
-    , source_table(source_table_)
+    : IStorage(table_id_)
+    , source_table(resolveStorageProxyLoading(source_table_))
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
 {
-    const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree_data = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", source_table->getName());
 
@@ -324,19 +318,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageMergeTreeAnalyzeIndexes::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageMergeTreeAnalyzeIndexes::readImpl(
+void StorageMergeTreeAnalyzeIndexes::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

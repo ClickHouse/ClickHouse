@@ -6,8 +6,6 @@
 namespace DB
 {
 
-struct Settings;
-
 /** What limitations and quotas should be checked.
   * LIMITS_CURRENT - checks amount of data returned by current stream only (BlockStreamProfileInfo is used for check).
   *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
@@ -31,10 +29,6 @@ struct StreamLocalLimits
     ExecutionSpeedLimits speed_limits;
 
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
-
-    /// Result-size limits (max_result_rows / max_result_bytes / result_overflow_mode)
-    /// applied to the final stream of a query. Used by executeQuery, WATCH and EXPLAIN ANALYZE.
-    static StreamLocalLimits forQueryResult(const Settings & settings);
 };
 
 struct StorageLimits
@@ -43,6 +37,6 @@ struct StorageLimits
     SizeLimits leaf_limits;
 };
 
-using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsList = std::list<StorageLimits>;
 
 }

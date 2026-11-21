@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -16,7 +15,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool is_utf8>
-class SparseGramsHashes final : public IFunction
+class SparseGramsHashes : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsHashesUTF8" : "sparseGramsHashes";

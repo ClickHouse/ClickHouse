@@ -256,7 +256,7 @@ private:
     {
         bool is_protected = false;
         MappedPtr value;
-        size_t size{};
+        size_t size;
         SLRUQueueIterator queue_iterator;
     };
 

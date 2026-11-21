@@ -49,7 +49,7 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
 {
     off_t old_pos = getPosition();
 
-    off_t new_pos = 0;
+    off_t new_pos;
     if (whence == SEEK_SET)
     {
         if (off < 0)

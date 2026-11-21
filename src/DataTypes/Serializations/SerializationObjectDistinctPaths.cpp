@@ -1,14 +1,15 @@
-#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -17,33 +18,6 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 {
     const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
-}
-
-
-UInt128 SerializationObjectDistinctPaths::getHash(const std::vector<String> & typed_paths_)
-{
-    SipHash hash;
-    hash.update("ObjectDistinctPaths");
-    for (const auto & path : typed_paths_)
-    {
-        hash.update(path.size());
-        hash.update(path);
-    }
-    /// shared_data_paths_serialization is always derived from the static
-    /// DataTypeObject::getTypeOfSharedData() type, so it is the same for all
-    /// instances and does not need to be part of the distinguishing hash.
-    return hash.get128();
-}
-
-SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<String> & typed_paths_)
-{
-    /// shared_data_paths_serialization is always derived from the static
-    /// DataTypeObject::getTypeOfSharedData() type, which always supports pooling,
-    /// but we check for consistency with other composite serializations.
-    auto result = std::shared_ptr<ISerialization>(new SerializationObjectDistinctPaths(typed_paths_));
-    if (!result->supportsPooling())
-        return result;
-    return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
@@ -70,24 +44,6 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
         for (size_t bucket = 0; bucket != bucket_shared_data_structure_states.size(); ++bucket)
             new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (object_structure_state)
-            callback(object_structure_state);
-        if (shared_data_paths_state)
-            callback(shared_data_paths_state);
-        for (const auto & bucket_state : bucket_shared_data_paths_state)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
-        for (const auto & bucket_state : bucket_shared_data_structure_states)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
     }
 };
 
@@ -302,11 +258,21 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
                 if (bucket == 0)
                     num_new_rows = bucket_shared_data_paths_column->size();
+                /// All buckets store the same rows, and the number of rows of the first one is used as
+                /// the number of rows of the result.
+                else if (bucket_shared_data_paths_column->size() != num_new_rows)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Bucket {} of Object shared data has {} rows, but bucket 0 has {} rows",
+                        bucket,
+                        bucket_shared_data_paths_column->size(),
+                        num_new_rows);
             }
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
         {
+            std::shared_ptr<SerializationObjectSharedData::StructureGranules> first_bucket_structure_granules;
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
                 settings.path.push_back(Substream::Bucket);
@@ -314,6 +280,11 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
                 auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
                 auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
+                if (bucket == 0)
+                    first_bucket_structure_granules = structure_granules;
+                else
+                    SerializationObjectSharedData::checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
+
                 for (const auto & structure_granule : *structure_granules)
                 {
                     for (const auto & path : structure_granule.all_paths)
@@ -328,20 +299,15 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    array_column.getOffsets().push_back(paths_column.size());
-    array_column.insertManyDefaults(num_new_rows - 1);
+    /// The streams may return no rows at all, and then there is no first row to hold the paths.
+    if (num_new_rows != 0)
+    {
+        array_column.getOffsets().push_back(paths_column.size());
+        array_column.insertManyDefaults(num_new_rows - 1);
+    }
 
     settings.path.pop_back();
     settings.path.pop_back();
-}
-
-size_t SerializationObjectDistinctPaths::allocatedBytes() const
-{
-    size_t bytes = sizeof(*this);
-    bytes += typed_paths.capacity() * sizeof(String);
-    for (const auto & path : typed_paths)
-        bytes += path.capacity();
-    return bytes;
 }
 
 }

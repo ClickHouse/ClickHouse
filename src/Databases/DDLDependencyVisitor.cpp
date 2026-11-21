@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -22,7 +21,6 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Poco/String.h>
 
 
@@ -129,22 +127,6 @@ namespace
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
-                    }
-                    else if (target.kind == ViewTarget::Kind::Samples
-                        || target.kind == ViewTarget::Kind::Tags
-                        || target.kind == ViewTarget::Kind::Metrics)
-                    {
-                        /// External target tables of a TimeSeries table are referential dependencies.
-                        /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
-                        /// the inner "TO" table of a materialized view is not registered as a dependency.
-                        const auto & table_id = target.table_id;
-                        if (!table_id.table_name.empty())
-                        {
-                            QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                            if (target_name.database.empty())
-                                target_name.database = current_database;
-                            dependencies.emplace(std::move(target_name));
-                        }
                     }
 
                     if (mv_to_dependency && mv_to_dependency->database_name.empty())
@@ -318,9 +300,10 @@ namespace
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// x IN table_name.
+                /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                    addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
@@ -436,7 +419,8 @@ namespace
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
+                if (!current_database.empty())
+                    global_context_copy->setCurrentDatabase(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))

@@ -45,11 +45,8 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
         Stopwatch watch;
 
 #if defined(OS_DARWIN)
-        /// macOS does not declare fdatasync in this build, so use fsync. Unlike
-        /// F_FULLFSYNC it does not force a drive-cache flush, matching the
-        /// fdatasync semantics used on Linux.
-        if (-1 == ::fsync(fd))
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fsync");
+        if (fcntl(fd, F_FULLFSYNC, 0))
+            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot fcntl(F_FULLFSYNC)");
 #else
         if (-1 == ::fdatasync(fd))
             throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");

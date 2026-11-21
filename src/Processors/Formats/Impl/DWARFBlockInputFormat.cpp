@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_ELF;
     extern const int CANNOT_PARSE_DWARF;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 enum DwarfColumn
@@ -77,7 +79,7 @@ enum DwarfColumn
 
 static NamesAndTypesList getHeaderForDWARF()
 {
-    NamesAndTypes cols(COL_COUNT);
+    std::vector<NameAndTypePair> cols(COL_COUNT);
     cols[COL_OFFSET] = {"offset", std::make_shared<DataTypeUInt64>()};
     cols[COL_SIZE] = {"size", std::make_shared<DataTypeUInt32>()};
     cols[COL_TAG] = {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -112,14 +114,83 @@ static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
     return name_to_idx;
 }
 
-DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
+static const DataTypes & getColumnTypes()
+{
+    static const DataTypes types = []
+    {
+        DataTypes res;
+        for (const auto & c : getHeaderForDWARF())
+            res.push_back(c.type);
+        return res;
+    }();
+    return types;
+}
+
+/// The DWARF format has a fixed set of columns, so a name that is not one of them can not be read.
+static size_t getColumnIdx(const std::string & name)
+{
+    const auto & name_to_idx = getColumnNameToIdx();
+    auto it = name_to_idx.find(name);
+    if (it == name_to_idx.end())
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", name);
+    return it->second;
+}
+
+/// `tryExtractDIEsIfNeeded` makes LLVM parse the unit DIE. LLVM advances the offset by the length of a block or
+/// a fixed-size form without checking it against the section (see `checkAttributeEnd`), so a malformed length
+/// made it read past the end of the section on the next attribute. Walk the unit DIE the same way with checks first.
+/// `data` is truncated at the end of the unit, so this walk itself does not read the next unit, and LLVM parses
+/// the unit DIE only if all its attributes are within the unit.
+static void checkUnitDie(
+    const llvm::DWARFUnit & unit, const llvm::DWARFAbbreviationDeclarationSet & abbrevs, const llvm::DWARFDataExtractor & data,
+    uint64_t end_offset)
+{
+    const uint64_t end = data.size();
+    uint64_t offset = unit.getOffset() + unit.getHeaderSize();
+    /// Leave other errors to LLVM, which reports them.
+    if (offset >= end)
+        return;
+    auto err = llvm::Error::success();
+    uint64_t abbrev_code = data.getULEB128(&offset, &err);
+    if (err)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse the unit entry at offset {}: {}", unit.getOffset(), llvm::toString(std::move(err)));
+    if (abbrev_code == 0 || abbrev_code > UINT32_MAX)
+        return;
+    const auto * abbrev = abbrevs.getAbbreviationDeclaration(static_cast<uint32_t>(abbrev_code));
+    if (!abbrev)
+        return;
+    for (const auto & attr : abbrev->attributes())
+    {
+        const uint64_t attr_offset = offset;
+        if (auto size = attr.getByteSize(unit))
+            offset += *size;
+        else if (!llvm::DWARFFormValue::skipValue(attr.Form, data, &offset, unit.getFormParams()))
+            return;
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} of the unit entry is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), end_offset);
+        /// A huge length makes the offset wrap around.
+        if (offset < attr_offset || offset > end)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "Attribute {} of form {} of the unit entry goes past the end of the unit: offset {}, end of unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, end_offset);
+    }
+}
+
+DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data)
     : dwarf_unit(u), end_offset(dwarf_unit->getNextUnitOffset())
+    /// Offsets stay relative to the start of the section.
+    , data(section_data, std::min<uint64_t>(end_offset, section_data.size()))
     , offset(dwarf_unit->getOffset() + dwarf_unit->getHeaderSize())
 {
     /// This call is not thread safe, so we do it during initialization.
     abbrevs = dwarf_unit->getAbbreviations();
     if (abbrevs == nullptr)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Couldn't find abbreviation set for unit at offset {}", dwarf_unit->getOffset());
+
+    checkUnitDie(*u, *abbrevs, data, end_offset);
 
     /// This call initializes some data structures inside DWARFUnit that are needed for parsing attributes.
     auto err = u->tryExtractDIEsIfNeeded(/*CUDieOnly*/ true);
@@ -186,6 +257,10 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader head
             append(attr_forms, name);
     }
     attr_form_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_forms), /*is_nullable*/ false);
+
+    /// Reject unknown column names up front instead of failing in the middle of parsing.
+    for (const std::string & name : getPort().getHeader().getNames())
+        getColumnIdx(name);
 }
 
 DWARFBlockInputFormat::~DWARFBlockInputFormat()
@@ -257,7 +332,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     dwarf_context = llvm::DWARFContext::create(sections, /*AddrSize*/ 8);
 
     for (std::unique_ptr<llvm::DWARFUnit> & unit : dwarf_context->info_section_units())
-        units_queue.emplace_back(unit.get());
+        units_queue.emplace_back(unit.get(), *extractor);
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
@@ -325,16 +400,32 @@ static inline void throwIfError(llvm::Error & e, const char * what)
     throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse {}: {}", what, llvm::toString(std::move(e)));
 }
 
+/// LLVM advances the offset by the length of a block or a fixed-size form without checking it against the
+/// section (LEB128 decoding checks the offset only with an assertion), so every following read would start
+/// past the end of the section. Attributes are read from `UnitState::data`, which ends at the end of the unit,
+/// so the bytes of the next unit are never read, and the offset is checked after each attribute.
+/// The offset is advanced with plain unsigned addition, so a huge length makes it wrap around to before the start of the attribute.
+void DWARFBlockInputFormat::checkAttributeEnd(
+    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset, const UnitState & unit) const
+{
+    if (offset < attr_offset || offset > unit.data.size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+            "Attribute {} of form {} goes past the end of the unit: offset {}, end of unit {}",
+            llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, unit.end_offset);
+}
+
 llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
 {
+    const uint64_t attr_offset = *offset;
     auto val = llvm::DWARFFormValue::createFromSValue(
         attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
-    if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
+    if (!val.extractValue(unit.data, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+    checkAttributeEnd(attr, attr_offset, *offset, unit);
     return val;
 }
 
@@ -351,11 +442,18 @@ void DWARFBlockInputFormat::skipAttribute(
     }
     else
     {
+        const uint64_t attr_offset = *offset;
         if (!llvm::DWARFFormValue::skipValue(
-            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
+            attr.Form, unit.data, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
                     llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && *offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} at offset {} is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr_offset, unit.end_offset);
+        checkAttributeEnd(attr, attr_offset, *offset, unit);
     }
 }
 
@@ -375,10 +473,9 @@ uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const 
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 {
     const auto & header = getPort().getHeader();
-    const auto & column_name_to_idx = getColumnNameToIdx();
     std::array<bool, COL_COUNT> need{};
     for (const std::string & name : header.getNames())
-        need[column_name_to_idx.at(name)] = true;
+        need[getColumnIdx(name)] = true;
 
     /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
     need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
@@ -425,7 +522,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
         }
 
-        uint64_t abbrev_code = extractor->getULEB128(&unit.offset, &err);
+        uint64_t abbrev_code = unit.data.getULEB128(&unit.offset, &err);
         throwIfError(err, "DIE header");
 
         if (abbrev_code == 0)
@@ -671,7 +768,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
                         if (need[COL_ATTR_INT])
                         {
-                            uint64_t ref = 0;
+                            uint64_t ref;
                             if (std::optional<uint64_t> offset = val.getAsRelativeReference())
                                 ref = val.getUnit()->getOffset() + *offset;
                             else if (offset = val.getAsDebugInfoReference(); offset)
@@ -706,7 +803,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                     parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
                 else if (low_pc.has_value())
                 {
-                    UInt64 high = 0;
+                    UInt64 high;
                     if (!high_pc.has_value())
                         high = *low_pc + 1;
                     else if (relative_high_pc)
@@ -737,7 +834,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     Columns cols;
     for (const std::string & name : header.getNames())
     {
-        switch (column_name_to_idx.at(name))
+        switch (getColumnIdx(name))
         {
             case COL_OFFSET:
                 cols.push_back(std::exchange(col_offset, nullptr));
@@ -823,6 +920,18 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column index");
         }
     }
+
+    /// The requested header may declare types other than the ones produced above.
+    const auto & native_types = getColumnTypes();
+    size_t pos = 0;
+    for (const std::string & name : header.getNames())
+    {
+        ColumnWithTypeAndName column(cols[pos], native_types[getColumnIdx(name)], name);
+        castColumnToRequestedType(column, header.getByName(name).type);
+        cols[pos] = std::move(column.column);
+        ++pos;
+    }
+
     return Chunk(std::move(cols), num_rows);
 }
 
@@ -849,7 +958,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     for (const auto & entry : prologue.FileNames)
     {
         auto val = entry.Name.getAsCString();
-        const char * c_str = nullptr;
+        const char * c_str;
         if (llvm::Error e = val.takeError())
         {
             c_str = "<error>";
@@ -1011,7 +1120,6 @@ NamesAndTypesList DWARFSchemaReader::readSchema()
     return getHeaderForDWARF();
 }
 
-void registerDWARFSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -1023,7 +1131,6 @@ void registerDWARFSchemaReader(FormatFactory & factory)
     );
 }
 
-void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -1040,83 +1147,6 @@ void registerInputFormatDWARF(FormatFactory & factory)
                 buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
-
-    factory.setDocumentation("DWARF", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output  | Alias |
-|-------|---------|-------|
-| ✔     | ✗       |       |
-
-## Description {#description}
-
-The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file).
-It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL.
-It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
-and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
-
-:::info
-`.debug_info` consists of *units*, which correspond to compilation units:
-- Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
-- Each DIE has a *tag* and a list of *attributes*.
-- Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded).
-
-The DIEs represent things from the source code, and their *tag* tells you what kind of thing it is. For example, there are:
-
-- functions (tag = `subprogram`)
-- classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`)
-- variables (`variable`)
-- function arguments (`formal_parameter`).
-
-The tree structure mirrors the corresponding source code. For example, a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
-:::
-
-The `DWARF` format outputs the following columns:
-
-- `offset` - position of the DIE in the `.debug_info` section
-- `size` - number of bytes in the encoded DIE (including attributes)
-- `tag` - type of the DIE; the conventional "DW_TAG_" prefix is omitted
-- `unit_name` - name of the compilation unit containing this DIE
-- `unit_offset` - position of the compilation unit containing this DIE in the `.debug_info` section
-- `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
-- `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
-- a few common attributes duplicated from the attributes array for convenience:
-  - `name`
-  - `linkage_name` - mangled fully qualified name; typically only functions have it (but not all functions)
-  - `decl_file` - name of the source code file where this entity was declared
-  - `decl_line` - line number in the source code where this entity was declared
-- parallel arrays describing attributes:
-  - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
-  - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
-  - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
-  - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
-
-## Example usage {#example-usage}
-
-The `DWARF` format can be used to find compilation units that have the most function definitions (including template instantiations and functions from included header files):
-
-```sql title="Query"
-SELECT
-    unit_name,
-    count() AS c
-FROM file('programs/clickhouse', DWARF)
-WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
-GROUP BY unit_name
-ORDER BY c DESC
-LIMIT 3
-```
-```text title="Response"
-┌─unit_name──────────────────────────────────────────────────┬─────c─┐
-│ ./src/Core/Settings.cpp                                    │ 28939 │
-│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
-│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
-└────────────────────────────────────────────────────────────┴───────┘
-
-3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
-Peak memory usage: 271.92 MiB.
-```
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
 }
@@ -1126,8 +1156,6 @@ Peak memory usage: 271.92 MiB.
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatDWARF(FormatFactory &);
-void registerDWARFSchemaReader(FormatFactory &);
 void registerInputFormatDWARF(FormatFactory &)
 {
 }

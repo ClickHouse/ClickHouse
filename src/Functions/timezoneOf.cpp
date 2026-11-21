@@ -17,7 +17,7 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Pacific/Pitcairn.
   */
-class FunctionTimezoneOf final : public IFunction
+class FunctionTimezoneOf : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";

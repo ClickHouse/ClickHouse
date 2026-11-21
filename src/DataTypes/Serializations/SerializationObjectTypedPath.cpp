@@ -1,7 +1,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <IO/ReadHelpers.h>
@@ -14,23 +13,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
-UInt128 SerializationObjectTypedPath::getHash(const SerializationPtr & nested_, const String & path_)
-{
-    SipHash hash;
-    hash.update("ObjectTypedPath");
-    hash.update(nested_->getHash());
-    hash.update(path_.size());
-    hash.update(path_);
-    return hash.get128();
-}
-
-SerializationPtr SerializationObjectTypedPath::create(const SerializationPtr & nested_, const String & path_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectTypedPath(nested_, path_));
-    return ISerialization::pooled(getHash(nested_, path_), [&] { return new SerializationObjectTypedPath(nested_, path_); });
-}
 
 void SerializationObjectTypedPath::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
@@ -92,11 +74,6 @@ void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
-}
-
-size_t SerializationObjectTypedPath::allocatedBytes() const
-{
-    return sizeof(*this) + path.capacity();
 }
 
 }

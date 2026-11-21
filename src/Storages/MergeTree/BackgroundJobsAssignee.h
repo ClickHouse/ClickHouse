@@ -38,7 +38,6 @@ class IBackgroundOperation
 public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
-    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
@@ -55,8 +54,7 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving,
-        Streaming,
+        Moving
     };
     Type type{Type::DataProcessing};
 

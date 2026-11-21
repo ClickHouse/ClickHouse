@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <span>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
@@ -105,12 +106,6 @@ inline bool isAlphaNumericASCII(char c)
 {
     return isAlphaASCII(c)
         || isNumericASCII(c);
-}
-
-inline bool isTokenSeparator(char c)
-{
-    /// `splitByNonAlpha` tokenizer semantics
-    return isASCII(c) && !isAlphaNumericASCII(c);
 }
 
 inline bool isWordCharASCII(char c)
@@ -278,56 +273,28 @@ inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
 }
 
-/// ASCII-only case conversion. Keywords, identifiers and function names are ASCII, and applying
-/// the locale to them would be wrong, so these deliberately leave every other byte alone.
-
-inline char toLowerASCII(char c)
+/// Equality for secret-derived byte sequences such as passwords and one-time codes. Unlike `memcmp`
+/// and `operator==`, the runtime does not depend on the position of the first mismatch, so timing does
+/// not reveal how many leading bytes were right. The lengths are treated as public, as in OpenSSL's
+/// `CRYPTO_memcmp`. The `volatile` reads keep the compiler from turning the loop into an early-exit compare.
+inline bool constantTimeEquals(std::span<const uint8_t> lhs, std::span<const uint8_t> rhs)
 {
-    return isUpperAlphaASCII(c) ? toLowerIfAlphaASCII(c) : c;
+    if (lhs.size() != rhs.size())
+        return false;
+
+    const volatile uint8_t * a = lhs.data();
+    const volatile uint8_t * b = rhs.data();
+    uint8_t diff = 0;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
 }
 
-inline char toUpperASCII(char c)
+inline bool constantTimeEquals(std::string_view lhs, std::string_view rhs)
 {
-    return isLowerAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c;
-}
-
-inline void toLowerASCII(std::string & str)
-{
-    for (char & c : str)
-        c = toLowerASCII(c);
-}
-
-inline void toUpperASCII(std::string & str)
-{
-    for (char & c : str)
-        c = toUpperASCII(c);
-}
-
-inline std::string toLowerCopyASCII(std::string_view str)
-{
-    std::string res{str};
-    toLowerASCII(res);
-    return res;
-}
-
-inline std::string toUpperCopyASCII(std::string_view str)
-{
-    std::string res{str};
-    toUpperASCII(res);
-    return res;
-}
-
-/// Replace every occurrence of `what` with `with`, in place. Does nothing if `what` is empty.
-inline void replaceAll(std::string & str, std::string_view what, std::string_view with)
-{
-    if (what.empty())
-        return;
-
-    for (size_t position = str.find(what); position != std::string::npos; position = str.find(what, position))
-    {
-        str.replace(position, what.length(), with);
-        position += with.length();
-    }
+    return constantTimeEquals(
+        std::span(reinterpret_cast<const uint8_t *>(lhs.data()), lhs.size()),
+        std::span(reinterpret_cast<const uint8_t *>(rhs.data()), rhs.size()));
 }
 
 
@@ -415,25 +382,6 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
 
-/// A fixed literal prefix extracted from a LIKE pattern: every matching string starts with `prefix`.
-struct LikePatternFixedPrefix
-{
-    String prefix;
-
-    /// The pattern matches every string starting with `prefix`, so it is equivalent to
-    /// `startsWith(haystack, prefix)`, e.g. 'test%'.
-    bool is_perfect = false;
-
-    /// The pattern has no wildcard at all, so it is equivalent to an exact match of `prefix`,
-    /// e.g. 'a\%b' matches only 'a%b'. Such a prefix is not perfect (a perfect prefix requires
-    /// a trailing '%'), but it describes the matching strings even more precisely, so it is
-    /// always returned regardless of `requires_perfect_prefix`.
-    bool is_exact = false;
-};
-
-/// Extracts the prefix of a LIKE pattern before the first wildcard, e.g. 'Hello\_World%' -> 'Hello_World'.
-/// Escapes are folded exactly as `likePatternToRegexp` does, so the prefix equals the string LIKE matches:
-/// '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it ('\w' matches the literal "\w").
-LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);

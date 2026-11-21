@@ -6,14 +6,14 @@ echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
 echo "Available LLVM tools:"
-command -v llvm-profdata-22 || echo "llvm-profdata-22: not found"
-command -v llvm-cov-22 || echo "llvm-cov-22: not found"
+command -v llvm-profdata-21 || echo "llvm-profdata-21: not found"
+command -v llvm-cov-21 || echo "llvm-cov-21: not found"
 command -v llvm-profdata || echo "llvm-profdata: not found"
 command -v llvm-cov || echo "llvm-cov: not found"
 
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 22 21 20 19 18 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
       LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
       break
@@ -22,7 +22,7 @@ if [ -z "$LLVM_PROFDATA" ]; then
 fi
 
 if [ -z "$LLVM_COV" ]; then
-  for ver in 22 21 20 19 18 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
       LLVM_COV="llvm-cov${ver:+-$ver}"
       break
@@ -98,35 +98,20 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.|/(QueryFuzzer|ThreadFuzzer|fuzzQuery|fuzzBits|StorageFuzzQuery|hasThreadFuzzer)\.(cpp|h)$|/fuzzers/' \
+        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.' \
         -skip-expansions \
         > llvm_coverage.info
 
 sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
-
-echo "Deduplicating template instantiations..."
-python3 "$WORKSPACE_PATH/ci/jobs/scripts/dedup_lcov_instantiations.py" llvm_coverage.info
-
 rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."
 genhtml --version
 
-html_escape() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
-export -f html_escape
-
 HEADER_TITLE="ClickHouse coverage report"
-if [ -n "${PR_NUMBER}" ] && [ "${PR_NUMBER}" -gt 0 ]; then
+if [ -n "${PR_NUMBER}" ]; then
   PR_URL="https://github.com/ClickHouse/ClickHouse/pull/${PR_NUMBER}"
-  HEADER_TITLE="${HEADER_TITLE} &middot; <a href=\"${PR_URL}\">#${PR_NUMBER}</a>"
-elif [ -n "${CURRENT_COMMIT}" ]; then
-  COMMIT_URL="https://github.com/ClickHouse/ClickHouse/commit/${CURRENT_COMMIT}"
-  COMMIT_SHORT="${CURRENT_COMMIT:0:12}"
-  COMMIT_MSG=$(html_escape "$(git -C "$WORKSPACE_PATH" log -1 --format="%s" "${CURRENT_COMMIT}" 2>/dev/null | cut -c1-120 || true)")
-  COMMIT_DATE=$(html_escape "$(git -C "$WORKSPACE_PATH" log -1 --format="%cs" "${CURRENT_COMMIT}" 2>/dev/null || true)")
-  HEADER_TITLE="${HEADER_TITLE} &middot; <a href=\"${COMMIT_URL}\"><code>${COMMIT_SHORT}</code></a>"
-  [ -n "${COMMIT_DATE}" ] && HEADER_TITLE="${HEADER_TITLE} &middot; ${COMMIT_DATE}"
-  [ -n "${COMMIT_MSG}" ] && HEADER_TITLE="${HEADER_TITLE} &middot; ${COMMIT_MSG}"
+  HEADER_TITLE="<a href=\"${PR_URL}\">${PR_URL}</a>"
 fi
 
 genhtml "llvm_coverage.info" \
@@ -142,14 +127,14 @@ genhtml "llvm_coverage.info" \
     --sort-tables \
     --hierarchical \
     --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
+    --no-function-coverage \
     --prefix $WORKSPACE_PATH \
-    --ignore-errors inconsistent,inconsistent \
+    --ignore-errors inconsistent \
     --ignore-errors category \
     --ignore-errors corrupt \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range,range \
-    --ignore-errors count,count \
+    --ignore-errors range \
     --filter missing \
     --quiet 

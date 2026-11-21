@@ -34,10 +34,6 @@ public:
     /// Validate if schema is consistent with the write schema of the transaction.
     void validateSchema(const DB::Block & header) const;
 
-    /// The Delta table's write schema (authoritative types and nullability, one entry per
-    /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
-    const DB::NamesAndTypesList & getWriteSchema() const;
-
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;
     using KernelExternEngine = DeltaLake::KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;

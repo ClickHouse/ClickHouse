@@ -37,7 +37,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!func_plus_minus || !function_supported.contains(Poco::toLower(func_plus_minus->name)) || func_plus_minus->arguments->children.size() != 2)
         return;
 
-    size_t column_id = 0;
+    size_t column_id;
     if (func_plus_minus->arguments->children[0]->as<ASTIdentifier>() && func_plus_minus->arguments->children[1]->as<ASTLiteral>())
         column_id = 0;
     else if (func_plus_minus->arguments->children[0]->as<ASTLiteral>() && func_plus_minus->arguments->children[1]->as<ASTIdentifier>())

@@ -6,7 +6,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/castColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -71,10 +70,10 @@ public:
         build();
     }
 
-    /// @p converted_columns_storage keeps cast results alive while the returned Patch references them.
-    IColumn::Patch createPatchForColumn(
-        const String & column_name, const ColumnWithTypeAndName & result_column,
-        IColumn::Versions & dst_versions, Columns & converted_columns_storage);
+    /// When @p result_type is provided, sources with a different type are
+    /// filtered out per-source so compatible updates survive schema transitions.
+    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions,
+                                        const DataTypePtr & result_type = nullptr) const;
 
 private:
     void build();
@@ -96,7 +95,7 @@ private:
 
     PatchesToApply patches;
     /// Flattened blocks from all patches.
-    Blocks all_patch_blocks;
+    std::vector<Block> all_patch_blocks;
     /// Index of block in the flattened patch blocks.
     IColumn::Offsets src_block_indices;
     /// Index of row in the patch block.
@@ -104,6 +103,10 @@ private:
     /// Index of row in the result block.
     IColumn::Offsets dst_row_indices;
 
+    /// Scratch space for type-filtering path in createPatchForColumn.
+    mutable IColumn::Offsets filtered_src_col_indices;
+    mutable IColumn::Offsets filtered_src_row_indices;
+    mutable IColumn::Offsets filtered_dst_row_indices;
 };
 
 void CombinedPatchBuilder::build()
@@ -231,49 +234,62 @@ void CombinedPatchBuilder::build()
 }
 
 IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
-    const String & column_name, const ColumnWithTypeAndName & result_column,
-    IColumn::Versions & dst_versions, Columns & converted_columns_storage)
+    const String & column_name, IColumn::Versions & dst_versions, const DataTypePtr & result_type) const
 {
-    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
+    std::vector<IColumn::Patch::Source> sources;
+    std::vector<bool> source_ok(all_patch_blocks.size(), true);
+    std::vector<size_t> remap(all_patch_blocks.size());
+    bool need_filter = false;
 
-    for (const auto & patch_block : all_patch_blocks)
+    for (size_t i = 0; i < all_patch_blocks.size(); ++i)
     {
-        auto patch_col_with_type = patch_block.getByName(column_name);
-        if (!patch_col_with_type.column)
+        const auto & pcol = all_patch_blocks[i].getByName(column_name);
+        if (!pcol.column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
 
-        const IColumn * source_col = patch_col_with_type.column.get();
-
-        /// Patch column may have a different on-disk type when it predates
-        /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-        if (!result_column.column->structureEquals(*source_col))
+        if (result_type && !result_type->equals(*pcol.type))
         {
-            converted_columns_storage.push_back(castColumn(patch_col_with_type, result_column.type));
-            source_col = converted_columns_storage.back().get();
+            source_ok[i] = false;
+            need_filter = true;
+            continue;
         }
 
-        IColumn::Patch::Source source =
-        {
-            .column = *source_col,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
-        };
-
-        sources.push_back(std::move(source));
+        remap[i] = sources.size();
+        sources.push_back({.column = *pcol.column,
+                           .versions = getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name)});
     }
 
-    return IColumn::Patch
+    if (!need_filter)
+        return IColumn::Patch{
+            .sources = std::move(sources), .src_col_indices = &src_block_indices,
+            .src_row_indices = src_row_indices, .dst_row_indices = dst_row_indices,
+            .dst_versions = dst_versions};
+
+    filtered_src_col_indices.clear();
+    filtered_src_row_indices.clear();
+    filtered_dst_row_indices.clear();
+
+    for (size_t j = 0; j < dst_row_indices.size(); ++j)
     {
+        if (!source_ok[src_block_indices[j]])
+            continue;
+        filtered_src_col_indices.push_back(remap[src_block_indices[j]]);
+        filtered_src_row_indices.push_back(src_row_indices[j]);
+        filtered_dst_row_indices.push_back(dst_row_indices[j]);
+    }
+
+    bool single_source = sources.size() == 1;
+    return IColumn::Patch{
         .sources = std::move(sources),
-        .src_col_indices = &src_block_indices,
-        .src_row_indices = src_row_indices,
-        .dst_row_indices = dst_row_indices,
-        .dst_versions = dst_versions,
-    };
+        .src_col_indices = single_source ? nullptr : &filtered_src_col_indices,
+        .src_row_indices = filtered_src_row_indices,
+        .dst_row_indices = filtered_dst_row_indices,
+        .dst_versions = dst_versions};
 }
 
 Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
-    Blocks headers;
+    std::vector<Block> headers;
 
     for (const auto & patch : patches)
     {
@@ -306,7 +322,7 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
         return {};
 
     /// Schema evolution may cause type mismatches across patch headers.
-    /// Skip assertion in that case — castColumn in apply handles conversion.
+    /// Skip assertion in that case — createPatchForColumn handles filtering.
     for (size_t i = 1; i < headers.size(); ++i)
         if (!isCompatibleHeader(headers[i], headers[0]))
             return headers.front();
@@ -365,19 +381,27 @@ void applyPatchesToBlockRaw(
             if (!patch_block.has(result_column.name))
                 continue;
 
-            auto patch_col_with_type = patch_block.getByName(result_column.name);
+            const auto & patch_col_with_type = patch_block.getByName(result_column.name);
             if (!patch_col_with_type.column)
                 continue;
 
-            /// Patch column may have a different on-disk type when it predates
-            /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-            ColumnPtr converted_col;
-            if (!result_column.column->structureEquals(*patch_col_with_type.column))
-                converted_col = castColumn(patch_col_with_type, result_column.type);
+            /// If the column type in the patch part doesn't match the result column
+            /// (e.g., due to schema evolution changing a column's type), skip the patch
+            /// for this column. Applying a patch with mismatched types would cause
+            /// undefined behavior in insertFrom (SIGSEGV in release builds).
+            if (!result_column.type->equals(*patch_col_with_type.type))
+            {
+                LOG_WARNING(getLogger("applyPatches"),
+                    "Skipping patch for column {} because column type has changed ({} -> {})",
+                    result_column.name, patch_col_with_type.type->getName(), result_column.type->getName());
+                continue;
+            }
+
+            const auto & patch_column = patch_col_with_type.column;
 
             IColumn::Patch::Source source =
             {
-                .column = converted_col ? *converted_col : *patch_col_with_type.column,
+                .column = *patch_column,
                 .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
             };
 
@@ -391,13 +415,7 @@ void applyPatchesToBlockRaw(
             };
 
             if (canApplyPatchInplace(*result_column.column))
-            {
-                /// COW-safe in-place update: clone when the column is shared instead of mutating
-                /// a column still referenced by another owner via `assumeMutableRef`.
-                auto mutable_column = IColumn::mutate(std::move(result_column.column));
-                mutable_column->updateInplaceFrom(patch);
-                result_column.column = std::move(mutable_column);
-            }
+                result_column.column->assumeMutableRef().updateInplaceFrom(patch);
             else
                 result_column.column = result_column.column->updateFrom(patch);
         }
@@ -422,20 +440,11 @@ void applyPatchesToBlockCombined(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
+        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions, result_column.type);
         result_column.column = removeSpecialRepresentations(result_column.column);
 
-        /// Local storage so cast results are released after each column update.
-        Columns converted_columns;
-        auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
-
         if (canApplyPatchInplace(*result_column.column))
-        {
-            /// COW-safe in-place update: clone when the column is shared instead of mutating
-            /// a column still referenced by another owner via `assumeMutableRef`.
-            auto mutable_column = IColumn::mutate(std::move(result_column.column));
-            mutable_column->updateInplaceFrom(multi_patch);
-            result_column.column = std::move(mutable_column);
-        }
+            result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
         else
             result_column.column = result_column.column->updateFrom(multi_patch);
     }
@@ -538,8 +547,8 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
-    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
+    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
 
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();

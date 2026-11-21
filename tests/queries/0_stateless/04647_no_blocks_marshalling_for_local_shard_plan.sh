@@ -54,8 +54,7 @@ marshalling_counts_query() {
                 rowNumberInAllBlocks() AS rn,
                 min(if(explain ILIKE '%$2%', rn, NULL)) OVER () AS remote_rn
             FROM ( EXPLAIN distributed = 1 $1 )
-        )
-        SETTINGS explain_query_plan_default = 'legacy'"
+        )"
 }
 
 # `GROUPING SETS` with 2+ sets, so `MergingAggregatedTransform::addChunk` type-checks
@@ -180,8 +179,7 @@ $INITIAL_CLIENT -q "
         SELECT x, sum(y) FROM remote('127.0.0.{1,2}', currentDatabase(), buf_all)
         GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
         SETTINGS enable_parallel_blocks_marshalling = 1, prefer_localhost_replica = 0, serialize_query_plan = 0
-    )
-    SETTINGS explain_query_plan_default = 'legacy';
+    );
 "
 
 $CLIENT -q "

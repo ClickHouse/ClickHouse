@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Common/checkStackSize.h>
 
 #include <stack>
 
@@ -24,6 +25,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+const SharedHeader & DeserializedInputHeaders::at(size_t i) const
+{
+    if (i >= headers.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A step of the serialized query plan has {} input(s), but the input {} is required", headers.size(), i);
+    return headers[i];
 }
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
@@ -39,9 +48,9 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
+static Block deserializeHeader(ReadBuffer & in)
 {
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, in);
 
     ColumnsWithTypeAndName columns(num_columns);
@@ -49,7 +58,7 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     for (auto & column : columns)
     {
         readStringBinary(column.name, in);
-        column.type = decodeDataType(in, max_type_complexity);
+        column.type = decodeDataType(in);
     }
 
     /// Fill columns in header. Some steps expect them to be not empty.
@@ -65,19 +74,6 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
-    flags.version = version;
-    serialize(out, flags);
-}
-
-void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
-{
-    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    writeVarUInt(version, out);
-
-    SerializationFlags flags;
-    flags.version = version;
-    flags.sets_must_be_ready = true;
-    flags.sets_transfer_limits = sets_transfer_limits;
     serialize(out, flags);
 }
 
@@ -130,12 +126,11 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
             serializeHeader({}, out);
 
         QueryPlanSerializationSettings settings;
-        node->step->serializeSettings(settings, flags.version);
+        node->step->serializeSettings(settings);
 
         settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
-        ctx.version = flags.version;
         node->step->serialize(ctx);
     }
 
@@ -166,9 +161,9 @@ bool QueryPlan::isSerialized() const
     return serialized_plan != nullptr;
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readVarUInt(version, in);
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
@@ -176,12 +171,15 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
-    SerializationFlags flags{.version = version, .skip_data = skip_data};
-    return deserialize(in, context, flags, max_type_complexity);
+    SerializationFlags flags;
+    return deserialize(in, context, flags);
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags)
 {
+    /// It is called recursively for plans of sets from subqueries.
+    checkStackSize();
+
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
     DeserializedSetsRegistry sets_registry;
@@ -204,7 +202,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto & frame = stack.top();
         if (frame.next_child == 0)
         {
-            UInt64 num_children = 0;
+            UInt64 num_children;
             readVarUInt(num_children, in);
             frame.children.resize(num_children);
         }
@@ -221,7 +219,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
+        auto output_header  = std::make_shared<const Block>(deserializeHeader(in));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
@@ -229,11 +227,24 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
+        {
+            /// A sink (e.g. `GatherSend`) has no output, so it cannot be an input of another step.
+            if (!child->step->hasOutputHeader())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized step {} has a child step {} without an output stream",
+                    step_name, child->step->getName());
             input_headers.push_back(child->step->getOutputHeader());
+        }
 
-        IQueryPlanStep::Deserialization ctx{
-            in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
+
+        /// The plan tree assumes that a step has exactly one input per child, e.g. optimizations iterate
+        /// over the children and access the input header of each of them.
+        if (step->getInputHeaders().size() != frame.children.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized step {} has {} input(s), but the serialized query plan has {} child(ren) of it",
+                step_name, step->getInputHeaders().size(), frame.children.size());
 
         if (step->hasOutputHeader())
         {
@@ -254,7 +265,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         stack.pop();
     }
 
-    return deserializeSets(std::move(plan), sets_registry, in, flags, context, max_type_complexity);
+    return deserializeSets(std::move(plan), sets_registry, in, flags, context);
 }
 
 }
