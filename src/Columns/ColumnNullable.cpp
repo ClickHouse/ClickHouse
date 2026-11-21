@@ -120,13 +120,18 @@ const UInt8 * getZeros(size_t size)
     static std::atomic<const UInt8 *> current_zeros = nullptr;
     static std::atomic<size_t> current_size = 0;
 
+    /// The pointer is checked as well: before the first allocation the size is zero, and a request
+    /// for zero bytes (an empty column) must still get a valid padded buffer, not nullptr,
+    /// because the callers use the presence of the pointer to enable the processing of NULLs.
     if (size <= current_size.load(std::memory_order_acquire))
-        return current_zeros.load(std::memory_order_acquire);
+        if (const UInt8 * zeros = current_zeros.load(std::memory_order_acquire))
+            return zeros;
 
     std::lock_guard lock(mutex);
     size_t old_size = current_size.load(std::memory_order_relaxed);
     if (size <= old_size)
-        return current_zeros.load(std::memory_order_relaxed);
+        if (const UInt8 * zeros = current_zeros.load(std::memory_order_relaxed))
+            return zeros;
 
     size_t new_size = std::max<size_t>({size, old_size * 2, 4096});
     buffers.emplace_back(new UInt8[zeros_pad_left + new_size + PADDING_FOR_SIMD]());
