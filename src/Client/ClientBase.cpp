@@ -1056,6 +1056,9 @@ try
     {
         output_buffer_canceled = false;
 
+        if (connection)
+            connection->onQueryOutputCreated();
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1338,6 +1341,9 @@ void ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
+        if (connection)
+            connection->onQueryOutputCreated();
+
         WriteBuffer * wb = out_logs_buf.get();
 
         bool color_logs = false;
@@ -2498,6 +2504,9 @@ void ClientBase::resetOutput()
         setupSignalHandler();
     }
     pager_cmd = nullptr;
+
+    if (connection)
+        connection->onQueryOutputReleased();
 
     std_out->next();
 }
