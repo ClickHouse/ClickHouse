@@ -40,6 +40,7 @@
                 "reference/statements/alter/skipping-index",
                 "reference/statements/alter/statistics",
                 "reference/statements/alter/ttl",
+                "reference/statements/alter/unlock-snapshot",
                 "reference/statements/alter/update",
                 "reference/statements/alter/user",
                 "reference/statements/alter/masking-policy",
@@ -47,6 +48,7 @@
               ]
             },
             "reference/statements/attach",
+            "reference/statements/backup",
             "reference/statements/check-grant",
             "reference/statements/check-database",
             "reference/statements/check-table",
@@ -149,6 +151,7 @@
             "reference/statements/optimize",
             "reference/statements/parallel_with",
             "reference/statements/rename",
+            "reference/statements/restore",
             "reference/statements/revoke",
             {
               "expanded": false,
