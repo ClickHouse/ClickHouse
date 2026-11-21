@@ -25,7 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/Set.h>
-
+#include <Interpreters/SetVariants.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBuilder.h>
 #include <Interpreters/DiskSetKeys.h>
@@ -66,11 +66,17 @@ namespace ErrorCodes
 
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
+    , data(std::make_unique<SetVariants>())
     , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
 {}
 
 
 Set::~Set() = default;
+
+bool Set::hasExplicitSetElements() const
+{
+    return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount());
+}
 
 void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {

@@ -472,7 +472,7 @@ void FinalizeAggregatedTransform::transform(Chunk & chunk)
 {
     if (params->final)
     {
-        finalizeChunk(chunk, aggregates_mask);
+        finalizeChunk(chunk, aggregates_mask, getOutputPort().getHeader());
     }
     else if (!chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
