@@ -57,6 +57,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <fmt/ranges.h>
 #include <ranges>
 #include <vector>
 
@@ -1901,7 +1902,8 @@ void AlterCommands::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
     bool share_nested_offsets,
-    const MergeTreeSettings * settings_defaults) const
+    const MergeTreeSettings * settings_defaults,
+    std::vector<std::pair<int, String>> * secondary_index_errors) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1962,6 +1964,7 @@ void AlterCommands::apply(
     /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
     /// in the global context, not in the session that happens to issue the `ALTER`.
     const ContextPtr index_context = context->getGlobalContext();
+    std::vector<std::pair<int, String>> index_errors;
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
@@ -1971,7 +1974,26 @@ void AlterCommands::apply(
         }
         catch (const Exception & exception)
         {
-            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+            index_errors.emplace_back(exception.code(), fmt::format("{}: {}", backQuoteIfNeed(index.name), exception.message()));
+        }
+    }
+
+    if (!index_errors.empty())
+    {
+        if (secondary_index_errors)
+            secondary_index_errors->insert(secondary_index_errors->end(), index_errors.begin(), index_errors.end());
+        else
+        {
+            Strings errors;
+            for (const auto & [code, error] : index_errors)
+            {
+                (void)code;
+                errors.push_back(error);
+            }
+            throw Exception(
+                index_errors.front().first,
+                "Cannot apply ALTER because it breaks skip indices: {}",
+                fmt::join(errors, "; "));
         }
     }
 
