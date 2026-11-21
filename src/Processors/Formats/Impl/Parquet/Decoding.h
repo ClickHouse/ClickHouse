@@ -75,6 +75,9 @@ struct Dictionary
     void reset();
     [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] double getAverageValueSize() const;
+    /// The size of the largest value. Unlike the average, it bounds the size of any number of values taken from
+    /// the dictionary, however often each of them is repeated.
+    [[nodiscard]] size_t getMaxValueSize() const;
     /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
     [[nodiscard]] size_t allocatedBytes() const;

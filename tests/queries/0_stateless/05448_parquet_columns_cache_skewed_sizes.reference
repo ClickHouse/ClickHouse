@@ -1,0 +1,25 @@
+--- dictionary-encoded strings without size statistics, mostly the longest value of the dictionary: not cached
+[false]
+65536	33489679
+65536	33489679
+--- the same, written by an old version of DuckDB, without dictionary_page_offset: not cached
+[false]
+65536	33489679
+65536	33489679
+--- a wide cached chunk among narrow ones
+524288	16777216
+s	8	524288
+5292701924961914880
+5292701924961914880
+--- a large dictionary page of a column that PREWHERE does not need
+[false,false]
+0	0
+0	0
+--- several small dictionary pages of columns that PREWHERE does not need
+[false,false,false,false,false,false,false]
+0	0	0	0	0	0	0
+0	0	0	0	0	0	0
+--- small dictionary pages of columns that PREWHERE does not need, each followed by large data pages
+[false,false,false,false,false,false,false,false]
+0	0	0	0	0	0	0
+0	0	0	0	0	0	0
