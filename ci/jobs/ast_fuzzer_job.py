@@ -36,6 +36,9 @@ JOB_ARTIFACTS = (
     WORKSPACE_PATH / "fatal.log",
 )
 
+# Written by run-fuzzer.sh only when the liveness probes found the server hung.
+HUNG_SERVER_LOG = WORKSPACE_PATH / "hung_server.log"
+
 
 def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
     """Last `max_lines` lines of `path` (bounded read), or "" if absent/empty."""
@@ -50,6 +53,21 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
     except OSError:
         return ""
     return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
+
+
+def _hung_server_summary(path: Path, max_bytes: int = 65536) -> str:
+    """hung_server.log up to its per-thread section (bounded read), or "" if unreadable."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(max_bytes)
+    except OSError:
+        return ""
+    lines = []
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        if line.startswith("--- per-thread"):
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 
 # A server-transmitted exception is printed by the client prefixed with
@@ -349,6 +367,7 @@ def analyze_job_logs(
 ) -> Result:
     """Judge the run from the logs in `JOB_ARTIFACTS`, which La Casa del Dolor writes too."""
     server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
+    server_hung = HUNG_SERVER_LOG.exists()
     # parse runner script exit status
     status = Result.Status.FAIL
     info = []
@@ -432,8 +451,12 @@ def analyze_job_logs(
             oom_logs = " ".join(
                 str(log) for log in (server_log, stderr_log) if Path(log).exists()
             )
+            # On a hung server the SIGKILL is the harness's own stop, not the kernel's.
+            oom_pattern = "Sanitizer:? (out-of-memory|out of memory|failed to allocate)"
+            if not server_hung:
+                oom_pattern += "|Child process was terminated by signal 9"
             sanitizer_oom = oom_logs and Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {oom_logs}"
+                f"rg --text '{oom_pattern}' {oom_logs}"
             )
             # Sanitizer shadow memory is invisible to the server's memory tracker,
             # so the kernel OOM killer may SIGKILL the server before any limit
@@ -442,7 +465,10 @@ def analyze_job_logs(
             # with no sanitizer report is an OOM, not a bug.
             has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
             kernel_oom_kill = (
-                server_died and server_exit_code == 137 and not has_sanitizer_report
+                server_died
+                and server_exit_code == 137
+                and not has_sanitizer_report
+                and not server_hung
             )
             if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
@@ -484,6 +510,22 @@ def analyze_job_logs(
             fuzzer_log=str(fuzzer_out),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        # Without a crash stack in the log, these names on a hung server come from the harness's own SIGTERM and SIGKILL.
+        if (
+            server_hung
+            and (
+                parsed_name == FuzzerLogParser.UNKNOWN_ERROR
+                or parsed_name.startswith("Received signal 15 ")
+                or parsed_name.startswith("Child process was terminated by signal 9 ")
+            )
+            and not fuzzer_log_parser.get_stack_trace()
+        ):
+            parsed_name = "Server liveness check failed"
+            parsed_info = (
+                "The server did not answer the liveness probes after fuzzing; "
+                "the diagnostics taken before stopping it are in hung_server.log\n"
+                + _hung_server_summary(HUNG_SERVER_LOG)
+            )[:4000]
 
         if parsed_name:
             results.append(
@@ -673,6 +715,7 @@ def run_fuzz_job(check_name: str):
             logging.info("Found %d changed files to guide fuzzing", len(changed_files))
         f.write("\n".join(changed_files))
 
+    HUNG_SERVER_LOG.unlink(missing_ok=True)
     Shell.check(command=run_command, verbose=True)
 
     # Fix file ownership after running docker as root
@@ -696,6 +739,8 @@ def run_fuzz_job(check_name: str):
     # limit, plus a symbolized rendering of the latest one (see run-fuzzer.sh).
     jemalloc_profiles = WORKSPACE_PATH / "jemalloc.tar.zst"
     paths.append(jemalloc_profiles)
+
+    paths.append(HUNG_SERVER_LOG)
 
     server_died = False
     server_exit_code = 0
