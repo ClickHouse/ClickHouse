@@ -1,0 +1,13 @@
+real part: Wide
+marks: 70
+With p_k (normal projection, hypothetical):
+marks: 2
+verdict: chosen
+real: ReadFromMergeTree (p_k)
+real: Granules: 2/95
+marks: 54
+With p_s (normal projection, hypothetical):
+marks: 60
+verdict: not chosen
+real: from the base table
+real forced: Granules: 60/120

@@ -1,0 +1,43 @@
+-- a merge keeps the wide format of the parts that it merges, after a change of the settings too
+-- the estimate of a merged part has to cover the wide layout, which the twin table has
+
+SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
+    enable_parallel_replicas = 0;
+
+CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '',
+        merge_max_block_size = 8192;
+CREATE TABLE t_real AS t_est;
+ALTER TABLE t_real ADD PROJECTION p_k (SELECT a, b, v ORDER BY intDiv(b, 10));
+
+INSERT INTO t_est SELECT number + 1, number % 100 + 1, number + 1 FROM numbers(1500);
+INSERT INTO t_est SELECT number + 1501, number % 100 + 1, number + 1 FROM numbers(1500);
+INSERT INTO t_real SELECT number + 1, number % 100 + 1, number + 1 FROM numbers(1500);
+INSERT INTO t_real SELECT number + 1501, number % 100 + 1, number + 1 FROM numbers(1500);
+-- the current settings choose a compact merged part, the parts that the merge merges are wide
+ALTER TABLE t_est MODIFY SETTING min_bytes_for_wide_part = '1Gi';
+ALTER TABLE t_real MODIFY SETTING min_bytes_for_wide_part = '1Gi';
+OPTIMIZE TABLE t_est FINAL;
+OPTIMIZE TABLE t_real FINAL;
+
+CREATE HYPOTHETICAL PROJECTION p_k ON t_est (SELECT a, b, v ORDER BY intDiv(b, 10));
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4 AND a < 378)
+WHERE match(line, '^(With |marks:|marks_span:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real WHERE intDiv(b, 10) = 4 AND a < 378)
+WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
+SELECT 'real format: ' || part_type FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real' AND active;
+
+-- the merge blocks cut a compact part, the span still has the wide layout
+ALTER TABLE t_est MODIFY SETTING merge_max_block_size = 1200;
+-- a change of the table settings makes the hypothetical projection stale, so create it again
+DROP HYPOTHETICAL PROJECTION p_k ON t_est;
+CREATE HYPOTHETICAL PROJECTION p_k ON t_est (SELECT a, b, v ORDER BY intDiv(b, 10));
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4 AND a < 378)
+WHERE match(line, '^(With |marks:|marks_span:|verdict:)');
+
+DROP TABLE t_est;
+DROP TABLE t_real;

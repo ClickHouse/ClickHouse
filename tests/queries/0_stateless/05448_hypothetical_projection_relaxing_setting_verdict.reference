@@ -1,0 +1,10 @@
+-- prefer_optimize_projection
+marks: 10
+With p_b (normal projection, hypothetical):
+marks: 1
+verdict: chosen
+real reads the projection: 1
+-- force_optimize_projection
+verdict: chosen
+-- with no relaxing setting the widths leave the verdict open
+verdict: too close to call
