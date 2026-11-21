@@ -41,6 +41,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char finish_clean_quorum_failed_parts[];
+    extern const char rmt_restarting_thread_pause_after_activation[];
 };
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -59,6 +60,10 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ run(); });
+
+    /// Not schedulable until `start`: the attach path calls `run` inline, and a pool execution of
+    /// `run` must not overlap that call.
+    task->deactivate();
 }
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
@@ -183,6 +188,10 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
+
+    /// Pauses where the replica is not readonly, first_time is still set, and queue_updating_task is armed.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restarting_thread_pause_after_activation);
+
     return true;
 }
 
