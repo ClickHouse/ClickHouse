@@ -319,7 +319,6 @@ protected:
     LoggerPtr log;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
-    StorageID storage_id;
     BackgroundJobsAssignee background_operations_assignee;
 };
 
