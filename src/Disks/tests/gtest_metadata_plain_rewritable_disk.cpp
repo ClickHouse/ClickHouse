@@ -4067,6 +4067,88 @@ TEST_F(MetadataPlainRewritableDiskTest, UnreadableDirectoryKeepsCommittedRemoval
     EXPECT_TRUE(list_markers().empty());
 }
 
+/// The name of a file may contain a line feed, and then the key of its blob contains it too. A hard link writes this
+/// key to the explicit file list of the target directory, where it is escaped, so it must be read back on the next
+/// load. The marker of a blob removal escapes the key the same way, so the last link to such a blob can be removed.
+TEST_F(MetadataPlainRewritableDiskTest, HardLinkOfFileWithLineFeedInName)
+{
+    using Kind = PlainRewritableLayout::TombstoneMarker::Kind;
+    const std::string name = "__removed.abcdefghijklmnop";
+    for (const auto & blob_key : std::vector<std::string>{"abc/f\nname", "abc/tab\there", "abc/back\\slash", "abc/\\n", "abc/plain"})
+    {
+        const auto content = PlainRewritableLayout::makeBlobRemovalTombstoneContent(blob_key);
+        const auto marker = PlainRewritableLayout::parseTombstoneMarkerContent(content, name);
+        EXPECT_EQ(marker.kind, Kind::BlobRemoval) << blob_key;
+        EXPECT_EQ(marker.blob_key, blob_key);
+        /// A torn content is never taken for a complete one.
+        for (size_t size = 0; size < content.size(); ++size)
+            EXPECT_EQ(PlainRewritableLayout::parseTombstoneMarkerContent(content.substr(0, size), name).kind, Kind::Malformed) << blob_key << " " << size;
+    }
+    /// A line feed or a tab that is not escaped is not what is written.
+    for (const auto & escaped_key : std::vector<std::string>{"abc/f\nname", "abc/f\tname"})
+        EXPECT_EQ(PlainRewritableLayout::parseTombstoneMarkerContent(PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX + escaped_key + "\n", name).kind, Kind::Malformed) << escaped_key;
+
+    thread_local_rng.seed(42);
+
+    const std::string test = "HardLinkOfFileWithLineFeedInName";
+    const std::string source_path = "A/f\nname";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        const auto key = tx->generateObjectKeyForPath(source_path).serialize();
+        size_t size = writeObject(object_storage, key, "shared");
+        tx->createMetadataFile(source_path, {StoredObject(key, source_path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink(source_path, "B/link");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto shared_remote_path = metadata->getStorageObjects(source_path).front().remote_path;
+    const auto check_file_list = [&]
+    {
+        const auto b_prefix_path = parsePrefixPath(readObject(object_storage, createMetadataObjectPath(metadata, "B")));
+        ASSERT_TRUE(b_prefix_path.has_explicit_file_list);
+        ASSERT_EQ(b_prefix_path.files.size(), 1u);
+        EXPECT_EQ(b_prefix_path.files[0].name, "link");
+        EXPECT_EQ(b_prefix_path.files[0].blob_key, generateObjectKeyPrefixForDirectoryPath(metadata, "A") + "/f\nname");
+    };
+    check_file_list();
+
+    metadata = restartMetadataStorage(test);
+    check_file_list();
+    EXPECT_EQ(sorted(metadata->listDirectory("A")), std::vector<std::string>({"f\nname"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("B")), std::vector<std::string>({"link"}));
+    EXPECT_EQ(metadata->getStorageObjects("B/link").front().remote_path, shared_remote_path);
+    EXPECT_EQ(readObject(object_storage, shared_remote_path), "shared");
+
+    /// The last link is the one of the explicit directory, so its removal goes through the marker of a blob removal.
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile(source_path, /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/link").front().remote_path), "shared");
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("B/link", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
+    EXPECT_TRUE(listBlobRemovalMarkers(object_storage, test).empty());
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_TRUE(metadata->listDirectory("A").empty());
+    EXPECT_TRUE(metadata->listDirectory("B").empty());
+    EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
+}
+
 /// The key of a blob is taken from the content of a marker of a blob removal, and the blob is deleted if nothing
 /// links it. A key that names an object outside of the blobs of the disk must not be accepted: an absolute path
 /// would discard the common key prefix, `..` would escape it, and a key under `__meta` would name metadata.

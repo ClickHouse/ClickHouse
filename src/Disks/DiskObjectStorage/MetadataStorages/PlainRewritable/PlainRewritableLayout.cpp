@@ -1,7 +1,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 #include <base/find_symbols.h>
@@ -129,15 +132,18 @@ std::string PlainRewritableLayout::makePendingReplaceTombstoneContent(const Pend
 
 std::string PlainRewritableLayout::makeBlobRemovalTombstoneContent(const std::string & blob_key)
 {
-    if (blob_key.contains('\n'))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove the blob '{}' on a plain_rewritable disk: the key contains a line feed", blob_key);
-
-    return fmt::format("{}{}\n", BLOB_REMOVAL_TOMBSTONE_PREFIX, blob_key);
+    /// The key is escaped the same way as in the file list of `prefix.path`: the name of a file may contain a line
+    /// feed, and so may the key of its blob, while a line feed terminates the content.
+    WriteBufferFromOwnString out;
+    writeString(BLOB_REMOVAL_TOMBSTONE_PREFIX, out);
+    writeEscapedString(blob_key, out);
+    writeChar('\n', out);
+    return out.str();
 }
 
 bool PlainRewritableLayout::isValidBlobKey(std::string_view blob_key)
 {
-    if (blob_key.empty() || blob_key.starts_with('/') || blob_key.contains('\n') || blob_key.contains('\0'))
+    if (blob_key.empty() || blob_key.starts_with('/') || blob_key.contains('\0'))
         return false;
 
     std::vector<std::string> parts;
@@ -194,17 +200,32 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
 
     if (content.starts_with(BLOB_REMOVAL_TOMBSTONE_PREFIX))
     {
-        auto blob_key = content.substr(BLOB_REMOVAL_TOMBSTONE_PREFIX.size());
-        if (!blob_key.ends_with('\n'))
+        auto escaped_blob_key = content.substr(BLOB_REMOVAL_TOMBSTONE_PREFIX.size());
+        if (!escaped_blob_key.ends_with('\n'))
             return {};
-        blob_key.remove_suffix(1);
+        escaped_blob_key.remove_suffix(1);
+
+        /// The key is escaped, see `makeBlobRemovalTombstoneContent`. An escaped key has no line feeds and no tabs, so
+        /// the whole content must be read as one string. Anything else was not written by it.
+        std::string blob_key;
+        ReadBufferFromString in(escaped_blob_key);
+        try
+        {
+            readEscapedString(blob_key, in);
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+        if (!in.eof())
+            return {};
 
         /// The blob of a marker is deleted, so a key that would name an object outside of the blobs of this disk
         /// (in another prefix, or in `__meta`) is never taken from a damaged or forged marker.
         if (!isValidBlobKey(blob_key))
             return {};
 
-        return {.kind = Kind::BlobRemoval, .pending_original_path = {}, .pending_replace = {}, .blob_key = std::string(blob_key)};
+        return {.kind = Kind::BlobRemoval, .pending_original_path = {}, .pending_replace = {}, .blob_key = std::move(blob_key)};
     }
 
     return {};

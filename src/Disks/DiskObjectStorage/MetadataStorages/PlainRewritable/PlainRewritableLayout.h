@@ -60,7 +60,8 @@ public:
     /// forever. So such an operation first writes a marker with the key of the blob, and `finalize` deletes the marker
     /// after the blob. The initial load deletes the blob of such a marker if no directory references it anymore (the
     /// operation was committed), and keeps it otherwise (the process died before it rewrote `prefix.path`). The name of
-    /// the marker marks nothing on the disk.
+    /// the marker marks nothing on the disk. The key is escaped like in the file list of `prefix.path`, because it
+    /// may contain a line feed, which terminates the content.
     constexpr static std::string BLOB_REMOVAL_TOMBSTONE_PREFIX = "blob removal\n";
 
     struct PendingReplace
@@ -104,7 +105,8 @@ public:
 
     /// Whether a key relative to the common key prefix can be the key of a blob or of a file (see `FileRemoteInfo::blob_key`): it is
     /// relative, has no `.` or `..` components and no NULs, and is not under `__meta`, so that the object it names
-    /// stays among the blobs of this disk.
+    /// stays among the blobs of this disk. A line feed is allowed: the name of a file may contain it, and the formats
+    /// that store keys (`prefix.path` and the marker of a blob removal) escape it.
     static bool isValidBlobKey(std::string_view blob_key);
 
     /// The content of a committed marker is the removed name itself.
