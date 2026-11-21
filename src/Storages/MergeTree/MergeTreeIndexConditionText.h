@@ -230,12 +230,19 @@ private:
     /// is a constant one that denotes the index tokenizer.
     [[nodiscard]] bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
+    /// `allow_direct_read = false` keeps the index from replacing the predicate: the search query then
+    /// only skips granules, for a predicate that implies the query but is not equivalent to it.
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
-        RPNElement & out) const;
+        RPNElement & out,
+        bool allow_direct_read = true) const;
+
+    /// `position(haystack, 'needle')` and its `UTF8` and `CaseInsensitive` variants, used directly as a
+    /// condition or compared with a constant so that the comparison rejects the zero result.
+    bool traversePositionNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 

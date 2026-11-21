@@ -42,4 +42,8 @@ bool likePatternHasStringValueFilterConditions(const String & pattern);
 /// Returns std::nullopt for unsupported comparison functions or constant types.
 std::optional<bool> evaluatePositionComparisonAtZero(const String & function_name, const Field & constant, bool position_is_left_argument);
 
+/// Same, assuming that `position(...)` returned `position_value`.
+std::optional<bool> evaluatePositionComparison(
+    const String & function_name, const Field & constant, bool position_is_left_argument, UInt64 position_value);
+
 }
