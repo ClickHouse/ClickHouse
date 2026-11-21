@@ -153,9 +153,11 @@ using Parquet::parq::CompressionCodec;
 
 /// The compression codec as the Apache Arrow library named it, for the output to stay the same: its `LZ4` is
 /// Parquet's `LZ4_RAW`, and Parquet's deprecated `LZ4` is its `LZ4_HADOOP`. An unknown codec reads as `UNCOMPRESSED`.
-std::string_view compressionName(CompressionCodec::type codec)
+/// The enums are read with `thriftEnumToInt`: loading a value out of the range of the enum, which a malformed file
+/// can have, is undefined behavior.
+std::string_view compressionName(const CompressionCodec::type & codec)
 {
-    switch (codec)
+    switch (Parquet::thriftEnumToInt(codec))
     {
         case CompressionCodec::UNCOMPRESSED: return "UNCOMPRESSED";
         case CompressionCodec::SNAPPY: return "SNAPPY";
@@ -169,9 +171,9 @@ std::string_view compressionName(CompressionCodec::type codec)
     return "UNCOMPRESSED";
 }
 
-std::string_view encodingName(Parquet::parq::Encoding::type encoding)
+std::string_view encodingName(const Parquet::parq::Encoding::type & encoding)
 {
-    auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(encoding);
+    auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(encoding));
     if (it == Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
         return "UNDEFINED";
     return it->second;
@@ -353,7 +355,7 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const Parquet::FooterMetada
             /// encodings, of the last row group
             auto & encodings_array_column = assert_cast<ColumnArray &>(tuple_column.getColumn(10));
             auto & encodings_nested_column = assert_cast<ColumnString &>(encodings_array_column.getData());
-            for (const auto encoding : metadata.columnChunk(num_row_groups - 1, column_i).encodings)
+            for (const auto & encoding : metadata.columnChunk(num_row_groups - 1, column_i).encodings)
                 insertString(encodings_nested_column, encodingName(encoding));
             encodings_array_column.getOffsets().push_back(encodings_nested_column.size());
         }
