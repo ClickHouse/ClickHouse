@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -598,7 +599,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
         chassert(inner);
     }
 
-    size_t size() const override { return inner->size(); }
+    [[nodiscard]] size_t size() const override { return inner->size(); }
 };
 
 }

@@ -294,7 +294,7 @@ struct KeyColumns
     /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
     /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
     /// table's column).
-    bool none() const { return !unknown && names.empty(); }
+    [[nodiscard]] bool none() const { return !unknown && names.empty(); }
 };
 
 KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)
@@ -2424,7 +2424,9 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> 
 
     UInt64 total_bytes = *totalBytes(getContext());
 
-    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
+    /// A rejection at shutdown would drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
+    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert]
+        && !getContext()->isShutdownCalled())
     {
         ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
@@ -2832,7 +2834,12 @@ Clusters are configured in the [server configuration file](/concepts/features/co
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,

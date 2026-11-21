@@ -30,6 +30,12 @@ ${CLICKHOUSE_CLIENT} -q """
     SYSTEM STOP MERGES t1_local;
 
     INSERT INTO t1_local SELECT * FROM numbers_mt(1e6);
+
+    -- A read from an empty table has one stream. An insert with one input stream into a Distributed table
+    -- keeps a single sink to preserve the input order, so the table must have data to check the resize.
+    SYSTEM STOP MERGES t4_pr;
+
+    INSERT INTO t4_pr SELECT * FROM numbers_mt(1e6);
 """
 
 max_insert_threads=8

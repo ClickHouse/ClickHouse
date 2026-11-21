@@ -1,0 +1,14 @@
+-- x matches both y and z, y does not match z
+10000
+0
+-- the explicit y = z must not be removed as redundant
+0
+0
+0
+-- y = z must not be synthesized when the two small tables are joined first
+10000
+10000
+10000
+-- the same with LowCardinality and Nullable wrappers
+10000
+0

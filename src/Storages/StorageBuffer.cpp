@@ -23,6 +23,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -38,6 +39,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
@@ -45,6 +47,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
@@ -103,6 +106,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -646,8 +650,12 @@ void StorageBuffer::read(
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
+        /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree = query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
+
         auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
         interpreter.addStorageLimits(*query_info.storage_limits);
         buffers_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -1579,6 +1587,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
+        if (!command.ignore && tryExtractQuantizedCodecParams(command.codec))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                getName(), backQuote(command.column_name));
+
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             if (!name_deps)
@@ -1757,6 +1769,9 @@ void registerStorageBuffer(StorageFactory & factory)
             columns = destination_metadata->getColumns();
             columns.clearColumnTTLs();
         }
+
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(columns.getAll(), args.engine_name);
 
         return std::make_shared<StorageBuffer>(
             args.table_id,
