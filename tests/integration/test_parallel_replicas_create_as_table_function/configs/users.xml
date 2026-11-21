@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_parallel_replicas>1</enable_parallel_replicas>
+            <max_parallel_replicas>3</max_parallel_replicas>
+            <cluster_for_parallel_replicas>parallel_replicas</cluster_for_parallel_replicas>
+            <parallel_replicas_for_cluster_engines>1</parallel_replicas_for_cluster_engines>
+        </default>
+    </profiles>
+</clickhouse>
