@@ -645,6 +645,19 @@ For `clickhouse-client`, you can also use the `--accept-invalid-certificate` CLI
 </openSSL>
 ```
 
+## Rotating certificates and CA certificates without a restart {#rotating-certificates-without-restart}
+
+ClickHouse server and ClickHouse Keeper watch the files referenced by `certificateFile`, `privateKeyFile` and `caConfig`
+in the `openSSL.server` and `openSSL.client` sections (and in `protocols.*` for composable protocols), or the files in the
+directory if `caConfig` is a directory. When one of these files changes, or when `SYSTEM RELOAD CONFIG` is executed, the
+certificates are reloaded and used for all new TLS connections, including HTTPS, the secure native protocol, interserver
+connections, connections to Keeper and the Raft connections between Keeper nodes. Established connections keep using the
+certificates they were opened with.
+
+To rotate a CA without downtime, first replace the `caConfig` file with a bundle that contains both the old and the new
+CA certificate, then switch the node and client certificates to ones issued by the new CA, and finally replace the bundle
+with the new CA certificate only.
+
 ## Summary {#summary}
 
 This article focused on getting a ClickHouse environment configured with TLS. The settings will differ for different requirements in production environments; for example, certificate verification levels, protocols, ciphers, etc. But you should now have a good understanding of the steps involved in configuring and implementing secure connections.

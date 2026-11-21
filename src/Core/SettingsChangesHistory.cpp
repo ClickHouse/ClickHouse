@@ -41,11 +41,23 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"azure_validate_etag_on_read", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."},
+        });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"json_extract_use_cast_string_to_date_time_mode", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."},
+            {"backup_s3_expired_token_retry_timeout_ms", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."},
+            {"allow_named_collection_override_by_default", true, true, "Obsolete. Overriding named collection keys requires `SHOW NAMED COLLECTIONS SECRETS`."},
+            {"use_aggregation_memory_tracker", false, false, "New setting. In this release it is disabled by default, which restores the two-level conversion of `GROUP BY` from before 26.7 (https://github.com/ClickHouse/ClickHouse/pull/107490)."},
+            {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."},
+            {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7: the previous value is deliberately equal to the new one, because 26.7 already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
+            {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
-            {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
+            {"ai_function_max_retries", 0, 3, "Retry a transient API error up to three times by default, so a 429 or 5xx from the provider does not fail the query and an overloaded rate-limited provider is retried under concurrent requests."},
+            {"ai_function_max_concurrent_requests_per_thread", 1, 8, "New setting"},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
@@ -102,7 +114,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"shrink_over_allocated_columns_min_waste_ratio", 1.0, 1.0, "New setting to shrink over-allocated columns to fit on INSERT to reduce peak memory usage. Disabled by default (1.0)."},
             {"shrink_over_allocated_columns_min_waste_bytes", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting: minimum absolute wasted memory in a column for it to be shrunk to fit on INSERT."},
             {"ai_function_allow_insecure_endpoint", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."},
-            {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
+            {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
+            {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"read_in_order_use_virtual_row", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."},
             {"page", 0., 0., "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
@@ -122,6 +135,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_allow_table_as_file", false, false, "New setting to recognize a table name in the URL path of HTTP requests, with optional format/compression extensions."},
             {"http_allow_filters_as_path", false, false, "New setting to recognize hive-style `name=value` filters in the URL path of HTTP requests."},
             {"http_allow_filters_as_unrecognized_url_parameters", false, false, "New setting to treat unrecognized URL parameters as filter expressions in HTTP requests."},
+            {"http_x_clickhouse_format_overrides_output_format", false, true, "Controls whether the `X-ClickHouse-Format` HTTP header is an alias for `output_format` (overriding the query's `FORMAT` clause), as since 26.8, or for `default_format`, as before 26.8. The entry sits in the 26.8 block because that is the release whose behavior it restores, so `compatibility` with a version before 26.8 brings back the old header behavior."},
             {"ignore_on_cluster_for_replicated_handler_queries", false, false, "New setting to ignore the ON CLUSTER clause for handler management queries when handlers are backed by replicated (Keeper) storage."},
             {"materialized_views_populate_atomically", false, true, "New setting that makes plain `CREATE MATERIALIZED VIEW ... POPULATE` locally atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted through the same server are neither missed nor duplicated. The guarantee covers the local insert path only - inserts arriving on another replica or through a distributed write are outside the cut - and it requires a source that can provide a pinned snapshot (the `MergeTree` family and `Memory`); other sources, as well as `CREATE OR REPLACE` / `REPLACE`, keep the legacy non-atomic population. Set to `false` for the legacy non-atomic behavior everywhere."},
             {"input_format_json_max_object_size", 512 * 1024 * 1024, 512 * 1024 * 1024, "New setting to limit the maximum size of a single JSON object in bytes"},
@@ -157,6 +171,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
             {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
+            {"query_plan_filter_push_down_below_limit_by", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."},
+            {"query_plan_read_in_order_through_join", true, true, "Added the value `force`: keep reading in order through a join even when the parts announce no virtual rows."},
+            {"output_format_arrow_max_record_batch_size_bytes", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -1445,6 +1462,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"enable_row_mask_update_coalescing", false, true, "Enable row-mask update coalescing by default"},
+            {"max_row_mask_update_coalescing_keys", 256, 256, "New setting"},
+            {"max_row_mask_update_coalescing_key_bytes", 64 * 1024, 64 * 1024, "New setting"},
+            {"max_row_mask_update_coalescing_commands", 4096, 4096, "New setting"},
+            {"max_row_mask_update_coalescing_ast_bytes", 1024 * 1024, 1024 * 1024, "New setting"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},

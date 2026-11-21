@@ -551,9 +551,18 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     const auto & name = node->function_base->getName();

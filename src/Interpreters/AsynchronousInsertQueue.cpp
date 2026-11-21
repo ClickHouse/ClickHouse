@@ -43,6 +43,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
@@ -74,6 +75,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char async_insert_pause_before_schedule[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -96,7 +102,6 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -319,8 +324,8 @@ void AsynchronousInsertQueue::flushAndShutdown()
 {
     try
     {
-        LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
         shutdown = true;
+        LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
 
         if (flush_on_shutdown)
         {
@@ -389,6 +394,8 @@ void AsynchronousInsertQueue::clear()
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
+
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
     chassert(!data->entries.empty());
@@ -494,7 +501,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
+        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context);
 
         LimitReadBuffer limit_buf(
             *read_buf,
@@ -539,6 +546,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
 {
+    /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
+    /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
+    for (const auto & elem : block)
+        if (elem.column && elem.column->convertToFullIfWrapped().get() != elem.column.get())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Async insert block column '{}' must be materialized before queuing, but has a "
+                "non-default serialization representation: {}",
+                elem.name, elem.column->dumpStructure());
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
@@ -676,6 +694,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
                       has_enough_queries ? "enough queries accumulated" :
                       "maximum busy wait timeout exceeded");
             data->timeout_ms = Milliseconds::zero();
+            data->trackFlush(shard.in_flight_flushes);
             data_to_process = std::move(data);
 
             NOEXCEPT_SCOPE({
@@ -704,11 +723,14 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueBytes, entry_data_size);
         }
 
-        if (data_to_process)
-            scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
-        else
+        if (!data_to_process)
             shard.are_tasks_available.notify_one();
     }
+
+    /// Pool admission can wait for a running flush to finish. Keep that backpressure on this
+    /// producer, but allow other inserts to append to their buffers in the same queue shard.
+    if (data_to_process)
+        scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
 
     return PushResult
     {
@@ -861,9 +883,11 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
             futures_to_wait.size(), total_entries, total_bytes, total_queries, fmt::join(affected_set, ", "));
 
     }
-    /// Wait until all jobs are finished. That includes only jobs
-    /// that were scheduled for this 'flush' call.
-    /// Other pending inserts are not blocked and can be processed concurrently.
+    /// Wait only for batches collected and scheduled by this `flush` call.
+    /// Batches already removed by producers or deadline workers are not included,
+    /// even if they are still waiting for pool admission. Unlike `flushAll`, this
+    /// does not wait on `in_flight_flushes`, which also counts unrelated tables.
+    /// Other pending inserts can continue concurrently.
     for (auto & future : futures_to_wait)
         future.wait();
 
@@ -909,6 +933,20 @@ void AsynchronousInsertQueue::flushAll()
     LOG_DEBUG(log,
         "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries)",
         pool.active(), total_entries, total_bytes, total_queries);
+
+    /// A removed batch can contain already acknowledged inserts while still waiting for
+    /// pool admission. `flush_stopped` and the shard locks above ensure no new batches
+    /// can enter this state until the forced flush finishes. Wait without the shard mutex
+    /// so producers can continue buffering and submitting the batches already removed.
+    for (auto & shard : queue_shards)
+    {
+        auto in_flight = shard.in_flight_flushes.load();
+        while (in_flight)
+        {
+            shard.in_flight_flushes.wait(in_flight);
+            in_flight = shard.in_flight_flushes.load();
+        }
+    }
 
     /// Wait until all jobs are finished. That includes also jobs
     /// that were scheduled before the call of 'flushAll'.
@@ -968,6 +1006,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
 
                     shard.iterators.erase(it->second.key.hash);
 
+                    it->second.data->trackFlush(shard.in_flight_flushes);
                     entries_to_flush.emplace_back(std::move(it->second));
 
                     shard.queue.erase(it);
@@ -1041,9 +1080,14 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
+    /// A batch may have left the shard queue before shutdown and waited for pool admission.
+    /// Check when the worker starts, after that wait, so the non-flushing shutdown path
+    /// also cancels detached batches through the normal exception and accounting cleanup.
+    if (shutdown && !flush_on_shutdown)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Async insert cancelled during shutdown");
+
     DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
 
-    const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     bool internal = true;

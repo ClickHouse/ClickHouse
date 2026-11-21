@@ -30,6 +30,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -169,10 +170,16 @@ namespace
         return path.substr(0, position);
     }
 
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
+            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();
@@ -208,6 +215,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool azure_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -793,6 +801,11 @@ Chunk StorageObjectStorageSource::generate()
 
                                     const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                                     auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// The `_delta_log` type differs from the declared one when the columns were
+                                    /// specified rather than inferred, and the block follows the declared schema.
+                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
+                                    if (!name_and_type.type->equals(*declared_type))
+                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
                                     /// This column is filled with default value now, remove it.
                                     chunk.erase(column_pos);
                                     /// Add correct values.
@@ -887,7 +900,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag
+            && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
@@ -922,7 +935,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -938,7 +951,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        need_only_count);
+        need_only_count,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -955,7 +969,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1036,9 +1051,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         break;
     }
 
+    std::unique_ptr<ReadBuffer> read_buf; /// Destroyed last: `builder` and `source` hold the input format reading it.
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
-    std::unique_ptr<ReadBuffer> read_buf;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
@@ -1365,6 +1380,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -1528,7 +1546,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
@@ -1573,16 +1591,24 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
     /// 4. object etag to detect a concurrent in-place overwrite during the read
+    /// Whether the read is pinned to the generation of the object seen at listing time. Each backend
+    /// that supports it has its own setting, because they are documented per backend and a user may
+    /// want to opt out of the check for one store but not the other.
+    bool validate_etag_on_read = false;
+    if (object_storage->getType() == ObjectStorageType::S3)
+        validate_etag_on_read = settings[Setting::s3_validate_etag_on_read];
+    else if (object_storage->getType() == ObjectStorageType::Azure)
+        validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
+
     if (!object_info.metadata)
     {
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
-    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
-             && object_storage->getType() == ObjectStorageType::S3)
+    else if (!object_info.metadata->is_fetched && validate_etag_on_read)
     {
-        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
-        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
-        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        /// Refresh the cluster function's skip_object_metadata placeholder to obtain its size + ETag for
+        /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
+        /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
@@ -1648,13 +1674,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
-    const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
+    /// The size is used by the object storage as the right bound of the read, so it must come from a
+    /// real listing or HEAD: the skip_object_metadata placeholder is default-constructed, and its
+    /// `size_bytes == 0` would otherwise read every non-empty object as empty.
+    const auto stored_object_size = is_size_known && object_info.metadata->is_fetched
+        ? object_size
+        : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
 
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
-    /// instead of torn cross-generation data.
-    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
+    /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
+    if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
@@ -1669,6 +1700,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(object_info.metadata->etag);
 

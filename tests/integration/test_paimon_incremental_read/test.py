@@ -21,6 +21,7 @@ CH_TABLE_NAME_AT_MOST_ONCE = "paimon_inc_read_at_most_once"
 CH_MV_PAIMON_TABLE = "paimon_mv_source"
 CH_MV_MERGETREE_TABLE = "paimon_mv_dest"
 CH_MV_NAME = "paimon_refresh_mv"
+CH_TABLE_NAME_ACTIVATE_RECLAIM = "paimon_inc_read_activate_reclaim"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -425,3 +426,105 @@ def test_paimon_to_mergetree_via_refresh_mv(started_cluster):
     node.query(f"DROP VIEW IF EXISTS {CH_MV_NAME} SYNC;")
     node.query(f"DROP TABLE IF EXISTS {CH_MV_MERGETREE_TABLE} SYNC;")
     node.query(f"DROP TABLE IF EXISTS {CH_MV_PAIMON_TABLE} SYNC;")
+
+
+def test_paimon_incremental_read_activate_tolerates_reaped_is_active(started_cluster):
+    """A read after a Keeper session loss reclaims the `is_active` marker its own
+    previous session left behind, and must survive Keeper reaping that ephemeral
+    concurrently: the marker is visible to the reclaim path's `tryGet` and already
+    gone by its versioned `tryRemove`, which then reports ZNONODE. The marker here
+    is fabricated because it reproduces exactly that observable state, whereas
+    waiting for the real reap to land inside a two-round-trip window would make the
+    test nondeterministic."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_activate_reclaim"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{USER_FILES_PATH}/{warehouse_name}/test.db/test_table"
+    # Unique per run: committed_snapshot persists in Keeper, so a rerun against
+    # the same cluster must not inherit an earlier run's watermark.
+    keeper_path = f"/clickhouse/paimon_activate_reclaim_{uuid.uuid4().hex}"
+    is_active_path = f"{keeper_path}/replicas/r1/is_active"
+    failpoint = "paimon_incremental_read_pause_before_is_active_remove"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+
+    # Warm-up commit (snapshot 1), consumed to establish the baseline.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_ACTIVATE_RECLAIM, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_ACTIVATE_RECLAIM}"
+    _wait_until_query_result(count_query, "1\n", database="default")
+    _wait_until_query_result(count_query, "0\n", database="default")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    reader = None
+    reader_result = {}
+    try:
+        # Read the server's own marker instead of hardcoding its payload format.
+        identifier = zk.get(is_active_path)[0]
+
+        # Snapshot 2: the batch the post-reconnect read must deliver.
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+
+        session_query = (
+            "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+        )
+        old_session = node.query(session_query)
+        # Finalizes the shared session, so the Keeper handle latched in
+        # PaimonStreamState stays expired and the next read takes the
+        # needsNewKeeper() branch that calls activate().
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        assert node.query(session_query) != old_session, (
+            f"the Keeper session was not replaced (still {old_session!r})"
+        )
+
+        deadline = time.monotonic() + 60
+        while zk.exists(is_active_path) is not None:
+            assert time.monotonic() < deadline, "the old session's is_active was never reaped"
+            time.sleep(0.5)
+
+        # Persistent, not ephemeral: activate() never inspects stat.ephemeralOwner,
+        # so persistence is invisible to the code under test while keeping a second
+        # Keeper session out of the test's failure modes.
+        zk.create(is_active_path, identifier)
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        reader = threading.Thread(
+            target=lambda: reader_result.update(
+                zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+            )
+        )
+        reader.start()
+
+        # Returns only once a thread has parked at the failpoint. Since the
+        # failpoint sits inside the identifier-matched branch, that proves the read
+        # entered the reclaim path with a marker it recognises as its own.
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        assert reader.is_alive(), (
+            f"the reader returned before parking at the failpoint: {reader_result!r}"
+        )
+
+        # The reap lands inside the read's tryGet/tryRemove window.
+        zk.delete(is_active_path)
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        reader.join(timeout=120)
+        assert not reader.is_alive(), "the reader thread never finished"
+        assert not reader_result.get("err"), f"the read failed: {reader_result!r}"
+        # Not just "did not throw": the pending snapshot must still be delivered.
+        assert reader_result.get("out") == "10\n", (
+            f"the pending snapshot was not delivered: {reader_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2"
+        _wait_until_query_result(count_query, "0\n", database="default")
+    finally:
+        # The failpoint is process-global: an early failure must leave neither it
+        # armed nor the reader thread parked on it.
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        zk.stop()
+        if reader is not None:
+            reader.join(timeout=60)
+        node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_ACTIVATE_RECLAIM} SYNC;")

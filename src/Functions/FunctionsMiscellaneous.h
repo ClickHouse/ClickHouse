@@ -100,6 +100,16 @@ private:
     SignaturePtr signature;
 };
 
+/// Whether a function in the body of a lambda reports `isExpensive`. Nested lambdas are covered through
+/// their own `FunctionCapture`, which is a `FUNCTION` node of this body.
+inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
+{
+    for (const auto & node : expression_actions.getActionsDAG().getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isExpensive())
+            return true;
+    return false;
+}
+
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression final : public IFunctionBase
 {
@@ -133,6 +143,8 @@ public:
     String getName() const override { return "FunctionExpression"; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
@@ -291,6 +303,8 @@ public:
         }
         return true;
     }
+
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

@@ -2,7 +2,11 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -13,6 +17,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -25,16 +30,22 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -60,19 +71,23 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -81,10 +96,77 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
 {
+
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
+    bool adds_transform = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+    }
+
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    if (!adds_transform || !metadata)
+        return;
+
+    AlterCommands commands;
+    /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
+    size_t metadata_segments = 0;
+    bool previous_is_metadata = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        std::optional<AlterCommand> command;
+        if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
+            command = AlterCommand::parse(command_ast);
+
+        if (command)
+        {
+            if (!previous_is_metadata)
+                ++metadata_segments;
+            commands.emplace_back(std::move(*command));
+        }
+        previous_is_metadata = command.has_value();
+    }
+
+    /// Applying every command at once would reject statements the executor, which commits segment by
+    /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
+    if (metadata_segments > 1)
+        return;
+
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
+    commands.validate(table, context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    StorageInMemoryMetadata metadata_copy = *metadata;
+    commands.prepare(metadata_copy, share_nested);
+    table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata_copy.columns);
+    commands.apply(metadata_copy, context, share_nested);
+
+}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -306,6 +388,27 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
+/// so only the submitting session's value is meaningful for it, and the gate must be applied
+/// exactly once, here at submission time.
+///
+/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
+/// segment only, so it is checked here, next to the other submission-time mutation validation.
+/// `MutationsInterpreter` does not check it: it also runs in the background with a context that
+/// reads the server-default profile instead of the submitting session.
+void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
+{
+    if (settings[Setting::allow_statistics])
+        return;
+
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_STATISTICS || command.type == MutationCommand::DROP_STATISTICS)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
 {
     BlockIO res;
@@ -328,7 +431,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
@@ -341,6 +444,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             {
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
+                checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
                 /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
                 /// diverge replicas.  The heavier query-shape validation that constructs a full
@@ -350,7 +454,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 if (settings[Setting::validate_mutation_query])
                 {
                     MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                    auto validation_context = Context::createCopy(context);
+                    validation_context->setAnalyzingBackgroundExpressions(true);
+                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 }
                 table->mutate(*mutation_commands, context);
             }
@@ -376,6 +482,31 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     }
 
     return res;
+}
+
+/// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
+/// that a row policy hides (as `StorageSet::checkNoRowPolicy`). It reads only the query and the access entities,
+/// not the table, so it runs on the initiator.
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING || !command.settings_changes)
+            continue;
+
+        const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+        if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
+            continue;
+
+        auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot change the settings of table {}.{} that send its data elsewhere because a row policy applies to it. "
+                "The data is copied as it is stored, so its rows cannot be filtered",
+                backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
+    }
 }
 
 }
@@ -425,11 +556,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table_id)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        /// Resolve once here so every branch below validates against the real structure instead of
+        /// the columns-only metadata a lazily loaded table reports.
+        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        /// NOLINT(storage-cast): `table` is resolved above.
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
@@ -445,17 +579,49 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
+        /// The hosts run the entry without the user, unless `distributed_ddl_use_initial_user_and_roles` is on,
+        /// so the view's SQL security is authorized here, which needs the view on this host.
+        if (modify_query && !table)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {}.{} does not exist on this host. `ALTER TABLE ... ON CLUSTER ... MODIFY QUERY` is authorized "
+                "on the initiator, so it must be run from a host that has the view",
+                backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+        /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
+        checkNoRowPolicyForExport(
+            alter, alter.getDatabase().empty() ? getContext()->getCurrentDatabase() : alter.getDatabase(), getContext());
+
+        /// The hosts run the entry without the user, unless `distributed_ddl_use_initial_user_and_roles` is on
+        /// and the entry format carries the initiator's user, so a text index transform cannot be authorized there.
+        const bool workers_use_initiator_user
+            = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+            && getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version] >= DDLLogEntry::INITIATOR_USER_VERSION;
+        if (!workers_use_initiator_user)
+        {
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                    continue;
+                if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                    rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            }
+        }
+
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess(table));
+    checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    checkAddedIndexPermissions(alter, table, getContext());
+
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
@@ -599,14 +765,70 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 
+/** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does
+  * not run with the caller's privileges. Writing it is the same act of impersonation that `CREATE` and
+  * `MODIFY SQL SECURITY` gate behind `SET DEFINER` and `ALLOW SQL SECURITY NONE` in
+  * `processSQLSecurityOption`, so it takes the same grants.
+  */
+void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
+    AccessRightsElements & required_access, const StoragePtr & storage) const
+{
+    /// Without the view there is no body to replace: the local path fails on the missing table, and an
+    /// `ON CLUSTER` statement refuses to dispatch a `MODIFY QUERY` for a view this host does not have.
+    if (!storage)
+        return;
+
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot->sql_security_type)
+        return;
+
+    if (*metadata_snapshot->sql_security_type == SQLSecurityType::NONE)
+    {
+        required_access.emplace_back(AccessType::ALLOW_SQL_SECURITY_NONE);
+        return;
+    }
+
+    if (*metadata_snapshot->sql_security_type != SQLSecurityType::DEFINER || !metadata_snapshot->definer)
+        return;
+
+    /// `processSQLSecurityOption` stores an ephemeral definer as a clone named `<user>:definer`, and the grant is
+    /// held on the user it was cloned from. A real user can have the same suffix, so strip it only when the base
+    /// user is ephemeral, which is the condition under which the clone is made.
+    String definer_name = *metadata_snapshot->definer;
+    static constexpr std::string_view ephemeral_suffix = ":definer";
+    if (definer_name.ends_with(ephemeral_suffix))
+    {
+        String base_name = definer_name.substr(0, definer_name.size() - ephemeral_suffix.size());
+        const auto & access_control = getContext()->getAccessControl();
+        if (auto base_id = access_control.find<User>(base_name); base_id && access_control.isEphemeral(*base_id))
+            definer_name = std::move(base_name);
+    }
+
+    if (definer_name != getContext()->getUserName())
+        required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
+}
+
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
+    /// A `MODIFY SQL SECURITY` in the same statement decides what the new body will execute as, and
+    /// `processSQLSecurityOption` has already authorized exactly that. The stored security then says
+    /// nothing about the body being written, so it must not add a requirement of its own.
+    const bool sql_security_is_being_replaced = std::ranges::any_of(
+        alter.command_list->children,
+        [](const auto & child) { return child->template as<ASTAlterCommand &>().sql_security != nullptr; });
+
     for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+
+        if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
+            addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
+    }
 
     return required_access;
 }
@@ -793,6 +1015,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
+
+            /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
+            /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
+            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
+            /// of `ON CLUSTER` can check them without the table.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            {
+                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                if (!export_access.empty())
+                {
+                    required_access.append_range(std::move(export_access));
+                    required_access.emplace_back(AccessType::SELECT, database, table);
+                }
+            }
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:

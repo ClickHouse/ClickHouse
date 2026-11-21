@@ -40,7 +40,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = {},
         bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
@@ -155,6 +155,7 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
     bool tryRefreshCredentialsViaCallback() override;
+    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }

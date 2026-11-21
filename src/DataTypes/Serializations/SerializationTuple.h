@@ -13,10 +13,7 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
 private:
-    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
-        : elems(std::move(elems_)), has_explicit_names(has_explicit_names_)
-    {
-    }
+    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_);
 
 public:
     static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
@@ -24,8 +21,8 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 
-    /// Wrap each tuple element into the layout its serialization deserializes into (e.g. a sparse element).
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    /// Create each tuple element in the layout its serialization deserializes into (e.g. a sparse element).
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -89,6 +86,8 @@ public:
 private:
     ElementSerializations elems;
     bool has_explicit_names;
+    /// Cached result of `supportsPooling` of all elements, see `SerializationArray`.
+    bool elems_support_pooling;
 
     size_t getPositionByName(const String & name) const;
 

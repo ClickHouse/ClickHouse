@@ -86,10 +86,7 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
-    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
-    /// the ColumnConst produced by the quantized-vector codebook serialization.
-    return serialization.wrapColumnForDeserialization(createColumn());
+    return serialization.createColumnForDeserialization(*this);
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
@@ -213,6 +210,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     settings.enumerate_dynamic_streams = false;
     settings.enumerate_virtual_streams = true;
     settings.array_level = initial_array_level;
+    settings.subcolumn_name = subcolumn_name;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())

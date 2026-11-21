@@ -387,16 +387,11 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         {
             if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
-                if (function_name == "notIn")
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-                if (function_name == "in")
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
+                /// `transform_null_in = 1` renames the family; a NULL element is refused above.
+                const bool negated = function_name == "notIn" || function_name == "globalNotIn"
+                    || function_name == "notNullIn" || function_name == "globalNotNullIn";
+                out.function = negated ? RPNElement::FUNCTION_NOT_IN : RPNElement::FUNCTION_IN;
+                return true;
             }
         }
         else if (function_name == "equals" ||
@@ -437,13 +432,52 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
+namespace
+{
+
+/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+
+    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
+    {
+        String value = field.safeGet<String>();
+        value.resize(value.find_last_not_of('\0') + 1);
+        return Field(std::move(value));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
+/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
+bool functionIgnoresFixedStringPadding(const String & function_name)
+{
+    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
+}
+
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
-    const RPNBuilderTreeNode & key_node,
+    const RPNBuilderTreeNode & wrapped_key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out)
 {
+    const auto key_node = unwrapLosslessConversion(wrapped_key_node);
+
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
@@ -467,7 +501,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    Field const_value = value_field;
+    /// Every allowed tokenizer `ngrams`, `splitByNonAlpha` and `sparseGrams` emit the terms of the unpadded value as terms of the padded one.
+    Field const_value = functionIgnoresFixedStringPadding(function_name)
+        ? stripFixedStringPaddingForTerms(value_field, value_type)
+        : value_field;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
@@ -488,7 +525,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            if (value_field == value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
@@ -531,7 +568,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            if (value_field == value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
@@ -781,14 +818,14 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
+            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).getColumnName()))
             {
                 key_tuple_mapping.emplace_back(i, *key);
                 data_types.push_back(index_data_types[*key]);
             }
         }
     }
-    else if (const auto key = getKeyIndex(left_argument.getColumnName()))
+    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument).getColumnName()))
     {
         key_tuple_mapping.emplace_back(0, *key);
         data_types.push_back(index_data_types[*key]);
@@ -807,7 +844,8 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
     for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
     {
-        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+        /// A `Nullable` key keeps the wrapper on its elements at `transform_null_in = 1`.
+        auto prepared_set_data_type_id = removeNullable(prepared_set_data_type)->getTypeId();
         if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
     }
@@ -826,10 +864,22 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
+        const DataTypePtr & element_type = prepared_set->getElementsTypes()[tuple_idx];
+        const bool is_fixed_string_element = WhichDataType(removeNullable(element_type)).isFixedString();
+
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
+            /// A NULL element also matches the column's NULL rows, which the filter cannot express.
+            if (column->isNullAt(row))
+                return false;
+
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
+
+            /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
+            std::string_view ref = column->getDataAt(row);
+            if (is_fixed_string_element)
+                ref = ref.substr(0, ref.find_last_not_of('\0') + 1);
+
             forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
@@ -961,6 +1011,36 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         args[first_bf_param_idx].safeGet<size_t>(),
         args[first_bf_param_idx+1].safeGet<size_t>(),
         args[first_bf_param_idx+2].safeGet<size_t>());
+}
+
+static size_t bloomFilterIndexTextTotalSize(const IndexDescription & index)
+{
+    if (index.type != NgramsTokenizer::getName()
+        && index.type != SplitByNonAlphaTokenizer::getName()
+        && index.type != SparseGramsTokenizer::getBloomFilterIndexName())
+        return 0;
+
+    /// The size of bloom filter is the first of the last three arguments, whatever the tokenizer.
+    /// The arguments are already checked by `bloomFilterIndexTextValidator`, and the size is at most `MAX_BLOOM_FILTER_SIZE`,
+    /// so the multiplication cannot overflow.
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    return args.at(args.size() - 3).safeGet<size_t>() * index.column_names.size();
+}
+
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index)
+{
+    const size_t total_size = bloomFilterIndexTextTotalSize(index);
+    if (total_size <= MAX_BLOOM_FILTER_SIZE)
+        return;
+
+    /// An index inherited from the old metadata may have been created before this check, so it is accepted as long as it does not grow.
+    if (old_index && bloomFilterIndexTextTotalSize(*old_index) >= total_size)
+        return;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "The total size of bloom filters in a granule of index {} cannot be more than {}: "
+        "the index has {} columns and the total size of their bloom filters is {}",
+        backQuote(index.name), MAX_BLOOM_FILTER_SIZE, index.column_names.size(), total_size);
 }
 
 }

@@ -24,6 +24,9 @@ public:
     } type{};
 
     String table_name;
+    /// The inner query of `COPY (query) TO STDOUT`, null for `COPY table`. It is the only child of this
+    /// node, so the secrets in it are found and hidden as in any other query.
+    ASTPtr subquery_ast;
     Strings column_names;
     enum class Formats : uint8_t
     {
@@ -38,8 +41,18 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Copy; }
 
+    /// Set `subquery_ast` and add it to `children`.
+    void setSubquery(ASTPtr subquery_ast_);
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    /// `subquery_ast` is a separate pointer to the node that `children` holds too, so a visitor that
+    /// replaces the child has to be able to repair it.
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &subquery_ast);
+    }
 };
 
 String toString(ASTCopyQuery::Formats format);

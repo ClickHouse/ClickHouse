@@ -3,8 +3,18 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IStoragePolicy.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
 
@@ -147,6 +157,84 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
     /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
     return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
+}
+
+namespace
+{
+
+/// The `MergeTreeData` behind `storage` if it is on a storage policy marked `backup_metadata_only`. Only a `MergeTreeData`
+/// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
+/// A proxy is not resolved here, unlike on master, where `resolveStorageProxyLoading` loads a lazily loaded table: the
+/// helpers it needs are not on this branch, so a table behind a proxy keeps its data backed up as usual.
+std::shared_ptr<MergeTreeData> getMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
+{
+    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    if (!merge_tree)
+        return nullptr;
+    auto policy = merge_tree->getStoragePolicy();
+    if (!policy || !policy->isBackupMetadataOnly())
+        return nullptr;
+    return merge_tree;
+}
+
+}
+
+/// `context` is unused here: only the `TimeSeries` targets left out on this branch needed it.
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, [[maybe_unused]] const ContextPtr & context)
+{
+    /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
+    /// `ReplicatedMergeTree` table in a mode that refuses them, a `SharedMergeTree` table sees only the parts in Keeper,
+    /// and a view looks for the data of its inner tables in the backup. For the others the flag is ignored.
+    ///
+    /// Master warns when it ignores the flag, naming the inner table that carries it. The warning is left out here:
+    /// it needs the inner tables of a `TimeSeries` table through `getTargetKinds`, which is not static on this
+    /// branch, and the answer below does not depend on it.
+    if (typeid_cast<const StorageMaterializedView *>(storage.get()) || typeid_cast<const StorageTimeSeries *>(storage.get()))
+        return false;
+
+    auto merge_tree = getMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
+    if (!merge_tree)
+        return false;
+
+    return std::dynamic_pointer_cast<StorageMergeTree>(merge_tree) != nullptr;
+}
+
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)
+{
+    if (storage)
+        return isDataOnBackupMetadataOnlyStoragePolicy(storage, context);
+
+    const auto * create_query = create_table_query ? create_table_query->as<ASTCreateQuery>() : nullptr;
+    return create_query && isCreatedOnBackupMetadataOnlyStoragePolicy(*create_query, context);
+}
+
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
+{
+    const auto * storage = create_query.storage;
+    if (!storage || !storage->engine || !storage->settings)
+        return false;
+
+    /// Only an explicit `storage_policy` matters: a read-only policy can't be the default one.
+    const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
+    if (!policy_name)
+        return false;
+
+    /// Only an engine of the `MergeTree` family keeps its data on a storage policy, see
+    /// `isDataOnBackupMetadataOnlyStoragePolicy`. `storage_policy` is a builtin setting of the `Log` family too, so what
+    /// identifies the family is the settings the engine declares, not that it declares this one. An unknown engine is
+    /// reported by `CREATE`.
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(storage->engine->name);
+    if (it == storages.end() || it->second.features.has_builtin_setting_fn != MergeTreeSettings::hasBuiltin)
+        return false;
+
+    /// Only the plain family reopens the parts it finds on the storage: the replicated and shared engines are
+    /// registered with `supports_replication`.
+    if (it->second.features.supports_replication)
+        return false;
+
+    auto policy = context->tryGetStoragePolicy(policy_name->safeGet<String>());
+    return policy && policy->isBackupMetadataOnly();
 }
 
 }

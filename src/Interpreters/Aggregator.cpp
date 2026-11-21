@@ -34,6 +34,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/JSONBuilder.h>
@@ -95,6 +96,12 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char aggregator_merge_collect_states_throw[];
 }
 
 }
@@ -115,6 +122,21 @@ bool worthConvertToTwoLevel(
     // params.group_by_two_level_threshold will be equal to 0 if we have only one thread to execute aggregation (refer to AggregatingStep::transformPipeline).
     return (group_by_two_level_threshold && result_size >= group_by_two_level_threshold)
         || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
+}
+
+/// The row capacity of each chunk that `convertToBlockImpl` emits. +1 for `nullKeyData`: if the table
+/// doesn't have it, that's not a problem, just memory for one excessive row is preallocated.
+/// A non-zero `max_rows_per_block` lowers the `max_block_size` bound so that a table smaller than
+/// one block can still be emitted as several chunks.
+size_t convertedBlockSize(size_t table_size, size_t max_block_size, size_t max_rows_per_block, bool return_single_block)
+{
+    if (return_single_block)
+        return table_size + 1;
+
+    if (max_rows_per_block)
+        max_block_size = std::min(max_block_size, max_rows_per_block);
+
+    return std::min(max_block_size, table_size) + 1;
 }
 
 void initDataVariantsWithSizeHint(
@@ -401,7 +423,8 @@ Aggregator::Params::Params(
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
-    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+    bool use_aggregation_memory_tracker_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -427,6 +450,7 @@ Aggregator::Params::Params(
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
+    , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -1163,7 +1187,7 @@ void Aggregator::executeImpl(
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+                && (bytesForPrefetch(method.data) > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2365,7 +2389,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
+    Int64 result_size_bytes = use_own_tracker && params.use_aggregation_memory_tracker
+        ? memory_tracker->get()
+        : current_memory_usage - memory_usage_before_aggregation;
 
     if (adaptive && !adaptive->isBaseline())
     {
@@ -3167,11 +3193,12 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
     {
         if (dst_places.empty())
             return;
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->mergeAndDestroyBatch(
-                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
-        dst_places.clear();
-        src_places.clear();
+        /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
+        SCOPE_EXIT({
+            dst_places.clear();
+            src_places.clear();
+        });
+        mergeAndDestroyDetachedBatch(dst_places, src_places, arena, is_cancelled, /*skip_compiled=*/ false);
     };
 
     /// The NULL key of the single-key nullable methods lives in a dedicated slot outside the cells,
@@ -3209,98 +3236,113 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
 
     const bool owns_null_slot = partition_index == 0;
 
-    for (auto * source : sources)
+    try
     {
-        if (is_cancelled.load(std::memory_order_seq_cst))
-            return;
-
-        auto & src = getDataVariant<Method>(*source).data;
-
-        if (owns_null_slot)
-            merge_null_slot(src);
-
-        if constexpr (requires { src.begin() != src.end(); })
+        for (auto * source : sources)
         {
-            static constexpr size_t prefetch_batch_size = 16;
-            using CellPtr = decltype(&*src.begin());
-            std::array<std::pair<CellPtr, size_t>, prefetch_batch_size> batch;
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                return;
 
-            auto it = src.begin();
-            const auto end = src.end();
-            while (it != end)
-            {
-                size_t batch_size = 0;
-                for (; it != end && batch_size < prefetch_batch_size; ++it)
-                {
-                    const size_t hash_value = it.getHash();
-                    if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
-                        continue;
-                    batch[batch_size++] = {&*it, hash_value};
-                }
-
-                if (params.enable_prefetch)
-                {
-                    for (size_t i = 0; i < batch_size; ++i)
-                        dst_method.data.prefetchByHash(batch[i].second);
-                }
-
-                for (size_t i = 0; i < batch_size; ++i)
-                    merge_cell(
-                        std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
-                        batch[i].first->getMapped(),
-                        batch[i].second);
-            }
-        }
-        else if constexpr (requires { src.emptyStringSlot(); })
-        {
-            /// A string table dispatches keys over size-class sub-tables and has no unified cell
-            /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
-            /// so it belongs to partition 0 like the NULL key.
-            auto & dst_table = dst_method.data;
+            auto & src = getDataVariant<Method>(*source).data;
 
             if (owns_null_slot)
+                merge_null_slot(src);
+
+            if constexpr (requires { src.begin() != src.end(); })
             {
-                auto & src_slot = src.emptyStringSlot();
-                if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
-                {
-                    auto & dst_slot = dst_table.emptyStringSlot();
-                    typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
-                    bool inserted = false;
+                static constexpr size_t prefetch_batch_size = 16;
+                using CellPtr = decltype(&*src.begin());
+                std::array<std::pair<CellPtr, size_t>, prefetch_batch_size> batch;
 
-                    /// The empty-string slot ignores the key argument.
-                    dst_slot.emplace(0, slot_it, inserted, 0);
-                    adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
-                }
-            }
-
-            std::decay_t<decltype(src)>::forEachSubMapPair(
-                src,
-                dst_table,
-                [&](auto & src_sub, auto & dst_sub)
+                auto it = src.begin();
+                const auto end = src.end();
+                while (it != end)
                 {
-                    for (auto it = src_sub.begin(); it != src_sub.end(); ++it)
+                    size_t batch_size = 0;
+                    for (; it != end && batch_size < prefetch_batch_size; ++it)
                     {
                         const size_t hash_value = it.getHash();
                         if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                             continue;
-
-                        AggregateDataPtr & src_data = it->getMapped();
-                        if (!src_data)
-                            continue;
-
-                        typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
-                        bool inserted = false;
-                        dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
-                        adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                        batch[batch_size++] = {&*it, hash_value};
                     }
-                });
-        }
-        else
-        {
-            static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
-        }
 
-        flush_merges();
+                    if (params.enable_prefetch)
+                    {
+                        for (size_t i = 0; i < batch_size; ++i)
+                            dst_method.data.prefetchByHash(batch[i].second);
+                    }
+
+                    for (size_t i = 0; i < batch_size; ++i)
+                        merge_cell(
+                            std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
+                            batch[i].first->getMapped(),
+                            batch[i].second);
+                }
+            }
+            else if constexpr (requires { src.emptyStringSlot(); })
+            {
+                /// A string table dispatches keys over size-class sub-tables and has no unified cell
+                /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
+                /// so it belongs to partition 0 like the NULL key.
+                auto & dst_table = dst_method.data;
+
+                if (owns_null_slot)
+                {
+                    auto & src_slot = src.emptyStringSlot();
+                    if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
+                    {
+                        auto & dst_slot = dst_table.emptyStringSlot();
+                        typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
+                        bool inserted = false;
+
+                        /// The empty-string slot ignores the key argument.
+                        dst_slot.emplace(0, slot_it, inserted, 0);
+                        adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
+                    }
+                }
+
+                std::decay_t<decltype(src)>::forEachSubMapPair(
+                    src,
+                    dst_table,
+                    [&](auto & src_sub, auto & dst_sub)
+                    {
+                        for (auto it = src_sub.begin(); it != src_sub.end(); ++it)
+                        {
+                            const size_t hash_value = it.getHash();
+                            if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
+                                continue;
+
+                            AggregateDataPtr & src_data = it->getMapped();
+                            if (!src_data)
+                                continue;
+
+                            typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
+                            bool inserted = false;
+                            dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
+                            adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                        }
+                    });
+            }
+            else
+            {
+                static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
+            }
+
+            if (!src_places.empty())
+                fiu_do_on(FailPoints::aggregator_merge_collect_states_throw,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while collecting the states of a merge");
+                });
+
+            flush_merges();
+        }
+    }
+    catch (...)
+    {
+        /// The queued states are detached from their source tables and not merged yet.
+        destroyDetachedSources(src_places, /*first_function=*/ 0, /*skip_compiled=*/ false);
+        throw;
     }
 }
 
@@ -3334,7 +3376,7 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block) const
 {
     if (data.empty())
     {
@@ -3344,7 +3386,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & 
         return result;
     }
 
-    Chunks res = convertToBlockImplKeysOnly(method, data, aggregates_pools, final, return_single_block);
+    Chunks res = convertToBlockImplKeysOnly(method, data, aggregates_pools, final, return_single_block, max_rows_per_block);
 
     /// In order to release memory early.
     data.clearAndShrink();
@@ -3355,7 +3397,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & 
 template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block) const
 {
     if (data.empty())
     {
@@ -3368,8 +3410,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
 
     if (is_simple_count)
     {
-        /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
-        const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+        const size_t max_block_size = convertedBlockSize(data.size(), params.max_block_size, max_rows_per_block, return_single_block);
 
         std::optional<OutputBlockColumns> out_cols;
         std::optional<Sizes> shuffled_key_sizes;
@@ -3483,11 +3524,11 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
 #if USE_EMBEDDED_COMPILER
         use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
 #endif
-        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, return_single_block);
+        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, return_single_block, max_rows_per_block);
     }
     else
     {
-        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block);
+        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block, max_rows_per_block);
     }
 
     /// In order to release memory early.
@@ -3661,10 +3702,9 @@ Chunk Aggregator::insertResultsIntoColumns(
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 Chunks Aggregator::convertToBlockImplKeysOnly(
-    Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const
+    Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block, size_t max_rows_per_block) const
 {
-    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
-    const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+    const size_t max_block_size = convertedBlockSize(data.size(), params.max_block_size, max_rows_per_block, return_single_block);
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
@@ -3730,10 +3770,10 @@ Chunks Aggregator::convertToBlockImplFinal(
     Arena * arena,
     Arenas & aggregates_pools,
     bool use_compiled_functions [[maybe_unused]],
-    bool return_single_block) const
+    bool return_single_block,
+    size_t max_rows_per_block) const
 {
-    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
-    const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+    const size_t max_block_size = convertedBlockSize(data.size(), params.max_block_size, max_rows_per_block, return_single_block);
     const bool final = true;
 
     std::optional<OutputBlockColumns> out_cols;
@@ -3811,10 +3851,9 @@ Chunks Aggregator::convertToBlockImplFinal(
 
 template <typename Method, typename Table>
 Chunks NO_INLINE
-Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t, bool return_single_block) const
+Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t, bool return_single_block, size_t max_rows_per_block) const
 {
-    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
-    const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+    const size_t max_block_size = convertedBlockSize(data.size(), params.max_block_size, max_rows_per_block, return_single_block);
     const bool final = false;
     Chunks res_chunks;
 
@@ -3989,7 +4028,7 @@ Aggregator::AggregatedChunk Aggregator::prepareChunkAndFillWithoutKey(Aggregated
 
 template <bool return_single_block>
 std::conditional_t<return_single_block, Aggregator::AggregatedChunk, Aggregator::AggregatedChunks>
-Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
+Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block) const
 {
     Chunks res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
@@ -3997,7 +4036,7 @@ Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variant
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
     { \
         res_variant = convertToBlockImpl( \
-            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows, return_single_block); \
+            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows, return_single_block, max_rows_per_block); \
     }
 
     if (false) {} // NOLINT
@@ -4092,7 +4131,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 }
 
 
-Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final) const
+Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block) const
 {
     LOG_TRACE(log, "Converting aggregated data to chunks");
 
@@ -4111,7 +4150,7 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            chunks.splice(chunks.end(), prepareChunkAndFillSingleLevel<false>(data_variants, final));
+            chunks.splice(chunks.end(), prepareChunkAndFillSingleLevel<false>(data_variants, final, max_rows_per_block));
         else
             chunks.splice(chunks.end(), prepareChunksAndFillTwoLevel(data_variants, final));
     }
@@ -4140,6 +4179,16 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
         ReadableSize(static_cast<double>(bytes) / elapsed_seconds));
 
     return chunks;
+}
+
+size_t Aggregator::singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams)
+{
+    static constexpr size_t MIN_ROWS_PER_CHUNK{512};
+    const size_t num_chunks = std::clamp<size_t>(rows / MIN_ROWS_PER_CHUNK, 1, std::max<size_t>(output_streams, 1));
+    if (num_chunks <= 1)
+        return 0;
+
+    return (rows + num_chunks - 1) / num_chunks;
 }
 
 
@@ -4270,42 +4319,99 @@ void NO_INLINE Aggregator::mergeDataImpl(
         src = nullptr;
     };
 
-    if (parallel_worker)
+    try
     {
-        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
-            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
-    }
-    else
-    {
-        if (prefetch)
-            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        if (parallel_worker)
+        {
+            if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+                std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+        }
         else
-            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-        table_src.clearAndShrink();
+        {
+            if (prefetch)
+                table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+            else
+                table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+            table_src.clearAndShrink();
+        }
+
+        if (!src_places.empty())
+            fiu_do_on(FailPoints::aggregator_merge_collect_states_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while collecting the states of a merge");
+            });
+    }
+    catch (...)
+    {
+        /// The queued states are detached from `table_src` and not merged yet.
+        destroyDetachedSources(src_places, /*first_function=*/ 0, /*skip_compiled=*/ false);
+        throw;
     }
 
+    /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
         callJITFunction(compiled_functions.merge_aggregate_states_function, dst_places.data(), src_places.data(), dst_places.size());
 
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            if (!is_aggregate_function_compiled[i])
-                aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
-        }
-
+        mergeAndDestroyDetachedBatch(dst_places, src_places, arena, is_cancelled, /*skip_compiled=*/ true);
         return;
     }
 #endif
 
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    mergeAndDestroyDetachedBatch(dst_places, src_places, arena, is_cancelled, /*skip_compiled=*/ false);
+}
+
+void Aggregator::mergeAndDestroyDetachedBatch(
+    PaddedPODArray<AggregateDataPtr> & dst_places,
+    PaddedPODArray<AggregateDataPtr> & src_places,
+    Arena * arena,
+    std::atomic<bool> & is_cancelled,
+    [[maybe_unused]] bool skip_compiled) const
+{
+    auto is_skipped = [&]([[maybe_unused]] size_t i)
     {
-        aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+#if USE_EMBEDDED_COMPILER
+        return skip_compiled && is_aggregate_function_compiled[i];
+#else
+        return false;
+#endif
+    };
+
+    size_t i = 0;
+    try
+    {
+        for (; i < params.aggregates_size; ++i)
+        {
+            if (is_skipped(i))
+                continue;
+
+            aggregate_functions[i]->mergeAndDestroyBatch(
+                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+        }
+    }
+    catch (...)
+    {
+        /// The source states are detached from their hash table, so nobody else will destroy them. The function
+        /// that threw has destroyed its own states of the batch; the states of the following functions are
+        /// untouched and are destroyed here.
+        destroyDetachedSources(src_places, i + 1, skip_compiled);
+        throw;
+    }
+}
+
+void Aggregator::destroyDetachedSources(
+    PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, [[maybe_unused]] bool skip_compiled) const noexcept
+{
+    for (size_t k = first_function; k < params.aggregates_size; ++k)
+    {
+#if USE_EMBEDDED_COMPILER
+        if (skip_compiled && is_aggregate_function_compiled[k])
+            continue;
+#endif
+        aggregate_functions[k]->destroyBatch(0, src_places.size(), src_places.data(), offsets_of_aggregate_states[k]);
     }
 }
 

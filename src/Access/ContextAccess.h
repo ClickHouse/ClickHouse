@@ -156,6 +156,8 @@ private:
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
+    void findRowPoliciesOfInitialUserImpl(
+        std::shared_ptr<const EnabledRowPolicies> & row_policies, std::vector<String> & unknown_current_roles) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -217,6 +219,12 @@ private:
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
+    /// The subscription for changes of roles, which change the forwarded current roles of the initial user.
+    mutable scope_guard subscription_for_roles_of_initial_user_changes TSA_GUARDED_BY(mutex);
+    /// Forwarded current roles of the initial user which do not exist on this node. If not empty, reading tables is denied.
+    mutable std::vector<String> unknown_current_roles_of_initial_user TSA_GUARDED_BY(mutex);
+    /// Whether the last attempt to find the row policies of the initial user threw. If true, reading tables is denied.
+    mutable bool failed_to_find_row_policies_of_initial_user TSA_GUARDED_BY(mutex) = false;
 #if CLICKHOUSE_CLOUD
     mutable std::shared_ptr<const EnabledMaskingPolicies> enabled_masking_policies TSA_GUARDED_BY(mutex);
 #endif

@@ -25,6 +25,7 @@ protected:
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
+    bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
@@ -81,10 +82,13 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
+    bool hasObservableSideEffects() const override { return function->hasObservableSideEffects(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
+
+    bool isExpensive() const override { return function->isExpensive(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
@@ -136,6 +140,7 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
+    bool isExpensive() const override { return function->isExpensive(); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

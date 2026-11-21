@@ -17,6 +17,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -325,6 +326,18 @@ struct RuntimeHashStatisticsContext
     }
 };
 
+/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
+constexpr Float64 array_join_rows_multiplier = 100;
+
+static UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
+}
+
 static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
@@ -508,7 +521,32 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
+    const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+    const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step);
+    if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
+    {
+        /// A filter above the array join can read its output, which the statistics of the input do not describe.
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr);
+        if (stats.estimated_rows && *stats.estimated_rows != 0)
+        {
+            /// Such a filter leaves the row count unknown unless the input is empty.
+            if (filter)
+            {
+                stats.estimated_rows.reset();
+                stats.imprecise_estimate = true;
+            }
+            else
+                stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        }
+        if (expression_step)
+            remapColumnStats(stats.column_stats, expression_step->getExpression());
+        else
+            for (const auto & column : array_join_step->getColumns())
+                stats.column_stats.erase(column);
+        return stats;
+    }
+
+    if (expression_step)
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -769,6 +807,19 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
+/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
+/// allows it and the expression is not sensitive to how many times it is evaluated. Merging puts the
+/// expression into the join graph, where reordering can leave it computed twice from the raw inputs -
+/// once for the join key that decides matching and once for the output column - and can also evaluate
+/// it on rows the original join order would have discarded: a non-deterministic function then draws
+/// independently in the two places, so the returned rows can violate the query's own `JOIN ON`
+/// condition, a stateful function makes extra external calls or mutates per-query state, and `sleep`
+/// spends a different amount of time and accounts different profile events.
+static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
+{
+    return merge_expression_into_join && !isSensitiveToEvaluationCount(dag);
+}
+
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -782,7 +833,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (graph.context->optimization_settings.merge_expression_into_join)
+        else if (canMergeExpressionIntoJoinGraph(
+                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
         {
             join_node = node->children[0];
         }
@@ -893,7 +945,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
                 if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
+                    && (isPassthroughActions(expr->getExpression())
+                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
                 {
                     check = check->children[0];
                 }
@@ -1109,6 +1162,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
+    BitSet null_supplying_relations;
+    for (const auto & [relation, restriction] : query_graph_builder.join_kinds)
+        if (restriction.second != JoinKind::Inner)
+            null_supplying_relations.set(relation);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
 
@@ -1303,11 +1360,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
-            for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
+            /// NULL padding applies where the relation is joined alone; other type changes only after all predicates on original columns.
+            const bool is_last_step = entry_idx + 1 == sequence.size();
+            for (const auto & [relation, new_inputs] : query_graph_builder.type_changes)
             {
-                if (!rel_id.has_value())
+                const bool joined_alone = left_rels.getSingleBit() == relation || right_rels.getSingleBit() == relation;
+                if (!(null_supplying_relations.test(relation) ? joined_alone : is_last_step))
                     continue;
-                const auto & new_inputs = query_graph_builder.type_changes[rel_id.value()];
                 for (const auto * new_input : new_inputs)
                 {
                     const auto * input_node = trackInputColumn(new_input);
@@ -1538,7 +1597,8 @@ static void collectJoinGraphRelationHeaders(
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
         expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
+        && (isPassthroughActions(expression_step->getExpression())
+            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
     {
         effective = effective->children[0];
     }

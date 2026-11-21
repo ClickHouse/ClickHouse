@@ -346,16 +346,16 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
-        : ISource(pipeline_.getSharedHeader())
-        , executor(pipeline_)
+        : ISource(std::make_shared<const Block>(pipeline_.getSharedHeader()->cloneEmpty()))
+        , executor(std::in_place, pipeline_)
     {
         pipeline_.setConcurrencyControl(false);
     }
 
     explicit SourceFromQueryPipeline(BlockIO io)
-        : ISource(io.pipeline.getSharedHeader())
+        : ISource(std::make_shared<const Block>(io.pipeline.getSharedHeader()->cloneEmpty()))
         , io_holder(std::move(io))
-        , executor(io_holder->pipeline)
+        , executor(std::in_place, io_holder->pipeline)
     {
         io_holder->pipeline.setConcurrencyControl(false);
     }
@@ -370,7 +370,7 @@ public:
         try
         {
             Chunk chunk;
-            while (executor.pull(chunk))
+            while (executor->pull(chunk))
             {
                 if (chunk)
                     return chunk;
@@ -380,6 +380,7 @@ public:
         {
             if (io_holder)
             {
+                executor.reset();
                 io_holder->onException();
             }
             throw;
@@ -387,6 +388,7 @@ public:
 
         if (io_holder)
         {
+            executor.reset();
             io_holder->onFinish();
         }
         return {};
@@ -400,7 +402,9 @@ private:
     /// * We need to run BlockIO::onFinish or BlockIO::onException.
     std::optional<BlockIO> io_holder;
 
-    TExecutor executor;
+    /// Reset before `io_holder` tears its pipeline down: the executor shares the pipeline's processors,
+    /// and they must not outlive the table locks that `onFinish` / `onException` release.
+    std::optional<TExecutor> executor;
 };
 
 Pipe getSourcePipe(QueryPipeline & pipeline, const bool use_async_executor)

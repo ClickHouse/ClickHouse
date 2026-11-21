@@ -10,6 +10,7 @@
 #include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -417,6 +418,8 @@ struct ExpressionFilters
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
     /// collapse), NaN constants, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
+    /// Index in `opaque_filters` of the first `equals` on this expression; set only when pruning is disabled.
+    std::optional<size_t> first_equals_position;
 };
 
 using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<ExpressionFilters>;
@@ -484,6 +487,18 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     }
 
     return converted;
+}
+
+/// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
+static bool isLowerScaleTimePoint(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get());
+    if (!to_date_time64)
+        return false;
+    if (isDateTime(from))
+        return true;
+    const auto * from_date_time64 = typeid_cast<const DataTypeDateTime64 *>(from.get());
+    return from_date_time64 && from_date_time64->getScale() < to_date_time64->getScale();
 }
 
 enum class BoundaryCheckResult : uint8_t
@@ -881,8 +896,8 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 }
 
 /// Insert a new comparison filter for `expression` into `filter_map`.
-/// When `enable_pruning` is true, performs type conversion, boundary folding, and
-/// comparison against existing filters for the same expression.
+/// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
+/// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 static AddComparisonFilterResult addComparisonFilter(
@@ -892,8 +907,10 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
-    /// Pruning disabled — just store the filter without analysis.
-    if (!enable_pruning)
+    /// A comparison with a nullable result is ambiguous under NULL and must not be pruned or folded;
+    /// keep it as-is. Test the comparison node's result type, not the raw operand type, so nested and
+    /// carrier-hidden nullability (e.g. `LowCardinality(Nullable)`, `Dynamic`, `Variant`) is caught.
+    if (isNullableOrLowCardinalityNullable(new_filter.original_node->getResultType()))
     {
         filter_map[expression].opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
@@ -901,14 +918,16 @@ static AddComparisonFilterResult addComparisonFilter(
 
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
-    chassert(!raw_type->isNullable());
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
-    if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
-        return *result;
+    if (enable_pruning)
+    {
+        if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
+            return *result;
+    }
 
     auto & filters = filter_map[expression];
 
@@ -921,6 +940,24 @@ static AddComparisonFilterResult addComparisonFilter(
     {
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
+    }
+
+    if (!enable_pruning)
+    {
+        auto result = AddComparisonFilterResult::ADDED;
+        if (new_filter.function == ComparisonFunction::EQUALS)
+        {
+            if (filters.first_equals_position)
+            {
+                if (compareComparisonFilters(filters.opaque_filters[*filters.first_equals_position], new_filter)
+                    == ValueComparisonResult::ALWAYS_FALSE)
+                    result = AddComparisonFilterResult::ALWAYS_FALSE;
+            }
+            else
+                filters.first_equals_position = filters.opaque_filters.size();
+        }
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return result;
     }
 
     /// Step 3: compare against the existing equals/range filters.
@@ -1807,6 +1844,31 @@ public:
         return result;
     }
 
+    /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
+    TableExpressionNodes preserved_join_tables;
+
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        const auto * join_node = parent->as<JoinNode>();
+        if (!join_node || child != join_node->getJoinExpression())
+            return true;
+
+        TableExpressionNodes tables;
+        /// semi join keeps only matched rows
+        if (join_node->getStrictness() != JoinStrictness::Semi)
+        {
+            if (isLeftOrFull(join_node->getKind()))
+                tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
+            if (isRightOrFull(join_node->getKind()))
+                tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+        }
+
+        std::swap(preserved_join_tables, tables);
+        visit(child);
+        std::swap(preserved_join_tables, tables);
+        return false;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -1881,7 +1943,7 @@ private:
     /** Optimize AND chains by analyzing comparison conditions on the same expression.
       * This method performs two things in a single pass:
       *
-      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled):
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled, except an always-false `equals` pair):
       *     Given an AND expression where the same column appears in multiple comparisons
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
@@ -1961,7 +2023,7 @@ private:
                 expression = lhs;
             }
 
-            /// Both sides are non-constant — keep as-is.
+            /// Both sides are non-constant (or the constant is NULL-valued) — keep as-is.
             if (!constant)
             {
                 all_operands.emplace_back(argument_index, argument);
@@ -2152,9 +2214,10 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
-    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
-    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
-    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    /// If one side is a constant the comparison converts once to the other side's type (a `String`/`FixedString`
+    /// vs a non-string, as `executeWithConstString` does, or a `DateTime`/lower-scale `DateTime64` vs a `DateTime64`,
+    /// widened exactly), convert the literal to that type and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
     {
         const auto * lhs_constant = lhs->as<ConstantNode>();
         const auto * rhs_constant = rhs->as<ConstantNode>();
@@ -2165,12 +2228,16 @@ private:
         const auto & other_side = lhs_constant ? rhs : lhs;
         const auto constant_type = removeLowCardinality(constant_side->getResultType());
         const auto other_type = removeLowCardinality(other_side->getResultType());
-        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+        if (other_type->isNullable())
             return {};
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
-        auto converted = tryConvertFieldToType(
-            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        Field converted;
+        if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
+            converted = tryConvertFieldToType(
+                constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        else if (isLowerScaleTimePoint(constant_type, other_type))
+            converted = tryConvertFieldToType(constant_node->getValue(), *other_type, constant_type.get(), {}, /*strict=*/true);
         if (converted.isNull())
             return {};
 
@@ -2306,10 +2373,10 @@ private:
             /// Only comparisons within one order domain join transitive chains; the seeding above
             /// is domain-agnostic (it converts constants to the expression's own type).
             auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
-            /// A const string compares after a one-time conversion to the other side's type (see
-            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            /// A constant of another type may compare after a one-time conversion to the other side's
+            /// type; mirror it so the edge carries a typed constant instead.
             if (!comparison_domain.isValid())
-                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
+                comparison_domain = tryNormalizeConstEdge(function_name, lhs, rhs);
             if (!comparison_domain.isValid())
                 continue;
 
@@ -2473,7 +2540,8 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE
+                                     && !std::ranges::contains(preserved_join_tables, getExpressionSource(left.node).first))
                             {
                                 if (left.crosses_source)
                                 {

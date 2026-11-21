@@ -428,6 +428,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
     extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -487,6 +490,10 @@ namespace ServerSetting
     extern const ServerSettingsString logger_shutdown_level;
     extern const ServerSettingsString openssl_server_certificate_file;
     extern const ServerSettingsString openssl_server_private_key_file;
+    extern const ServerSettingsString openssl_server_ca_config;
+    extern const ServerSettingsString openssl_client_certificate_file;
+    extern const ServerSettingsString openssl_client_private_key_file;
+    extern const ServerSettingsString openssl_client_ca_config;
     extern const ServerSettingsString distributed_ddl_path;
     extern const ServerSettingsString distributed_ddl_replicas_path;
     extern const ServerSettingsInt32 distributed_ddl_pool_size;
@@ -1132,7 +1139,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -1166,7 +1173,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
@@ -1997,6 +2004,11 @@ try
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
+
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
@@ -2668,26 +2680,25 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = server_settings[ServerSetting::openssl_server_certificate_file];
-    std::string key_path = server_settings[ServerSetting::openssl_server_private_key_file];
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    auto watch_path = [&](const std::string & file_path)
+    {
+        if (!file_path.empty())
+            extra_paths.emplace_back(file_path);
+    };
+    watch_path(server_settings[ServerSetting::openssl_server_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_ca_config]);
+    watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);
     for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
+        for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
+            watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
@@ -3049,6 +3060,11 @@ try
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
                 new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);

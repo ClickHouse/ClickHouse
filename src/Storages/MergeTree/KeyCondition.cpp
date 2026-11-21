@@ -5,6 +5,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -1473,6 +1475,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -4032,6 +4035,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
                 && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+            /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+            /// a scale-0 decimal compares the same and is not stepped.
+            if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+                && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+            {
+                if (const_value.getType() == Field::Types::Int64)
+                    const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+                else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+                    const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+            }
+
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
                 if (const_value.getType() == Field::Types::String)
@@ -4083,6 +4097,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
                             if (!fixed_key || fixed_key->getN() < const_bytes)
                                 return false;
+                        }
+
+                        /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
+                        /// constant instead of throwing, so the index must do the same instead of converting.
+                        /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
+                        if (!validate_enum_literals_in_operators && isUnknownEnumElement(*key_expr_type_not_null, const_value))
+                        {
+                            if (key_expr_type_is_nullable)
+                                return false;
+
+                            if (func_name == "equals")
+                            {
+                                out.function = RPNElement::ALWAYS_FALSE;
+                                return true;
+                            }
+                            if (func_name == "notEquals")
+                            {
+                                out.function = RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                            return false;
                         }
 
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
@@ -5175,6 +5210,14 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    if (functions.empty())
+        return key_range;
+
+    /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
+    /// so no transformed value would remain to compare against an atom in the function's result domain.
+    if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
+        return {};
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -5206,17 +5249,21 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// If we apply function to open interval, we can get empty intervals in result.
             /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
             /// To avoid this we make range left and right included.
-            /// Any function that treats NULL specially is not monotonic.
-            /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+            /// A NULL bound is an -inf/+inf stand-in and is left as is. A function that returns NULL for a non-NULL
+            /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
             if (!key_range.left.isNull())
             {
                 key_range.left = applyFunction(func, current_type, key_range.left);
+                if (key_range.left.isNull())
+                    return {};
                 key_range.left_included = true;
             }
 
             if (!key_range.right.isNull())
             {
                 key_range.right = applyFunction(func, current_type, key_range.right);
+                if (key_range.right.isNull())
+                    return {};
                 key_range.right_included = true;
             }
         }
@@ -5747,9 +5794,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t element_idx = 0;
-    for (const auto & element : rpn)
+    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
+    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
+    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
     {
+        const auto & element = rpn[element_idx];
+
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -6155,10 +6205,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
         if (update_partial_disjunction_result_fn)
-        {
             update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
     }
 
     if (rpn_stack.size() != 1)
@@ -6217,52 +6264,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
+                /// the helper returns the range unchanged.
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    sparse_hyperrectangle[sparse_pos],
+                    element.monotonic_functions_chain,
+                    sparse_data_types[sparse_pos],
+                    single_point);
 
-                /// The case when the column is wrapped in a chain of possibly monotonic functions.
-                if (!element.monotonic_functions_chain.empty())
+                if (!new_range)
                 {
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
-                        single_point);
-
-                    if (!new_range)
-                    {
-                        /// Cannot determine monotonicity on this range – unknown.
-                        rpn_stack.emplace_back(true, true);
-                    }
-                    else
-                    {
-                        key_range = *new_range;
-
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
-
-                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                        /// analysis may incorrectly include NaN values.
-                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                        ///   so no comparison condition can be true.
-                        /// - If only right bound is NaN: the range extends into NaN territory,
-                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
-                        {
-                            intersects = false;
-                            contains = false;
-                        }
-                        else if (unlikely(key_range.right.isNaN()))
-                        {
-                            contains = false;
-                        }
-
-                        rpn_stack.emplace_back(intersects, !contains);
-                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
-                    }
+                    /// Cannot determine monotonicity on this range – unknown.
+                    rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
+                    const Range & key_range = *new_range;
+
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
@@ -6284,7 +6302,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
-
                 }
             }
 

@@ -234,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
             )
     return out
 
@@ -4398,7 +4398,18 @@ class ClickHouseCluster:
                         "Kill command failed during shutdown. {}".format(repr(e))
                     )
                     logging.debug("Trying to kill forcefully")
-                    run_and_check(self.base_cmd + ["kill"])
+
+                    def logging_compose_kill(**kwargs):
+                        if "exception" in kwargs:
+                            logging.info(
+                                "Got exception in docker compose kill: %s", kwargs["exception"]
+                            )
+
+                    # `kill` fails on a container that exits after it is listed as running; a retry lists
+                    # only the containers that are still running.
+                    retry(log_function=logging_compose_kill, retries=3, delay=3, jitter=2)(
+                        run_and_check, self.base_cmd + ["kill"]
+                    )
 
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
@@ -4451,9 +4462,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance:
+            if not sanitizer_assert_instance and not ignore_sanitizer:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r") as f:
+                with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -6153,7 +6164,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             deadline = start_time + timeout
@@ -6166,7 +6177,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)

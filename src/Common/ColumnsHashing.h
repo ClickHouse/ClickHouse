@@ -528,7 +528,7 @@ struct HashMethodSerialized
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        if (min_bytes_for_prefetch != 0 && bytesForPrefetch(data) <= min_bytes_for_prefetch)
         {
             can_precompute_hashes = false;
             return;

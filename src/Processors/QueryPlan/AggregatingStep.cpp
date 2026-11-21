@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -69,6 +70,11 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_aggregation_memory_tracker;
 }
 
 namespace ErrorCodes
@@ -563,6 +569,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             });
         }
 
+        /// The per-set results are spread over `max_threads` streams below, so split a small single-level
+        /// result of each set for that width as for an ordinary aggregation.
+        const size_t grouping_sets_output_streams = should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads;
+
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
             chassert(streams * grouping_sets_size == ports.size());
@@ -586,7 +596,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                             new_temporary_data_merge_threads,
                             should_produce_results_in_order_of_bucket_number,
                             skip_merging,
-                            nullptr);
+                            nullptr,
+                            grouping_sets_output_streams);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
@@ -597,7 +608,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 else
                 {
                     auto aggregation_for_set
-                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater);
+                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater, grouping_sets_output_streams);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -859,7 +870,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
                     skip_merging,
-                    dataflow_cache_updater);
+                    dataflow_cache_updater,
+                    streams_after_aggregation);
             });
 
         pipeline.resize(streams_after_aggregation, false, settings.min_outstreams_per_resize_after_split);
@@ -869,7 +881,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     else
     {
         pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater, streams_after_aggregation); });
 
         pipeline.resize(streams_after_aggregation);
 
@@ -1322,6 +1334,34 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    const auto & input_header = *ctx.input_headers.front();
+    /// The serialized step never merges the states only (it is deserialized with `only_merge = false`),
+    /// so the arguments of the aggregates must be present in its input.
+    checkDeserializedAggregateOutputNames(keys, aggregates);
+    checkDeserializedAggregateArguments(aggregates, input_header);
+
+    /// `AggregatingInOrderTransform` takes the first columns of `group_by_sort_description` as the ones the input
+    /// is sorted by and looks them up among the keys of its output, and `less` compares the key columns at those positions.
+    if (sort_description_for_merging.size() > group_by_sort_description.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The sort description for merging of a deserialized in-order aggregation has {} columns, "
+            "more than the {} columns of the `GROUP BY` sort description",
+            sort_description_for_merging.size(), group_by_sort_description.size());
+    for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
+        if (sort_description_for_merging[i] != group_by_sort_description[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The sort description for merging of a deserialized in-order aggregation is not a prefix of "
+                "the `GROUP BY` sort description: {} at position {} instead of {}",
+                sort_description_for_merging[i].column_name, i, group_by_sort_description[i].column_name);
+    if (!group_by_sort_description.empty())
+    {
+        NameSet key_names(keys.begin(), keys.end());
+        for (const auto & column : group_by_sort_description)
+            if (!key_names.contains(column.column_name))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The `GROUP BY` sort description of a deserialized in-order aggregation refers to {}, which is not a key",
+                    column.column_name);
+    }
 
     UInt64 stats_key = 0;
     if (has_stats_key)
@@ -1360,7 +1400,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
+        ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

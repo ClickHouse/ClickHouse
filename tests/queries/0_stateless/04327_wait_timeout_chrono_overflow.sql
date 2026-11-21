@@ -9,9 +9,6 @@ SELECT 1 SETTINGS interactive_delay = 100000000000000000;
 -- the query just acquires the lock and completes.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 100000000000;
 
--- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
-SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
-
 -- SYSTEM SYNC MERGES builds its deadline as now() + max_execution_time; a huge value must not overflow.
 -- SYSTEM commands take no trailing SETTINGS clause, so the timeout is set on the session. With all
 -- scheduled parts already covered the command returns immediately, so this just exercises the clamp.

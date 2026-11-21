@@ -365,6 +365,24 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
         conjuncts.push_back(node);
 }
 
+/// True if evaluating the condition may throw on rows that a preceding condition rejects.
+/// Uses the same predicate as `tryBuildPrewhereSteps` (MergeTreeSplitPrewhereIntoReadSteps.cpp),
+/// which splits such a condition into a step that runs on the rows filtered by the previous step.
+static bool conditionMayThrow(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        DataTypesWithConstInfo argument_types;
+        argument_types.reserve(node->children.size());
+        for (const auto * child : node->children)
+            argument_types.push_back({child->result_type, child->column != nullptr});
+        if (node->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+            return true;
+    }
+
+    return std::ranges::any_of(node->children, [](const auto * child) { return conditionMayThrow(child); });
+}
+
 /// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
 /// Algorithm:
 ///   1. Flatten the top-level AND chain into individual conjuncts with `collectConjuncts`.
@@ -373,6 +391,8 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
 ///      (i.e., eligible to be moved to PREWHERE).
 ///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
 ///      conditions on the same column set are scored together (better selectivity estimate).
+///      Conjuncts over physical columns where a condition that may throw follows another condition
+///      are grouped by these physical columns instead, so that the throwing one is not moved ahead.
 ///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
 ///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
 ///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
@@ -386,32 +406,29 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         RPNBuilderTreeNode node;
         NameSet columns;
-        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-        /// Used for grouping: conditions on subcolumns of the same storage column
-        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        /// `columns` resolved to the physical columns they are read from (subcolumn suffix stripped).
         NameSet storage_columns;
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
         bool viable = false;
+        bool expensive = false;
     };
 
     std::vector<ConjunctInfo> infos;
     infos.reserve(conjuncts.size());
 
+    const auto & storage_columns_description = storage_metadata->getColumns();
     for (const auto & conjunct : conjuncts)
     {
-        ConjunctInfo info{conjunct, {}, {}, false, true, false};
+        ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
 
-        /// Resolve each column to its physical storage name so that subcolumns
-        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
-        const auto & storage_columns_description = storage_metadata->getColumns();
-        for (const auto & col : info.columns)
+        for (const auto & column : info.columns)
         {
-            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
+            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column))
                 info.storage_columns.insert(resolved->getNameInStorage());
             else
-                info.storage_columns.insert(col);
+                info.storage_columns.insert(column);
         }
 
         /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
@@ -428,20 +445,52 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Do not move conditions involving all queried columns.
             && info.columns.size() < queried_columns.size();
 
+        info.expensive = isExpensiveExpression(conjunct);
+
         infos.push_back(std::move(info));
     }
 
-    /// Group viable conjuncts by their required storage column set so same-column conditions
+    /// Group viable conjuncts by their required column set so same-column conditions
     /// are treated as a single unit and their combined selectivity can be estimated.
-    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
-    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
-    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     /// Non-viable conjuncts stay as individual Conditions.
+    /// 'expensive' conjuncts each get their own group.
+    ///
+    /// A condition that may throw is guarded by the conditions written before it (`and` evaluates it only on
+    /// the rows they pass), but separate groups are reordered by cost. So when such a condition reads the same
+    /// physical columns as an earlier condition, e.g. `t.safe != '' AND toUInt64(t.val) > 50` on subcolumns
+    /// of one `Tuple`, all conditions over these physical columns are grouped by them instead of by the
+    /// exact columns. The group keeps the written order, and `tryBuildPrewhereSteps` splits it into steps
+    /// so that the throwing condition runs only on the rows the guard passes.
     ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
+    std::vector<NameSet> storage_columns_guarding_throwing_condition;
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        /// The AST-based optimization (the old analyzer with `query_plan_optimize_prewhere` disabled) has no DAG nodes.
+        const auto * dag_node = infos[i].node.getDAGNode();
+        if (!infos[i].viable || infos[i].expensive || !dag_node || !conditionMayThrow(dag_node))
+            continue;
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (infos[j].viable && !infos[j].expensive && infos[j].storage_columns == infos[i].storage_columns)
+            {
+                storage_columns_guarding_throwing_condition.push_back(infos[i].storage_columns);
+                break;
+            }
+        }
+    }
+
+    auto group_key = [&](const ConjunctInfo & info) -> const NameSet &
+    {
+        if (std::ranges::find(storage_columns_guarding_throwing_condition, info.storage_columns)
+            != storage_columns_guarding_throwing_condition.end())
+            return info.storage_columns;
+        return info.columns;
+    };
+
     struct Group
     {
-        NameSet storage_columns;
+        NameSet columns;
         std::vector<size_t> indices;
     };
     std::vector<Group> groups;
@@ -449,20 +498,30 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].storage_columns == cols)
+            if (groups[g].columns == cols && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
+
+    /// Index of the group of each viable conjunct.
+    std::vector<size_t> group_of(infos.size());
 
     for (size_t i = 0; i < infos.size(); ++i)
     {
         if (!infos[i].viable)
             continue;
-        auto g = find_group_idx(infos[i].storage_columns);
+        const auto & key = group_key(infos[i]);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key);
         if (!g.has_value())
-            groups.push_back({infos[i].storage_columns, {i}});
+        {
+            group_of[i] = groups.size();
+            groups.push_back({key, {i}});
+        }
         else
+        {
+            group_of[i] = *g;
             groups[*g].indices.push_back(i);
+        }
     }
 
     /// Emit Conditions in the original AND-chain order:
@@ -491,8 +550,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         else
         {
             /// Emit the whole column-set group at the position of the first conjunct.
-            auto g_idx = find_group_idx(info.storage_columns);
-            const auto & group = groups[*g_idx];
+            const auto & group = groups[group_of[i]];
 
             for (size_t idx : group.indices)
                 emitted[idx] = true;
@@ -516,6 +574,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.columns_size = getColumnsSize(group_columns);
             cond.viable = true;
             cond.good = group_good;
+            cond.expensive = info.expensive;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -685,6 +744,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
         if (!it->viable)
+            break;
+
+        /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
+        if (it->expensive && std::ranges::any_of(where_conditions, [](const Condition & cond) { return !cond.expensive; }))
             break;
 
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
@@ -876,6 +939,25 @@ NameSet MergeTreeWhereOptimizer::determineArrayJoinedNames(const ASTSelectQuery 
         array_joined_names.emplace(ast->getAliasOrColumnName());
 
     return array_joined_names;
+}
+
+bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
+        return true;
+
+    size_t arguments_size = function_node.getArgumentsSize();
+    for (size_t i = 0; i < arguments_size; ++i)
+    {
+        if (isExpensiveExpression(function_node.getArgumentAt(i)))
+            return true;
+    }
+
+    return false;
 }
 
 }

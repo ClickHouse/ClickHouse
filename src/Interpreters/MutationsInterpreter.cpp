@@ -11,6 +11,7 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -80,7 +81,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -338,8 +338,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
@@ -367,7 +368,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     return predicate_ast;
 }
 
-MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
+/// A mutation reads and rewrites parts, so it needs the real storage rather than the proxy a lazily
+/// loaded table is reached through.
+MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(resolveStorageProxyLoading(storage_))
 {
 }
 
@@ -409,7 +412,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -490,7 +493,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -768,6 +771,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
     /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns reading an EPHEMERAL column, with their readable dependencies. They are
+    /// skipped by the recompute, so they are checked for staleness after the graph is built.
+    std::vector<std::pair<String, Names>> ephemeral_reading_materialized;
 
     /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
     /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
@@ -803,16 +809,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (std::ranges::any_of(required_columns,
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
-                    /// Warn if the mutation also updates a non-ephemeral dependency
-                    /// of this MATERIALIZED column — the on-disk value will become stale.
-                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
-                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
-                        LOG_WARNING(logger,
-                            "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
-                            "columns that are being updated. Its value will NOT be recalculated "
-                            "during this mutation — the on-disk value may become inconsistent. "
-                            "To fix this, re-INSERT the affected rows.",
-                            column.name);
+                    /// Such a column is never recomputed, so its on-disk value goes stale as soon as
+                    /// one of its regular inputs changes. Collect it and warn below, once the readable
+                    /// dependency graph is complete: whether an input changed can only be answered
+                    /// over the transitive closure, and a hop of the chain may still be unvisited here.
+                    Names readable_dependencies;
+                    for (const auto & dep : required_columns)
+                        if (!ephemeral_columns.contains(dep))
+                            readable_dependencies.push_back(dep);
+                    ephemeral_reading_materialized.emplace_back(column.name, std::move(readable_dependencies));
                     continue;
                 }
 
@@ -881,6 +886,30 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         return affected;
     };
+
+    /// A MATERIALIZED column reading an EPHEMERAL column cannot be recomputed by a mutation, so if
+    /// any of its readable inputs is changed by this mutation — directly, or through another
+    /// MATERIALIZED hop that this mutation does recompute — its on-disk value becomes stale.
+    if (!ephemeral_reading_materialized.empty())
+    {
+        NameSet changed_base_columns = updated_columns;
+        changed_base_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        changed_base_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+
+        NameSet stale_columns = affected_materialized_closure(changed_base_columns);
+        stale_columns.insert(changed_base_columns.begin(), changed_base_columns.end());
+
+        for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        {
+            if (std::ranges::any_of(readable_dependencies, [&](const auto & dep) { return stale_columns.contains(dep); }))
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                    "columns that are being updated or cleared. Its value will NOT be "
+                    "recalculated during this mutation — the on-disk value may become "
+                    "inconsistent. To fix this, re-INSERT the affected rows.",
+                    name);
+        }
+    }
 
     /// Emit recompute stages for a set of affected MATERIALIZED columns. A MATERIALIZED
     /// column may read another affected MATERIALIZED column (e.g. m2 MATERIALIZED m1, where
@@ -964,14 +993,21 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
+    NameSet materialized_with_ephemeral_dependency;
+    for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        materialized_with_ephemeral_dependency.insert(name);
+
     /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
+    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. A column reading
+    /// an EPHEMERAL one is not recomputable outside INSERT and must be left out, or the recompute
+    /// stage fails to resolve the EPHEMERAL name and the whole mutation fails.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
     {
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
+                && !materialized_with_ephemeral_dependency.contains(column.name))
                 clear_affected_materialized.insert(column.name);
         }
     }
@@ -1305,8 +1341,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1361,8 +1401,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
@@ -1544,9 +1584,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             bool has_dependent_materialized = false;
             for (const auto & column : columns_desc)
             {
+                /// A column reading an EPHEMERAL one is not recomputed, and its expression cannot
+                /// even be analyzed without the EPHEMERAL columns, which are absent from `all_columns`.
                 if (column.default_desc.kind != ColumnDefaultKind::Materialized
                     || !available_columns_set.contains(column.name)
-                    || !column.default_desc.expression)
+                    || !column.default_desc.expression
+                    || materialized_with_ephemeral_dependency.contains(column.name))
                     continue;
 
                 auto query = column.default_desc.expression->clone();
@@ -1759,6 +1802,19 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     }
 
     /// Every column emitted by a non-readonly stage is written into the new part at its current

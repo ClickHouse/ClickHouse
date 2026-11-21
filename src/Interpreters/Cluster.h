@@ -296,6 +296,9 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Every replica of the original cluster became a shard of its own, as `clusterAllReplicas` does.
+    bool replicasAsShards() const { return replicas_as_shards; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -342,6 +345,7 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+    bool replicas_as_shards = false;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

@@ -13,6 +13,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -118,9 +119,17 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
+void HTTPDictionarySource::checkCredentials() const
+{
+    /// Per request: a loaded source is kept and cloned across updates, and <http_forbid_headers> can change meanwhile.
+    if (configuration.created_from_ddl)
+        context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
+}
+
 BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
+    checkCredentials();
 
     Poco::URI uri(configuration.url);
 
@@ -138,9 +147,12 @@ BlockIO HTTPDictionarySource::loadAll()
 
 BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
+    checkCredentials();
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
+    String masked_uri = uri.toString();
+    maskURICredentials(masked_uri);
+    LOG_TRACE(log, "loadUpdatedAll {}", masked_uri);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -158,6 +170,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
+    checkCredentials();
 
     auto block = blockForIds(dict_struct, ids);
 
@@ -189,6 +202,7 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
+    checkCredentials();
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
@@ -239,8 +253,10 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-    Poco::URI uri(configuration.url);
-    return uri.toString();
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = Poco::URI(configuration.url).toString();
+    maskURICredentials(uri);
+    return uri;
 }
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
@@ -345,7 +361,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries),
+            .created_from_ddl = created_from_ddl
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
@@ -413,6 +430,8 @@ Setting fields:
 | `value` | Value set for a specific identifier name. |
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
+
+The headers, including their names, are shown as `HEADERS ('[HIDDEN]')` in the output of `SHOW CREATE DICTIONARY`, in `system.tables` and in the query logs, the same way as the password. As with the password, a query that cannot be parsed is logged as is, with only [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) applied. To display the headers in `SHOW CREATE DICTIONARY` and `system.tables`, enable the server setting [`display_secrets_in_show_and_select`](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select) and the format setting [`format_display_secrets_in_show_and_select`](/reference/settings/formats/format#format_display_secrets_in_show_and_select); the user also needs the `displaySecretsInShowAndSelect` privilege. These settings do not affect the query logs.
 )DOCS_MD",
         .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
         .related = {"file"}});

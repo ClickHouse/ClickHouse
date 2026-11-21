@@ -15,6 +15,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/StorageProxy.h>
 #include <Disks/IDisk.h>
 
 #include <fmt/ranges.h>
@@ -49,8 +50,20 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto & store = context->getHypotheticalObjectStore();
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    /// Dropping only forgets a session entry, so it must not load a lazily loaded table.
+    if (query.kind == ASTHypotheticalIndexQuery::Drop)
+    {
+        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
+        /// in the session store already passed that check at creation
+        auto index_name = query.index_name->as<ASTIdentifier &>().name();
+        store.remove(table_id, index_name, query.if_exists);
+        return {};
+    }
+
+    table = resolveStorageProxyLoading(table);
+    const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -65,17 +78,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             "Hypothetical indexes require a table with a UUID (Atomic database); {}.{} has none",
             table_id.getDatabaseName(),
             table_id.getTableName());
-
-    auto & store = context->getHypotheticalObjectStore();
-
-    if (query.kind == ASTHypotheticalIndexQuery::Drop)
-    {
-        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
-        /// in the session store already passed that check at creation
-        auto index_name = query.index_name->as<ASTIdentifier &>().name();
-        store.remove(table_id, index_name, query.if_exists);
-        return {};
-    }
 
     /// CREATE HYPOTHETICAL INDEX
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();

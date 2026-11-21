@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
 }
 
 static bool containsAggregateStateColumn(const IColumn & column)
@@ -232,6 +233,9 @@ void UnionStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
+    if (ctx.input_headers.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "UnionStep must have at least one input");
+
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
     return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);

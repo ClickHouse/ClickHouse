@@ -40,11 +40,9 @@
 --     the analyzer promotes the result type to `Variant` because
 --     `use_variant_as_common_type = 1` by default, and `canBeNativeType`
 --     excludes `Variant`. `FunctionIfBase::isCompilableImpl` returns `false`
---     and the helper is never called. The helper still has correct code paths
---     for these (the `pow10_fp_const` helper avoids 64-bit narrowing via
---     `APFloat::convertFromAPInt` so high-bit-width `Decimal128`/`Decimal256`
---     factors stay accurate) so it is forward-compatible if the analyzer ever
---     stops promoting to `Variant`.
+--     and the helper is never called. `Float` -> `Decimal` is asserted against
+--     rather than supported: an out-of-range float to integer conversion has no
+--     defined result once compiled.
 --
 --   * `Decimal` -> `Decimal` with different scales (scale increase OR decrease):
 --     `FunctionIf::executeImpl` rejects this with `NOT_IMPLEMENTED:

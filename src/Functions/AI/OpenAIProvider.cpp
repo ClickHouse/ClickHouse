@@ -19,6 +19,21 @@ namespace ErrorCodes
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
+namespace
+{
+
+void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & ai_request)
+{
+    chassert(!ai_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
+    if (!ai_request.query_id.empty())
+        http_request.set("X-ClickHouse-Query-Id", sanitize(ai_request.query_id));
+    if (!ai_request.initial_query_id.empty())
+        http_request.set("X-ClickHouse-Initial-Query-Id", sanitize(ai_request.initial_query_id));
+}
+
+}
+
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
@@ -26,7 +41,14 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
-AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
+HTTPHeaderEntries OpenAIProvider::getHeaders() const
+{
+    if (api_key.empty()) /// not all providers need API key
+        return {};
+    return {{"Authorization", "Bearer " + api_key}};
+}
+
+AIResponse OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts)
 {
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
@@ -61,10 +83,9 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
-    chassert(!ai_request.function_name.empty());
-    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
+    setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -172,10 +193,9 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
-    chassert(!ai_embedding_request.function_name.empty());
-    http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
+    setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);

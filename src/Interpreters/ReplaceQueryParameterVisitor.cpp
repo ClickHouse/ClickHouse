@@ -16,6 +16,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -103,6 +105,24 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             }
             else
                 visitChildren(ast);
+        }
+        else if (auto * create_row_policy_query = dynamic_cast<ASTCreateRowPolicyQuery *>(ast.get()))
+        {
+            /// The filters are not children, see ASTCreateRowPolicyQuery::filters.
+            for (auto & [_, filter] : create_row_policy_query->filters)
+            {
+                if (filter)
+                    visit(filter);
+            }
+            visitChildren(ast);
+        }
+        else if (auto * create_masking_policy_query = dynamic_cast<ASTCreateMaskingPolicyQuery *>(ast.get()))
+        {
+            if (create_masking_policy_query->update_assignments)
+                visit(create_masking_policy_query->update_assignments);
+            if (create_masking_policy_query->where_condition)
+                visit(create_masking_policy_query->where_condition);
+            visitChildren(ast);
         }
         else
             visitChildren(ast);

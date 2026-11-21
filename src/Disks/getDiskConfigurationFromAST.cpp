@@ -175,7 +175,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
-        else if (key == "_server_credentials_allowed")
+        else if (key == S3_SERVER_CREDENTIALS_MARKER)
             has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
         if (key == "include")
@@ -260,6 +260,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         /// (the session opted in), so the disk is not re-restricted on reload.
         info->persist_server_credentials_allowance = !is_loading_from_existing_metadata && relies_on_server_credentials
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
+        info->uses_server_credentials = relies_on_server_credentials;
     }
 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
@@ -277,7 +278,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
             /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
             if (info)
+            {
                 info->load_anonymously = true;
+                info->uses_server_credentials = false;
+            }
         }
         else
             throw Exception(
@@ -349,6 +353,20 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 namespace
 {
 
+/// The disk root and every `locations.<name>` child of a resolved dynamic disk configuration.
+std::vector<String> getS3BackendPrefixes(const Poco::Util::AbstractConfiguration & config)
+{
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
+    return prefixes;
+}
+
 /// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
 /// `prefix`) is an S3 backend that resolved to credentials the AST did not prove explicit, and so must be
 /// downgraded to anonymous or rejected. Returns false for a non-S3 backend or one whose resolved auth is safe.
@@ -419,17 +437,8 @@ void validateResolvedS3DiskCredentials(
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
     /// object storage per child, each with its own `object_storage_type`, so an `include` can hide an S3 child
     /// (built with `for_disk_s3 = true`) behind a root that proves non-S3.
-    std::vector<String> prefixes{""};
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            prefixes.push_back("locations." + location + ".");
-    }
-
     std::vector<String> restricted_prefixes;
-    for (const auto & prefix : prefixes)
+    for (const auto & prefix : getS3BackendPrefixes(config))
         if (resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info))
             restricted_prefixes.push_back(prefix);
 
@@ -460,6 +469,15 @@ void validateResolvedS3DiskCredentials(
             " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             );
+}
+
+bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    if (info.uses_server_credentials)
+        return true;
+    /// Every backend counts, because a multi-location disk writes to all of them.
+    return std::ranges::any_of(getS3BackendPrefixes(config),
+        [&](const String & prefix) { return resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info); });
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

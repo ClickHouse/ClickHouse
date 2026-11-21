@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace FailPoints
@@ -601,10 +602,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
+    for (const auto & column : info.columns_description)
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = DeltaLake::getPhysicalName(column.name, physical_names_map);
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
@@ -615,12 +623,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const StorageID & /* table_id */,
+    const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
     {
@@ -643,14 +651,30 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
+    auto write_object_storage = object_storage_;
+    auto write_kernel_helper = kernel_helper;
+    if (catalog && object_storage_->hasCredentialsRefreshCallback())
+    {
+        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id))
+        {
+            write_object_storage = configuration->createObjectStorage(context, /* is_readonly */ false, write_credentials_callback);
+            if (!write_object_storage->tryRefreshCredentialsViaCallback())
+                throw Exception(
+                    ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "The catalog did not vend storage credentials for writing into table {}",
+                    table_id.getNameForLogs());
+            write_kernel_helper = DB::getKernelHelper(configuration, write_object_storage);
+        }
+    }
+
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(write_kernel_helper);
     delta_transaction->create(partition_columns, snapshot->getTableSchema());
 
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
             delta_transaction,
-            object_storage_,
+            write_object_storage,
             context,
             sample_block,
             format_settings,
@@ -661,7 +685,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
-        object_storage_,
+        write_object_storage,
         context,
         sample_block,
         format_settings,

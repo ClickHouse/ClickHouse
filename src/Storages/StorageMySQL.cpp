@@ -531,10 +531,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(
+    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context_, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -610,7 +613,8 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
+        auto configuration = StorageMySQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
@@ -678,7 +682,7 @@ The table structure can differ from the original MySQL table structure:
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
+- `host:port` — MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected.
 - `database` — Remote database name.
 - `table` — Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).
 - `user` — MySQL user.

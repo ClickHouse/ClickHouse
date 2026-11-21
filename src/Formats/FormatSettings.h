@@ -5,8 +5,14 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <limits>
+
 namespace DB
 {
+
+/// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
+/// builders additionally reject the last representable value.
+constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -133,6 +139,8 @@ struct FormatSettings
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
+    bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
+
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
     bool check_conversion_from_numbers_to_enum = true;
@@ -201,6 +209,8 @@ struct FormatSettings
         bool output_unsupported_types_as_binary = true;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
+        /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts

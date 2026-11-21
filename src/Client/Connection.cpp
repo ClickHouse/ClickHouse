@@ -83,6 +83,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -1057,6 +1058,20 @@ void Connection::sendQuery(
             disconnect();
     });
 
+    /// Over the cluster secret a shard authenticates as `initial_user` without a password, so forward
+    /// only an `initial_user` equal to the authenticated `current_user`. Skip the check when
+    /// `current_user` is empty -- server-internal paths (async `Distributed` insert, buffer flush) have none.
+    if (!cluster_secret.empty() && client_info && !client_info->current_user.empty()
+        && client_info->initial_user != client_info->current_user)
+    {
+        /// A mismatch means a forged SECONDARY_QUERY impersonating another user -- including an empty
+        /// initial_user, which the shard would otherwise run with full access -- so refuse it.
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Refusing to forward a query over the cluster secret: its initial_user '{}' differs "
+            "from the authenticated user '{}'.",
+            client_info->initial_user, client_info->current_user);
+    }
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -1577,8 +1592,11 @@ Packet Connection::receivePacket()
                 // materializing it (do not resize a vector to a peer-chosen size).
                 UInt64 num_part_uuids = 0;
                 readVarUInt(num_part_uuids, *in);
-                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                /// The count comes from the server and is only used to skip the payload, but it
+                /// still decides how much the client reads from the socket, so keep it realistic.
+                static constexpr UInt64 max_part_uuids = 1000000;
+                if (num_part_uuids > max_part_uuids)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", max_part_uuids);
                 in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
             }

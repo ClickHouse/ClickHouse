@@ -77,7 +77,8 @@ private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context) override;
+        const ContextPtr & context,
+        bool add_structure_and_format) override;
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;

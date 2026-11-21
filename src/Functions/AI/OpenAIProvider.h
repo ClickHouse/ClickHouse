@@ -33,7 +33,9 @@ class OpenAIProvider : public IAIProvider
 public:
     OpenAIProvider(const String & endpoint_, const String & api_key_);
 
-    AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) override;
+    AIResponse call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts) override;
+    HTTPHeaderEntries getHeaders() const override;
+
     bool supportsEmbeddings() const override { return true; }
     AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts) override;
 

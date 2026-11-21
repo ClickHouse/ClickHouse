@@ -163,7 +163,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -179,12 +179,14 @@ private:
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
+    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
     /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
     std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
+    /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
     std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
@@ -197,6 +199,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
+    std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.

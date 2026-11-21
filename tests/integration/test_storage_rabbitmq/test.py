@@ -2796,7 +2796,7 @@ def test_max_rows_per_message(rabbitmq_cluster, db, unique):
 
     check_expected_result_polling(num_rows, f"SELECT count() FROM {db}.view")
 
-    result = instance.query(f"SELECT * FROM {db}.view")
+    result = instance.query(f"SELECT * FROM {db}.view ORDER BY key")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
@@ -2884,7 +2884,7 @@ def test_row_based_formats(rabbitmq_cluster, db, unique):
         for i in range(num_rows):
             expected += str(i * 10) + "\t" + str(i * 100) + "\n"
 
-        result = instance.query(f"SELECT * FROM {db}.view")
+        result = instance.query(f"SELECT * FROM {db}.view ORDER BY key")
         assert result == expected
 
 
@@ -3602,7 +3602,7 @@ def test_hiding_credentials(rabbitmq_cluster, db, unique):
     instance.query("SYSTEM FLUSH LOGS")
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {db}.{table_name}%'")
     assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
-    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message
+    assert "rabbitmq_address = \\'[HIDDEN]\\'" in  message
 
 
 def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique):

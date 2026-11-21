@@ -203,6 +203,15 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
+      * noticeable amount of time, performs an external request, or accounts profile events that a user can
+      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
+      * Such a function still returns the same value for the same arguments, so it is neither
+      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
+      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
+      */
+    virtual bool hasObservableSideEffects() const { return false; }
+
     /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
       * to a small fixed-size result, so that computing it early and carrying the result instead of the
       * argument strictly reduces the volume of data flowing through the query plan.
@@ -210,6 +219,12 @@ public:
       * Used by the `pushDownVolumeReducingFunction` query plan optimization.
       */
     virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
+      */
+    virtual bool isExpensive() const { return false; }
 
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
@@ -435,6 +450,9 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -647,8 +665,12 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::hasObservableSideEffects`.
+    virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

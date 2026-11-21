@@ -20,12 +20,18 @@ namespace
 {
     /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
     /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
-    /// not accepted from a `CREATE DICTIONARY` query in the first place).
+    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
+    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
+    /// names included: the query is logged before the dictionary source validates its structure,
+    /// so a malformed definition must not leak either.
+    /// The `url` and `endpoint` of the `HTTP` source are hidden whole: the userinfo, the path or the query can carry credentials.
     bool isSecretKey(const String & key)
     {
         return key == "password"
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
-            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
+            || key == "headers" || key == "header"
+            || key == "url" || key == "endpoint";
     }
 }
 
@@ -56,7 +62,9 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    first = r.getString("first");
+    /// The SQL parser lower-cases the key (see `ParserKeyValuePair`), and the checks for secret keys in
+    /// `formatImpl` and `hasSecretParts` rely on it, so canonicalize it the same way here.
+    first = Poco::toLower(r.getString("first"));
     if (first.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
 
@@ -104,7 +112,16 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    if (isSecretKey(first))
+        return true;
+    /// The `uri` is a secret part only when it carries a password, see `formatImpl`.
+    if (first == "uri")
+    {
+        String uri = second->formatWithSecretsOneLine();
+        if (maskURIPassword(&uri))
+            return true;
+    }
+    return second->hasSecretParts();
 }
 
 

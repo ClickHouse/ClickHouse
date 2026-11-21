@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <aws/core/endpoint/EndpointParameter.h>
@@ -10,8 +11,24 @@
 #include <string_view>
 #include <fmt/format.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
+
 namespace DB::S3
 {
+
+Model::StorageClass getStorageClassForName(const std::string & name)
+{
+    /// An unknown name is sent as is, so it must not break the header line.
+    if (name.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
+    return Model::StorageClassMapper::GetStorageClassForName(name);
+}
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {

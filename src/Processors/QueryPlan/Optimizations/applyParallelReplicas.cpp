@@ -199,6 +199,11 @@ public:
         if (coordinated_side == JoinSide::None)
             return;
 
+        /// RightAny picks one right row per left row out of the whole right table, so the join must see all of it.
+        if (coordinated_side == JoinSide::Right
+            && typeid_cast<const JoinStepLogical *>(node->step.get())->getJoinOperator().strictness == JoinStrictness::RightAny)
+            return;
+
         auto * coordinated_child = node->children[static_cast<size_t>(coordinated_side)];
         if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
             return;
@@ -432,7 +437,7 @@ private:
         /// The split marker is a unary pass-through; the fragment to distribute is the subtree below
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
-        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
+        auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
 
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they

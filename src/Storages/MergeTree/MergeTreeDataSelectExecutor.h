@@ -202,6 +202,19 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
+    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
+    static RangesInDataParts filterParts(
+        const RangesInDataParts & parts,
+        const ReadFromMergeTree::Indexes & indexes,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
@@ -247,6 +260,9 @@ public:
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
+    static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(

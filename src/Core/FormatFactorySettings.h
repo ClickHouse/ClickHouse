@@ -686,7 +686,7 @@ Allow data types conversion in Native input format
 Read data types in binary format instead of type names in Native input format
 )", 0) \
     DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 )", 0) \
@@ -852,7 +852,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
 The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
@@ -1520,6 +1520,13 @@ Buffering blocks can increase memory use and delay the first record batch until 
 
 `0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats. A block whose strings, binary values or list elements exceed this is written as several record batches.
+
+Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes), which is a target that combines small blocks, this is a limit that splits large ones. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
+
+Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1613,7 +1620,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 

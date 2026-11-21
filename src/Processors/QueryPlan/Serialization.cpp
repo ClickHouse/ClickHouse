@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Common/checkStackSize.h>
 
 #include <stack>
 
@@ -24,6 +25,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+const SharedHeader & DeserializedInputHeaders::at(size_t i) const
+{
+    if (i >= headers.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A step of the serialized query plan has {} input(s), but the input {} is required", headers.size(), i);
+    return headers[i];
 }
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
@@ -71,6 +80,14 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -81,6 +98,14 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -93,6 +118,12 @@ void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_suppor
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
+
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        writeVarUInt(max_threads, out);
+        writeBinary(concurrency_control, out);
+    }
 
     SerializedSetsRegistry registry;
 
@@ -191,6 +222,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
 {
+    /// It is called recursively for plans of sets from subqueries.
+    checkStackSize();
+
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
     DeserializedSetsRegistry sets_registry;
@@ -206,6 +240,12 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     std::stack<Frame> stack;
 
     QueryPlan plan;
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        readVarUInt(plan.max_threads, in);
+        readBinary(plan.concurrency_control, in);
+    }
+
     stack.push(Frame{.to_fill = plan.root});
 
     while (!stack.empty())
@@ -238,11 +278,25 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
+        {
+            /// A sink (e.g. `GatherSend`) has no output, so it cannot be an input of another step.
+            if (!child->step->hasOutputHeader())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized step {} has a child step {} without an output stream",
+                    step_name, child->step->getName());
             input_headers.push_back(child->step->getOutputHeader());
+        }
 
         IQueryPlanStep::Deserialization ctx{
             in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
+
+        /// The plan tree assumes that a step has exactly one input per child, e.g. optimizations iterate
+        /// over the children and access the input header of each of them.
+        if (step->getInputHeaders().size() != frame.children.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized step {} has {} input(s), but the serialized query plan has {} child(ren) of it",
+                step_name, step->getInputHeaders().size(), frame.children.size());
 
         if (step->hasOutputHeader())
         {

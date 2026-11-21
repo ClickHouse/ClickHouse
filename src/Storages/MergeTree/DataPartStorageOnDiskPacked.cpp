@@ -421,7 +421,14 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     }
 
     if (writer)
+    {
+        /// Rewrite an already written file as a disk does. For example, when a vertical merge writes no rows,
+        /// the writers of different subcolumns of `Nested` create the file with their shared offsets each.
+        if (mode == WriteMode::Rewrite)
+            return writer->rewriteFile(name, settings);
+
         return writer->writeFile(name, settings);
+    }
 
     throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 }
@@ -689,8 +696,12 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         {
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
-            auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
-            seedSkipIndicesPackedReader(inner_index);
+            auto index = readSkipIndicesPackedIndex(*inner_archive_buf, data_path + "/" + String(SKIP_INDICES_PACKED_FILENAME));
+            {
+                std::lock_guard lock(skip_indices_packed_mutex);
+                skip_indices_packed_unsupported = !index;
+            }
+            seedSkipIndicesPackedReader(index ? *index : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {

@@ -11,6 +11,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -272,6 +274,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 
 Field ColumnObject::operator[](size_t n) const
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     Object object;
 
     for (const auto & [path, column] : typed_paths)
@@ -426,6 +431,11 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     {
         if (num_non_default == num_rows)
             return;
+
+        /// The indices of the non-default rows of a subcolumn index the bitmap of `num_rows` entries.
+        if (column.size() != num_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Subcolumn of a JSON column has {} rows, but the column has {} rows", column.size(), num_rows);
 
         const size_t num_defaults_in_column = column.getNumberOfDefaultRows();
         if (num_defaults_in_column == num_rows)
@@ -1184,6 +1194,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
+    const size_t shared_data_row_start = shared_data_paths->size();
     for (size_t i = 0; i != num_paths; ++i)
     {
         size_t path_size = 0;
@@ -1202,9 +1213,17 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
 
+        /// `serializeDynamicPathsAndSharedDataIntoArena` writes every path of a row once. A path repeated
+        /// in the row would get several values in a column of a dynamic path, or break the order of shared data.
+        /// Typed paths are deserialized before, so a typed path here would be a second value of it.
+        if (typed_paths.contains(path))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Typed path '{}' in dynamic paths of a serialized value of JSON column", path);
+
         /// Check if we have this path in dynamic paths.
         if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
         {
+            if (dynamic_it->second->size() != current_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate path '{}' in a serialized value of JSON column", path);
             getDynamicSerialization()->deserializeBinary(*dynamic_it->second, in, getFormatSettings());
         }
         /// Try to add a new dynamic path.
@@ -1222,6 +1241,9 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
                     "Attempt to read {} bytes for the value size, but only {} bytes are available",
                     value_size,
                     in.available());
+            if (shared_data_paths->size() > shared_data_row_start && shared_data_paths->getDataAt(shared_data_paths->size() - 1) >= path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths of a serialized value of JSON column are not sorted or have duplicates (at path '{}')", path);
             std::string_view value(in.position(), value_size);
             in.ignore(value_size);
             shared_data_paths->insertData(path.data(), path.size());

@@ -217,7 +217,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
@@ -498,6 +498,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
     std::vector<MatchInfo> match_infos;
     match_infos.reserve(description.size());
 
+    /// For every fixed `ORDER BY` column: the read direction in which it is ordered like its key column, 0 if there is none.
+    std::vector<int> fixed_column_directions;
+
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
         const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
@@ -564,14 +567,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                /// The key column has to be fixed as well: `toDate(ts) = '2024-01-01'` fixes `toDate(ts)` but not the key column `ts`.
+                if (fixed_columns.contains(sort_node) && fixed_key_columns.contains(sort_column_node))
                 {
-                    /// Virtual row for fixed column from order by is not supported now.
-                    can_optimize_virtual_row = false;
+                    int direction = sort_column_description.direction * reverse_indicator;
+                    if (match.monotonicity)
+                        direction = match.monotonicity->strict ? direction * match.monotonicity->direction : 0;
+                    const bool requests_nulls_last = sort_column_description.direction == sort_column_description.nulls_direction;
+                    if (column_is_nullable && (direction * reverse_indicator == 1) != requests_nulls_last)
+                        direction = 0;
+                    fixed_column_directions.push_back(direction);
 
                     /// Still add the fixed column to the sort description (required for sort matching)
                     /// but don't set current_direction so it won't influence read_direction.
-                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    match_infos.push_back({.source = sort_node, .monotonic = match.monotonicity ? &match : nullptr});
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
@@ -663,6 +672,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     /// If the prefix description is used, we can't restore the full description from PK value.
     if (pk_column_names.size() < next_sort_key)
+        can_optimize_virtual_row = false;
+
+    /// The virtual row takes a fixed `ORDER BY` column from the index like any other key column.
+    /// It bounds the rows only if the read goes in the direction of the column, as if the column was not fixed.
+    if (std::ranges::any_of(fixed_column_directions, [&](int direction) { return direction != read_direction; }))
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
@@ -1151,7 +1165,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1196,22 +1210,24 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            if (!uses_virtual_row)
-            {
-                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
-                /// Without it, the sorting step after join cannot correctly determine
-                /// which input stream to read from when most rows are filtered out,
-                /// potentially reading excessive amount of data.
-                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            /// Joins that can discard left rows need virtual rows from every selected part to avoid
+            /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
+            /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            const bool join_requires_virtual_rows = std::ranges::any_of(
+                find_reading_ctx.joins_to_keep_in_order,
+                [](const auto * join_step)
                 {
                     const auto & table_join = join_step->getJoin()->getTableJoin();
-                    auto strictness = table_join.strictness();
-                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
-                    {
-                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
-                        return nullptr;
-                    }
-                }
+                    const auto strictness = table_join.strictness();
+                    return table_join.kind() != JoinKind::Left
+                        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
+                });
+            if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
+                && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
+            {
+                LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                reading->resetVirtualRowConversions();
+                return nullptr;
             }
 
             bool can_read = reading->requestReadingInOrder(
@@ -1221,7 +1237,11 @@ InputOrderInfoPtr buildInputOrderInfo(
                 query_limit);
 
             if (!can_read)
+            {
+                /// E.g. a reverse `FINAL` read the engine does not support: the read stays as it was.
+                reading->resetVirtualRowConversions();
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1276,7 +1296,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1397,7 +1417,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1488,7 +1508,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)

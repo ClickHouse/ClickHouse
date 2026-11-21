@@ -9,9 +9,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
-# `role_arn` and `role_session_name` are not secrets -- assuming the role still needs the server's
-# own identity and a matching trust policy -- so they survive into the `<base_backup>` locator and
-# let every hop of a chain reopen its base. The mock STS accepts the role and session name below.
+# `role_arn` and `role_session_name` survive into the `<base_backup>` locator and let every hop of a
+# chain reopen its base: assuming the role still needs the server's own identity and a matching trust
+# policy. The session name is masked in logged query text, because a trust policy can pin it, but the
+# stored locator keeps it on purpose (see `BackupInfo.cpp`). The mock STS accepts the role and
+# session name below.
 #
 # Metadata written by a version that stripped the identifiers names no credentials and carries no
 # marker to reconstruct them from, so its base backup opens unauthenticated. Such a chain must still
