@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
@@ -25,6 +26,11 @@ extern const Event KafkaRowsRejected;
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char kafka_consumer_pause_mid_block[];
+}
+
 namespace Setting
 {
 extern const SettingsMilliseconds kafka_max_wait_ms;
@@ -46,7 +52,7 @@ KafkaSource::KafkaSource(
     const Names & columns,
     LoggerPtr log_,
     size_t max_block_size_,
-    bool commit_in_suffix_,
+    CommitMode commit_mode_,
     std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
@@ -55,7 +61,7 @@ KafkaSource::KafkaSource(
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
-    , commit_in_suffix(commit_in_suffix_)
+    , commit_mode(commit_mode_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
@@ -98,7 +104,7 @@ Chunk KafkaSource::generateImpl()
         if (!consumer)
             return {};
 
-        consumer->subscribe();
+        consumer->subscribe(commit_mode != CommitMode::None);
 
         broken = true;
     }
@@ -310,6 +316,9 @@ Chunk KafkaSource::generateImpl()
         else if (consumer->isStalled())
         {
             ++failed_poll_attempts;
+            /// Lets tests change the consumer group while the block holds every row read so far.
+            if (total_rows > 0)
+                FailPointInjection::pauseFailPoint(FailPoints::kafka_consumer_pause_mid_block);
         }
         else
         {
@@ -326,8 +335,11 @@ Chunk KafkaSource::generateImpl()
                 consumer->currentOffset());
         }
 
+        /// A cooperative consumer may lose ownership in the next poll. Finish this batch's insert
+        /// before committing its offsets when `kafka_commit_every_batch` is enabled.
         if (!consumer->hasMorePolledMessages()
-            && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (consumer->finishBlockAfterPollBatch() || total_rows >= max_block_size || !checkTimeLimit()
+                || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
         }
@@ -389,7 +401,7 @@ Chunk KafkaSource::generateImpl()
 Chunk KafkaSource::generate()
 {
     auto chunk = generateImpl();
-    if (!chunk && commit_in_suffix)
+    if (!chunk && commit_mode == CommitMode::OnSelect)
         commit();
 
     return chunk;

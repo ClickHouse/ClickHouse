@@ -20,6 +20,13 @@ namespace DB
 class KafkaSource final : public ISource
 {
 public:
+    enum class CommitMode
+    {
+        None,
+        OnSelect,
+        AfterInsert,
+    };
+
     KafkaSource(
         StorageKafka & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -27,7 +34,7 @@ public:
         const Names & columns,
         LoggerPtr log_,
         size_t max_block_size_,
-        bool commit_in_suffix = false,
+        CommitMode commit_mode_,
         std::optional<UInt64> cancel_epoch_ = {});
     ~KafkaSource() override;
 
@@ -51,7 +58,7 @@ private:
     KafkaConsumerPtr consumer;
     bool broken = true;
     bool is_finished = false;
-    bool commit_in_suffix;
+    const CommitMode commit_mode;
 
     const Block non_virtual_header;
     const Block virtual_header;
