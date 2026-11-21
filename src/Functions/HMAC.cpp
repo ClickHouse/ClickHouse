@@ -19,6 +19,8 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -43,7 +45,7 @@ class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
+    [[clang::no_destroy]] inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {

@@ -91,6 +91,7 @@ namespace ProfileEvents
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
+    extern const Event ParquetMetadataCacheOffsetIndexHits;
 }
 
 namespace DB::Parquet
@@ -153,7 +154,8 @@ static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
         };
         check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
         check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
-        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+        if (thriftEnumToInt(element.converted_type) != LEGACY_NULL_CONVERTED_TYPE)
+            check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
     }
 }
 
@@ -381,11 +383,19 @@ void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_du
 void Reader::setFileFooter(
     std::shared_ptr<const FileFooter> footer,
     VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_,
-    SharedFileColumnChunksPtr shared_column_chunks_)
+    SharedFileColumnChunksPtr shared_column_chunks_,
+    KeptOffsetIndexesPtr kept_offset_indexes_)
 {
     file_footer = std::move(footer);
     cached_column_chunks = std::move(cached_column_chunks_);
     shared_column_chunks = std::move(shared_column_chunks_);
+    kept_offset_indexes = std::move(kept_offset_indexes_);
+}
+
+VectorWithMemoryTracking<KeptOffsetIndexes::Entry> Reader::takeReadOffsetIndexes()
+{
+    std::lock_guard lock(read_offset_indexes_mutex);
+    return std::exchange(read_offset_indexes, {});
 }
 
 size_t Reader::numColumnChunks(size_t row_group_idx) const
@@ -1979,14 +1989,23 @@ void Reader::initializePrefetches()
             if (use_offset_index && (!column.served_from_cache || !primitive_columns[column_idx].column_index_conditions.empty()) &&
                 column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length)
             {
-                column.offset_index_prefetch = prefetcher.registerRange(
-                    size_t(column.meta->offset_index_offset),
-                    size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
+                /// An offset index read before is kept with the cached footer, already validated.
+                auto kept_offset_index = kept_offset_indexes
+                    ? kept_offset_indexes->get(row_group.row_group_idx, primitive_columns[column_idx].column_idx) : nullptr;
+                if (kept_offset_index)
+                {
+                    column.offset_index = *kept_offset_index;
+                    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheOffsetIndexHits);
+                }
+                else
+                    column.offset_index_prefetch = prefetcher.registerRange(
+                        size_t(column.meta->offset_index_offset),
+                        size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
             }
 
             /// Column index.
             column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
-                && column.offset_index_prefetch
+                && (column.offset_index_prefetch || !column.offset_index.page_locations.empty())
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
@@ -2064,11 +2083,8 @@ void Reader::preparePrewhere()
     const auto & prewhere_info = format_filter_info->prewhere_info;
     UnorderedSetWithMemoryTracking<size_t> prewhere_output_column_idxs;
 
-    /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
-    ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
-    ///     and run them after decoding the corresponding columns, in parallel.
-    ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-    ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+    /// TODO [parquet]: Steps run one after another, each after all of its columns are decoded.
+    ///     Single-column steps could instead run in parallel, as soon as their column is decoded.
 
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
@@ -3404,7 +3420,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
-void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
+void Reader::decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
 {
     auto data = prefetcher.getRangeData(column.offset_index_prefetch);
     deserializeThriftStruct(column.offset_index, data.data(), data.size());
@@ -3448,6 +3464,21 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     {
         column.offset_index.page_locations.clear();
         column.use_column_index = false;
+        return;
+    }
+
+    if (max_read_offset_indexes_bytes)
+    {
+        size_t bytes = KeptOffsetIndexes::entryBytes(column.offset_index);
+        std::lock_guard lock(read_offset_indexes_mutex);
+        if (read_offset_indexes_bytes + bytes <= max_read_offset_indexes_bytes)
+        {
+            read_offset_indexes_bytes += bytes;
+            read_offset_indexes.push_back(
+                {.row_group_idx = row_group.row_group_idx,
+                 .column_idx = column_info.column_idx,
+                 .offset_index = std::make_shared<const parq::OffsetIndex>(column.offset_index)});
+        }
     }
 }
 
@@ -3862,16 +3893,18 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (subchunk.dictionary_values)
     {
-        if (column_info.last_step_can_throw)
-        {
-            /// Drop the values no read row references: the step must not evaluate them.
-            ColumnIndex indexes(std::move(subchunk.column));
-            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-            subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
-        }
-        else
-            subchunk.column = ColumnReplicated::create(subchunk.dictionary_values->assumeMutable(), std::move(subchunk.column));
+        /// `dictionary_values` is still shared with the column chunk (other row subgroups read it too),
+        /// so it must not be aliased as mutable, and copying it for every row subgroup would be
+        /// expensive. Use the immutable `ColumnReplicated::create` overload, which shares the values.
+        /// The resulting `ColumnReplicated` itself is exclusively owned, so the outer `assumeMutable`
+        /// is sound; any later mutation has to go through `IColumn::mutate`, which unshares the values.
+        ColumnPtr values = std::move(subchunk.dictionary_values);
         subchunk.dictionary_values = nullptr;
+        ColumnIndex indexes(std::move(subchunk.column));
+        /// Drop the values no read row references: the step must not evaluate them.
+        if (column_info.last_step_can_throw)
+            values = indexes.removeUnusedRowsInIndexedData(values);
+        subchunk.column = ColumnReplicated::create(values, std::move(indexes))->assumeMutable();
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
@@ -3890,7 +3923,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (column_info.levels_only_arrays)
     {
-        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        /// Nothing takes the values: free them now instead of when the row subgroup is delivered.
         subchunk.column.reset();
         subchunk.null_map.reset();
         subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
@@ -4751,6 +4784,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 
+    if (output_info.is_missing_column && output_info.missing_column_default)
+    {
+        /// Not a missing value: `AddingDefaultsTransform` must not replace it.
+        res = output_info.output_type->createColumn();
+        res->insertMany(*output_info.missing_column_default, num_rows);
+        return res;
+    }
+
     if (output_info.is_missing_column)
     {
         res = output_info.output_type->createColumn();
@@ -5069,6 +5110,10 @@ void Reader::initColumnsCache()
     /// in `system.columns_cache`.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
+    /// A tuple can have elements absent from the file, filled with these defaults.
+    const UInt64 defaults_hash = format_filter_info && format_filter_info->column_mapper
+        ? format_filter_info->column_mapper->getIcebergInitialDefaultsHash()
+        : 0;
     for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
@@ -5083,6 +5128,7 @@ void Reader::initColumnsCache()
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
         hash.update(info.nullable_group);
+        hash.update(defaults_hash);
         bool decoded = true;
         for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
         {
