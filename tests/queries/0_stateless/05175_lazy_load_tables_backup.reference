@@ -1,0 +1,6 @@
+--- not accessed yet
+TableProxy
+--- backup of the whole table
+100
+--- backup and restore of a single partition
+50	0	0
