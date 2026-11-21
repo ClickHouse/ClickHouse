@@ -938,6 +938,11 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+static bool isPlainString(const DataTypePtr & type)
+{
+    return isString(type) && !type->getCustomName() && !type->getCustomSerialization();
+}
+
 /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static std::optional<size_t> findArrayJoinIndexPosition(
     const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
@@ -1140,12 +1145,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    if (function_name != "in" && function_name != "globalIn")
-        return false;
-    if (!column)
+    const bool null_in = function_name == "nullIn" || function_name == "globalNullIn";
+    if ((!null_in && function_name != "in" && function_name != "globalIn") || !column)
         return false;
 
-    auto array_join_argument = key_node.getArrayJoinArgument();
+    const auto array_join_key = null_in ? unwrapLosslessConversion(wrapped_key_node, /*allow_drop_nullable=*/ false) : key_node;
+    auto array_join_argument = array_join_key.getArrayJoinArgument();
     if (!array_join_argument)
         return false;
 
@@ -1162,6 +1167,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const auto & array_nested_type = array_type->getNestedType();
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
         return false;
+
+    if (null_in)
+    {
+        /// A computed index expression can depend on settings, e.g. CAST from Dynamic to Array(String).
+        if (index_nodes[position]->getWithoutAlias()->type != ActionsDAG::ActionType::INPUT)
+            return false;
+
+        /// The index stores string element hashes. Only use a complete set of strings with no NULLs.
+        if (!prepared_set || prepared_set->isTruncated() || prepared_set->getDataTypes().size() != 1
+            || !isPlainString(removeNullable(type)) || !isPlainString(array_nested_type))
+            return false;
+
+        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+        if (nullable_column && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+    }
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
     if (padded && containsPaddedElement(*converted_column, *array_nested_type))
