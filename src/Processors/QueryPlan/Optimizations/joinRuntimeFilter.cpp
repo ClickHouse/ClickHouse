@@ -217,15 +217,10 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
-/// A cast that keeps every value, or converts an integer to another integer type, which wraps around instead of throwing.
-static bool isCastThatCannotThrow(const ActionsDAG::Node & node)
+/// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer to another integer type,
+/// which wraps around, or a number to a float.
+static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to)
 {
-    const auto & name = node.function_base->getName();
-    if ((name != "_CAST" && name != "CAST") || node.children.empty())
-        return false;
-
-    const auto & from = node.children.front()->result_type;
-    const auto & to = node.result_type;
     if (canBeSafelyCast(from, to))
         return true;
 
@@ -233,7 +228,30 @@ static bool isCastThatCannotThrow(const ActionsDAG::Node & node)
     if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
         return false;
 
-    return isInteger(removeNullable(removeLowCardinality(from))) && isInteger(removeNullable(removeLowCardinality(to)));
+    const auto from_nested = removeNullable(removeLowCardinality(from));
+    const auto to_nested = removeNullable(removeLowCardinality(to));
+
+    /// A number converted to a float is rounded, never rejected.
+    if (isFloat(to_nested) && (isInteger(from_nested) || isFloat(from_nested)))
+        return true;
+
+    return isInteger(from_nested) && isInteger(to_nested);
+}
+
+/// A cast, or a conversion function to an integer type (`toInt32`, ...), whose conversion cannot throw.
+static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
+{
+    static constexpr std::string_view integer_conversions[] = {
+        "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256",
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256"};
+
+    const auto & name = node.function_base->getName();
+    const bool is_cast = name == "_CAST" || name == "CAST";
+    const bool is_integer_conversion = node.children.size() == 1 && std::ranges::find(integer_conversions, name) != std::end(integer_conversions);
+    if (node.children.empty() || (!is_cast && !is_integer_conversion))
+        return false;
+
+    return canCastWithoutThrowing(node.children.front()->result_type, node.result_type);
 }
 
 /// Whether the key can be computed on any row without throwing. Its runtime filter computes it below the steps that
@@ -249,8 +267,8 @@ static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
         if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
             return true;
 
-        /// `IFunctionBase::canThrow` assumes that every cast and `tuple` can throw.
-        if (node->function_base->getName() == "tuple" || isCastThatCannotThrow(*node))
+        /// `IFunctionBase::canThrow` assumes that every cast, conversion and `tuple` can throw.
+        if (node->function_base->getName() == "tuple" || isConversionThatCannotThrow(*node))
             return true;
 
         DataTypesWithConstInfo arguments;
@@ -259,6 +277,51 @@ static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
             arguments.push_back({child->result_type, child->column != nullptr, typeid_cast<const ColumnConst *>(child->column.get())});
         return !node->function_base->canThrow(arguments);
     });
+}
+
+/// Whether the probe key can be computed on any row without throwing, also where the expressions and filters right below
+/// the join compute the columns it reads: the runtime filter is merged with them when it is pushed down.
+static bool canComputeProbeKeyOnAnyRow(const ActionsDAG::Node * key, const QueryPlan::Node * probe)
+{
+    if (!canComputeKeyOnAnyRow(key))
+        return false;
+
+    auto add_inputs = [](const ActionsDAG::Node * node, NameSet & columns)
+    {
+        for (const auto * reachable : findReachableNodes({node}))
+            if (reachable->type == ActionsDAG::ActionType::INPUT)
+                columns.insert(reachable->result_name);
+    };
+
+    NameSet columns;
+    add_inputs(key, columns);
+    for (const auto * plan_node = probe; plan_node && !columns.empty();
+         plan_node = plan_node->children.size() == 1 ? plan_node->children.front() : nullptr)
+    {
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(plan_node->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(plan_node->step.get()))
+            dag = &filter->getExpression();
+        else
+            break;
+
+        /// The filter is not merged with a step that has an `arrayJoin`, see `tryMergeExpressions` and `tryMergeFilters`.
+        if (dag->hasArrayJoin())
+            break;
+
+        NameSet next_columns;
+        for (const auto * output : dag->getOutputs())
+        {
+            if (!columns.contains(output->result_name))
+                continue;
+            if (!canComputeKeyOnAnyRow(output))
+                return false;
+            add_inputs(output, next_columns);
+        }
+        columns = std::move(next_columns);
+    }
+    return true;
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -442,8 +505,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * build_filter_node = node.children[1];
 
     /// For each key pair, whether its probe key can throw, in the order `preCalculateKeys` returns the keys. It is checked
-    /// as the query wrote it: the normalization that `preCalculateKeys` adds (`trimRight` of zero bytes, a cast to the
-    /// common type) cannot throw.
+    /// as the query wrote it and where the steps right below the join compute it; the normalization that `preCalculateKeys`
+    /// adds (`trimRight` of zero bytes, a cast to the common type) cannot throw.
     VectorWithMemoryTracking<bool> probe_key_can_throw;
 
     /// The runtime filter is built on the build (right) side and is addressed by name
@@ -472,12 +535,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             if (lhs.fromLeft() && rhs.fromRight())
             {
                 build_key_names.insert(rhs.getColumnName());
-                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(lhs.getNode()));
+                probe_key_can_throw.push_back(!canComputeProbeKeyOnAnyRow(lhs.getNode(), apply_filter_node));
             }
             else if (lhs.fromRight() && rhs.fromLeft())
             {
                 build_key_names.insert(lhs.getColumnName());
-                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(rhs.getNode()));
+                probe_key_can_throw.push_back(!canComputeProbeKeyOnAnyRow(rhs.getNode(), apply_filter_node));
             }
         }
 
@@ -634,6 +697,20 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             common_types.push_back(join_key_build_side.type);
         }
     }
+
+    /// The filter casts the probe key to the common type itself, see `createRuntimeFilterCondition`.
+    for (size_t i = common_types.size(); i-- > 0;)
+    {
+        if (canCastWithoutThrowing(join_keys_probe_side[i].type, common_types[i]))
+            continue;
+        if (check_left_does_not_contain)
+            return false;
+        join_keys_probe_side.erase(join_keys_probe_side.begin() + i);
+        join_keys_build_side.erase(join_keys_build_side.begin() + i);
+        common_types.erase(common_types.begin() + i);
+    }
+    if (join_keys_build_side.empty())
+        return false;
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
     const size_t hash_table_keys_count = countHashTableKeys(*join_step);
