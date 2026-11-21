@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -349,7 +350,11 @@ void IMergeTreeReader::fillMissingColumns(
                         if (!res_columns[column_index] && !missing_info->type_name.empty() && !source_is_read)
                         {
                             auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
-                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            /// A marker stands for `insert(getDefault())`, the value the writer checks before skipping;
+                            /// for `JSON` it differs from `createColumnConstWithDefaultValue`.
+                            auto frozen_value = frozen_type->createColumn();
+                            frozen_value->insert(frozen_type->getDefault());
+                            auto frozen_column = ColumnConst::create(std::move(frozen_value), num_rows)->convertToFullColumnIfConst();
                             if (isSubcolumnExtractedFromConvertedColumn(column_index))
                             {
                                 frozen_column = castColumn({frozen_column, frozen_type, column.getNameInStorage()}, column.getTypeInStorage());

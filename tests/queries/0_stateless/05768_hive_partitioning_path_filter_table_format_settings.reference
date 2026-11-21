@@ -1,0 +1,8 @@
+file	7	true
+url	7	true
+s3	7	true
+s3, GLOBAL IN	7	true
+s3, parallel replicas	7	true
+s3 brace expansion	7	true
+s3 brace expansion, GLOBAL IN	7	true
+s3 glob	7	true
