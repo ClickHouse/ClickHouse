@@ -34,13 +34,16 @@ t_sparse_prewhere	v	Sparse
 1
 1
 t_full_prewhere_types	o	Default
+t_full_prewhere_types	r	Default
 t_full_prewhere_types	s	Default
 t_full_prewhere_types	w	Default
 t_full_prewhere_types	z	Default
 t_sparse_prewhere_types	o	Sparse
+t_sparse_prewhere_types	r	Sparse
 t_sparse_prewhere_types	s	Sparse
 t_sparse_prewhere_types	w	Sparse
 t_sparse_prewhere_types	z	Sparse
+1
 1
 1
 1

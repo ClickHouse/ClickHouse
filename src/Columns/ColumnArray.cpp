@@ -1335,8 +1335,8 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
-/// From about this many elements per row, one `insertRangeFrom` per row is cheaper than gathering the elements.
-static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_ROW = 8;
+/// From about this many elements per range, one `insertRangeFrom` per range of consecutive rows is cheaper than gathering the elements.
+static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_RANGE = 8;
 
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
@@ -1361,13 +1361,30 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (current_offset == 0)
         return ColumnArray::create(data->cloneEmpty(), std::move(res_offsets_column));
 
-    if (data->isFixedAndContiguous() && current_offset / limit >= RANGE_COPY_MIN_ELEMENTS_PER_ROW)
+    if (data->isFixedAndContiguous())
     {
-        auto res_data = data->cloneEmpty();
-        res_data->reserve(current_offset);
-        for (size_t i = 0; i < limit; ++i)
-            res_data->insertRangeFrom(*data, offsetAt(indexes[i]), sizeAt(indexes[i]));
-        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+        auto continues_range = [&](size_t i) { return static_cast<UInt64>(indexes[i]) == static_cast<UInt64>(indexes[i - 1]) + 1; };
+
+        size_t num_ranges = 1;
+        for (size_t i = 1; i < limit; ++i)
+            num_ranges += !continues_range(i);
+
+        if (current_offset / num_ranges >= RANGE_COPY_MIN_ELEMENTS_PER_RANGE)
+        {
+            auto res_data = data->cloneEmpty();
+            res_data->reserve(current_offset);
+            const Offsets & src_offsets = getOffsets();
+            for (size_t i = 0; i < limit;)
+            {
+                size_t j = i + 1;
+                while (j < limit && continues_range(j))
+                    ++j;
+                const size_t begin = offsetAt(indexes[i]);
+                res_data->insertRangeFrom(*data, begin, src_offsets[indexes[j - 1]] - begin);
+                i = j;
+            }
+            return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+        }
     }
 
     /// Convert indexes to UInt64 in case of overflow.
