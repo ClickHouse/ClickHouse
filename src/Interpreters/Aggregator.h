@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ListWithMemoryTracking.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <functional>
@@ -260,6 +261,7 @@ public:
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
             VectorWithMemoryTracking<int> directions;       /// per-column ORDER BY directions
             VectorWithMemoryTracking<int> nulls_directions; /// per-column NULLS/NaNs directions
+            VectorWithMemoryTracking<std::shared_ptr<Collator>> collators;  /// per ranked column: the COLLATE of the ORDER BY, null without one; empty or key_columns entries
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
@@ -269,6 +271,11 @@ public:
             /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
             /// link between two steps of the same local plan.
             TopKThresholdTrackerPtr threshold_tracker;
+
+            [[nodiscard]] bool hasCollators() const
+            {
+                return std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
+            }
         };
         std::optional<TopKParams> top_k;
 

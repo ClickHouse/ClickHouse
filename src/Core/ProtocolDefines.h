@@ -154,6 +154,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Version 22 adds version 2 of the `Aggregating` step, which carries the collation of each `GROUP BY` top-K key.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -165,8 +166,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// Last bumped for release 26.12.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
 /// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
 /// from such a peer is not deserialized.
@@ -268,6 +269,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First global query-plan version that writes `Aggregating` version 2 (top-K key collations); older peers get no collated top-K.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION = 22;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

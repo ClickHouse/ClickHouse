@@ -87,6 +87,11 @@ struct TopKAggregationHeapBase
         skipped_rows += skipped;
         if (boundary_changed)
             publishBoundary();
+        if (collated_skip_sample_full && skipped_rows >= collated_skip_sample_resume_rows)
+        {
+            collated_skip_sample_full = false;
+            collated_skip_sample_now = true;
+        }
     }
 
     [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -94,6 +99,11 @@ struct TopKAggregationHeapBase
     [[nodiscard]] bool needsTrim() const { return heap_indices.size() > next_trim_size; }
 
     [[nodiscard]] bool shouldFreeze() const;
+
+    /// Whether some ranked key has a `COLLATE`. The aggregation loops then look a row's key up in the hash table before
+    /// they call `shouldSkip`: a key already in the table is aggregated without the locale comparison, so the comparison
+    /// runs once per row with a new key instead of once per row.
+    [[nodiscard]] bool ranksUnderCollation() const { return has_collators; }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
@@ -120,13 +130,15 @@ struct TopKAggregationHeapBase
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
     /// anything the numeric dispatch rejects), hence inline.
-    [[nodiscard]] bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
+    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
         chassert(hasBoundary());
+        if (has_collators) [[unlikely]]
+            return shouldSkipCollated(source_columns, source_row);
         if (is_composite)
-            return sourceAboveBoundaryComposite(source_columns, source_row);
-        return sourceAboveBoundary(*source_columns[0], source_row);
+            return sourceAboveBoundaryComposite<false>(source_columns, source_row);
+        return sourceAboveBoundary<false>(*source_columns[0], source_row);
     }
 
     /// The innermost check of the aggregation loop, hence inline.
@@ -169,8 +181,10 @@ protected:
     bool publish_pending = false;           /// a trim tightened the local boundary since the last exchange
 
     /// Ranking configuration.
+    bool has_collators = false;             /// some entry of `collators` is set
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
+    std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column, null without `COLLATE`
     TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
@@ -191,6 +205,18 @@ protected:
     UInt64 window_start_skipped_rows = 0;
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
 
+    /// A 1/64 hash sample of the distinct keys a collated heap skipped (open addressing, 0 = empty slot), the number of
+    /// sampled keys, and whether the sample reached a cap and was dropped; see `shouldFreeze`. Filled by the `const`
+    /// skip check.
+    mutable std::vector<UInt64> collated_skip_sample;
+    mutable size_t collated_skip_sample_keys = 0;
+    mutable bool collated_skip_sample_full = false;
+    mutable bool collated_skip_sample_now = false;  /// sampling, i.e. a collated heap that ranks all keys and has no full sample
+    mutable UInt64 collated_skip_sample_rows = 0;   /// skipped rows seen while sampling
+    mutable UInt64 collated_skip_sample_resume_rows = 0; /// `skipped_rows` at which a new sample starts; 0 before the first is dropped
+    bool collated_skip_sample_by_bytes = false; /// every ranked column hashes by `getDataAt`, which is cheaper than `SipHash`
+    bool collated_skip_sample_string = false;   /// the only ranked column is a plain `ColumnString`
+
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
     std::vector<size_t> evicted_rows;       /// `heap_column` rows dropped by the last `trimToK`
@@ -206,6 +232,7 @@ protected:
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
         const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows);
 
     void freezeBase();
@@ -364,13 +391,19 @@ private:
 
     void setK(size_t query_k);
 
-    void init(const IColumn & source_column, size_t query_k, int direction, int nulls_direction);
+    void init(
+        const IColumn & source_column,
+        size_t query_k,
+        int direction,
+        int nulls_direction,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols);
 
     void init(
         const ColumnRawPtrs & source_columns,
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
-        const VectorWithMemoryTracking<int> & null_dirs);
+        const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols);
 
     void findLowCardinalityColumns();
 
@@ -388,19 +421,26 @@ private:
     /// than it.
     void publishBoundary();
 
+    [[nodiscard]] bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    void sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    void dropCollatedSkipSample() const;
+    [[nodiscard]] bool collatedSkipsRepeat() const;
+
+    template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
     {
-        const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
+        const int cmp = compareColumns<with_collation>(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
         return directions[0] * cmp > 0;
     }
 
+    template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(boundaryColumn());
         const size_t boundary_idx = boundaryRow();
         for (size_t i = 0; i < source_columns.size(); ++i)
         {
-            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
+            const int cmp = compareColumns<with_collation>(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
             if (cmp != 0)
                 return directions[i] * cmp > 0;
         }
@@ -409,8 +449,15 @@ private:
 
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 
+    /// `with_collation = false` is valid only without `has_collators`.
+    template <bool with_collation = true>
     [[nodiscard]] int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
+        if constexpr (with_collation)
+        {
+            if (const auto & collator = collators[column_index])
+                return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collator);
+        }
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 };
@@ -438,6 +485,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
         const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows,
         SharedTopKBoundary * shared,
         TopKThresholdTrackerPtr tracker)
@@ -448,7 +496,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         shared_boundary = shared;
 
         const size_t reserve_hint
-            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, observation_rows);
+            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, cols, observation_rows);
         threshold_tracker = std::move(tracker);
 
         hash_table_keys.clear();

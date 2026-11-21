@@ -3,6 +3,7 @@
 #include <memory>
 #include <unordered_set>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/Collator.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -175,6 +176,11 @@ bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
+
+bool canTopKRankSortKey(const SortColumnDescription & description, const IDataType & key_type, bool ranks_all_keys)
+{
+    return !description.collator || (ranks_all_keys && key_type.createColumn()->isCollationSupported());
 }
 
 Block appendGroupingSetColumn(Block header)
@@ -1526,8 +1532,10 @@ void AggregatingStep::serialize(Serialization & ctx) const
     if (ctx.step_version < 1)
         return;
 
-    writeBinary(params.top_k.has_value(), ctx.out);
-    if (params.top_k)
+    /// A version 1 reader would rank a collated key in byte order, so such a top-K is omitted towards it.
+    const bool write_top_k = params.top_k && (ctx.step_version >= 2 || !params.top_k->hasCollators());
+    writeBinary(write_top_k, ctx.out);
+    if (write_top_k)
     {
         const auto & top_k = *params.top_k;
         writeVarUInt(top_k.k, ctx.out);
@@ -1538,6 +1546,15 @@ void AggregatingStep::serialize(Serialization & ctx) const
         {
             writeIntBinary(static_cast<Int8>(top_k.directions[i]), ctx.out);
             writeIntBinary(static_cast<Int8>(top_k.nulls_directions[i]), ctx.out);
+        }
+
+        if (ctx.step_version >= 2)
+        {
+            for (size_t i = 0; i < top_k.directions.size(); ++i)
+            {
+                const auto & collator = i < top_k.collators.size() ? top_k.collators[i] : nullptr;
+                writeStringBinary(collator ? collator->getLocale() : String{}, ctx.out);
+            }
         }
     }
 }
@@ -1695,6 +1712,18 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             value.directions[i] = direction;
             value.nulls_directions[i] = nulls_direction;
         }
+
+        if (ctx.step_version >= 2)
+        {
+            value.collators.resize(num_directions);
+            for (size_t i = 0; i < num_directions; ++i)
+            {
+                String locale;
+                readStringBinary(locale, ctx.in);
+                if (!locale.empty())
+                    value.collators[i] = std::make_shared<Collator>(locale);
+            }
+        }
     }
 
     /// AggregatingInOrderTransform cannot run the top-K heap.
@@ -1823,10 +1852,13 @@ void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `GROUP BY` top-K parameters.
+    /// Version 2 adds the collation of each ranked key.
     registry.registerStep(
         "Aggregating",
         AggregatingStep::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION}});
 }
 
 

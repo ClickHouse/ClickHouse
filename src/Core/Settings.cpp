@@ -2436,7 +2436,9 @@ When enabled, the aggregator maintains a bounded heap of the top `K` keys seen s
 
 The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
 
-The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+
+With `COLLATE` on a ranked key, a row is first looked up in the hash table, and only a row with a new key is compared with the heap boundary under the collation, because such a comparison costs more than the lookup. A composite key aggregated with the serialized method is compared first, because its key is costly to build twice. A `COLLATE` key is ranked only when the `ORDER BY` covers every `GROUP BY` key.
 
 Possible values:
 
@@ -2448,6 +2450,8 @@ Possible values:
 For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
 
 The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
+
+A heap with a `COLLATE` key also freezes after the window when the rows it skipped repeat a few keys, because each skipped row costs a comparison under the collation and a repeated key would cost only a hash table lookup without the heap. `0` disables this freeze too.
 
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \
@@ -2492,7 +2496,7 @@ For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): w
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
-It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.
+It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas. Nor when the first key is sorted with `COLLATE`: the filter would compare every read row under the collation, also after the heap gives up.
 
 Possible values:
 
