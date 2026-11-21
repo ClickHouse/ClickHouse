@@ -635,8 +635,7 @@ public:
             return;
         }
 
-        /// The addBatchLookupTable8 of the nested function may add the rows of a key out of order, which changes the
-        /// result of order-dependent functions such as deltaSum, so the places are resolved and the row order is kept.
+        /// The nested addBatchLookupTable8 reorders the rows of a key, which changes order-dependent functions such as deltaSum.
         PaddedPODArray<AggregateDataPtr> places(row_end);
         for (size_t i = row_begin; i < row_end; ++i)
         {
@@ -687,8 +686,6 @@ public:
 #endif
 
 private:
-    /// A batch without NULLs is added by the batched code of the nested function. A batch with NULLs, or with the
-    /// condition of an enclosing combinator, is added row by row.
     template <bool places_are_non_null>
     void addBatchImpl(
         size_t row_begin,
