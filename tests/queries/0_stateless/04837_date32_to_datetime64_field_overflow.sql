@@ -1,4 +1,4 @@
--- An extended-range `Date32` constant used as an exact bound for a `DateTime64` (or `Time64`) column with
+-- An extended-range `Date32` constant used as an exact bound for a `DateTime64` column with
 -- a large scale can produce a whole-seconds value that does not fit into the underlying `Int64` after
 -- multiplying by the scale multiplier. `convertFieldToType` must treat such a bound as "cannot convert"
 -- (it cannot equal any stored value) instead of throwing `DECIMAL_OVERFLOW`.
@@ -24,6 +24,7 @@ SELECT count() FROM t_d64_small WHERE d64 IN (toDate32('0000-01-01'));
 
 DROP TABLE t_d64_small;
 
+-- A `Date32` converted to `Time64` is midnight, as `CAST` gives, so it matches `00:00:00` and does not overflow.
 DROP TABLE IF EXISTS t_t64;
 CREATE TABLE t_t64 (t64 Time64(9)) ENGINE = MergeTree ORDER BY t64;
 INSERT INTO t_t64 VALUES ('00:00:00');

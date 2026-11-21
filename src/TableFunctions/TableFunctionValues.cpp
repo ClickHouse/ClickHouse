@@ -42,6 +42,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
 {
     /// The query's format settings, so that a constant outside the window of a `DateTime64` / `Time64` column
     /// follows `date_time_overflow_behavior` exactly as the same constant does in `INSERT ... VALUES`.
+    /// They also make a value converted to `String` render as `CAST(x AS String)` renders it under the same session settings.
     const FormatSettings format_settings = getFormatSettings(context);
 
     if (res_columns.size() == 1) /// Parsing arguments as single values

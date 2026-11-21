@@ -16,6 +16,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -1008,6 +1009,8 @@ private:
             GetSetElementParams{
                 .transform_null_in = false,
                 .forbid_unknown_enum_values = getSettings()[Setting::validate_enum_literals_in_operators],
+                /// The same text rendering as the set of `IN` itself, e.g. under `bool_true_representation`.
+                .format_settings = getFormatSettings(getContext()),
             });
 
         if (set_elements.size() != 1)
