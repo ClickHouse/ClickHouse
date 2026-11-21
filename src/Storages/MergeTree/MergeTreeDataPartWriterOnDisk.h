@@ -134,6 +134,8 @@ protected:
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
+    /// The full description of `default_codec`, built by the first `getSubstreamCodec` that needs it.
+    mutable ASTPtr default_codec_description;
 
     const bool compute_granularity;
 

@@ -150,6 +150,19 @@ private:
     /// (`written_offset_substreams`). Throws for a stream `addStreams` did not register.
     [[nodiscard]] const ResolvedStream * resolveStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
+    /// The fields of a substream path element that identify a stream: paths with equal fields have the same stream name.
+    struct SubstreamPathElement
+    {
+        ISerialization::Substream::Type type;
+        size_t bucket;
+        String name_of_substream;
+        String variant_element_name;
+        String object_path_name;
+    };
+    using SubstreamPathElements = std::vector<SubstreamPathElement>;
+
+    static bool isSameSubstreamPath(const SubstreamPathElements & elements, const ISerialization::SubstreamPath & substream_path);
+
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -163,6 +176,9 @@ private:
     /// functions iterate this list instead of enumerating the substreams and building the stream names again.
     std::unordered_map<String, ResolvedStreams> resolved_streams_by_column;
 
+    /// The substream paths of the streams of every column, in the order of `resolved_streams_by_column`.
+    std::unordered_map<String, std::vector<SubstreamPathElements>> resolved_stream_paths_by_column;
+
     /// The same streams by full stream name, for the getters the serialization calls with a substream path.
     std::unordered_map<String, ResolvedStream> resolved_streams_by_full_name;
 
@@ -172,6 +188,9 @@ private:
 
     /// Some long stream names are replaced with hashes. Maps the actual stream name, possibly a hash, to the full one.
     std::unordered_map<String, String> stream_name_to_full_name;
+
+    /// The codec of the marks of every stream, created by the first `addStreams` that creates a stream.
+    CompressionCodecPtr marks_compression_codec;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
