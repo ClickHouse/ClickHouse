@@ -36,6 +36,18 @@ SELECT value, (SELECT count() FROM t_05233 AS t2 PREWHERE arrayMap(x -> t1.value
 SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 WHERE arrayMap(value -> t1.value + value, [toUInt8(1)])[1] = 11);
 SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 WHERE arrayMap(value -> value + t1.value, [toUInt8(1)])[1] = 11);
 
+-- The functions and lambdas that use the shadowed column are named after it as well, so that a function of the
+-- column and the same function of the lambda argument are different actions: (10 + 1) + (1 + 1) = 13.
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> (t_05233.value + value) + (value + value), [toUInt8(1)])[1] = 13;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> (value + value) + (t_05233.value + value), [toUInt8(1)])[1] = 13;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> (t_05233.value + value) + (value + value), [toUInt8(1)])[1] = 22;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> (t_05233.value + value) + (value + value), [1])[1], [toUInt8(1)])[1] = 13;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> t_05233.value + value, [toUInt8(1)])[1] = 11 AND arrayMap(value -> value + value, [toUInt8(1)])[1] = 2;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> value + value, [toUInt8(1)])[1] = 2 AND arrayMap(value -> t_05233.value + value, [toUInt8(1)])[1] = 11;
+-- The same expression of the column outside of the lambda and inside it, where the column is shadowed.
+SELECT value FROM t_05233 PREWHERE t_05233.value + 1 = 11 AND arrayMap(value -> (t_05233.value + 1) + (value + 1), [toUInt8(1)])[1] = 13;
+WITH t_05233.value + 1 AS a SELECT value FROM t_05233 PREWHERE a = 11 AND arrayMap(value -> a + (value + 1), [toUInt8(1)])[1] = 13;
+
 DROP TABLE t_05233;
 
 -- A quoted column name may coincide with the column identifier of another column, here `__table1.value`.
@@ -69,6 +81,17 @@ SELECT number, toUInt64(10) AS value
 FROM numbers(1)
 ORDER BY number WITH FILL FROM 0 TO 2
 INTERPOLATE (value AS (toUInt8(value) + 1 AS d) + arrayMap(value -> value + d, [1])[1]);
+
+-- `d` is `value + 1` of the interpolated column, and the lambda has `value + 1` of its argument: (10 + 1) + (11 + 1 + (1 + 1)) = 25.
+SELECT number, toUInt64(10) AS value
+FROM numbers(1)
+ORDER BY number WITH FILL FROM 0 TO 2
+INTERPOLATE (value AS (value + 1 AS d) + arrayMap(value -> d + value + (value + 1), [toUInt8(1)])[1]);
+
+SELECT number, toUInt64(10) AS value
+FROM numbers(1)
+ORDER BY number WITH FILL FROM 0 TO 2
+INTERPOLATE (value AS arrayMap(value -> (value + 1) + d + value, [toUInt8(1)])[1] + (value + 1 AS d));
 
 -- A matcher inside a lambda in `PREWHERE` takes the `USING` column from the left table, like an identifier does,
 -- so the lambda reads only the table of `PREWHERE`. A column of the other table is rejected.
