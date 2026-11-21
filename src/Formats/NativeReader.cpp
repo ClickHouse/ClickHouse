@@ -495,7 +495,9 @@ Block NativeReader::read()
             index_column_it = index_block_it->columns.begin();
     }
 
-    if (rows && !header.empty())
+    /// A block without columns and rows marks the end of the data. Any other block gets the structure of the header,
+    /// also one without rows: it may lack some columns, have them in another order, or have only columns that were skipped.
+    if ((rows || columns) && !header.empty())
     {
         /// Allow to skip columns. We will fill them with default values later.
         Block tmp_res;
