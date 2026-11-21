@@ -976,7 +976,13 @@ void registerHiddenPreWriteChecksImpl(
     /// A storage that does not push the inserted rows to its dependent views (`Kafka`, `NATS`, `RabbitMQ`) runs
     /// them only when it consumes the rows, in a separate write, so the nested INSERT does not reach them,
     /// see `InsertDependenciesBuilder::createChainWithDependencies`.
-    if (follow_dependent_views && !storage->noPushingToViewsOnInserts())
+    ///
+    /// A `MaterializedView` that is inserted into directly only passes the rows to its target table: the nested
+    /// INSERT expands the dependent views of that target (they are followed below), but not the views reading
+    /// from the materialized view itself, see `InsertDependenciesBuilder::collectAllDependencies`. Such views
+    /// write nothing, so their checks must not be registered either.
+    const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get());
+    if (follow_dependent_views && !materialized_view && !storage->noPushingToViewsOnInserts())
         registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result, ignore_view_errors);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
@@ -1009,7 +1015,7 @@ void registerHiddenPreWriteChecksImpl(
             registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, origin, depth + 1, result);
         return;
     }
-    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    if (materialized_view)
     {
         /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view,
         /// passing the query, and so the columns it lists, through.
