@@ -10,11 +10,12 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t;
 
--- `k` has 1000 values, each in a run of 200 rows, longer than a granule of 64 rows; `v` has 100 values.
+-- `k` has 1000 values, each in a run of 200 rows, longer than a granule of 64 rows.
+-- Only the index in memory is used: without the primary key cache, the index of a new part stays loaded.
 CREATE TABLE t (k UInt32, v UInt32, x UInt64)
 ENGINE = MergeTree ORDER BY (k, v)
 SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 64, index_granularity_bytes = '10Mi',
-    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1, use_primary_key_cache = 0;
 
 INSERT INTO t SELECT intDiv(number, 200), intHash32(number) % 100, number FROM numbers(200000);
 
@@ -22,9 +23,16 @@ SELECT 'The first column of the key';
 SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) BETWEEN 500 AND 2000
 FROM (EXPLAIN SELECT count() FROM t AS a JOIN t AS b ON a.k = b.k);
 
-SELECT 'The second column of the key';
-SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) BETWEEN 30 AND 300
-FROM (EXPLAIN SELECT count() FROM t AS a JOIN t AS b ON a.v = b.v);
+SELECT 'The second column of the key: no estimate, the marks take the first value of each run of the first column';
+DROP TABLE IF EXISTS s;
+-- `sequence` has 64 values repeated for each `tenant`, and every mark takes `sequence = 0`, in two parts.
+CREATE TABLE s (tenant UInt64, sequence UInt64)
+ENGINE = MergeTree PARTITION BY intDiv(tenant, 64) ORDER BY (tenant, sequence)
+SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 64, index_granularity_bytes = '10Mi',
+    primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+INSERT INTO s SELECT intDiv(number, 64), number % 64 FROM numbers(8192);
+SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 64
+FROM (EXPLAIN SELECT count() FROM s AS a JOIN s AS b ON a.sequence = b.sequence);
 
 SELECT 'A unique first column of the key changes in every granule: no estimate';
 DROP TABLE IF EXISTS u;
@@ -34,6 +42,15 @@ SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granular
 INSERT INTO u SELECT number, intHash64(number) FROM numbers(100000);
 SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 50000
 FROM (EXPLAIN SELECT count() FROM u AS a JOIN u AS b ON a.id = b.id);
+
+SELECT 'A unique first column of the key with a last granule of one row, equal to the final mark: no estimate';
+DROP TABLE IF EXISTS u_last;
+CREATE TABLE u_last (id UInt64, x UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 64, index_granularity_bytes = '10Mi';
+INSERT INTO u_last SELECT number, intHash64(number) FROM numbers(64 * 1563 + 1);
+SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 50000
+FROM (EXPLAIN SELECT count() FROM u_last AS a JOIN u_last AS b ON a.id = b.id);
 
 SELECT 'The same with ZSTD, which compresses a sorted unique column to a few bits per row: no estimate from the compressed size';
 DROP TABLE IF EXISTS u_zstd;
@@ -47,4 +64,6 @@ FROM (EXPLAIN SELECT count() FROM u_zstd AS a JOIN u_zstd AS b ON a.id = b.id);
 
 DROP TABLE t;
 DROP TABLE u;
+DROP TABLE s;
+DROP TABLE u_last;
 DROP TABLE u_zstd;

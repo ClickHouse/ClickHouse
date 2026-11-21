@@ -45,6 +45,9 @@ public:
     /// filtered out and which are therefore unknown to the collector.
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// `timeSeriesStoreTags` skips NULL identifiers, so the value behind a NULL is unknown to the collector.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// The declarative signature below is documentation-only — the exact accepted shapes

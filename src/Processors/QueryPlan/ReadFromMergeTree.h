@@ -363,7 +363,8 @@ public:
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
         bool skip_ranges_analysis,
-        bool report_index_usage);
+        bool report_index_usage,
+        bool stop_at_first_match);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -424,6 +425,8 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    /// Whether `requestOutputEachPartitionThroughSeparatePortForWindow` would apply, without applying it.
+    bool canOutputEachPartitionThroughSeparatePortForWindow() const;
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
@@ -434,6 +437,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -552,7 +558,7 @@ public:
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
     /// See `estimateDistinctValuesFromMetadata` in `MergeTreeDistinctValuesFromMetadata.h`: over the parts of
     /// `analyzed_result`, or all parts of the read without it.
-    std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(const Names & column_names, const AnalysisResultPtr & analyzed_result) const;
+    [[nodiscard]] std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(const Names & column_names, const AnalysisResultPtr & analyzed_result) const;
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
         const Names & required_columns, const ActionsDAG::Node * predicate) const;
@@ -772,6 +778,9 @@ private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
+    size_t getReplicasCountForParallelReading();
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -969,6 +978,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
@@ -990,6 +1000,7 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+    std::optional<size_t> replicas_count_for_parallel_reading;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     std::shared_ptr<HypotheticalProjection> hypothetical_projection;

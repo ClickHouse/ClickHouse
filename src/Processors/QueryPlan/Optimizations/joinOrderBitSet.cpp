@@ -138,7 +138,7 @@ SelectivityEstimate computeSelectivity(
                 has_right = true;
             else
                 continue;
-            key_distinct_values.add(getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+            addKeyDistinctValues(key_distinct_values, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
         }
         if (has_left && has_right)
             applyEquiKeyDistinctValues(estimate, key_distinct_values);
