@@ -1,0 +1,241 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "d931e6ac-6b2f-418a-8315-48e19dcfd869",
+  "location" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter",
+  "last-sequence-number" : 7,
+  "last-updated-ms" : 1720015650066,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int",
+      "doc" : ""
+    }, {
+      "id" : 2,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamp",
+      "doc" : ""
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "format" : "iceberg/parquet",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 676640781458910602,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 676640781458910602,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 1497982984005376611,
+    "timestamp-ms" : 1720015648105,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "662",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "662",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-1497982984005376611-1-158a8244-2481-4caf-bbcc-9c74f233cbf0.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 6573139365866404695,
+    "parent-snapshot-id" : 1497982984005376611,
+    "timestamp-ms" : 1720015648442,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "662",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "1324",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-6573139365866404695-1-db02aab1-93fc-4f2e-aabf-1d99d85b1ad5.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 6794256657977651182,
+    "parent-snapshot-id" : 6573139365866404695,
+    "timestamp-ms" : 1720015648650,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "661",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "1985",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-6794256657977651182-1-a379a919-4122-4444-8eea-b381d30112b9.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 4,
+    "snapshot-id" : 5926146033206259390,
+    "parent-snapshot-id" : 6794256657977651182,
+    "timestamp-ms" : 1720015648845,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "661",
+      "changed-partition-count" : "1",
+      "total-records" : "4",
+      "total-files-size" : "2646",
+      "total-data-files" : "4",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-5926146033206259390-1-3040337b-95fa-4dc7-ba4f-98cc293ed7bb.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 5,
+    "snapshot-id" : 6647137445675742324,
+    "parent-snapshot-id" : 5926146033206259390,
+    "timestamp-ms" : 1720015649036,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "662",
+      "changed-partition-count" : "1",
+      "total-records" : "5",
+      "total-files-size" : "3308",
+      "total-data-files" : "5",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-6647137445675742324-1-1fd4e208-4f6a-4b2e-9c7a-398e9b1e9fb6.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 6,
+    "snapshot-id" : 3701250494750438496,
+    "parent-snapshot-id" : 6647137445675742324,
+    "timestamp-ms" : 1720015649230,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "661",
+      "changed-partition-count" : "1",
+      "total-records" : "6",
+      "total-files-size" : "3969",
+      "total-data-files" : "6",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-3701250494750438496-1-9978507e-38c9-4ccc-b85d-f8b711945e70.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 7,
+    "snapshot-id" : 676640781458910602,
+    "parent-snapshot-id" : 3701250494750438496,
+    "timestamp-ms" : 1720015650066,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720015473774",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "662",
+      "changed-partition-count" : "1",
+      "total-records" : "7",
+      "total-files-size" : "4631",
+      "total-data-files" : "7",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/snap-676640781458910602-1-4d082d3c-65f8-4d34-8bae-4257b5e4503c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720015648105,
+    "snapshot-id" : 1497982984005376611
+  }, {
+    "timestamp-ms" : 1720015648442,
+    "snapshot-id" : 6573139365866404695
+  }, {
+    "timestamp-ms" : 1720015648650,
+    "snapshot-id" : 6794256657977651182
+  }, {
+    "timestamp-ms" : 1720015648845,
+    "snapshot-id" : 5926146033206259390
+  }, {
+    "timestamp-ms" : 1720015649036,
+    "snapshot-id" : 6647137445675742324
+  }, {
+    "timestamp-ms" : 1720015649230,
+    "snapshot-id" : 3701250494750438496
+  }, {
+    "timestamp-ms" : 1720015650066,
+    "snapshot-id" : 676640781458910602
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720015525278,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00000-adcda0c4-fed6-430b-b2fe-a2a0eb999832.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015648105,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00001-fff03c64-ed8f-4e2d-b222-3349fcf6cc02.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015648442,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00002-d2548d73-da10-4a15-83a8-f7ad41cd62c3.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015648650,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00003-ae98cf86-56c1-4251-8c92-623db3902e3b.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015648845,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00004-90950691-f411-458b-89da-854d28ef4f02.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015649036,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00005-f02ec65e-3823-4e46-b071-888e4272534e.metadata.json"
+  }, {
+    "timestamp-ms" : 1720015649230,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/tb_ts_filter/metadata/00006-27ee9f62-7eb7-4ea5-b267-9d80e3e666a2.metadata.json"
+  } ]
+}
