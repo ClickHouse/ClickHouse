@@ -352,6 +352,15 @@ bool isTableNameArgument(std::string_view argument)
     return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
+/// The failed query printed next to its error hides secrets, as `system.query_log` does. The inline data of an
+/// INSERT is outside the AST, so its secrets can't be hidden: it is left out.
+String queryTextForErrorMessage(std::string_view query, const DB::ASTPtr & parsed_query)
+{
+    if (parsed_query && (parsed_query->hasSecretParts() || DB::getInsertData(parsed_query)))
+        return parsed_query->formatForErrorMessage();
+    return String(query);
+}
+
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
@@ -1829,7 +1838,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+            e.addMessage("(in query: {})", queryTextForErrorMessage(full_query, parsed_query));
         throw;
     }
 
@@ -1839,7 +1848,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         recordErrorForAIContext(full_query, parsed_query);
         sanitizeErrorOfUnconfirmedAIQuery();
 #endif
-        processError(full_query);
+        processError(queryTextForErrorMessage(full_query, parsed_query));
     }
     return !have_error;
 }
@@ -4252,7 +4261,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     recordErrorForAIContext(full_query, parsed_query);
                     sanitizeErrorOfUnconfirmedAIQuery();
 #endif
-                    processError(full_query);
+                    processError(queryTextForErrorMessage(full_query, parsed_query));
                 }
 
                 // Stop processing queries if needed.
@@ -4274,7 +4283,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.contains(trimmed_input))
+    if (isExitString(trimmed_input))
         return false;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
@@ -4434,12 +4443,7 @@ bool ClientBase::processQueryText(const String & text)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
-    if (query_fuzzer_runs)
-    {
-        processWithASTFuzzer(text);
-        return true;
-    }
-
+    /// With the AST fuzzer `executeMultiQuery` fuzzes each statement and returns false when the server is gone.
     return executeMultiQuery(text);
 }
 
@@ -7503,16 +7507,8 @@ void ClientBase::runNonInteractive()
     {
         for (const auto & query : queries)
         {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithASTFuzzer(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
+            if (!processQueryText(query))
+                return;
         }
     }
     else
@@ -7522,10 +7518,7 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(stdin_fd);
         String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
     }
 }
 
