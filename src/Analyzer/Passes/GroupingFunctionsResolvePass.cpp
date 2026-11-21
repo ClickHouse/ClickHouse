@@ -73,16 +73,43 @@ enum class GroupByKind : uint8_t
     GROUPING_SETS
 };
 
+/// Replaces every folded constant by its source expression. The result is only a lookup key.
+QueryTreeNodePtr unfoldConstants(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return constant_node->hasSourceExpression() ? unfoldConstants(constant_node->getSourceExpression()) : node;
+
+    QueryTreeNodePtr result;
+    const auto & children = node->getChildren();
+    for (size_t i = 0; i < children.size(); ++i)
+    {
+        if (!children[i])
+            continue;
+
+        auto unfolded_child = unfoldConstants(children[i]);
+        if (unfolded_child == children[i])
+            continue;
+
+        if (!result)
+            result = node->clone();
+        result->getChildren()[i] = std::move(unfolded_child);
+    }
+
+    return result ? result : node;
+}
+
 class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitorWithContext<GroupingFunctionResolveVisitor>
 {
 public:
     GroupingFunctionResolveVisitor(GroupByKind group_by_kind_,
         AggredationKeyNodeMap<size_t> aggregation_key_to_index_,
+        QueryTreeNodes grouping_sets_key_nodes_,
         ColumnNumbersList grouping_sets_keys_indices_,
         ContextPtr context_)
         : InDepthQueryTreeVisitorWithContext(std::move(context_))
         , group_by_kind(group_by_kind_)
         , aggregation_key_to_index(std::move(aggregation_key_to_index_))
+        , grouping_sets_key_nodes(std::move(grouping_sets_key_nodes_))
         , grouping_sets_keys_indexes(std::move(grouping_sets_keys_indices_))
     {
     }
@@ -100,8 +127,27 @@ public:
 
         for (const auto & argument : function_arguments)
         {
-            auto it = aggregation_key_to_index.find(argument);
-            if (it == aggregation_key_to_index.end())
+            auto it = aggregation_key_to_index.find(group_by_kind == GroupByKind::GROUPING_SETS ? unfoldConstants(argument) : argument);
+            if (it != aggregation_key_to_index.end())
+            {
+                arguments_indexes.push_back(it->second);
+                continue;
+            }
+
+            ColumnNumbers equal_keys_indexes;
+            for (size_t i = 0; i < grouping_sets_key_nodes.size(); ++i)
+                if (compareGroupByKeys(argument, grouping_sets_key_nodes[i]))
+                    equal_keys_indexes.push_back(i);
+
+            if (equal_keys_indexes.size() > 1)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Argument {} of GROUPING function is equal to several GROUP BY keys [{}]",
+                    unfoldConstants(argument)->formatASTForErrorMessage(),
+                    fmt::join(equal_keys_indexes | std::views::transform([&](size_t i) { return unfoldConstants(grouping_sets_key_nodes[i])->formatASTForErrorMessage(); }), ", "));
+            }
+
+            if (equal_keys_indexes.empty())
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Argument {} of GROUPING function is not a part of GROUP BY clause [{}]",
@@ -109,7 +155,7 @@ public:
                     fmt::join(aggregation_key_to_index | std::views::transform([](const auto & e) { return e.first.node->formatASTForErrorMessage(); }), ", "));
             }
 
-            arguments_indexes.push_back(it->second);
+            arguments_indexes.push_back(equal_keys_indexes.front());
         }
 
         bool force_grouping_standard_compatibility = getSettings()[Setting::force_grouping_standard_compatibility];
@@ -205,6 +251,7 @@ public:
 private:
     GroupByKind group_by_kind;
     AggredationKeyNodeMap<size_t> aggregation_key_to_index;
+    QueryTreeNodes grouping_sets_key_nodes;
     ColumnNumbersList grouping_sets_keys_indexes;
 };
 
@@ -215,6 +262,8 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     size_t aggregation_node_index = 0;
     AggredationKeyNodeMap<size_t> aggregation_key_to_index;
 
+    /// GROUPING SETS keys as written; aggregation_key_to_index is keyed by their unfolded expressions.
+    QueryTreeNodes grouping_sets_key_nodes;
     std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
 
     if (query_node_typed.hasGroupBy())
@@ -246,20 +295,23 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    if (used_keys_in_set.contains(grouping_set_key_node))
+                    auto key_expression = unfoldConstants(grouping_set_key_node);
+                    if (used_keys_in_set.contains(key_expression))
                         continue;
-                    used_keys_in_set.insert(grouping_set_key_node);
-                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
+                    used_keys_in_set.insert(key_expression);
+                    grouping_sets_used_aggregation_keys.push_back(key_expression);
 
-                    if (aggregation_key_to_index.contains(grouping_set_key_node))
+                    if (aggregation_key_to_index.contains(key_expression))
                         continue;
-                    aggregation_key_to_index.emplace(grouping_set_key_node, aggregation_node_index);
+                    aggregation_key_to_index.emplace(key_expression, aggregation_node_index);
+                    grouping_sets_key_nodes.push_back(grouping_set_key_node);
                     ++aggregation_node_index;
                 }
             }
         }
         else
         {
+            /// Keys equal by value are one key here: the planner derives the ROLLUP and CUBE levels from keys deduplicated by value.
             for (auto & group_by_key_node : query_node_typed.getGroupBy().getNodes())
             {
                 if (aggregation_key_to_index.contains(group_by_key_node))
@@ -301,6 +353,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
 
     GroupingFunctionResolveVisitor visitor(group_by_kind,
         std::move(aggregation_key_to_index),
+        std::move(grouping_sets_key_nodes),
         std::move(grouping_sets_keys_indexes),
         std::move(context));
     visitor.visit(query_node);
