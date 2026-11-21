@@ -1,0 +1,21 @@
+ArgMin, NULL comparator
+String	[]
+String	[]
+ArgMax, NULL comparator
+String	[]
+String	[]
+ArgMin, NULL comparator, state
+String	[]
+Resample, NULL key
+Array(String)	['','','']
+Array(String)	['','','']
+Resample, NULL key, signed bounds
+Array(String)	['','','']
+Array(String)	['','','']
+other nested functions are not affected
+Nullable(Nothing)	\N
+UInt64	0
+Variant argument
+1	▁▂█▆▇
+Variant argument under an outer combinator
+1

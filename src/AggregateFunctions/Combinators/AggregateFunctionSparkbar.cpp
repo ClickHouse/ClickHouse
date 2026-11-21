@@ -68,6 +68,27 @@ public:
         return DataTypes(arguments.begin() + 1, arguments.end());
     }
 
+    /// The rows are passed to the nested states of the buckets one by one, so the forwarded `Variant` arguments that
+    /// the nested function does not support are converted around the combinator, once for the whole block.
+    /// Otherwise the adapter applied to the nested function would cast a one-row column for every row.
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override
+    {
+        return VariantArgumentsOfNestedFunction::ConvertedAround;
+    }
+
+    /// The nested argument `i` is the argument `i + 1` of the combined function: the first one is the bucket key.
+    void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
+    {
+        for (size_t i = 0; i < nested_arguments.size(); ++i)
+        {
+            if (converted_nested_arguments[i]->equals(*nested_arguments[i]))
+                continue;
+            chassert(i + 1 < arguments.size() && arguments[i + 1]->equals(*nested_arguments[i]));
+            arguments[i + 1] = converted_nested_arguments[i];
+        }
+    }
+
     [[nodiscard]] Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
