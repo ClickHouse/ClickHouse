@@ -31,8 +31,8 @@ SELECT count(), sum(b), min(a), max(a) FROM t_pr_remote_only WHERE a > 5;
 
 -- Plan shape. Before optimization the planner produces a plain local plan with no split marker
 -- After optimization the parallel-replicas analysis inserts the split above the read and
--- replaces it with a remote parallel-replicas read of the shipped fragment, with no local read and no
--- local/remote union
+-- replaces it with a remote parallel-replicas read of the shipped fragment, with no local/remote union.
+-- The only read is the one of the fragment, shown under the remote read.
 SELECT
     countIf(explain LIKE '%ParallelReplicasSplit%') > 0 AS has_split,
     countIf(explain LIKE '%Union%') > 0 AS has_union,
