@@ -233,6 +233,14 @@ public:
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
     /// Same, for the functions of a `Map` that read only its keys or only its values (`mapKeys(m)` -> reading `m.keys`).
     virtual bool supportsOptimizationToMapKeysAndValuesSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+
+    /// True when a subcolumn read under FINAL equals the function computed on the merged column.
+    /// Safe for engines whose FINAL merge selects whole rows (Replacing/Collapsing/VersionedCollapsing);
+    /// unsafe for value-combining engines (Summing/Graphite/Coalescing) that recompute column values.
+    /// Wrappers that resolve the table they read by name (`Merge`, `Buffer`, `Alias`, materialized views) keep the
+    /// default: that table may change between this check and the read, and may have other column types.
+    virtual bool supportsSubcolumnOptimizationWithFinal() const { return false; }
+
     /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
     /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
     virtual bool hasBucketedMapSerialization() const { return false; }
