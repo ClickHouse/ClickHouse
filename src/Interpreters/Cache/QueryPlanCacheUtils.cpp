@@ -22,6 +22,9 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -33,6 +36,7 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -204,6 +208,20 @@ bool isFunctionCheckingAccessOnCreate(const String & name)
         || effective_name.starts_with("dict");
 }
 
+/// True when `text` mentions an aggregate function that checks access rights of the current user when
+/// it is created (`flameGraph` requires the `INTROSPECTION` grant). Such an aggregate function is
+/// reachable not only by a direct call, but also by its name given as a string: `arrayReduce`,
+/// `arrayReduceInRanges` and `initializeAggregation` take the name as an argument and are folded into
+/// a constant when the other arguments are constant, and the name of the data type
+/// `AggregateFunction(flameGraph, ...)` creates the function as well. A hit creates none of them
+/// again, so it would keep serving the value after the privilege was revoked. The name is matched as
+/// a substring, which also covers combinators (`flameGraphIf`, `flameGraphState`) and parameters; a
+/// string that merely contains the name only makes the plan uncacheable.
+bool mentionsAggregateFunctionCheckingAccessOnCreate(std::string_view text)
+{
+    return text.contains("flameGraph");
+}
+
 /// What a function argument passed by name refers to, when it names a function the plan cache
 /// cannot support.
 enum class FunctionPassedByName : uint8_t
@@ -298,7 +316,7 @@ struct RowPolicyFilterContents
     /// `isFunctionCheckingAccessOnCreate`): a hit does not create it again, so the check is lost.
     bool has_function_checking_access = false;
 
-    bool isCacheable() const
+    [[nodiscard]] bool isCacheable() const
     {
         return !has_subquery && !has_function_resolved_outside_function_factory && !has_sql_udf && !has_unknown_function
             && !has_non_deterministic_function && !has_function_checking_access;
@@ -701,6 +719,21 @@ bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr
     if (isFunctionCheckingAccessOnCreate(function.name))
         return true;
 
+    /// An aggregate function checking access rights, called directly or named by a string argument
+    /// (`arrayReduce('flameGraph', ...)`), see `mentionsAggregateFunctionCheckingAccessOnCreate`.
+    if (mentionsAggregateFunctionCheckingAccessOnCreate(function.name))
+        return true;
+    if (function.arguments)
+    {
+        for (const auto & argument : function.arguments->children)
+        {
+            const auto * literal = argument->as<ASTLiteral>();
+            if (literal && literal->value.getType() == Field::Types::String
+                && mentionsAggregateFunctionCheckingAccessOnCreate(literal->value.safeGet<String>()))
+                return true;
+        }
+    }
+
     /// Checked before `FunctionFactory`, mirroring the resolution order of the analyzer.
     if (isFunctionResolvedOutsideFunctionFactory(function.name, context))
         return true;
@@ -809,7 +842,7 @@ private:
         return true;
     }
 
-    const ASTWithElement * findCTE(const StorageID & table_id) const
+    [[nodiscard]] const ASTWithElement * findCTE(const StorageID & table_id) const
     {
         /// A qualified identifier always names a storage. CTE names are unqualified and shadow
         /// catalog names only in their lexical query scope.
@@ -1219,6 +1252,12 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
 
     if (const auto * function_node = node.as<FunctionNode>())
     {
+        /// An aggregate function that checks access rights when it is created, also with combinators
+        /// (see `mentionsAggregateFunctionCheckingAccessOnCreate`). Its name given as a string argument
+        /// is a constant, which is checked below.
+        if (mentionsAggregateFunctionCheckingAccessOnCreate(function_node->getFunctionName()))
+            return false;
+
         if (function_node->isOrdinaryFunction())
         {
             /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is
@@ -1249,6 +1288,18 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
     }
     else if (const auto * constant_node = node.as<ConstantNode>())
     {
+        /// The name of an aggregate function checking access rights, passed as a string to a function
+        /// that creates it (`arrayReduce('flameGraph', ...)`, a cast to `AggregateFunction(flameGraph, ...)`).
+        /// The call is folded into a constant, so a hit would not repeat the check. The argument is
+        /// itself a constant, possibly computed (`concat('flame', 'Graph')`), so check the value.
+        if (isString(removeLowCardinalityAndNullable(constant_node->getResultType())))
+        {
+            const Field value = constant_node->getValue();
+            if (value.getType() == Field::Types::String
+                && mentionsAggregateFunctionCheckingAccessOnCreate(value.safeGet<String>()))
+                return false;
+        }
+
         if (constant_node->hasSourceExpression())
         {
             const auto & source = constant_node->getSourceExpression();
