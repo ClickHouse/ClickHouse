@@ -600,6 +600,8 @@ public:
         bool has_low_cardinality_argument = false;
         /// The same for a replicated `String` column, as a `String` column with dictionary granules is read.
         bool has_replicated_argument = false;
+        /// The only argument is a replicated `String` column that the function reads as it is, and the function ignores
+        /// repeated values (aggregation with keys): a row whose position in the argument's nested column and whose place
         /// The arguments are copies of constants with this many rows, added repeatedly to cover the rows (aggregation without keys); 0 otherwise.
         size_t constant_argument_rows = 0;
     };
@@ -1200,6 +1202,34 @@ private:
         AdaptiveAggregationProducer & adaptive,
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
+
+    /// `collectCombinedMisses` for a key state whose rows are positions in a column of values (see
+    /// `HashMethodPackedString::forEachPositionCount`): the key of each position is probed once, at its first row, for
+    /// all the rows of the position. A hit adds them to the key's inline count with `with_count`. A miss becomes one
+    /// record: with `with_count` a count record of all the rows, otherwise a key-only record. Returns the hits.
+    template <bool with_count, typename RecordKey, typename LocalMethod, typename State>
+    AdaptiveLocalProbes collectPositionMisses(
+        LocalMethod & local_method,
+        State & find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe) const;
+
+    /// `collectArgumentMisses` for a key state whose rows are positions in a column of values: the key of each position
+    /// is probed once, and every row of the position takes the result. A missed row is still a record of its own, which
+    /// carries the row's arguments. The method keeps no slot for the NULL key.
+    template <bool record_places, typename RecordKey, typename LocalMethod, typename State>
+    AdaptiveLocalProbes collectPositionArgumentMisses(
+        LocalMethod & local_method,
+        State & local_find_state,
+        size_t row_begin,
+        size_t row_end,
+        Arena & scratch_pool,
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe,
+        AggregateDataPtr * places_data) const;
 
     /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
     /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot

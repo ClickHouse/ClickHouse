@@ -1856,11 +1856,26 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
+    /// The key states whose rows are positions in a column of values, a `LowCardinality` dictionary or the nested
+    /// column of a replicated `String` key, so that the keys of a block are looked up once per position. The positions
+    /// of a replicated key repeat only as much as its values repeat within a granule, so its state tells whether they
+    /// repeat enough to pay (`positionsRepeat`).
+    static constexpr bool state_counts_positions = requires(State & s) { s.canCountPositions(size_t{}, size_t{}); };
+    [[maybe_unused]] const auto counts_positions = [&](size_t begin, size_t end)
+    {
+        if constexpr (requires(const State & s) { s.positionsRepeat(size_t{}, size_t{}); })
+            return state.canCountPositions(begin, end) && state.positionsRepeat(begin, end);
+        else if constexpr (state_counts_positions)
+            return state.canCountPositions(begin, end);
+        else
+            return false;
+    };
+
     if (is_simple_count)
     {
-        if constexpr (Method::low_cardinality_optimization && !top_k)
+        if constexpr (state_counts_positions && !top_k)
         {
-            if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
+            if (!all_keys_are_const && counts_positions(row_begin, row_end))
             {
                 if (!no_more_keys)
                 {
@@ -2044,8 +2059,62 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// Assign at the branch tails so `no_more_keys` is not live across either loop.
     bool all_places_are_non_null = false;
 
+    /// The rows of a replicated `String` key are positions in its nested column, whose entries are the strings, so the
+    /// key of each position is emplaced once, at its first row, and every row takes the place of its position.
+    bool rows_placed_by_position = false;
+    if constexpr (requires(const State & s) { s.positionAt(size_t{}); } && !top_k)
+    {
+        if (!no_more_keys && !all_keys_are_const && counts_positions(key_start, key_end))
+        {
+            PaddedPODArray<AggregateDataPtr> position_places(state.numPositions());
+            const auto emplace_position = [&](size_t first_row) ALWAYS_INLINE
+            {
+                auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
+                AggregateDataPtr aggregate_data = nullptr;
+                if (emplace_result.isInserted())
+                {
+                    /// The states are created as in the loop below, which explains the order.
+                    emplace_result.setMapped(nullptr);
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data, use_compiled_functions);
+                    emplace_result.setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result.getMapped();
+                position_places[state.positionAt(first_row)] = aggregate_data;
+            };
+
+            if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
+            {
+                PODArrayWithStackMemory<UInt32, 4096> first_rows;
+                state.forEachPositionCount(key_start, key_end, [&](size_t first_row, UInt64)
+                {
+                    first_rows.push_back(static_cast<UInt32>(first_row));
+                });
+                for (size_t i = 0; i < first_rows.size(); ++i)
+                {
+                    if (i + prefetch_look_ahead < first_rows.size())
+                        method.data.prefetchByHash(state.getHash(method.data, first_rows[i + prefetch_look_ahead], *aggregates_pool));
+                    emplace_position(first_rows[i]);
+                }
+            }
+            else
+            {
+                state.forEachPositionCount(key_start, key_end, [&](size_t first_row, UInt64) { emplace_position(first_row); });
+            }
+
+            for (size_t i = key_start; i < key_end; ++i)
+                places[i] = position_places[state.positionAt(i)];
+            rows_placed_by_position = true;
+        }
+    }
+
     /// For all rows.
-    if (!no_more_keys)
+    if (rows_placed_by_position)
+    {
+        all_places_are_non_null = true;
+    }
+    else if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
         if constexpr (top_k)
@@ -2265,6 +2334,10 @@ void Aggregator::executeAggregateInstructions(
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
+        else if (inst->skips_repeated_rows && !inst->offsets)
+        {
+            addBatchSkippingRepeatedRows(row_begin, row_end, inst, places, aggregates_pool);
+        }
         else
         {
             addBatch(row_begin, row_end, inst, places, aggregates_pool, all_places_are_non_null);
@@ -2482,6 +2555,7 @@ void Aggregator::prepareAggregateInstructions(
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
         bool has_replicated_argument = false;
+        bool skips_repeated_rows = false;
 
         size_t constant_argument_rows = 0;
         if (params.keys_size == 0 && !aggregate_columns[i].empty())
@@ -2523,6 +2597,12 @@ void Aggregator::prepareAggregateInstructions(
 
             /// A function that reads replicated arguments through their indexes also gets the column as it is.
             const bool keep_replicated = has_replicated_argument || (replicated_string && aggregate_functions[i]->supportsReplicatedArguments());
+
+            /// With keys, the rows of one position and one place add one value to one state, which a function that ignores
+            /// repeated values needs only once. Skipping them pays when the positions repeat, on the bound above.
+            if (keep_replicated && params.keys_size > 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues()
+                && replicated->getNestedColumn()->size() * 2 <= replicated->size())
+                skips_repeated_rows = true;
 
             /// Only the converted columns have to be held here, the original ones are held by the caller.
             auto converted_column = keep_replicated
@@ -2571,6 +2651,7 @@ void Aggregator::prepareAggregateInstructions(
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
         aggregate_functions_instructions[i].has_replicated_argument = has_replicated_argument;
+        aggregate_functions_instructions[i].skips_repeated_rows = skips_repeated_rows;
         aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
 }

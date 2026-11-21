@@ -389,11 +389,16 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     /// for a `String` key column, whose rows are the strings.
     PaddedPODArray<UInt32> replicated_positions;
     bool replicated = false;
+    /// The number of entries of the nested column of a replicated key column.
+    size_t num_positions = 0;
 
     /// The content hashes of the entries that rows have asked for, so that the rows of one entry hash its string once. 0
     /// marks an entry not hashed yet. Empty when the nested column has more entries than the block has rows, as for a
     /// filtered block: each row then hashes its string.
     mutable PaddedPODArray<UInt32> entry_hashes;
+
+    /// The scratch of `forEachPositionCount`.
+    columns_hashing_impl::PositionCounter position_counter;
 
     HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
         : Base(key_columns[0])
@@ -412,6 +417,35 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
     }
+
+    /// Whether `forEachPositionCount` can count the rows [row_begin, row_end): the key column is replicated, so that
+    /// its rows are positions in its nested column, and the range fits the 32-bit scratch of the counter.
+    [[nodiscard]] bool canCountPositions(size_t row_begin, size_t row_end) const
+    {
+        return replicated && row_end - row_begin <= std::numeric_limits<UInt32>::max();
+    }
+
+    /// Calls `f(first_row, count)` once for every position that the rows [row_begin, row_end) name, in the order of
+    /// their first rows, with the number of those rows. Requires `canCountPositions`.
+    template <typename F>
+    void forEachPositionCount(size_t row_begin, size_t row_end, F && f)
+    {
+        position_counter.forEach(replicated_positions, num_positions, row_begin, row_end, f);
+    }
+
+    /// Whether the rows [row_begin, row_end) are at least twice as many as the positions, so that work done once per
+    /// position instead of once per row pays. The nested column holds the distinct values of each granule of the block,
+    /// also those of the rows that a filter removed. The bound is the one of `LowCardinality` arguments in
+    /// `Aggregator::prepareAggregateInstructions`.
+    [[nodiscard]] bool positionsRepeat(size_t row_begin, size_t row_end) const
+    {
+        return num_positions * 2 <= row_end - row_begin;
+    }
+
+    /// The position of the row in the nested column, below `numPositions`. Requires `canCountPositions`.
+    [[nodiscard]] ALWAYS_INLINE size_t positionAt(size_t row) const { return replicated_positions[row]; }
+
+    [[nodiscard]] size_t numPositions() const { return num_positions; }
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
