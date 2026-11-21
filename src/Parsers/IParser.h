@@ -77,6 +77,8 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
   */
 struct Expected
 {
+    /// Descriptions of what the parser could accept at `max_parsed_pos`, the rightmost position it reached;
+    /// a syntax error lists them as "Expected one of: ...".
     InlineVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
@@ -94,6 +96,23 @@ struct Expected
 
     /// Positions of opening brackets where `ParserSubquery` failed in this parse; copies share it.
     std::shared_ptr<FailedSubqueryReadings> failed_subquery_readings;
+
+    /// The state a parser restores when it takes a reading back. Not `highlights`: the re-read tokens are highlighted again.
+    struct SavedState
+    {
+        InlineVector<const char *, 7> variants;
+        const char * max_parsed_pos = nullptr;
+        LiteralTokenMap * literal_token_map = nullptr;
+    };
+
+    [[nodiscard]] SavedState save() const { return {variants, max_parsed_pos, literal_token_map}; }
+
+    void restore(const SavedState & state)
+    {
+        variants = state.variants;
+        max_parsed_pos = state.max_parsed_pos;
+        literal_token_map = state.literal_token_map;
+    }
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
