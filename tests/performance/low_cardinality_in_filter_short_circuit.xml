@@ -1,0 +1,81 @@
+<test>
+    <!--
+        A `WHERE`/`PREWHERE` filter on a `LowCardinality` column (`x IN (...)`, `x = 'a'`, ...) has type
+        `LowCardinality(UInt8)`. When every row of a block evaluates to the same value, this is never
+        detected as constant unless the whole filter column happens to be a `ColumnConst`, so the filter
+        gets materialized into a full column and the other columns of the block get filtered row by row,
+        even though nothing in the block actually passes (or everything does).
+
+        The queries aggregate `cityHash64(pad)` rather than `length(pad)`: `length` of a `String` column is read
+        from its `size` subcolumn only, so the data of `pad` would not be read nor filtered at all, and the
+        cost this optimization saves would not show up. The `count()` queries read nothing but the filter
+        column, which exposes the cost of processing the filter itself.
+
+        Columns of `lc_filter_short_circuit`, and what each one exercises:
+        - `s`: two values, `'a'` and `'b'`, alternating on every row. `s IN ('z')` is constant-false in every
+          block, `s IN ('a', 'b')` is constant-true in every block (both are decided from the dictionary of the
+          filter alone, without scanning the indexes), and `s IN ('a')` is never constant: a control query that
+          should show no improvement, to catch a regression in the extra per-block scan this needs.
+        - `s_many`: 5000 distinct values, so the dictionary indexes are `UInt16` rather than `UInt8`.
+        - `s_rare`: `'a'` on every row except one in 50000, which is `'b'`. This is the mixed-but-mostly-true
+          case: most blocks are constant, and the rest have to be scanned until the rare value is found, so
+          this is where the overhead of the detection is the largest relative to the work it saves.
+        - `n`: `LowCardinality(Nullable(String))`, `'a'` on even rows and `NULL` on odd ones, so the filter has
+          a `NULL` key in its dictionary.
+    -->
+    <create_query>DROP TABLE IF EXISTS lc_filter_short_circuit</create_query>
+    <create_query>
+        CREATE TABLE lc_filter_short_circuit
+        (
+            id UInt64,
+            s LowCardinality(String),
+            s_many LowCardinality(String),
+            s_rare LowCardinality(String),
+            n LowCardinality(Nullable(String)),
+            pad String
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lc_filter_short_circuit
+        SELECT
+            number,
+            if(number % 2 = 0, 'a', 'b'),
+            toString(number % 5000),
+            if(number % 50000 = 49999, 'b', 'a'),
+            if(number % 2 = 0, 'a', NULL),
+            leftPad(toString(sipHash64(number)), 64, '0')
+        FROM numbers(10000000)
+    </fill_query>
+
+    <!-- Constant-false in every block. -->
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('z') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_many IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE n IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+
+    <!-- Constant-true in every block. -->
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('a', 'b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a', 'b') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_many NOT IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+
+    <!-- Mixed, mostly true: the overhead of the detection when it only sometimes pays off. -->
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s_rare IN ('a') SETTINGS use_query_condition_cache = 0</query>
+
+    <!-- Mixed, mostly false: the same, for a filter that rejects almost every row. -->
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+
+    <!-- Only the filter column is read: the cost of the filter itself. -->
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s IN ('a', 'b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s_rare IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+
+    <!-- Never constant: a control that should show no change. -->
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a') SETTINGS use_query_condition_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_filter_short_circuit</drop_query>
+</test>
