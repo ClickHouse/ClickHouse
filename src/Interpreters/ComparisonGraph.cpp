@@ -5,11 +5,18 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
+
 #include <Functions/FunctionFactory.h>
+
+#include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
 
@@ -19,8 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int VIOLATED_CONSTRAINT;
-    extern const int TYPE_MISMATCH;
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 namespace
@@ -156,25 +161,47 @@ const auto & getArguments(const FunctionNode * function)
     return function->getArguments().getNodes();
 }
 
+/// `accurateLess` and `accurateEquals` compare a `Field` with a `Field` of the same type, and two numbers of any types.
+/// A query also compares other pairs, like an `IPv4` and an `IPv6`, after a conversion that the graph does not do.
+/// A decimal and a float compare after the decimal is rounded to `Float64`, so the order of the bounds is not exact.
+/// `accurateLess` puts a `NaN` after all numbers, but each ordered comparison with a `NaN` is false.
+bool canCompare(const Field & lhs, const Field & rhs)
+{
+    auto is_nan = [](const Field & field)
+    {
+        return field.getType() == Field::Types::Float64 && isNaN(field.safeGet<Float64>());
+    };
+    if (is_nan(lhs) || is_nan(rhs))
+        return false;
+
+    auto is_float = [](const Field & field) { return field.getType() == Field::Types::Float64; };
+    auto is_decimal = [](const Field & field) { return Field::isDecimal(field.getType()); };
+    if ((is_decimal(lhs) && is_float(rhs)) || (is_float(lhs) && is_decimal(rhs)))
+        return false;
+
+    auto is_number = [](Field::Types::Which type)
+    {
+        switch (type)
+        {
+            case Field::Types::Bool:
+            case Field::Types::UInt64:
+            case Field::Types::Int64:
+            case Field::Types::Float64:
+            case Field::Types::UInt128:
+            case Field::Types::Int128:
+            case Field::Types::UInt256:
+            case Field::Types::Int256:
+                return true;
+            default:
+                return Field::isDecimal(type);
+        }
+    };
+    return lhs.getType() == rhs.getType() || (is_number(lhs.getType()) && is_number(rhs.getType()));
+}
+
 bool less(const Field & lhs, const Field & rhs)
 {
-    try
-    {
-        return accurateLess(lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
+    return accurateLess(lhs, rhs);
 }
 
 bool greater(const Field & lhs, const Field & rhs)
@@ -184,23 +211,7 @@ bool greater(const Field & lhs, const Field & rhs)
 
 bool equals(const Field & lhs, const Field & rhs)
 {
-    try
-    {
-        return accurateEquals(lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
+    return accurateEquals(lhs, rhs);
 }
 
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
@@ -236,6 +247,57 @@ ComparisonGraphCompareResult inverseCompareResult(ComparisonGraphCompareResult r
     return inverse_relations.at(result);
 }
 
+}
+
+bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto is_string = [](const QueryTreeNodePtr & node)
+    {
+        return isStringOrFixedString(removeLowCardinalityAndNullable(node->getResultType()));
+    };
+    auto is_string_constant = [&](const QueryTreeNodePtr & node) { return node->as<ConstantNode>() && is_string(node); };
+    return (is_string_constant(left) && !is_string(right)) || (is_string_constant(right) && !is_string(left));
+}
+
+bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_fixed_string = [](const DataTypePtr & type)
+    {
+        return anyInTypeTree(*type, [](const IDataType & nested) { return isFixedString(nested); });
+    };
+    const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
+    const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
+    return (has_fixed_string(left_type) || has_fixed_string(right_type)) && !left_type->equals(*right_type);
+}
+
+bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
+    const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
+    return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type))
+        || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
+}
+
+bool comparesDecimalWithFloat(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_decimal = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDecimal(type) || isDateTime64(type); });
+    };
+    auto has_float = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isFloat(type); });
+    };
+    return (has_decimal(left) && has_float(right)) || (has_float(left) && has_decimal(right));
+}
+
+bool hasDynamicArgument(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    auto has_dynamic = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDynamic(type) || isVariant(type); });
+    };
+    return has_dynamic(left) || has_dynamic(right);
 }
 
 template <ComparisonGraphNodeType Node>
@@ -381,6 +443,20 @@ std::optional<typename ComparisonGraph<Node>::Path> ComparisonGraph<Node>::findP
 template <ComparisonGraphNodeType Node>
 ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, const Node & right) const
 {
+    /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array. The graph has no
+    /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
+    /// A string constant compared with another type is a value of that type, which the bounds do not know.
+    /// A `FixedString` compared with another string type is padded with zero bytes. A `Dynamic` compares by its active type.
+    /// A `Date` compared with a `DateTime` is converted to a time, but its bounds count days.
+    /// A decimal compared with a float is rounded to `Float64`, but its relations in the graph are exact.
+    if constexpr (!with_ast)
+    {
+        if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
+            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right)
+            || comparesDecimalWithFloat(left, right))
+            return ComparisonGraphCompareResult::UNKNOWN;
+    }
+
     size_t start = 0;
     size_t finish = 0;
 
@@ -395,7 +471,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
             const auto left_bound = getConstLowerBound(left);
             const auto right_bound = getConstUpperBound(right);
 
-            if (left_bound && right_bound)
+            if (left_bound && right_bound && canCompare(left_bound->first, right_bound->first))
             {
                 if (greater(left_bound->first, right_bound->first))
                     result = ComparisonGraphCompareResult::GREATER;
@@ -408,7 +484,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
             const auto left_bound = getConstUpperBound(left);
             const auto right_bound = getConstLowerBound(right);
 
-            if (left_bound && right_bound)
+            if (left_bound && right_bound && canCompare(left_bound->first, right_bound->first))
             {
                 if (less(left_bound->first, right_bound->first))
                     result = ComparisonGraphCompareResult::LESS;
@@ -622,9 +698,19 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         return graph.vertices[index].getConstant();
     else
     {
-        const auto & constant = getConstantValue(graph.vertices[index].getConstant());
-        auto constant_node = std::make_shared<ConstantNode>(constant, node->getResultType());
-        return constant_node;
+        const auto & equal_constant = graph.vertices[index].getConstant();
+
+        /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but '9' cast to the `Enum` of `e` is the name '9'.
+        if (mixesEnumAndString(equal_constant->getResultType(), node->getResultType()))
+            return std::nullopt;
+
+        /// `CHECK e = 1.0` gives `e` a `Float64` constant, which has no exact conversion to the `Enum` of `e`.
+        const auto type = node->getResultType();
+        Field constant = tryConvertFieldToTypeExact(getConstantValue(equal_constant), *type, equal_constant->getResultType().get());
+        if (constant.isNull())
+            return std::nullopt;
+
+        return std::make_shared<ConstantNode>(std::move(constant), type);
     }
 }
 
@@ -782,7 +868,7 @@ typename ComparisonGraph<Node>::Graph ComparisonGraph<Node>::buildGraphFromNodes
                 const auto right = getConstantValue(result.vertices[u].getConstant());
 
                 /// Only GREATER. Equal constant fields = equal literals so it was already considered above.
-                if (greater(left, right))
+                if (canCompare(left, right) && greater(left, right))
                     result.edges[v].push_back({Graph::Edge::GREATER, u});
             }
         }
@@ -842,17 +928,20 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph<Node>::bui
 
         if (graph.vertices[to].hasConstant())
         {
+            /// Each bound holds, so a bound that cannot be compared with the current one does not replace it.
             if (lower[from] == -1
-                || greater(get_value(to), get_value(lower[from]))
-                || (equals(get_value(to), get_value(lower[from])) && path == Path::GREATER))
+                || (canCompare(get_value(to), get_value(lower[from]))
+                    && (greater(get_value(to), get_value(lower[from]))
+                        || (equals(get_value(to), get_value(lower[from])) && path == Path::GREATER))))
                 lower[from] = to;
         }
 
         if (graph.vertices[from].hasConstant())
         {
             if (upper[to] == -1
-                || less(get_value(from), get_value(upper[to]))
-                || (equals(get_value(from), get_value(upper[to])) && path == Path::GREATER))
+                || (canCompare(get_value(from), get_value(upper[to]))
+                    && (less(get_value(from), get_value(upper[to]))
+                        || (equals(get_value(from), get_value(upper[to])) && path == Path::GREATER))))
                 upper[to] = from;
         }
     }

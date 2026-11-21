@@ -40,4 +40,47 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
+/** Returns true if `<`, `>`, `<=` or `>=` between `string_side` and `enum_side` can compare a `String` or a
+  * `FixedString` in `string_side` with an `Enum` in `enum_side`, as a whole or in aligned elements of tuples.
+  * Such a comparison converts the string to the `Enum` and compares the numbers, so it does not follow the
+  * order of the strings. `Nullable` and `LowCardinality` are looked through. A `Dynamic` or a `Variant` in
+  * `enum_side` counts as an `Enum`, and in `string_side` as a string, also in a tuple, because it can hold one.
+  *
+  * Examples:
+  * `String` and `Enum8('b' = 1, 'a' = 2)` returns true.
+  * `Enum8('b' = 1, 'a' = 2)` and `String` returns false.
+  * `Tuple(Nullable(String), UInt8)` and `Tuple(Enum8('b' = 1, 'a' = 2), UInt8)` returns true.
+  * `Tuple(String)` and `Tuple(Dynamic)` returns true.
+  * `Tuple(Tuple(String))` and `Tuple(Dynamic)` returns true.
+  * `Tuple(Dynamic)` and `Tuple(Enum8('b' = 1, 'a' = 2))` returns true.
+  * `String` and `Tuple(Enum8('b' = 1, 'a' = 2))` returns false.
+  */
+bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr & enum_side);
+
+/** Returns true if a comparison of `left` with `right` can meet an `Enum` on one side and a `String` or
+  * a `FixedString` on the other, as a whole or in aligned elements of arrays, maps and tuples. Such a pair
+  * does not compare in the order of two `Enum`s or of two strings: a scalar pair compares by the `Enum` value,
+  * an array pair by the name. `Nullable` and `LowCardinality` are looked through. A `Dynamic` or a `Variant`
+  * counts as both, because it can hold either.
+  *
+  * Examples:
+  * `Enum8('b' = 1, 'a' = 2)` and `String` returns true.
+  * `Array(String)` and `Array(Enum8('b' = 1, 'a' = 2))` returns true.
+  * `Map(String, Enum8('b' = 1, 'a' = 2))` and `Map(String, String)` returns true.
+  * `Tuple(String, UInt8)` and `Tuple(String, Enum8('b' = 1, 'a' = 2))` returns false.
+  * `Dynamic` and `Array(String)` returns true.
+  */
+bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right);
+
+/** Returns true if `mixesEnumAndString` holds for the elements of aligned arrays or maps of `left` and `right`,
+  * also in aligned elements of tuples. Such a pair compares by the name of the `Enum`.
+  *
+  * Examples:
+  * `Array(Enum8('b' = 1, 'a' = 2))` and `Array(String)` returns true.
+  * `Tuple(Array(String))` and `Tuple(Array(Enum8('b' = 1, 'a' = 2)))` returns true.
+  * `Enum8('b' = 1, 'a' = 2)` and `String` returns false.
+  * `Tuple(Enum8('b' = 1, 'a' = 2))` and `Tuple(String)` returns false.
+  */
+bool mixesEnumAndStringInArray(const DataTypePtr & left, const DataTypePtr & right);
+
 }

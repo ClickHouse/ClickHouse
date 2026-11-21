@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -383,6 +385,135 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
     if (from_array && to_array)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
+
+    return false;
+}
+
+bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr & enum_side)
+{
+    const auto string_type = removeLowCardinalityAndNullable(string_side);
+    const auto enum_type = removeLowCardinalityAndNullable(enum_side);
+
+    const auto * string_tuple = typeid_cast<const DataTypeTuple *>(string_type.get());
+    const auto * enum_tuple = typeid_cast<const DataTypeTuple *>(enum_type.get());
+    if (string_tuple && enum_tuple)
+    {
+        const auto & string_elements = string_tuple->getElements();
+        const auto & enum_elements = enum_tuple->getElements();
+        if (string_elements.size() != enum_elements.size())
+            return false;
+        for (size_t i = 0; i < string_elements.size(); ++i)
+            if (comparesStringWithEnum(string_elements[i], enum_elements[i]))
+                return true;
+        return false;
+    }
+
+    /// A `Dynamic` or a `Variant` may hold a string in `string_side` or an `Enum` in `enum_side`,
+    /// also in a tuple aligned with a tuple on the other side.
+    const bool string_carrier = isDynamic(string_type) || isVariant(string_type);
+    const bool enum_carrier = isDynamic(enum_type) || isVariant(enum_type);
+    if (string_carrier && enum_tuple)
+    {
+        for (const auto & element : enum_tuple->getElements())
+            if (comparesStringWithEnum(string_type, element))
+                return true;
+        return false;
+    }
+    if (enum_carrier && string_tuple)
+    {
+        for (const auto & element : string_tuple->getElements())
+            if (comparesStringWithEnum(element, enum_type))
+                return true;
+        return false;
+    }
+
+    return (string_carrier || isStringOrFixedString(string_type)) && (enum_carrier || isEnum(enum_type));
+}
+
+namespace
+{
+
+bool isEnumOrStringCarrier(const DataTypePtr & type)
+{
+    return isDynamic(type) || isVariant(type);
+}
+
+/// A `Map` compares as the array of its key-value tuples.
+DataTypePtr comparedShape(const DataTypePtr & type)
+{
+    auto shape = removeLowCardinalityAndNullable(type);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(shape.get()))
+        return map->getNestedType();
+    return shape;
+}
+
+bool containsEnumOrString(const DataTypePtr & type)
+{
+    const auto shape = comparedShape(type);
+    if (isEnum(shape) || isStringOrFixedString(shape) || isEnumOrStringCarrier(shape))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(shape.get()))
+        return containsEnumOrString(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(shape.get()))
+        return std::ranges::any_of(tuple->getElements(), containsEnumOrString);
+    return false;
+}
+
+}
+
+bool mixesEnumAndString(const DataTypePtr & left, const DataTypePtr & right)
+{
+    const auto left_shape = comparedShape(left);
+    const auto right_shape = comparedShape(right);
+
+    /// A `Dynamic` or a `Variant` can hold an `Enum` or a string of any shape.
+    if (isEnumOrStringCarrier(left_shape) || isEnumOrStringCarrier(right_shape))
+        return containsEnumOrString(left_shape) && containsEnumOrString(right_shape);
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_shape.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_shape.get());
+    if (left_array && right_array)
+        return mixesEnumAndString(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_shape.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_shape.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (mixesEnumAndString(left_elements[i], right_elements[i]))
+                return true;
+        return false;
+    }
+
+    return (isEnum(left_shape) && isStringOrFixedString(right_shape)) || (isStringOrFixedString(left_shape) && isEnum(right_shape));
+}
+
+bool mixesEnumAndStringInArray(const DataTypePtr & left, const DataTypePtr & right)
+{
+    const auto left_shape = comparedShape(left);
+    const auto right_shape = comparedShape(right);
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_shape.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_shape.get());
+    if (left_array && right_array)
+        return mixesEnumAndString(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_shape.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_shape.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (mixesEnumAndStringInArray(left_elements[i], right_elements[i]))
+                return true;
+    }
 
     return false;
 }

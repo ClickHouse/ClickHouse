@@ -2,6 +2,8 @@
 
 #include <Common/quoteString.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -20,6 +22,7 @@
 #include <Core/Defines.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -309,8 +312,46 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
                 continue;
 
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-            if (function_node && relations.contains(function_node->getFunctionName()))
-                constraints_for_graph.push_back(atom.node_with_hash.node);
+            if (!function_node || !relations.contains(function_node->getFunctionName()))
+                continue;
+
+            /// An `Enum` compared with a string orders by the `Enum` value, or by the name in an array, two `Enum`s by the value.
+            /// The graph chains its relations and treats a constant by its `Field`, so such an atom is left out.
+            const auto & arguments = function_node->getArguments().getNodes();
+            if (arguments.size() == 2 && mixesEnumAndString(arguments[0]->getResultType(), arguments[1]->getResultType()))
+                continue;
+
+            /// The graph orders constants by their `Field`s, which order the elements of arrays, maps and tuples by the `Field` type first.
+            auto is_composite = [](const QueryTreeNodePtr & node)
+            {
+                const auto type = removeLowCardinalityAndNullable(node->getResultType());
+                return isArray(type) || isTuple(type) || isMap(type);
+            };
+            if (arguments.size() == 2 && (arguments[0]->as<ConstantNode>() || arguments[1]->as<ConstantNode>())
+                && (is_composite(arguments[0]) || is_composite(arguments[1])))
+                continue;
+
+            /// `CHECK n = '9'` makes `n` the number 9, but the graph orders the bound '9' as a string.
+            if (arguments.size() == 2 && comparesStringConstantWithOtherType(arguments[0], arguments[1]))
+                continue;
+
+            /// `CHECK s = f` holds for the `String` 'a\0' and the `FixedString(2)` 'a', but `CAST(f, 'String')` is 'a'.
+            if (arguments.size() == 2 && comparesPaddedStrings(arguments[0], arguments[1]))
+                continue;
+
+            /// `CHECK v = 1` does not give a `Dynamic` `v` the type of 1.
+            if (arguments.size() == 2 && hasDynamicArgument(arguments[0], arguments[1]))
+                continue;
+
+            /// `CHECK d = dt` holds for 2020-01-02 and 2020-01-02 00:00:00, but the graph would compare 18263 days with 1577923200 seconds.
+            if (arguments.size() == 2 && comparesDateWithDateTime(arguments[0], arguments[1]))
+                continue;
+
+            /// `CHECK d = toFloat64(1)` holds for the decimal 1.000000000000000001, which rounds to 1.
+            if (arguments.size() == 2 && comparesDecimalWithFloat(arguments[0], arguments[1]))
+                continue;
+
+            constraints_for_graph.push_back(atom.node_with_hash.node);
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
     }

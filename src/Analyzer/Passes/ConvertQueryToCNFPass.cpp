@@ -12,6 +12,9 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -283,6 +286,11 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
     return UNKNOWN;
 }
 
+bool comparesEnumWithString(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+{
+    return mixesEnumAndString(left->getResultType(), right->getResultType());
+}
+
 /// Create OR-group for 'indexHint'.
 /// Consider we have expression like A <op1> C, where C is constant.
 /// Consider we have a constraint I <op2> A, where I depends only on columns from primary key.
@@ -310,6 +318,10 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
         if (arguments.size() != 2)
             continue;
 
+        /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`: '9' is a name for `e`, a number for `n`.
+        if (comparesEnumWithString(arguments[0], arguments[1]))
+            return {};
+
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
         {
             if (!onlyConstants(arguments[1 - index]))
@@ -328,6 +340,17 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     auto helper_node = function_node->clone();
                     auto & helper_function_node = helper_node->as<FunctionNode &>();
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
+
+                    /// `CHECK e <= n` must not turn `n <= '9'` into `e <= '9'`: '9' is a number for `n`, a name for `e`.
+                    const auto & helper_arguments = helper_function_node.getArguments().getNodes();
+                    if (comparesEnumWithString(helper_arguments[0], helper_arguments[1]))
+                        continue;
+
+                    /// `CHECK dt >= 1600000000` must not turn `dt < '2021-01-01 00:00:00'` into `1600000000 < '2021-01-01 00:00:00'`.
+                    if (comparesStringConstantWithOtherType(helper_arguments[0], helper_arguments[1])
+                        && !primary_key_node->getResultType()->equals(*arguments[index]->getResultType()))
+                        continue;
+
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
                     result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
@@ -509,8 +532,20 @@ public:
         const auto component_id = component_id_it->second;
         auto new_node = id_to_query_node_map.at(component_id)->clone();
 
+        /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but `CAST('9', ...)` to the `Enum` of `e` reads the name '9'.
+        if (comparesEnumWithString(node, new_node))
+            return;
+
         if (!node->getResultType()->equals(*new_node->getResultType()))
         {
+            /// `CHECK e = f` compares two different `Enum`s by the value, but `CAST` from one to the other reads the name.
+            auto contains_enum = [](const DataTypePtr & type)
+            {
+                return anyInTypeTree(*type, [](const IDataType & nested) { return isEnum(nested); });
+            };
+            if (contains_enum(node->getResultType()) && contains_enum(new_node->getResultType()))
+                return;
+
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
         }
