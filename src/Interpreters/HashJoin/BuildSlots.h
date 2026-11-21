@@ -50,8 +50,8 @@ public:
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
 
     /// Call under the lock of `slot`. On the first insert of `slot` into `map`, reserves the
-    /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
-    /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.
+    /// slot's share of `reserve_keys` over the slot's buckets, and at least `min_keys_per_bucket` keys in each.
+    /// Returns the share of `reserve_keys`. The caller uses it only for `HashJoinPreallocatedElementsInHashTables`.
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t slot)
     {
@@ -60,10 +60,11 @@ public:
             return 0;
         else
         {
-            if (!reserve_keys || reserved[slot])
+            if (reserved[slot])
                 return 0;
+            const size_t keys_per_bucket = std::max<size_t>(reserve_keys / Map::NUM_BUCKETS, min_keys_per_bucket);
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
-                map.impls[bucket].reserve(reserve_keys / Map::NUM_BUCKETS);
+                map.impls[bucket].reserve(keys_per_bucket);
             reserved[slot] = 1;
             return reserve_keys / slots.size();
         }
@@ -109,6 +110,9 @@ private:
     {
         std::mutex mutex;
     };
+
+    /// 256 cells, the initial size of a `TwoLevelHashTableGrower<>` bucket.
+    static constexpr size_t min_keys_per_bucket = 128;
 
     std::vector<Slot> slots;
 
