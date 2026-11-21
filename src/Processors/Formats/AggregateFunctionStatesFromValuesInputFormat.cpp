@@ -244,12 +244,11 @@ std::optional<Block> AggregateFunctionStatesFromValuesInputFormat::getHeaderToPa
 }
 
 AggregateFunctionStatesFromValuesInputFormat::AggregateFunctionStatesFromValuesInputFormat(
-    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_, bool forward_missing_values_)
+    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_)
     : IInputFormat(std::move(header_), in_)
     , underlying(std::move(underlying_))
     , port(underlying->getPort().getHeader(), this)
     , mode(mode_)
-    , forward_missing_values(forward_missing_values_)
 {
     connect(underlying->getPort(), port);
     port.setNeeded();
@@ -288,8 +287,9 @@ Chunk AggregateFunctionStatesFromValuesInputFormat::read()
     const Block & parsed_header = underlying->getPort().getHeader();
     size_t num_rows = chunk.getNumRows();
     Columns columns = chunk.detachColumns();
-    /// The values that the input did not have, for the chunk just pulled.
-    const BlockMissingValues * missing_values = mode == Mode::Value ? underlying->getMissingValues() : nullptr;
+    /// The values that the input did not have, for the chunk just pulled. Their states stay empty, the default of the column type,
+    /// also when their `DEFAULT` expressions are not computed.
+    const BlockMissingValues * missing_values = mode == Mode::Value ? underlying->getOmittedValues() : nullptr;
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const BlockMissingValues::RowsBitMask * missing_rows = nullptr;

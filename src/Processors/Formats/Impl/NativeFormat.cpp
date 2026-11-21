@@ -56,7 +56,11 @@ public:
         IInputFormat::setReadBuffer(in_);
     }
 
-    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override
+    {
+        return settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
+    }
+    const BlockMissingValues * getOmittedValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -74,7 +78,7 @@ private:
             header_,
             0,
             settings_,
-            settings_.defaults_for_omitted_fields ? &block_missing_values_ : nullptr,
+            &block_missing_values_,
             /*type_cache_=*/ nullptr,
             ISerialization::KindSet{ISerialization::Kind::DEFAULT},
             with_defaults_masks_);

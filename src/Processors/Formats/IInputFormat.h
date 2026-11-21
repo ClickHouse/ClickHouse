@@ -145,6 +145,10 @@ public:
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
+    /// The values that the input did not have. Unlike `getMissingValues`, which marks the values that take the `DEFAULT` expression
+    /// of their column, also when the format does not report them for that because `input_format_defaults_for_omitted_fields` is disabled.
+    virtual const BlockMissingValues * getOmittedValues() const { return getMissingValues(); }
+
     /// Must be called from ParallelParsingInputFormat after readSuffix
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
     /// Must be called from ParallelParsingInputFormat before readPrefix
