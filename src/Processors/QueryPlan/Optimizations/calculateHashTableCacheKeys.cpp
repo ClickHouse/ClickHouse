@@ -183,7 +183,12 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
     /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
     /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
-    if (isByteTransparentTransform(transform))
+    /// An expression that computes its outputs instead of forwarding its inputs is not transparent, even
+    /// when the byte layout stays the same: `key + 1` and `key + 2` read the same bytes but give a join above
+    /// different keys to match. It gets a key from its serialized form below.
+    const auto * expression = typeid_cast<const ExpressionStep *>(&transform);
+    const auto permutation = expression ? pureColumnPermutation(expression->getExpression()) : std::nullopt;
+    if (isByteTransparentTransform(transform) && (!expression || permutation))
     {
         /// A rename-only step is transparent, but a step that REORDERS same-typed columns is not: it
         /// changes which column each position holds, and a position is how the payloads above identify
@@ -191,22 +196,19 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
         /// permutation of same-typed columns has the same layout - so two mirror queries whose only
         /// difference is which join input a column comes from would otherwise share a key. Hash the
         /// permutation, which is structural and so equal in both plan builds.
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
+        if (permutation)
         {
-            if (auto permutation = pureColumnPermutation(expression->getExpression()))
-            {
-                bool is_identity = true;
-                for (size_t i = 0; i < permutation->size(); ++i)
-                    is_identity &= (*permutation)[i] == i;
+            bool is_identity = true;
+            for (size_t i = 0; i < permutation->size(); ++i)
+                is_identity &= (*permutation)[i] == i;
 
-                if (!is_identity)
-                {
-                    SipHash permutation_hash;
-                    permutation_hash.update("column permutation");
-                    for (auto index : *permutation)
-                        permutation_hash.update(index);
-                    return permutation_hash.get64();
-                }
+            if (!is_identity)
+            {
+                SipHash permutation_hash;
+                permutation_hash.update("column permutation");
+                for (auto index : *permutation)
+                    permutation_hash.update(index);
+                return permutation_hash.get64();
             }
             else
             {
@@ -380,6 +382,61 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
+/// A chain of `ExpressionStep`s, keyed as the single step merging them would be.
+struct ExpressionChain
+{
+    std::unique_ptr<ExpressionStep> merged;
+    /// The node below the chain.
+    const QueryPlan::Node * input = nullptr;
+};
+
+/// The merge of the `ExpressionStep`s from a node down to the first step that is not one, for the step above to extend.
+struct MergedExpressions
+{
+    ActionsDAG actions;
+    SharedHeader input_header;
+    /// The node below the chain.
+    const QueryPlan::Node * input = nullptr;
+};
+
+/// Optimizing a plan again can merge expressions it left apart (the local plan of plan-based parallel
+/// replicas is), so a chain and its merge must have one key, or the two plans cannot be matched.
+/// Extends the merge of the node below instead of merging the whole chain again at every node of it.
+static std::optional<ExpressionChain> mergeExpressionChain(
+    const QueryPlan::Node & node, std::unordered_map<const QueryPlan::Node *, MergedExpressions> & merged_expressions)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(node.step.get());
+    if (!expression || node.children.size() != 1)
+        return {};
+
+    const auto * child = node.children.front();
+    MergedExpressions merged;
+    const auto it = merged_expressions.find(child);
+    /// Where the optimizer would not merge, a chain ends: neither plan merges such steps.
+    const bool extends_chain = it != merged_expressions.end() && canMergeExpressions(it->second.actions, expression->getExpression());
+    if (it != merged_expressions.end() && !extends_chain)
+        merged_expressions.erase(it);
+
+    if (extends_chain)
+    {
+        /// The plan is a tree, so the merge of the child has no other user.
+        merged = std::move(it->second);
+        merged_expressions.erase(it);
+        merged.actions = ActionsDAG::merge(std::move(merged.actions), expression->getExpression().clone());
+    }
+    else
+    {
+        merged = {expression->getExpression().clone(), expression->getInputHeaders().front(), child};
+    }
+
+    std::optional<ExpressionChain> chain;
+    if (extends_chain)
+        chain = ExpressionChain{std::make_unique<ExpressionStep>(merged.input_header, merged.actions.clone()), merged.input};
+
+    merged_expressions.emplace(&node, std::move(merged));
+    return chain;
+}
+
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
@@ -405,6 +462,9 @@ void calculateHashTableCacheKeys(
     // We use addresses of `left` and `right`, so they should be stable
     ListWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
+
+    /// The merges of the expression chains whose top the traversal has not passed yet, see `mergeExpressionChain`.
+    std::unordered_map<const QueryPlan::Node *, MergedExpressions> merged_expressions;
 
     while (!stack.empty())
     {
@@ -460,6 +520,8 @@ void calculateHashTableCacheKeys(
             stack.push_back(next_frame);
             continue;
         }
+
+        const auto chain = mergeExpressionChain(node, merged_expressions);
 
         /// Hash a `JoinStep`'s children in their physical order. `considerEnablingParallelReplicas`
         /// picks the parallelized side by physical slot (child 0, or child 1 for `RIGHT`) — see
@@ -620,17 +682,24 @@ void calculateHashTableCacheKeys(
             frame.hash.update(a);
             frame.hash.update(b);
         }
+        else if (chain)
+        {
+            frame.hash.update(cache_keys[chain->input]);
+        }
         else
         {
             for (const auto * child : node.children)
                 frame.hash.update(cache_keys[child]);
         }
 
-        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+        const IQueryPlanStep & step = chain ? *chain->merged : *node.step;
+        const QueryPlan::Node * input = chain ? chain->input : (node.children.size() == 1 ? node.children.front() : nullptr);
+
+        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(&step))
             frame.hash.update(calculateHashFromStep(*source));
-        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(&step))
             frame.hash.update(calculateHashFromStep(*read));
-        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
@@ -656,11 +725,10 @@ void calculateHashTableCacheKeys(
         /// a key of its own, from the permutation `calculateHashFromStep` hashed: adopting it would put a
         /// plan that permutes same-typed columns and a plan that does not on one key, which is how two
         /// mirror queries over different join inputs came to share a statistics entry.
-        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1
-            && forwardsInputsInOrder(*node.step))
+        if (input && isPassthroughExpressionWithRenames(step) && forwardsInputsInOrder(step))
         {
-            raw_hashes[&node] = raw_hashes[node.children.front()];
-            cache_keys[&node] = cache_keys[node.children.front()];
+            raw_hashes[&node] = raw_hashes[input];
+            cache_keys[&node] = cache_keys[input];
         }
         else
         {
