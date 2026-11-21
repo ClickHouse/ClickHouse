@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
+    extern const SettingsBool optimize_use_projections;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
 }
@@ -369,11 +370,18 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (optimize_result.prewhere_nodes.empty())
         return;
 
+    /// The read has already analyzed its indexes with the implied hints, so they need no filter step. Projection
+    /// analysis, which runs later on the filters of the plan steps, still does.
+    const bool projections_are_analyzed = (read_from_merge_tree_step && read_from_merge_tree_step->getHypotheticalProjection())
+        || (settings[Setting::optimize_use_projections] && storage_snapshot->metadata->hasProjections());
+    const bool fully_moved_to_prewhere = optimize_result.fully_moved_to_prewhere
+        || (optimize_result.only_implied_index_hints_left && filter_step->removesFilterColumn() && !projections_are_analyzed);
+
     PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,
-        optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn(),
+        fully_moved_to_prewhere && filter_step->removesFilterColumn(),
         std::move(filter_step->getExpression()),
         filter_step->getFilterColumnName(),
         optimize_result.prewhere_nodes,
@@ -429,7 +437,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
     QueryPlanStepPtr new_step;
-    if (!optimize_result.fully_moved_to_prewhere)
+    if (!fully_moved_to_prewhere)
     {
         auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),

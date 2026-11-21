@@ -52,6 +52,8 @@ public:
         UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes;
         ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
         bool fully_moved_to_prewhere = false;
+        /// Every condition left in WHERE is an implied `indexHint`, which evaluates to 1.
+        bool only_implied_index_hints_left = false;
     };
 
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
