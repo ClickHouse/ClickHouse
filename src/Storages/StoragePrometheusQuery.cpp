@@ -14,6 +14,7 @@
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
@@ -57,9 +58,22 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
     return String(value.getDataAt());
 }
 
+/// A single argument becomes a compound identifier, the node the parser produces for `database.table`:
+/// an `ASTTableIdentifier` there would be resolved as an expression and rejected.
+void setResolvedTableArgument(ASTs & args, size_t num_table_args, const StorageID & storage_id)
+{
+    if (num_table_args == 1)
+        args[0] = make_intrusive<ASTIdentifier>(std::vector<String>{storage_id.database_name, storage_id.table_name});
+    else
+    {
+        args[0] = make_intrusive<ASTLiteral>(storage_id.database_name);
+        args[1] = make_intrusive<ASTLiteral>(storage_id.table_name);
+    }
 }
 
-StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(ASTs & args, const ContextPtr & context, bool over_range)
+}
+
+StoragePrometheusQuery::Arguments StoragePrometheusQuery::parseArgumentsOnly(ASTs & args, const ContextPtr & context, bool over_range)
 {
     std::string_view function_name = over_range ? "prometheusQueryRange" : "prometheusQuery";
     size_t min_num_args = 3 + over_range * 2;
@@ -106,8 +120,49 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         }
     }
 
-    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    size_t num_table_args = argument_index;
 
+    /// A stored definition is replayed against the loader's current database, so the name is qualified and
+    /// written back now. Resolving the table here would wait for its startup job, which a load job cannot do.
+    if (auto temporary_table_id = context->tryResolveStorageID(time_series_storage_id, Context::ResolveExternal))
+    {
+        /// The resolved id of a temporary table names an internal database, so the argument keeps the name as written.
+        time_series_storage_id = std::move(temporary_table_id);
+    }
+    /// An empty name stays as written: `StorageID` rejects a database without a table, and identifier parts cannot be empty.
+    else if (!time_series_storage_id.empty())
+    {
+        if (time_series_storage_id.database_name.empty())
+            time_series_storage_id.database_name = context->getCurrentDatabase();
+        if (!time_series_storage_id.database_name.empty())
+            setResolvedTableArgument(args, num_table_args, time_series_storage_id);
+    }
+
+    Arguments parsed_args;
+    parsed_args.time_series_storage_id = std::move(time_series_storage_id);
+    parsed_args.promql_query = getStringConstArgument(args[argument_index++], context, "promql_query");
+
+    if (over_range)
+    {
+        parsed_args.mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
+        parsed_args.start_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+        parsed_args.end_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+        parsed_args.step = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+    }
+    else
+    {
+        parsed_args.mode = PrometheusQueryEvaluationMode::QUERY;
+        parsed_args.start_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+    }
+
+    chassert(argument_index == args.size());
+    return parsed_args;
+}
+
+StoragePrometheusQuery::Configuration
+StoragePrometheusQuery::resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context)
+{
+    auto time_series_storage_id = context->tryResolveStorageID(parsed_args.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     UInt64 time_series_version = time_series_storage->getVersion();
@@ -117,48 +172,28 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), time_scale};
-
-    PrometheusQueryEvaluationMode mode = {};
-    DateTime64 start_time;
-    DateTime64 end_time;
-    Decimal64 step;
-    DataTypes time_parameter_types;  /// The types of the timestamp parameters: they can specify the time zone of the results.
-
-    if (over_range)
-    {
-        const auto start_time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
-        const auto end_time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
-        const auto step_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
-
-        mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(start_time_value), time_scale);
-        end_time = parseTimeSeriesTimestamp(resolveActiveAlternative(end_time_value), time_scale);
-        step = parseTimeSeriesDuration(resolveActiveAlternative(step_value), time_scale);
-        time_parameter_types = {start_time_value.getType(), end_time_value.getType()};
-    }
-    else
-    {
-        const auto time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
-
-        mode = PrometheusQueryEvaluationMode::QUERY;
-        start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(time_value), time_scale);
-        end_time = start_time;
-        step = 0;
-        time_parameter_types = {time_value.getType()};
-    }
-
-    chassert(argument_index == args.size());
-
     Configuration config;
-    config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
+    config.promql_query = std::make_shared<PrometheusQueryTree>(parsed_args.promql_query, time_scale);
+
+    DateTime64 start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(*parsed_args.start_time), time_scale);
+    DateTime64 end_time = start_time;
+    Decimal64 step = 0;
+    DataTypes time_parameter_types{parsed_args.start_time->getType()};  /// The types of the timestamp parameters: they can specify the time zone of the results.
+
+    if (parsed_args.mode == PrometheusQueryEvaluationMode::QUERY_RANGE)
+    {
+        end_time = parseTimeSeriesTimestamp(resolveActiveAlternative(*parsed_args.end_time), time_scale);
+        step = parseTimeSeriesDuration(resolveActiveAlternative(*parsed_args.step), time_scale);
+        time_parameter_types.push_back(parsed_args.end_time->getType());
+    }
+
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
     evaluation_settings.time_scale = time_scale;
-    evaluation_settings.mode = mode;
+    evaluation_settings.mode = parsed_args.mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
