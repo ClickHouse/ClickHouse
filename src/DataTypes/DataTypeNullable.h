@@ -75,6 +75,8 @@ private:
 DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
+/// Same as above, but does not copy the shared pointer.
+const IDataType & removeNullable(const IDataType & type [[clang::lifetimebound]]);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T

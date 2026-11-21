@@ -17,6 +17,7 @@ namespace Setting
     extern const SettingsBool partial_aggregate_cache_allow_parallel_aggregation_streams;
     extern const SettingsUInt64 max_streams_for_union_step;
     extern const SettingsFloat max_streams_for_union_step_to_max_threads_ratio;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
@@ -33,6 +34,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
     max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);
+    max_block_size = settings[Setting::max_block_size];
     allow_preliminary_distinct_abandoning = settings[Setting::allow_preliminary_distinct_abandoning];
     optimize_uniq_exact_radix_partitioning = settings[Setting::optimize_uniq_exact_radix_partitioning];
 
