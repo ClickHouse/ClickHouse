@@ -35,7 +35,7 @@ public:
 
     /// The protocol revision of the replica that sent the last packet returned by `receivePacket`.
     /// Before the first packet, it is the maximum value.
-    virtual UInt64 getServerRevisionOfLastPacket() const = 0;
+    [[nodiscard]] virtual UInt64 getServerRevisionOfLastPacket() const = 0;
 
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
