@@ -260,6 +260,15 @@ class IcebergAzureCatalogManager:
         table = self._catalog.load_table(f"default.{table_name}")
         return {s.snapshot_id: s.timestamp_ms for s in table.metadata.snapshots}
 
+    def delete_rows(self, table_name: str, row_filter: str) -> None:
+        self._catalog.load_table(f"default.{table_name}").delete(row_filter)
+        self._upload_table(table_name)
+
+    def put_file(self, table_name: str, relative_path: str, data: bytes) -> None:
+        self._container.upload_blob(
+            name=f"{self.blob_path(table_name)}{relative_path}", data=data
+        )
+
     def table_function_sql(self, table_name: str, fmt: str = "auto") -> str:
         cfg = self.config
         bp = self.blob_path(table_name)

@@ -19,6 +19,7 @@ from helpers.catalog_manager_aws_glue import AwsGlueCatalogManager
 from helpers.catalog_manager_biglake import BigLakeCatalogManager
 from helpers.catalog_manager_onelake import OneLakeCatalogManager
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 pytestmark = pytest.mark.e2e
 
@@ -1255,6 +1256,160 @@ def test_insert_into_table(node, catalog_manager, request):
         assert value == "three", value
     finally:
         catalog_manager.cleanup_table(table_name)
+
+
+def _nonzero_metrics(result: str) -> dict:
+    rows = (line.split("\t") for line in result.strip().splitlines())
+    return {name: int(value) for name, value in rows if int(value) != 0}
+
+
+# OneLake exposes a single snapshot of a virtualized Delta table, and ClickHouse commits
+# to BigLake do not land (see `test_insert_into_table`).
+@only_glue
+def test_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
+    table_name = catalog_manager.create_table(
+        pa.table({"id": pa.array([1, 2, 3], type=pa.int64()), "value": ["a", "b", "c"]})
+    )
+    db = None
+    try:
+        catalog_manager.wait_for_table_ready(table_name)
+        db = catalog_manager.make_database_name()
+        catalog_manager.create_catalog(node, db)
+        full = catalog_manager.resolve_table_name(node, db, table_name)
+        catalog = catalog_manager.catalog
+        catalog.load_table(full).append(
+            pa.table({"id": pa.array([4, 5, 6], type=pa.int64()), "value": ["d", "e", "f"]})
+        )
+        table = catalog.load_table(full)
+        assert len(table.metadata.snapshots) == 2
+
+        tbl = f"{db}.`{full}`"
+        select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+        rows_before = node.query(select_all)
+        assert rows_before == "1\ta\n2\tb\n3\tc\n4\td\n5\te\n6\tf\n"
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
+
+        expired = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+                settings=settings,
+            )
+        )
+        # Both data files stay live: the second append keeps the first manifest.
+        assert expired == {"deleted_manifest_lists_count": 1}
+        # Glue is not transactional, so ClickHouse writes a new metadata file and points Glue at it.
+        assert catalog.load_table(full).metadata_location != table.metadata_location
+
+        orphan = f"{table.location()}/data/orphan-{uuid.uuid4().hex[:8]}.parquet"
+        with table.io.new_output(orphan).create() as f:
+            f.write(b"orphan")
+        # Object timestamps have one-second precision and come from the storage's clock;
+        # the margin covers normal clock drift between it and the server.
+        cutoff = node.query("SELECT now() + 2").strip()
+        assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+        query_id = uuid.uuid4().hex
+        removed = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+                settings=settings,
+                query_id=query_id,
+            )
+        )
+        # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+        # https://github.com/ClickHouse/ClickHouse/issues/118812
+        deleted_metadata = removed.pop("deleted_metadata_files_count", 0)
+        assert removed == {"deleted_data_files_count": 1}
+        assert not table.io.new_input(orphan).exists()
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        deletes, lists = node.query(
+            "SELECT ProfileEvents['S3DeleteObjects'], ProfileEvents['S3ListObjects'] "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' FORMAT TSV"
+        ).split()
+        assert int(deletes) == 1 + deleted_metadata
+        # Counts list requests (pages), not files: listing once per file would exceed it.
+        assert int(lists) <= 10
+
+        assert node.query(select_all) == rows_before
+        stored = catalog.load_table(full)
+        assert len(stored.metadata.snapshots) == 1
+        assert stored.scan().to_arrow().sort_by("id").to_pylist() == [
+            {"id": i, "value": v} for i, v in zip(range(1, 7), "abcdef")
+        ]
+    finally:
+        if db:
+            node.query(f"DROP DATABASE IF EXISTS {db}")
+        catalog_manager.cleanup_table(table_name)
+
+
+# The same maintenance on GCS, through a path-based table that ClickHouse creates and writes
+# itself, authenticated with the OAuth credentials of the BigLake manager.
+@only_biglake
+def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
+    cfg = catalog_manager.config
+    suffix = uuid.uuid4().hex[:8]
+    # Under the session namespace's storage, which `cleanup_all` also deletes.
+    table_path = catalog_manager.gcs_table_path(f"gcs_{suffix}")
+    url = f"https://storage.googleapis.com/{table_path}"
+    nc = f"nc_gcs_{suffix}"
+    tbl = f"gcs_{suffix}"
+    node.query(
+        f"CREATE NAMED COLLECTION {nc} AS url = '{url}/', http_client = 'gcp_oauth', "
+        f"google_adc_client_id = '{cfg.adc_client_id}', "
+        f"google_adc_client_secret = '{cfg.adc_client_secret}', "
+        f"google_adc_refresh_token = '{cfg.adc_refresh_token}'"
+    )
+    try:
+        node.query(f"CREATE TABLE {tbl} (id Int64, value String) ENGINE = IcebergS3({nc})")
+        for row in ("(1, 'a')", "(2, 'b')", "(3, 'c')"):
+            node.query(f"INSERT INTO {tbl} VALUES {row}")
+        select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+        rows_before = node.query(select_all)
+        assert rows_before == "1\ta\n2\tb\n3\tc\n"
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
+
+        expired = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+                settings=settings,
+            )
+        )
+        assert expired["deleted_manifest_lists_count"] == 2
+        assert node.query(select_all) == rows_before
+
+        node.query(
+            f"INSERT INTO FUNCTION s3({nc}, url = '{url}/data/orphan-{suffix}.parquet', "
+            "format = 'RawBLOB', structure = 'data String') SELECT 'orphan'"
+        )
+        # Object timestamps have one-second precision and come from the storage's clock;
+        # the margin covers normal clock drift between it and the server.
+        cutoff = node.query("SELECT now() + 2").strip()
+        assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+        removed = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+                settings=settings,
+            )
+        )
+        # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+        # https://github.com/ClickHouse/ClickHouse/issues/118812
+        removed.pop("deleted_metadata_files_count", None)
+        assert removed == {"deleted_data_files_count": 1}
+        assert node.query(select_all) == rows_before
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {tbl}")
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {nc}")
+        catalog_manager.delete_gcs_path(table_path)
 
 
 @only_onelake
