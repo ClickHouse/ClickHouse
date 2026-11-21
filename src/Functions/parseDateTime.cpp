@@ -1167,10 +1167,28 @@ namespace
                 return cur;
             }
 
+            template <size_t digits>
+            [[nodiscard]]
+            static VoidOrError checkDateDigits(Pos cur, Pos end, const String & fragment)
+            {
+                for (size_t i = 0; i < digits; ++i)
+                {
+                    if (cur[i] < '0' || cur[i] > '9') [[unlikely]]
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because a date field contains a non-digit",
+                            fragment,
+                            std::string_view(cur, end - cur))
+                }
+                return {};
+            }
+
             [[nodiscard]]
             static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
+                RETURN_ERROR_IF_FAILED(checkDateDigits<2>(cur, end, fragment))
+                RETURN_ERROR_IF_FAILED(checkDateDigits<2>(cur + 6, end, fragment))
 
                 Int32 month = 0;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
@@ -1222,6 +1240,8 @@ namespace
             static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
+                RETURN_ERROR_IF_FAILED(checkDateDigits<4>(cur, end, fragment))
+                RETURN_ERROR_IF_FAILED(checkDateDigits<2>(cur + 5, end, fragment))
 
                 Int32 year = 0;
                 Int32 month = 0;
