@@ -38,6 +38,8 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <base/EnumReflection.h>
 #include <algorithm>
+#include <ranges>
+#include <unordered_set>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -722,6 +724,20 @@ namespace
             ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
     }
 
+    /// Keeps only the last occurrence of each setting, the one the table applies, so that lookups and merges by name see it.
+    void keepLastOccurrenceOfEachSetting(SettingsChanges & changes)
+    {
+        std::unordered_set<String> seen;
+        SettingsChanges last_occurrences;
+        for (auto & change : changes | std::views::reverse)
+        {
+            if (seen.insert(change.name).second)
+                last_occurrences.push_back(std::move(change));
+        }
+        std::ranges::reverse(last_occurrences);
+        changes = std::move(last_occurrences);
+    }
+
     /// Removes the settings copied from the old table which this table must not inherit. `new_settings` is
     /// the SETTINGS clause of the query, which is applied on top of the copied settings afterwards.
     void removeOldSettingsDisabledByNewSettings(SettingsChanges & old_settings, const ASTSetQuery * new_settings)
@@ -739,8 +755,11 @@ namespace
         {
             if (new_settings)
             {
-                if (const auto * written_value = new_settings->changes.tryGet(name))
-                    return written_value;
+                /// The last occurrence of a repeated setting is the one the table applies.
+                const auto & changes = new_settings->changes;
+                auto written = std::ranges::find_if(changes.rbegin(), changes.rend(), [&](const SettingChange & change) { return change.name == name; });
+                if (written != changes.rend())
+                    return &written->value;
                 if (std::ranges::find(new_settings->default_settings, name) != new_settings->default_settings.end())
                     return nullptr;
             }
@@ -2437,6 +2456,7 @@ namespace
                 create_query.set(create_query.storage, make_intrusive<ASTStorage>());
 
             auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(old_create_query.storage->settings->clone());
+            keepLastOccurrenceOfEachSetting(merged_settings->changes);
 
             /// Some settings of the old table are not copied because the settings written in this query disable them.
             removeOldSettingsDisabledByNewSettings(merged_settings->changes, create_query.storage->settings);
@@ -2542,8 +2562,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     bool is_new_table = params.isNewTable();
 
     /// Whether the create query may come from an older version, so it can be converted to the current form.
-    /// The initial CREATE query is excluded: it must be written in the current form already.
-    bool can_convert = (params.mode != LoadingStrictnessLevel::CREATE) || params.is_restore_from_backup;
+    /// A fresh definition is excluded: it must be written in the current form already.
+    bool can_convert = !isFreshDefinition(params.mode) || params.is_restore_from_backup;
 
     /// Convert the create_query if it was created before the `version` setting was introduced.
     if (can_convert && !hasExplicitTimeSeriesVersion(create_query))

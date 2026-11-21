@@ -1268,7 +1268,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching. The loader
         /// flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user statements
         /// as internal ones.
-        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        if (!(args.is_metadata_replay && expectsExistingState(args.mode)))
             database->throwIfLocalChainRefersBack();
 
         return database;

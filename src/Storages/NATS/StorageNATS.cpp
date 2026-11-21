@@ -183,7 +183,7 @@ StorageNATS::StorageNATS(
     , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-    , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
+    , throw_on_startup_failure(mode == LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
     if (fresh_definition
@@ -1486,7 +1486,7 @@ void registerStorageNATS(StorageFactory & factory)
 
         /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
         /// to keep existing tables loadable.
-        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const bool is_fresh_definition = isFreshDefinition(args.mode);
         const UInt64 num_consumers = (*nats_settings)[NATSSetting::nats_num_consumers].value;
         if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
             throw Exception(
@@ -1511,7 +1511,7 @@ void registerStorageNATS(StorageFactory & factory)
             std::move(nats_settings),
             args.mode,
             authentication_determined_by_table,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshDefinition(args.mode));
     };
 
     factory.registerStorage(

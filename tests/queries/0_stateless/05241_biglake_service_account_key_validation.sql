@@ -44,16 +44,7 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
 
--- A definition that already exists is not refused, so that an upgrade does not lose a database created before the
--- check: a full `ATTACH DATABASE` stands in for the stored definition, which then survives `DETACH` plus a short
--- `ATTACH`. None of them connects to the catalog. `BACKUP` plus `RESTORE` is in 05616, since `BACKUP` does not accept
--- query parameters. Such a definition is accepted with a warning in the server log, which must not reach stderr.
-SET send_logs_level = 'error';
+-- A full-definition `ATTACH` is a new definition, so it is refused like `CREATE`. A stored definition still loads, see 05839.
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
 SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
-    google_adc_client_id = 'id', google_adc_client_secret = 'secret', google_adc_refresh_token = 'token';
-DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
-
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+    google_adc_client_id = 'id', google_adc_client_secret = 'secret', google_adc_refresh_token = 'token'; -- { serverError BAD_ARGUMENTS }

@@ -165,7 +165,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::enable_ytsaurus_table_engine])
+        if (isFreshDefinition(args.mode) && !args.getLocalContext()->getSettingsRef()[Setting::enable_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `enable_ytsaurus_table_engine` setting to enable it");
         auto configuration = StorageYTsaurus::getConfiguration(

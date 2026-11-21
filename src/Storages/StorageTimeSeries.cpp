@@ -159,7 +159,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     const ContextPtr & local_context,
     LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::enable_time_series_table])
+    if (isFreshDefinition(mode) && !local_context->getSettingsRef()[Setting::enable_time_series_table])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "TimeSeries table engine "
@@ -169,7 +169,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     auto targets = findTargets(create_query);
 
     /// Inner target tables are created only for a new table, ATTACH expects them to exist already.
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+    if (!expectsExistingState(mode))
     {
         for (const auto & target : targets)
         {
@@ -220,8 +220,8 @@ StorageTimeSeries::StorageTimeSeries(
     /// A new table with an unsupported version is rejected by `checkTimeSeriesSettings` during the normalization below.
     bool is_version_supported = isTimeSeriesVersionSupported(version);
 
-    /// An unsupported version is tolerated only for ATTACH.
-    if (!is_version_supported && (mode >= LoadingStrictnessLevel::ATTACH))
+    /// An unsupported version is tolerated only for a stored definition.
+    if (!is_version_supported && expectsExistingState(mode) && !isFreshDefinition(mode))
     {
         /// Only the identifiers of the target tables are taken from the definition.
         targets = findTargets(query);

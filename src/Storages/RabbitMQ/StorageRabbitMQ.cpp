@@ -203,9 +203,9 @@ StorageRabbitMQ::StorageRabbitMQ(
         /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
         /// `rabbitmq_secure` setting for the address form, so reject a contradictory
         /// `rabbitmq_secure = 1` rather than silently connecting in plaintext. Only for a fresh
-        /// CREATE though: an existing table must still attach on restart (it stays plaintext, as
+        /// definition though: an existing table must still attach on restart (it stays plaintext, as
         /// it did before), so this validation does not brick upgrades.
-        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure())
+        if (isFreshDefinition(mode) && secure_connection && !address->secure())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
@@ -301,14 +301,14 @@ StorageRabbitMQ::StorageRabbitMQ(
         {
             if (connection->connect())
                 initRabbitMQ();
-            else if (mode <= LoadingStrictnessLevel::CREATE)
+            else if (mode == LoadingStrictnessLevel::CREATE)
                 throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
         }
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (mode == LoadingStrictnessLevel::CREATE)
             throw;
     }
 
@@ -1662,7 +1662,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
         /// to keep existing tables loadable.
-        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const bool is_fresh_definition = isFreshDefinition(args.mode);
         const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
         if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
             throw Exception(

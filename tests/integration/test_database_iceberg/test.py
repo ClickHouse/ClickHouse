@@ -2879,7 +2879,8 @@ def test_alter_database_settings_not_supported(started_cluster):
         f"""
         ATTACH DATABASE {glue_db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
         SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x'
-        """
+        """,
+        settings={"allow_database_glue_catalog": 1},
     )
     error = node.query_and_get_error(
         f"ALTER DATABASE {glue_db_name} MODIFY SETTING region = 'eu-west-1'"
@@ -2899,7 +2900,8 @@ def test_alter_database_settings_rest_auth_header(started_cluster):
         f"""
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-rest:1/api')
         SETTINGS catalog_type = 'rest', warehouse = 'wh', auth_header = '{old_header}'
-        """
+        """,
+        settings={"allow_database_iceberg": 1},
     )
 
     node.query(
@@ -2938,7 +2940,8 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
         f"""
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
         SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-0', onelake_tenant_id = 'tenant-1', onelake_bearer_token = '{old_token}'
-        """
+        """,
+        settings={"allow_database_iceberg": 1},
     )
 
     node.query(
@@ -3043,7 +3046,8 @@ def test_alter_database_settings_onelake_refresh_token(started_cluster):
         f"""
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
         SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
-        """
+        """,
+        settings={"allow_database_iceberg": 1},
     )
 
     node.query(

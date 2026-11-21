@@ -102,7 +102,8 @@ def test_core_dump_has_no_secrets(started_cluster):
     )
     node.query(
         "ATTACH DATABASE data_lake ENGINE = DataLakeCatalog('http://localhost:1/') "
-        f"SETTINGS catalog_type = 'rest', warehouse = 'warehouse', catalog_credential = 'client_id:{DATA_LAKE_CATALOG_CREDENTIAL}'"
+        f"SETTINGS catalog_type = 'rest', warehouse = 'warehouse', catalog_credential = 'client_id:{DATA_LAKE_CATALOG_CREDENTIAL}'",
+        settings={"allow_database_iceberg": 1},
     )
     redis.Redis(
         host="localhost", port=started_cluster.redis_port, password="clickhouse"

@@ -28,6 +28,8 @@ def started_cluster():
             "node2",
             with_zookeeper=True,
             stay_alive=True,
+            # A test rewrites a stored table definition, which must be a local file.
+            with_remote_database_disk=False,
         )
         cluster.start()
 
@@ -312,18 +314,26 @@ def test_reserved_name_index_differing_from_implicit_is_kept(started_cluster):
     node2 = started_cluster.instances["node2"]
 
     node2.query("DROP TABLE IF EXISTS test_reserved_name SYNC;")
+    # A new definition cannot use the reserved name, so an older version's stored definition is emulated:
+    # the index is renamed in the local definition and the replica's Keeper metadata is dropped.
     node2.query(
         """
-        ATTACH TABLE test_reserved_name UUID '3d1e7c55-2f4e-4c8b-9a51-6f3d2e1a0b79' (
+        CREATE TABLE test_reserved_name (
             key UInt64,
             x UInt64,
-            INDEX auto_minmax_index_x x TYPE minmax GRANULARITY 8
+            INDEX held_x x TYPE minmax GRANULARITY 8
         )
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_reserved_name', 'r1')
         ORDER BY key
         SETTINGS add_minmax_index_for_numeric_columns=1, index_granularity=1;
         """
     )
+    node2.query("DETACH TABLE test_reserved_name;")
+    node2.exec_in_container(
+        ["bash", "-c", "sed -i 's/INDEX held_x /INDEX auto_minmax_index_x /' /var/lib/clickhouse/metadata/default/test_reserved_name.sql"]
+    )
+    node2.query("SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/test_reserved_name';")
+    node2.query("ATTACH TABLE test_reserved_name;")
     # The attached replica has no Keeper metadata yet; this writes it from the local definition.
     node2.query("SYSTEM RESTORE REPLICA test_reserved_name;")
     node2.query("INSERT INTO test_reserved_name SELECT number, number FROM numbers(64);")

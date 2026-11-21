@@ -31,7 +31,8 @@ public:
         /// The definition is replayed (`ATTACH DATABASE`, including server startup, or `RESTORE DATABASE`) rather than
         /// written by this query: the catalog is built lazily, and a combination of settings that a new definition
         /// refuses is accepted with a warning so that an existing database keeps loading.
-        bool is_existing_definition);
+        bool is_fresh_definition,
+        bool defer_catalog_initialization);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -134,7 +135,7 @@ private:
     /// load; `getCatalog` then throws this so every query against the database reports a clear error.
     mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
-    void validateSettings(bool is_existing_definition);
+    void validateSettings(bool is_fresh_definition);
 
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),

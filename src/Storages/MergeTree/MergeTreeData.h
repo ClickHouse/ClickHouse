@@ -2088,7 +2088,7 @@ protected:
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
-        bool attach,
+        bool is_stored_definition,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
@@ -2105,7 +2105,7 @@ protected:
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
-        bool attach = false,
+        bool is_stored_definition = false,
         ContextPtr local_context = nullptr);
 
     /// The part of `setProperties` that runs after `new_metadata` is published.

@@ -608,7 +608,7 @@ StorageDistributed::StorageDistributed(
         ///
         /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
         /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
-        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// `SECONDARY_CREATE`, server startup - is read back from metadata that already
         /// exists, and rejecting it there would make the table (or the whole database) unloadable
         /// instead of failing the one insert that is actually broken. The size mismatch in
         /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
@@ -652,8 +652,8 @@ StorageDistributed::StorageDistributed(
                              "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
     }
 
-    /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// Sanity check. Skip check for a stored definition to allow the server to start.
+    if (isFreshDefinition(mode))
     {
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
@@ -2681,7 +2681,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshDefinition(args.mode));
     },
     SecretArgumentsSpec{},
     {
@@ -3036,7 +3036,7 @@ void registerStorageRemote(StorageFactory & factory)
         /// same existing-metadata case: only an `ATTACH` query that carries a full definition
         /// introduces one that still needs validation.
         ///
-        /// A backup `RESTORE` is different: it reaches here with `args.mode == SECONDARY_CREATE` and
+        /// A backup `RESTORE` is different: it reaches here with `args.mode == RESTORE` and
         /// `args.is_restore_from_backup`, introducing the definition under a possibly different user, so it
         /// must be validated like a `CREATE`. Both the plain local-shard `SELECT`/`INSERT` check below and
         /// the table-function analysis run for it, otherwise a user who can restore could smuggle in
@@ -3133,7 +3133,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
+            isFreshDefinition(args.mode),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);

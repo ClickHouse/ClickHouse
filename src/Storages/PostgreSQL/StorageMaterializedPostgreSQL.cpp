@@ -85,7 +85,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
     , remote_table_name(remote_table_name_)
-    , is_attach(mode >= LoadingStrictnessLevel::ATTACH)
+    , is_attach(expectsExistingState(mode))
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL is allowed only for Atomic database");
@@ -710,7 +710,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setConstraints(args.constraints);
         metadata.setComment(args.comment);
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        if (isFreshDefinition(args.mode)
             && !args.getLocalContext()->getSettingsRef()[Setting::enable_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `enable_materialized_postgresql_table` setting");
@@ -784,7 +784,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
         /// where the nested table structure is derived from PostgreSQL.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        if (isFreshDefinition(args.mode)
             && (*postgresql_replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].isChanged())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `materialized_postgresql_use_extended_date_and_time_types` is not applicable to the "

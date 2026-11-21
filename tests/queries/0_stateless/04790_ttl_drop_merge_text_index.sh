@@ -133,18 +133,22 @@ echo "-- Case 3: inert index"
 # isInert filter the normal path applies, which wedged the merge and left the rows in place.
 # The non-inert sibling pins that the filter is per index rather than per table: it must still
 # materialize while the inert one is skipped.
-# Full-definition ATTACH is the only way to get such a table, and it needs an explicit UUID.
-uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
-${CLICKHOUSE_CLIENT} -q "
-    SET send_logs_level = 'fatal';
+# A new definition cannot have such an index, so the table is stored in a clickhouse-local data directory
+# with a minmax index, its stored definition is rewritten to the hypothesis index, and the next start loads it.
+function local_query()
+{
+    ${CLICKHOUSE_LOCAL} --path="${CLICKHOUSE_TMP:?}/04790_data" "$@"
+}
+
+local_query -q "
     SET allow_experimental_full_text_index = 1;
 
-    ATTACH TABLE t_ttl_drop_inert UUID '$uuid'
+    CREATE TABLE t_ttl_drop_inert
     (
         id UInt64,
         value String,
         event_time DateTime DEFAULT now() - INTERVAL 2 DAY,
-        INDEX i0 90 % id TYPE hypothesis,
+        INDEX i0 90 % id TYPE minmax,
         INDEX idx_txt value TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
     )
     ENGINE = MergeTree()
@@ -156,35 +160,44 @@ ${CLICKHOUSE_CLIENT} -q "
         min_bytes_for_wide_part = 1,
         remove_empty_parts = 0;
 "
+${CLICKHOUSE_LOCAL} --param_metadata="${CLICKHOUSE_TMP:?}/04790_data/metadata/default/t_ttl_drop_inert.sql" --param_copy="${CLICKHOUSE_TMP:?}/04790_data.sql" -q "
+    SET engine_file_truncate_on_insert = 1;
+    INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
+        SELECT replaceOne(raw_blob, 'TYPE minmax', 'TYPE hypothesis') FROM file({metadata:String}, 'RawBLOB');
+    INSERT INTO FUNCTION file({metadata:String}, 'RawBLOB') SELECT * FROM file({copy:String}, 'RawBLOB')"
 
-${CLICKHOUSE_CLIENT} -q "
+local_query -q "
     SELECT count() FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_ttl_drop_inert' AND type = 'hypothesis';
 "
 
-${CLICKHOUSE_CLIENT} -q "
+local_query -q "
     SYSTEM STOP MERGES t_ttl_drop_inert;
 
     INSERT INTO t_ttl_drop_inert (id, value) SELECT number, 'w' || toString(number) FROM numbers(100);
     INSERT INTO t_ttl_drop_inert (id, value) SELECT number + 100, 'w' || toString(number) FROM numbers(100);
-
-    SYSTEM START MERGES t_ttl_drop_inert;
 "
 
-wait_for_ttl_drop "t_ttl_drop_inert"
+# Each start of clickhouse-local runs background merges while it waits.
+deadline=$((SECONDS + 90))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ "$(local_query -q "SELECT sleep(0.5) FORMAT Null; SELECT count() FROM t_ttl_drop_inert")" = "0" ]; then
+        break
+    fi
+done
 
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_inert;"
+local_query -q "SELECT count() FROM t_ttl_drop_inert;"
 
 # The inert index is skipped individually; its non-inert sibling still gets materialized.
-${CLICKHOUSE_CLIENT} -q "
+local_query -q "
     SELECT name, type, data_compressed_bytes > 0
     FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_ttl_drop_inert'
     ORDER BY name;
 "
 
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ttl_drop_inert SETTINGS check_query_single_value_result = 1;"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_inert;"
+local_query -q "CHECK TABLE t_ttl_drop_inert SETTINGS check_query_single_value_result = 1;"
+rm -rf "${CLICKHOUSE_TMP:?}/04790_data" "${CLICKHOUSE_TMP:?}/04790_data.sql"
 
 echo "-- Case 4: default TTL settings"
 

@@ -393,7 +393,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
-    if (!create->attach)
+    if (!create->attach) // STYLE_CHECK_ALLOW_ATTACH_FLAG
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL database engine does not support create table");
 
     attachTable(local_context, table_name, storage, {});
@@ -789,7 +789,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
         /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_internal_metadata_replay = args.is_metadata_replay && expectsExistingState(args.mode);
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)

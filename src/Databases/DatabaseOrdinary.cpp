@@ -1197,7 +1197,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        if (!args.create_query.attach && !args.context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
+        if (isFreshDefinition(args.mode) && !args.context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
             throw Exception(
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
