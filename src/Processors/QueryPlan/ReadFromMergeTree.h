@@ -173,6 +173,8 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+        UInt64 selected_data_compressed_bytes = 0;
+        UInt64 selected_data_uncompressed_bytes = 0;
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
@@ -307,6 +309,8 @@ public:
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
+    UInt64 getSelectedDataCompressedBytes() const { return selected_data_compressed_bytes; }
+    UInt64 getSelectedDataUncompressedBytes() const { return selected_data_uncompressed_bytes; }
 
     struct Indexes
     {
@@ -850,6 +854,8 @@ private:
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
+    UInt64 selected_data_compressed_bytes = 0;
+    UInt64 selected_data_uncompressed_bytes = 0;
 
     /// When query has WHERE and LIMIT we cannot stop reading after reaching the limit,
     /// because we can read many rows that do not satisfy the condition.
