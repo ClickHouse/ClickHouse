@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <load_balancing>in_order</load_balancing>
+            <hedged_connection_timeout_ms>100</hedged_connection_timeout_ms>
+            <receive_data_timeout_ms>5000</receive_data_timeout_ms>
+            <async_socket_for_remote>1</async_socket_for_remote>
+            <use_hedged_requests>1</use_hedged_requests>
+            <hedged_connections_prefer_stable_pools>1</hedged_connections_prefer_stable_pools>
+            <prefer_localhost_replica>0</prefer_localhost_replica>
+        </default>
+    </profiles>
+</clickhouse>

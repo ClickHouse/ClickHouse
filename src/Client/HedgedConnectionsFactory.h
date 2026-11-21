@@ -56,7 +56,8 @@ public:
         bool skip_unavailable_shards_,
         bool fail_if_replica_unprobed_,
         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        bool prefer_stable_pools_ = false);
 
     /// Create and return active connections according to pool_mode.
     std::vector<Connection *> getManyConnections(PoolMode pool_mode, AsyncCallback async_callback = {});
@@ -165,6 +166,7 @@ private:
     /// The number of failed connections (replica is considered failed after max_tries attempts to connect).
     size_t failed_pools_count = 0;
 
+
     /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;
     /// The number of ready replicas (replica is considered ready when it's
@@ -178,6 +180,8 @@ private:
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
     const bool fail_if_replica_unprobed = false;
+    bool prefer_stable_pools = false;
+    size_t stable_pools_to_try_connections = 0;
 };
 
 }
