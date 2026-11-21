@@ -819,6 +819,16 @@ SortingInputOrder buildInputOrderFromSortDescription(
                         direction = 0;
                     fixed_column_directions.push_back(direction);
 
+                    /// The virtual row takes this column from the index like any other matched key column,
+                    /// so it extends the virtual row prefix under the same conditions.
+                    if (virtual_row_prefix_open)
+                    {
+                        if (key_index_values_usable)
+                            ++num_virtual_row_columns;
+                        else
+                            virtual_row_prefix_open = false;
+                    }
+
                     /// Still add the fixed column to the sort description (required for sort matching)
                     /// but don't set current_direction so it won't influence read_direction.
                     match_infos.push_back({.source = sort_node, .monotonic = match.monotonicity ? &match : nullptr});

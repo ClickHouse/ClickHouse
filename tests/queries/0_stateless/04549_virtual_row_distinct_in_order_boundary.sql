@@ -167,8 +167,8 @@ SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1))
   = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
--- A fixed key that stays in ORDER BY is not supported for the virtual row (as before this fix):
--- the index value at the boundary may belong to a filtered-out row.
+-- A fixed key that stays in ORDER BY keeps the key prefix contiguous: the virtual row takes it from
+-- the index like any other key column, and the index entry bounds the whole `(a, b, c)` tuple.
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT a, b, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, b, c
       SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1)
