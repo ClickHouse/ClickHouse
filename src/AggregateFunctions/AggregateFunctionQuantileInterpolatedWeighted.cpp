@@ -79,7 +79,9 @@ struct QuantileInterpolatedWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.first] = pair.second;
+            /// A state written before `-0.` and `0.` became equal keys can hold both of them,
+            /// so the second one is added to the first one instead of overwriting it.
+            map[pair.first] += pair.second;
         }
     }
 

@@ -222,9 +222,24 @@ struct JoinKeyRange
     UInt64 size = 0;
 };
 
+/// `negative_zeros_canonicalized` - the caller has already replaced negative zeros with positive zeros in `key_columns`,
+/// see `CanonicalJoinKeys`, so the key getter does not scan them again.
 template <typename KeyGetter, bool is_asof_join>
-KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, JoinKeyRange key_range = {})
+KeyGetter createJoinKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    JoinKeyRange key_range = {},
+    bool negative_zeros_canonicalized = false)
 {
+    auto make_getter = [&](const ColumnRawPtrs & columns, const Sizes & sizes)
+    {
+        /// `LowCardinalityKeyGetterForJoin` takes no `RowRange`: its keys are strings, which have no negative zeros.
+        if constexpr (std::is_constructible_v<KeyGetter, const ColumnRawPtrs &, const Sizes &, std::nullptr_t, ColumnsHashing::RowRange>)
+            return KeyGetter(columns, sizes, nullptr, ColumnsHashing::RowRange{.negative_zeros_canonicalized = negative_zeros_canonicalized});
+        else
+            return KeyGetter(columns, sizes, nullptr);
+    };
+
     KeyGetter getter = [&]()
     {
         if constexpr (is_asof_join)
@@ -233,10 +248,10 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
             auto key_size_copy = key_sizes;
             key_column_copy.pop_back();
             key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+            return make_getter(key_column_copy, key_size_copy);
         }
         else
-            return KeyGetter(key_columns, key_sizes, nullptr);
+            return make_getter(key_columns, key_sizes);
     }();
 
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
@@ -646,7 +661,8 @@ public:
 
         chassert(key_type == TYPE);
         const Map & map = typedMap<TYPE, Maps>(*this);
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, key_sizes, key_range);
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            keys.key_columns, key_sizes, key_range, /* negative_zeros_canonicalized= */ true);
 
         size_t rows = ScatteredBlock::Selector::size(selector);
 
@@ -1170,7 +1186,8 @@ private:
         {
             mapv[d] = &typedMap<TYPE, Maps>(*tables[d]);
             key_getter_vector.push_back(
-                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range));
+                createJoinKeyGetter<KeyGetter, is_asof_join>(
+                    keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range, /* negative_zeros_canonicalized= */ true));
         }
     }
 

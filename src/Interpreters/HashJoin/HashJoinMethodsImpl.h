@@ -48,16 +48,32 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const HashJoin & join,
     ScatteredBlock block,
     const Block & block_with_columns_to_add,
-    bool is_join_get)
+    bool is_join_get,
+    CanonicalJoinKeys * canonical_join_keys)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
+    CanonicalJoinKeys local_canonical_join_keys;
+    if (!canonical_join_keys)
+        canonical_join_keys = &local_canonical_join_keys;
+
     std::vector<JoinOnKeyColumns> join_on_keys;
-    for (const auto & onexpr : join.table_join->getClauses())
+    const auto & onexprs = join.table_join->getClauses();
+    const bool prepare_canonical_keys = !canonical_join_keys->prepared;
+    if (prepare_canonical_keys)
+        canonical_join_keys->clauses.assign(onexprs.size(), {});
+    else if (canonical_join_keys->clauses.size() != onexprs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected canonicalized JOIN keys for {} clauses, got {}",
+            onexprs.size(), canonical_join_keys->clauses.size());
+
+    for (size_t i = 0; i < onexprs.size(); ++i)
     {
-        const auto & key_names = !is_join_get ? onexpr.key_names_left : onexpr.key_names_right;
-        join_on_keys.emplace_back(block, key_names, onexpr.condColumnNames().first, HashJoin::isLowCardinalityType(join.keyType()));
+        const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
+        join_on_keys.emplace_back(
+            block, key_names, onexprs[i].condColumnNames().first,
+            HashJoin::isLowCardinalityType(join.keyType()), canonical_join_keys->clauses[i], prepare_canonical_keys);
     }
+    canonical_join_keys->prepared = true;
 
     /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
     /// exact rows. The residual path is excluded: its words count output rows rather than left rows,

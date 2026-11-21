@@ -1,0 +1,14 @@
+JSON, grace_hash
+1
+JSON, hash
+1
+Array(JSON)
+1
+Tuple(JSON, UInt8)
+1
+Negative zero inside an array value of a path
+1
+Many rows
+100	100
+Many rows, dynamic paths
+100	100

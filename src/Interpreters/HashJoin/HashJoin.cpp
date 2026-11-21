@@ -1459,9 +1459,10 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 class HashJoin::ContinuationResult final : public IJoinResult
 {
 public:
-    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_, CanonicalJoinKeys canonical_join_keys_)
         : join(join_)
         , current_result(std::move(current_result_))
+        , canonical_join_keys(std::move(canonical_join_keys_))
     {
     }
 
@@ -1474,7 +1475,7 @@ public:
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
 
             if (result.next_block)
-                current_result = join.runJoinDispatch(std::move(*result.next_block));
+                current_result = join.runJoinDispatch(std::move(*result.next_block), canonical_join_keys);
             else
                 current_result.reset();
         }
@@ -1490,6 +1491,8 @@ public:
 private:
     HashJoin & join;
     JoinResultPtr current_result;
+    /// Every continuation is over a suffix of the same source block, so its key columns are canonicalized once.
+    CanonicalJoinKeys canonical_join_keys;
     std::optional<size_t> matched_right_rows = 0;
 };
 
@@ -1507,11 +1510,12 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
-    return std::make_unique<ContinuationResult>(*this, std::move(result));
+    CanonicalJoinKeys canonical_join_keys;
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)), canonical_join_keys);
+    return std::make_unique<ContinuationResult>(*this, std::move(result), std::move(canonical_join_keys));
 }
 
-JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
+JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block, CanonicalJoinKeys & canonical_join_keys)
 {
     JoinResultPtr res;
     const bool joined = dispatchJoinShape(
@@ -1519,7 +1523,10 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
         strictness,
         getMapsKind(),
         [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
-        { res = HashJoinMethods<kind_, strictness_, Maps>::joinBlockImpl(*this, std::move(block), sample_block_with_columns_to_add); });
+        {
+            res = HashJoinMethods<kind_, strictness_, Maps>::joinBlockImpl(
+                *this, std::move(block), sample_block_with_columns_to_add, /* is_join_get= */ false, &canonical_join_keys);
+        });
 
     if (!joined)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
