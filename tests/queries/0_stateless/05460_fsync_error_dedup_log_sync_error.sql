@@ -1,7 +1,9 @@
--- Tags: no-parallel, no-fasttest, no-object-storage
+-- Tags: no-parallel, no-fasttest, no-object-storage, no-random-detach
 -- Tag no-parallel: the failpoints fail the deferred fsync of all inserts with `fsync_after_insert` and the syncs of all deduplication logs in the server
 -- Tag no-fasttest: tests that enable a failpoint run alone, so they are kept out of the fast test
 -- Tag no-object-storage: fsync is not applicable to object storage
+-- Tag no-random-detach: the part that failed to sync is kept only in memory (it is neither detached nor known to be durable),
+-- and the failed removal from the deduplication log is remembered in memory too, so a reattach of the table loses both
 
 -- When the fsync of a part fails, the part is removed from the deduplication log, and the removal is synced before the part is detached.
 -- If syncing the removal fails, the part is not detached. The removal is not known to be durable then, and syncing the log again
