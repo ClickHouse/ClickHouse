@@ -73,7 +73,7 @@ if __name__ == "__main__":
     from types import SimpleNamespace
 
     # FIXME these should be parameters for the script
-    # So far I call `tests/docker_scripts/setup_minio.sh stateless` to start MinIO
+    # So far I call `ci/jobs/scripts/functional_tests/setup_seaweedfs.sh stateless` to start SeaweedFS
     cluster_settings = {
         "minio_ip": "127.0.0.1",
         "minio_port": 11111,
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     all_running = True
     while all_running:
-        start = time.time()
+        start = time.monotonic()
         finish = start + 1
 
         while all_running and start < finish:
