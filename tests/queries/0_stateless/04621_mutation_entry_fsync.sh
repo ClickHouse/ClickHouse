@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-shared-merge-tree, no-parallel, no-fasttest
+# Tags: no-object-storage, no-shared-merge-tree, no-parallel, no-fasttest, no-replicated-database
 # Tag no-object-storage: object storage disks do not fsync local directories.
 # Tag no-shared-merge-tree: the mutation_*.txt entry file is a plain-MergeTree-only durability record;
 #   SharedMergeTree keeps mutations in Keeper.
 # Tag no-parallel: the rollback case toggles the server-global failpoint mt_throw_after_mutation_commit,
 #   which would affect any concurrent plain-MergeTree mutation (same reason as 04308).
+# Tag no-replicated-database: the kill case reloads the table with `DETACH TABLE`, which Replicated databases reject.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -75,6 +76,33 @@ run_rollback() {
     $CLICKHOUSE_CLIENT -q "drop table t_me_r"
 }
 
+# The same compensating unlink after the entry was registered: it is removed from `held_entry`, so the
+# fsync policy must survive the moves of the entry. mt_alter_throw_after_mutation_registered fires after
+# the rename mutation of RENAME COLUMN is registered (same failpoint as 04309).
+run_post_registration_rollback() {
+    local fsync=$1
+    $CLICKHOUSE_CLIENT -m -q "
+        drop table if exists t_me_p;
+        create table t_me_p (id UInt64, d String default '') engine = MergeTree order by id settings fsync_part_directory = $fsync;
+        insert into t_me_p values (1, 'a');
+    "
+    local query_id="me-post-registration-rollback-fsync${fsync}-$CLICKHOUSE_DATABASE"
+    $CLICKHOUSE_CLIENT -q "system enable failpoint mt_alter_throw_after_mutation_registered"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" -q "alter table t_me_p rename column d to d1 settings alter_sync = 2" 2>/dev/null \
+        && echo "FAIL: ALTER unexpectedly succeeded; failpoint did not fire"
+    $CLICKHOUSE_CLIENT -q "system disable failpoint mt_alter_throw_after_mutation_registered"
+    $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
+        system flush logs query_log;
+        select ProfileEvents['DirectorySync'] >= 2
+        from system.query_log
+        where event_date >= yesterday() and current_database = currentDatabase()
+          and query_id = {query_id:String} and type = 'ExceptionBeforeStart'
+        order by event_time_microseconds desc limit 1;
+    "
+    $CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = currentDatabase() and table = 't_me_p'"
+    $CLICKHOUSE_CLIENT -q "drop table t_me_p"
+}
+
 # Direction 2: the KILL MUTATION unlink of mutation_N.txt.
 run_kill() {
     local fsync=$1
@@ -84,6 +112,9 @@ run_kill() {
         insert into t_me_k values (1);
         alter table t_me_k delete where throwIf(id >= 0) settings mutations_sync = 0;
     "
+    # Reattach so the entry is reloaded from disk: KILL must then apply the table's current setting.
+    $CLICKHOUSE_CLIENT -q "detach table t_me_k"
+    $CLICKHOUSE_CLIENT -q "attach table t_me_k"
     # Wait until the mutation is registered (and failing) before killing it.
     for _ in {1..50}; do
         [ "$($CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = currentDatabase() and table = 't_me_k'")" = "1" ] && break
@@ -116,3 +147,7 @@ echo "rollback fsync_part_directory = 1: DirectorySync>=2 (rename + unlink), no 
 run_rollback 1
 echo "rollback fsync_part_directory = 0: DirectorySync=0 (setting honored), no mutation left"
 run_rollback 0
+echo "post-registration rollback fsync_part_directory = 1: DirectorySync>=2 (rename + unlink), no mutation left"
+run_post_registration_rollback 1
+echo "post-registration rollback fsync_part_directory = 0: DirectorySync=0 (setting honored), no mutation left"
+run_post_registration_rollback 0

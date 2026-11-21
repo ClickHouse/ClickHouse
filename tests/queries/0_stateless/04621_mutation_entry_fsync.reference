@@ -16,3 +16,9 @@ rollback fsync_part_directory = 1: DirectorySync>=2 (rename + unlink), no mutati
 rollback fsync_part_directory = 0: DirectorySync=0 (setting honored), no mutation left
 0
 0
+post-registration rollback fsync_part_directory = 1: DirectorySync>=2 (rename + unlink), no mutation left
+1
+0
+post-registration rollback fsync_part_directory = 0: DirectorySync=0 (setting honored), no mutation left
+0
+0
