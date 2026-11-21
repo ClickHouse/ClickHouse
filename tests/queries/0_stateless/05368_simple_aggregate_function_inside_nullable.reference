@@ -16,3 +16,4 @@
 1	SimpleAggregateFunction(max, Int128)
 [1,2]	(1,'a')	{'a':1}	(2,'b')
 3432	SimpleAggregateFunction(any, Dynamic)
+2	2	2	SimpleAggregateFunction(sum, UInt64)

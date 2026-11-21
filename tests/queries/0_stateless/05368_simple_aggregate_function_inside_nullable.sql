@@ -50,3 +50,6 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow'
 SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64)), u SimpleAggregateFunction(anyLast, Tuple(Int128, String))');
 INSERT INTO FUNCTION file(currentDatabase() || '_05368_opaque.arrow', 'Arrow') SELECT CAST(42::Dynamic, 'SimpleAggregateFunction(any, Dynamic)') AS d SETTINGS output_format_arrow_unsupported_types = 'binary', engine_file_truncate_on_insert = 1;
 SELECT hex(CAST(d AS String)), toTypeName(d) FROM file(currentDatabase() || '_05368_opaque.arrow', 'Arrow', 'd SimpleAggregateFunction(any, Dynamic)');
+CREATE TABLE v (k UInt32, m SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree ORDER BY k;
+INSERT INTO v VALUES (1, 1 + 1);
+SELECT m, if(k > 0, m, m), CASE WHEN k > 0 THEN m ELSE m END, toTypeName(if(k > 0, m, m)) FROM v;
