@@ -1,0 +1,8 @@
+rejections:
+Nullable(Tuple(a Int32)): rejected
+Array(Nullable(Tuple(a Int32))): rejected
+Map(String, Nullable(Tuple(a Int32))): rejected
+Tuple(a Nullable(Tuple(b Int32))): rejected
+nullable-leaves:
+accepted
+schema preserved
