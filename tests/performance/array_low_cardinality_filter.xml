@@ -1,0 +1,13 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_lc_filter (k UInt64, arr Array(LowCardinality(String))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO array_lc_filter SELECT number, arrayMap(x -> toString((number + x) % 1000), range(number % 10)) FROM numbers(20000000)</fill_query>
+
+    <query>SELECT arr FROM array_lc_filter WHERE k % 2 = 0 FORMAT Null</query>
+    <query>SELECT arr FROM array_lc_filter WHERE k % 10 = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_lc_filter</drop_query>
+</test>
