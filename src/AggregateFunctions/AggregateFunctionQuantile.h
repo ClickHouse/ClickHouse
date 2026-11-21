@@ -76,6 +76,9 @@ private:
     static constexpr bool has_add_many = std::is_same_v<SecondArgumentType, void>
         && requires(Data & data, const Value * values) { data.addMany(values, size_t{}); };
 
+    static constexpr bool has_add_many_same = std::is_same_v<SecondArgumentType, void>
+        && requires(Data & data, const Value & value) { data.addManySame(value, size_t{}); };
+
     static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static constexpr size_t state_version = quantileStateVersion<Data>();
@@ -306,6 +309,14 @@ public:
         }
         else
             Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if constexpr (has_add_many_same)
+            this->data(place).addManySame(assert_cast<const ColVecType &>(*columns[0]).getData()[0], length);
+        else
+            Base::addManyDefaults(place, columns, length, arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
