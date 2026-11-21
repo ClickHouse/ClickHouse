@@ -76,6 +76,12 @@ CREATE DATABASE ${DATABASE_TEST2} ENGINE = Filesystem('relative_unknown_dir');
 # FILE_DOESNT_EXIST: unknown file
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`tmp2.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "FILE_DOESNT_EXIST" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
+#################
+# A table here is served by a table function, so its storage carries the synthetic `_table_function`
+# database rather than this one; anything resolving the table by its storage's own id fails.
+echo "Test 3: read a table of a filesystem database through the loop table function"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM (SELECT * FROM loop(${DATABASE_TEST1}, '${unique_name}/tmp.csv') LIMIT 6);"
+
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DATABASE_TEST1};"
 rm -rd $tmp_dir
