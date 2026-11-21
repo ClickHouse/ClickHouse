@@ -9,6 +9,8 @@
 #include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
 
+#include <unordered_set>
+
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
   * 2. TCP - interface for native clickhouse-client and for server to server internal communications.
@@ -79,6 +81,9 @@ private:
     ConfigurationPtr latest_config;
     /// The `application.*` properties that `Poco::Util::Application` sets before any file or command-line layer is added.
     ConfigurationPtr application_properties;
+    /// Port names of the `<protocols>` endpoints served by introspection listeners. These listeners are not
+    /// reconfigured on config reload, so no regular listener is created for these endpoints until restart.
+    std::unordered_set<std::string> introspection_port_names;
 
     HTTPContextPtr httpContext() const;
 

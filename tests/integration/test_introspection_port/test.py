@@ -12,8 +12,12 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/introspection.xml", "configs/startup_scripts.xml"],
 )
+node_reload = cluster.add_instance(
+    "node_reload", main_configs=["configs/introspection.xml"]
+)
 
 INTROSPECTION_PORT = 9010
+INTROSPECTION_CONFIG = "/etc/clickhouse-server/config.d/introspection.xml"
 
 
 @pytest.fixture(scope="module")
@@ -89,3 +93,28 @@ def test_introspection_port(started_cluster):
     assert introspection_client().query("SELECT 1") == "1\n"
     introspection_client().query("SYSTEM START LISTEN QUERIES ALL")
     assert node.query("SELECT 1") == "1\n"
+
+
+def test_reload_after_unmarking_introspection_endpoint(started_cluster):
+    client = Client(
+        node_reload.ip_address, INTROSPECTION_PORT, command=cluster.client_bin_path
+    )
+    try:
+        node_reload.replace_in_config(
+            INTROSPECTION_CONFIG,
+            "<introspection>true</introspection>",
+            "<introspection>false</introspection>",
+        )
+        # The introspection listener is not reconfigured on reload and keeps the port until restart.
+        node_reload.query("SYSTEM RELOAD CONFIG")
+        node_reload.query("SYSTEM START LISTEN CUSTOM 'introspection_native'")
+        assert "QUERY_IS_PROHIBITED" in client.query_and_get_error(
+            "CREATE TABLE t (a UInt8) ENGINE = Memory"
+        )
+    finally:
+        node_reload.replace_in_config(
+            INTROSPECTION_CONFIG,
+            "<introspection>false</introspection>",
+            "<introspection>true</introspection>",
+        )
+        node_reload.query("SYSTEM RELOAD CONFIG")
