@@ -1,0 +1,8 @@
+<clickhouse>
+    <user_directories replace="replace">
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <memory />
+    </user_directories>
+</clickhouse>
