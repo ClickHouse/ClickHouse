@@ -499,21 +499,21 @@ ObjectStorageListResult S3ObjectStorage::listObjectsSingleLevel(
         ObjectMetadata metadata{
             .size_bytes = static_cast<uint64_t>(object.GetSize()),
             .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-            .etag = object.GetETag(),
+            .etag = String(object.GetETag()),
             .tags = {},
             .attributes = {},
         };
         if (with_tags)
             metadata.tags = S3::getObjectTags(*client.get(), uri.bucket, object.GetKey());
-        res.objects.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+        res.objects.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey()), std::move(metadata)));
     }
 
     for (const auto & common_prefix : result.GetCommonPrefixes())
-        res.common_prefixes.push_back(common_prefix.GetPrefix());
+        res.common_prefixes.emplace_back(common_prefix.GetPrefix());
 
     res.is_truncated = result.GetIsTruncated();
     if (res.is_truncated)
-        res.next_continuation_token = result.GetNextContinuationToken();
+        res.next_continuation_token = String(result.GetNextContinuationToken());
 
     return res;
 }
