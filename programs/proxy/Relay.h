@@ -31,6 +31,10 @@ void runRelay(
 /// which only half-closes the backend leg, so a backend that keeps its side open would hold the relay forever.
 void abortAllRelays();
 
+/// Whether `abortAllRelays` was called: the proxy is shutting down, and a handler must not start
+/// more work on behalf of its connection.
+bool relaysAborted();
+
 }
 
 #endif

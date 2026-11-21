@@ -9,7 +9,14 @@
 
 #include <base/scope_guard.h>
 
+#include <silk/fibers/fiber.h>
+#include <silk/fibers/future.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <optional>
+#include <vector>
 
 
 namespace DB::Proxy
@@ -59,38 +66,93 @@ bool parseStartupParameters(const String & params, RouteAttributes & attributes)
     return true;
 }
 
+/// The delivery of a `CancelRequest` to one backend, run on its own fiber.
+struct CancelDelivery
+{
+    const FrontendContext * ctx;
+    Backend * backend;
+    const String * packet;
+    UInt64 timeout_ms;
+    std::atomic<size_t> * delivered;
+};
+
+int deliverCancelRequest(CancelDelivery * task) noexcept
+{
+    const FrontendContext & ctx = *task->ctx;
+    try
+    {
+        const UInt16 port = backendPortFor(ListenerProtocol::PostgreSQL, task->backend->config(), ctx.listener.port);
+        FiberSocket socket = FiberSocket::connect(resolveAddress(task->backend->config().host, port), task->timeout_ms);
+        socket.setTimeouts(task->timeout_ms, task->timeout_ms);
+        socket.sendAll(task->packet->data(), task->packet->size());
+        socket.close();
+        task->delivered->fetch_add(1, std::memory_order_relaxed);
+    }
+    catch (...)
+    {
+        /// Not a health signal (the request is sent to backends that may not serve this session):
+        /// only log it. The other backends still receive the request.
+        LOG_DEBUG(ctx.log, "Cannot deliver a PostgreSQL CancelRequest to backend {}: {}", task->backend->name(),
+            getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+    }
+    return 0;
+}
+
 /// A `CancelRequest` arrives on a new connection and must reach the backend serving the session it
 /// cancels. The proxy does not track sessions (their `BackendKeyData` passes through the relay unparsed),
 /// but the key is a random secret: deliver the request to every backend the listener can route to, and
 /// only the one that issued the key acts on it. The protocol has no response to a `CancelRequest`.
+///
+/// The request is not authenticated, and each unreachable backend costs a connect timeout. So the backends
+/// receive the request concurrently, in batches, for an unreachable backend not to delay the others,
+/// the whole broadcast has the time budget of a handshake, and it stops when the proxy shuts down.
+/// The backends that are not marked down go first: they most likely serve the session.
 void broadcastCancelRequest(const String & packet, const FrontendContext & ctx)
 {
-    size_t delivered = 0;
-    for (const auto & backend : ctx.router.reachableBackends(ctx.listener))
+    constexpr size_t max_concurrent_deliveries = 64;
+
+    std::vector<BackendPtr> backends = ctx.router.reachableBackends(ctx.listener);
+    /// A secure backend cannot be reached over this protocol (see `connectToBackend`). A backend that
+    /// is marked down still receives the request: `alive` only gates new routing, and the sessions that
+    /// were relayed to it before it was marked down may still be running there.
+    std::erase_if(backends, [](const BackendPtr & backend) { return backend->config().secure; });
+    std::stable_partition(backends.begin(), backends.end(), [](const BackendPtr & backend) { return backend->isAlive(); });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ctx.config.handshake_timeout_ms);
+    std::atomic<size_t> delivered = 0;
+    size_t attempted = 0;
+    while (attempted < backends.size())
     {
-        /// A secure backend cannot be reached over this protocol (see `connectToBackend`). A backend that
-        /// is marked down still receives the request: `alive` only gates new routing, and the sessions that
-        /// were relayed to it before it was marked down may still be running there.
-        if (backend->config().secure)
-            continue;
-        try
+        const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (remaining_ms <= 0 || relaysAborted())
+            break;
+        const UInt64 timeout_ms = std::min<UInt64>(ctx.config.connect_timeout_ms, remaining_ms);
+
+        const size_t batch_size = std::min(backends.size() - attempted, max_concurrent_deliveries);
+        std::vector<silk::FiberFuture> futures(batch_size);
+        size_t started = 0;
+        /// The fibers use `packet`, `ctx`, `delivered` and the backends, so they are joined before leaving the scope.
+        SCOPE_EXIT({
+            for (size_t i = 0; i < started; ++i)
+                futures[i].wait();
+        });
+        for (size_t i = 0; i < batch_size; ++i)
         {
-            const UInt16 port = backendPortFor(ListenerProtocol::PostgreSQL, backend->config(), ctx.listener.port);
-            FiberSocket socket = FiberSocket::connect(resolveAddress(backend->config().host, port), ctx.config.connect_timeout_ms);
-            socket.setTimeouts(ctx.config.handshake_timeout_ms, ctx.config.handshake_timeout_ms);
-            socket.sendAll(packet.data(), packet.size());
-            socket.close();
-            ++delivered;
+            CancelDelivery task{&ctx, backends[attempted + i].get(), &packet, timeout_ms, &delivered};
+            if (silk::FiberScheduler::run(deliverCancelRequest, CancelDelivery(task), &futures[started]) == 0)
+                ++started;
+            else
+                deliverCancelRequest(&task);    /// No fiber is available: deliver from this one.
         }
-        catch (...)
-        {
-            /// Not a health signal (the request is sent to backends that may not serve this session):
-            /// only log it. The other backends still receive the request.
-            LOG_DEBUG(ctx.log, "Cannot deliver a PostgreSQL CancelRequest to backend {}: {}", backend->name(),
-                getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-        }
+        attempted += batch_size;
     }
-    LOG_DEBUG(ctx.log, "Delivered a PostgreSQL CancelRequest to {} backends", delivered);
+
+    if (attempted < backends.size())
+        LOG_WARNING(ctx.log, "Delivered a PostgreSQL CancelRequest to {} backends; {} backends were skipped, because {}",
+            delivered.load(), backends.size() - attempted,
+            relaysAborted() ? "the proxy is shutting down" : "the time budget of the request is used up");
+    else
+        LOG_DEBUG(ctx.log, "Delivered a PostgreSQL CancelRequest to {} backends", delivered.load());
 }
 
 }

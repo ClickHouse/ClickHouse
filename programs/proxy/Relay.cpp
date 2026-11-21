@@ -309,6 +309,13 @@ void abortAllRelays()
         abortRelay(*state);
 }
 
+bool relaysAborted()
+{
+    auto & registry = relayRegistry();
+    std::lock_guard lock(registry.mutex);
+    return registry.aborted;
+}
+
 }
 
 #endif
