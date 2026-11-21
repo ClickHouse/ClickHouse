@@ -865,6 +865,8 @@ def test_async_backups_to_same_destination(interface, on_cluster):
 
     nodes = [node1, node2]
     node1.query("INSERT INTO tbl VALUES (1)")
+    # A backup without ON CLUSTER on node2 contains only the parts node2 has.
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     backup_name = new_backup_name()
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""

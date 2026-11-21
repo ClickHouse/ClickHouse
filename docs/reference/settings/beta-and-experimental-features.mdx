@@ -150,8 +150,10 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [reader_executor_plan_look_ahead](/reference/settings/session-settings/reader-executor#reader_executor_plan_look_ahead) | `16777216` |
 | [use_columns_cache](/reference/settings/session-settings/use#use_columns_cache) | `0` |
 | [group_by_top_k_optimization_observation_rows](/reference/settings/session-settings/group-by#group_by_top_k_optimization_observation_rows) | `65536` |
+| [log_query_plans](/reference/settings/session-settings/log-query#log_query_plans) | `0` |
 | [query_plan_optimize_join_order_max_searched_plans](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_max_searched_plans) | `100000` |
 | [query_plan_optimize_join_order_randomize](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize) | `0` |
+| [log_query_plans_max_size](/reference/settings/session-settings/log-query#log_query_plans_max_size) | `1048576` |
 | [ast_fuzzer_runs](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_runs) | `0` |
 | [ast_fuzzer_any_query](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_any_query) | `0` |
 | [ast_fuzzer_oracle](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_oracle) | `0` |
@@ -170,6 +172,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [read_from_filesystem_cache_if_exists_otherwise_cache_temporarily](/reference/settings/session-settings/read-from#read_from_filesystem_cache_if_exists_otherwise_cache_temporarily) | `0` |
 | [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) | `0` |
 | [parallel_replicas_allow_merge_tables](/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables) | `0` |
+| [iceberg_write_table_statistics_ndv](/reference/settings/session-settings/iceberg#iceberg_write_table_statistics_ndv) | `0` |
 | [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) | `0` |
 | [enable_materialized_postgresql_table](/reference/settings/session-settings/enable#enable_materialized_postgresql_table) | `0` |
 | [enable_funnel_functions](/reference/settings/session-settings/enable#enable_funnel_functions) | `0` |

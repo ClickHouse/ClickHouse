@@ -41,6 +41,9 @@ public:
 
     [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
+    /// See `distributed_group_by_top_k`.
+    void enableGroupByTopK(size_t top_k_limit);
+
 private:
     Pipes addPipes(const SharedHeader & out_header);
 
