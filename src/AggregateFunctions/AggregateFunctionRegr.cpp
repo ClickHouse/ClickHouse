@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -273,7 +274,7 @@ struct RegrMoments
         sxy += rhs.sxy + dx * rhs.sy + dy * rhs.sx + rhs_count * dx * dy;
         sx += rhs.sx + rhs_count * dx;
         sy += rhs.sy + rhs_count * dy;
-        count += rhs.count;
+        count = common::addIgnoreOverflow(count, rhs.count);
     }
 
     void write(WriteBuffer & buf) const
@@ -572,7 +573,8 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).count += data(rhs).count;
+        /// The count is a modular `UInt64` sum, e.g. for a state multiplied by a large number with repeated merges.
+        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
