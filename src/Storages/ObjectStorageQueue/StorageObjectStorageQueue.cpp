@@ -521,7 +521,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
+        /// Message-broker streaming loops run on the dedicated MessageBrokerSchedulePool, like RabbitMQ/NATS/Kafka.
+        auto task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
