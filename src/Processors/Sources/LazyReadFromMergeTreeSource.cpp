@@ -336,7 +336,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         PartialAggregateInfoPtr partial_aggregate_plan_identity;
         if (reader_settings.use_partial_aggregate_cache)
         {
-            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*part_with_ranges.data_part, reader_settings);
+            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*group.parts[index_in_group].data_part, reader_settings);
         }
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name, std::move(partial_aggregate_plan_identity));
