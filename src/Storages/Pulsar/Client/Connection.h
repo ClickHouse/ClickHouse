@@ -65,7 +65,7 @@ struct BrokerAddress
     String proxy_to_broker_url;
 
     bool operator==(const BrokerAddress &) const = default;
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 class Connection;
@@ -120,7 +120,7 @@ public:
 
     /// The descriptor and the `poll` events to wait for, -1 when closed.
     int fd() const;
-    short pollEvents() const;
+    Int16 pollEvents() const;
     /// Whether decrypted data is buffered in the TLS session, so that `poll` would not see it.
     bool hasBufferedInput() const;
     /// When `process` must be called even without socket events (time limits and keepalive).
@@ -229,7 +229,7 @@ public:
     /// Waits for socket events on all connections until `deadline` or until one of them needs `process`.
     void wait(TimePoint deadline);
 
-    bool hasPendingOutput() const;
+    [[nodiscard]] bool hasPendingOutput() const;
     /// Throws `ABORTED` if the client was closed or the owner was interrupted.
     void checkInterrupted() const;
 
@@ -241,7 +241,7 @@ private:
     void sendRequest(Request & request);
     void completeLookup(const RequestPtr & request, const PulsarProto::CommandLookupTopicResponse & response);
     Connection & serviceConnection();
-    BrokerAddress parseBrokerUrl(const String & url) const;
+    [[nodiscard]] BrokerAddress parseBrokerUrl(const String & url) const;
 
     ClientStatePtr client_state;
     Owner & owner;

@@ -29,12 +29,12 @@ struct EntryId
 class MessageId
 {
 public:
-    UInt64 ledgerId() const { return entry.ledger_id; }
-    UInt64 entryId() const { return entry.entry_id; }
+    [[nodiscard]] UInt64 ledgerId() const { return entry.ledger_id; }
+    [[nodiscard]] UInt64 entryId() const { return entry.entry_id; }
     /// -1 when the message is not a part of a batch.
-    Int32 batchIndex() const { return batch_index; }
+    [[nodiscard]] Int32 batchIndex() const { return batch_index; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
 private:
     friend class ConsumerImpl;
@@ -52,16 +52,16 @@ private:
 class Message
 {
 public:
-    std::string_view payload() const { return data; }
+    [[nodiscard]] std::string_view payload() const { return data; }
     /// The topic partition the message was received from.
-    const String & topic() const { return *topic_name; }
+    [[nodiscard]] const String & topic() const { return *topic_name; }
     /// Empty if not set.
-    const String & orderingKey() const { return ordering_key; }
-    const String & partitionKey() const { return partition_key; }
+    [[nodiscard]] const String & orderingKey() const { return ordering_key; }
+    [[nodiscard]] const String & partitionKey() const { return partition_key; }
     /// The event time set by the producer, in milliseconds since the epoch. It may be set to 0.
-    bool hasEventTime() const { return event_time.has_value(); }
-    UInt64 eventTime() const { return event_time.value_or(0); }
-    const MessageId & id() const { return message_id; }
+    [[nodiscard]] bool hasEventTime() const { return event_time.has_value(); }
+    [[nodiscard]] UInt64 eventTime() const { return event_time.value_or(0); }
+    [[nodiscard]] const MessageId & id() const { return message_id; }
 
 private:
     friend class ConsumerImpl;

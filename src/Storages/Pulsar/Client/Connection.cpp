@@ -553,7 +553,7 @@ int Connection::fd() const
     return registered_fd;
 }
 
-short Connection::pollEvents() const
+Int16 Connection::pollEvents() const
 {
     switch (current_state)
     {
@@ -563,7 +563,7 @@ short Connection::pollEvents() const
             return tls_wants_write ? POLLOUT : POLLIN;
         case State::ConnectSent:
         case State::Ready:
-            return static_cast<short>(POLLIN | ((output.empty() && !tls_wants_write) ? 0 : POLLOUT));
+            return static_cast<Int16>(POLLIN | ((output.empty() && !tls_wants_write) ? 0 : POLLOUT));
         case State::Closed:
             return 0;
     }
@@ -862,8 +862,8 @@ void Session::process()
 
     /// New connections are created here, before processing them all.
     sendRequests();
-    for (size_t i = 0; i < connections.size(); ++i)
-        connections[i]->process(*this);
+    for (auto & connection : connections)
+        connection->process(*this);
     /// On the connections that became ready. The output is sent by the next call, `wait` does not wait for it.
     sendRequests();
 

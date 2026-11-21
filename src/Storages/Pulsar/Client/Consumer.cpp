@@ -466,7 +466,10 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
     };
 
     if (entry.checksum_mismatch)
-        return discard(PulsarProto::CommandAck::ChecksumMismatch, "checksum mismatch");
+    {
+        discard(PulsarProto::CommandAck::ChecksumMismatch, "checksum mismatch");
+        return;
+    }
 
     if (metadata.has_encryption_keys())
     {
@@ -516,7 +519,10 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
     {
         decoded = decodePayload(metadata, entry.payload, buffer, connection.maxMessageSize(), true, client->limits);
         if (decoded.error)
-            return discard(*decoded.error, "the payload is corrupted");
+        {
+            discard(*decoded.error, "the payload is corrupted");
+            return;
+        }
     }
 
     QueuedEntry & queued = queue.emplace_back(QueuedEntry{

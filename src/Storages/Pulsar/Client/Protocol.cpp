@@ -42,8 +42,8 @@ class Reader
 public:
     explicit Reader(std::string_view data_) : data(data_) {}
 
-    size_t remaining() const { return data.size() - pos; }
-    std::string_view rest() const { return data.substr(pos); }
+    [[nodiscard]] size_t remaining() const { return data.size() - pos; }
+    [[nodiscard]] std::string_view rest() const { return data.substr(pos); }
 
     bool peekUInt16(UInt16 & value) const
     {
@@ -149,7 +149,7 @@ bool decompress(Int32 codec, std::string_view in, char * out, size_t size)
             stream.avail_out = static_cast<uInt>(size);
 
             /// Block by block, so that `data_type` tells where the input ended. One byte past the size catches longer output.
-            Bytef extra;
+            Bytef extra = 0;
             int data_type = 0;
             while (true)
             {
@@ -619,8 +619,8 @@ String normalizeTopicName(std::string_view name)
     }
 
     size_t parts = std::count(rest.begin(), rest.end(), '/') + 1;
-    bool has_empty_part = rest.empty() || rest.starts_with('/') || rest.ends_with('/') || rest.find("//") != std::string_view::npos;
-    if (has_empty_part || (parts != 3 && (parts != 1 || name.find("://") != std::string_view::npos)))
+    bool has_empty_part = rest.empty() || rest.starts_with('/') || rest.ends_with('/') || rest.contains("//");
+    if (has_empty_part || (parts != 3 && (parts != 1 || name.contains("://"))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Invalid Pulsar topic name '{}': it must be `topic`, `tenant/namespace/topic` or `<domain>://tenant/namespace/topic`", name);
 
