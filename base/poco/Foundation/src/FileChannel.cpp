@@ -108,38 +108,37 @@ void FileChannel::log(const Message& msg)
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	unsafeOpen();
-
-	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
-	{
-		unsafeRotate();
-		// we must call mustRotate() again to give the
-		// RotateByIntervalStrategy a chance to write its timestamp
-		// to the new file.
-		_pRotateStrategy->mustRotate(_pFile);
-	}
-
 	try
 	{
-	_pFile->write(msg.getText(), _flush);
-    }
-    catch (const WriteFileException & e)
-    {
-        // In case of no space left on device,
-        // we try to purge old files or truncate current file.
+		unsafeOpen();
 
-        // NOTE: error reason is not preserved in WriteFileException, we need to check errno manually.
-        // NOTE: other reasons like quota exceeded are not handled.
-        // NOTE: current log message will be lost.
+		if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
+		{
+			unsafeRotate();
+			// we must call mustRotate() again to give the
+			// RotateByIntervalStrategy a chance to write its timestamp
+			// to the new file.
+			_pRotateStrategy->mustRotate(_pFile);
+		}
 
-        if (errno == ENOSPC)
-        {
-            PurgeOneFileStrategy().purge(_path);
-        }
-    }
+		_pFile->write(msg.getText(), _flush);
+	}
+	catch (const FileException & e)
+	{
+		// In case of no space left on device, we try to purge old files or truncate current file.
+		// Any other error is propagated to the caller.
+		//
+		// NOTE: the rotation check can fail as well, since it flushes the pending data to get the file size.
+		// NOTE: current log message will be lost.
+
+		if (e.code() == ENOSPC || e.code() == EDQUOT)
+			PurgeOneFileStrategy().purge(_path);
+		else
+			throw;
+	}
 }
 
-	
+
 void FileChannel::setProperty(const std::string& name, const std::string& value)
 {
 	FastMutex::ScopedLock lock(_mutex);

@@ -16,6 +16,8 @@
 #include <base/sleep.h>
 #include <base/scope_guard.h>
 
+#include <mutex>
+
 #if defined(MEMORY_SANITIZER)
 #include <sanitizer/msan_interface.h>
 #endif
@@ -86,6 +88,34 @@ void OwnSplitChannel::log(Poco::Message && msg)
 
 namespace
 {
+
+/// Writes the current exception to stderr (errors are ignored, since nothing can be done).
+/// The stack trace is included only when the exception differs from the previous one,
+/// otherwise an unwritable log file turns every log message into a stack trace on stderr.
+void writeCurrentExceptionToStderr(const char * prefix, const std::string & log_message = {})
+{
+    static std::mutex mutex;
+    static std::string last_exception_message;
+
+    std::string exception_message = getCurrentExceptionMessage(false);
+    {
+        std::lock_guard lock(mutex);
+        if (exception_message != last_exception_message)
+        {
+            last_exception_message = exception_message;
+            exception_message = getCurrentExceptionMessage(true);
+        }
+    }
+
+    writeRetry(STDERR_FILENO, prefix);
+    if (!log_message.empty())
+    {
+        writeRetry(STDERR_FILENO, log_message.data(), log_message.size());
+        writeRetry(STDERR_FILENO, "\n");
+    }
+    writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+    writeRetry(STDERR_FILENO, "\n");
+}
 
 /// Sleep between polls of an empty queue (consumers poll instead of futex-waiting, keeping pushes cheap).
 constexpr size_t sleep_on_empty_queue_ms = 10;
@@ -206,17 +236,9 @@ void OwnSplitChannel::logSplit(
     /// Also note, that we cannot log the exception here, since this
     /// will lead to recursion, using regular tryLogCurrentException().
     /// but let's log it into the stderr at least.
-    catch (...)
+    catch (...) /// Ok
     {
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        const std::string & message = msg.getText();
-
-        /// NOTE: errors are ignored, since nothing can be done.
-        writeRetry(STDERR_FILENO, "Cannot add message to the log: ");
-        writeRetry(STDERR_FILENO, message.data(), message.size());
-        writeRetry(STDERR_FILENO, "\n");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeCurrentExceptionToStderr("Cannot add message to the log: ", msg.getText());
     }
 }
 
@@ -315,12 +337,9 @@ void OwnAsyncSplitChannel::close()
     {
         closeAndJoinThreads();
     }
-    catch (...)
+    catch (...) /// Ok
     {
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        writeRetry(STDERR_FILENO, "Cannot close OwnAsyncSplitChannel: ");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeCurrentExceptionToStderr("Cannot close OwnAsyncSplitChannel: ");
 
         /// A thread whose join failed would never serve a waiting flusher, so release them here too.
         releaseWaitingFlushers();
@@ -509,14 +528,9 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (text_log_max_priority_loaded >= msg_priority)
             enqueueMessage(text_log_queue, std::move(notification));
     }
-    catch (...)
+    catch (...) /// Ok
     {
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-
-        /// NOTE: errors are ignored, since nothing can be done.
-        writeRetry(STDERR_FILENO, "Failed to add message to the log queue: ");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeCurrentExceptionToStderr("Failed to add message to the log queue: ");
     }
 }
 
@@ -634,12 +648,9 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
                     report_dropped_messages();
             }
         }
-        catch (...)
+        catch (...) /// Ok
         {
-            const std::string & exception_message = getCurrentExceptionMessage(true);
-            writeRetry(STDERR_FILENO, "Cannot log message in OwnAsyncSplitChannel channel: ");
-            writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-            writeRetry(STDERR_FILENO, "\n");
+            writeCurrentExceptionToStderr("Cannot log message in OwnAsyncSplitChannel channel: ");
         }
     }
 
@@ -654,12 +665,9 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
         flush_queue();
         report_dropped_messages();
     }
-    catch (...)
+    catch (...) /// Ok
     {
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        writeRetry(STDERR_FILENO, "Cannot flush messages in OwnAsyncSplitChannel channel: ");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeCurrentExceptionToStderr("Cannot flush messages in OwnAsyncSplitChannel channel: ");
     }
 }
 
@@ -742,12 +750,9 @@ void OwnAsyncSplitChannel::runTextLog()
                     report_dropped_messages(text_log_locked);
             }
         }
-        catch (...)
+        catch (...) /// Ok
         {
-            const std::string & exception_message = getCurrentExceptionMessage(true);
-            writeRetry(STDERR_FILENO, "Cannot log message in OwnAsyncSplitChannel text log: ");
-            writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-            writeRetry(STDERR_FILENO, "\n");
+            writeCurrentExceptionToStderr("Cannot log message in OwnAsyncSplitChannel text log: ");
         }
     }
 
@@ -770,12 +775,9 @@ void OwnAsyncSplitChannel::runTextLog()
         text_log_flush_completed.store(flush_requested, std::memory_order_release);
         text_log_flush_completed.notify_all();
     }
-    catch (...)
+    catch (...) /// Ok
     {
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        writeRetry(STDERR_FILENO, "Cannot flush queue in OwnAsyncSplitChannel text log: ");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
+        writeCurrentExceptionToStderr("Cannot flush queue in OwnAsyncSplitChannel text log: ");
     }
 }
 
