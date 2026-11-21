@@ -398,7 +398,7 @@ Pipe StorageSQLite::read(
         /// as smaller than `'2'`; and the remote side, where only a STRICT table pins the storage class of
         /// every cell to the declared column type - in an ordinary table any cell can carry any storage
         /// class (an INTEGER-declared column holding the TEXT cell `'abc'`), which SQLite compares by its
-        /// runtime storage class while ClickHouse reads it through a coercing accessor, so the two sides
+        /// runtime storage class while the ClickHouse read rejects it, so the two sides
         /// disagree. Ineligible columns are passed as `local_only_columns` instead of simply being dropped
         /// from the set: `transformQueryForExternalDatabase` must distinguish them from columns of other
         /// tables of the query, because a disjunction with a branch over such a column has to stay local as
