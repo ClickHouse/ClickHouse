@@ -1640,6 +1640,7 @@ void LocalServer::processConfig()
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
+    global_context->setOpaConfiguration(getClientConfiguration());
 
     setupUsers();
 

@@ -5415,12 +5415,34 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     if (table_node || table_function_node)
     {
         auto & data = data_it->second;
-        auto populator = [&data, table_expression_node, captured_storage_snapshot = storage_snapshot]
+        /// A table function has no name a policy could describe, so masking applies to tables only.
+        auto masked_storage_id = table_node ? table_node->getStorageID() : StorageID::createEmpty();
+        /// Masks returned by the policy, filled by the populator and used by the resolver below.
+        auto column_masks = std::make_shared<std::unordered_map<String, ASTPtr>>();
+        auto populator = [&data, table_expression_node, captured_storage_snapshot = storage_snapshot, masked_storage_id, column_masks, &scope]
             (ColumnNameToColumnNodeMap & node_map)
         {
             const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
 
             std::vector<std::string> alias_columns;
+
+            /** A masked column is given the mask as its expression, which is the same thing an ALIAS
+              * column has. That makes the mask apply wherever the column is named - in the projection,
+              * but also in WHERE, GROUP BY and a join key - so no part of the query can observe the
+              * value behind the mask. Applying it later, as a step over the read data, would leave
+              * predicates comparing against the real value.
+              */
+            column_masks->clear();
+            if (masked_storage_id.hasDatabase())
+            {
+                Names column_names;
+                column_names.reserve(data.column_names_and_types.size());
+                for (const auto & column_name_and_type : data.column_names_and_types)
+                    column_names.push_back(column_name_and_type.name);
+
+                *column_masks = scope.context->getAccess()->getOpaColumnMasks(
+                    scope.context, masked_storage_id.getDatabaseName(), masked_storage_id.getTableName(), column_names);
+            }
 
             /** For ALIAS columns in table we must additionally analyze ALIAS expressions.
               * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + 5);
@@ -5432,7 +5454,23 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             for (const auto & column_name_and_type : data.column_names_and_types)
             {
                 const auto & column_default = columns_description.getDefault(column_name_and_type.name);
-                if (column_default && column_default->kind == ColumnDefaultKind::Alias)
+                const bool is_masked = column_masks->contains(column_name_and_type.name);
+                const bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+
+                if (is_masked && is_alias)
+                {
+                    /// Both want to define what the column evaluates to. Silently choosing one would
+                    /// either ignore the mask or ignore the table definition.
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "An Open Policy Agent policy returned a mask for column {} of table {}, which is an "
+                        "ALIAS column. Masking an ALIAS column is not supported",
+                        backQuote(column_name_and_type.name),
+                        masked_storage_id.getFullTableName());
+                }
+
+                /// A masked column is resolved like an ALIAS column, with the mask as its expression.
+                if (is_masked || is_alias)
                     alias_columns.push_back(column_name_and_type.name);
 
                 auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
@@ -5447,11 +5485,20 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
           *
           * During resolve of alias_value_1, alias_value_2 column will be resolved.
           */
-        auto alias_column_resolver = [this, &data, &scope, captured_storage_snapshot = std::move(storage_snapshot)](const ColumnNodePtr & alias_column_to_resolve)
+        auto alias_column_resolver = [this, &data, &scope, column_masks, captured_storage_snapshot = std::move(storage_snapshot)](const ColumnNodePtr & alias_column_to_resolve)
         {
-            const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
-            if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+            ASTPtr alias_expression;
+            if (auto mask_it = column_masks->find(alias_column_to_resolve->getColumnName()); mask_it != column_masks->end())
+            {
+                alias_expression = mask_it->second;
+            }
+            else
+            {
+                const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
+                if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+                alias_expression = column_default->expression;
+            }
 
             data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
             bool alias_column_resolved = false;
@@ -5461,7 +5508,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                     alias_column_to_resolve->setExpression(nullptr);
             });
 
-            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
+            alias_column_to_resolve->setExpression(buildQueryTree(alias_expression, scope.context));
 
             auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
             /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
