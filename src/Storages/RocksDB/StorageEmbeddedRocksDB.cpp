@@ -1643,6 +1643,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<RocksDBSettings>,
         .stores_data_on_disk = true,
     };
 

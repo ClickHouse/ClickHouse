@@ -1,0 +1,22 @@
+kafka_no_secret	kafka_broker_list	localhost:9092
+kafka_no_secret	kafka_sasl_password	
+kafka_secret	kafka_broker_list	localhost:9092
+kafka_secret	kafka_sasl_password	[HIDDEN]
+kafka_broker_list	localhost:9092	1
+kafka_format	JSONEachRow	1
+kafka_group_name	g	1
+kafka_max_block_size	100	1
+kafka_num_consumers	2	1
+kafka_schema		1
+kafka_topic_list	t	1
+after_processing_move_secret_access_key		0
+mode	unordered	1
+queue_key	[HIDDEN]
+queue_no_key	DefaultEndpointsProtocol=https;AccountName=acc
+format_csv_delimiter	[HIDDEN]	1
+kafka_broker_list	[HIDDEN]	1
+kafka_group_name	g_override	1
+kafka_max_block_size	[HIDDEN]	1
+kafka_poll_timeout_ms	1234	1
+holds a value that cannot be applied to the engine's settings
+0

@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/SetSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -73,4 +74,6 @@ bool SetSettings::hasBuiltin(std::string_view name)
 {
     return SetSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(SetSettings)
 }

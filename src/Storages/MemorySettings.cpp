@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/MemorySettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -95,5 +96,7 @@ bool MemorySettings::hasBuiltin(std::string_view name)
 {
     return MemorySettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MemorySettings)
 }
 

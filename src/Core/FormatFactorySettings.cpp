@@ -39,4 +39,9 @@ namespace DB
  */
 DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS, FORMAT_FACTORY_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS, FormatFactorySettings, FormatFactorySetting)
+
+bool isFormatFactorySetting(std::string_view name)
+{
+    return BaseSettings<FormatFactorySettingsTraits>::hasBuiltin(name);
+}
 }

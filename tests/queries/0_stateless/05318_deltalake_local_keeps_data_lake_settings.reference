@@ -1,0 +1,1 @@
+SETTINGS iceberg_compaction_commit_batch_size = 7, allow_dynamic_metadata_for_data_lakes = 1

@@ -941,6 +941,20 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
+namespace
+{
+
+/// The definition of an existing table as the constructor uses it on `ATTACH`: a definition of an older version is converted
+/// (for example, a definition without `version` gets `version = 0`), and one of a version this server does not support is
+/// left as it is.
+void normalizeStoredTimeSeriesDefinition(ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (isTimeSeriesVersionSupported(getTimeSeriesVersion(create)))
+        normalizeTimeSeriesDefinition(create, context, LoadingStrictnessLevel::ATTACH, /* is_restore_from_backup = */ false);
+}
+
+}
+
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
@@ -957,6 +971,8 @@ void registerStorageTimeSeries(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<TimeSeriesSettings>,
+        .normalize_stored_definition_fn = normalizeStoredTimeSeriesDefinition,
     },
     Documentation{
         .description = R"DOCS_MD(
