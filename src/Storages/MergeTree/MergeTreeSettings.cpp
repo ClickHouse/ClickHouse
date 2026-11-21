@@ -72,6 +72,34 @@ For a column of fixed-size values the block size is rounded down to a multiple o
 
 A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
+    DECLARE(UInt64, uncompressed_fixed_array_size, 0, R"(
+A column-level setting for a column of type `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)` or `Array(Int8)`,
+for example vector embeddings. It declares that every row of the column has exactly this number of elements, and makes
+the elements of every row be stored as one uncompressed block, so that a single row can be read from the file at a
+computed position, see the query setting `merge_tree_use_one_row_per_block_layout`.
+
+An `INSERT` of a row with another number of elements fails. The column can have no codec, `CODEC(NONE)`, or a
+`Quantized` codec, and cannot have the column-level settings `min_compress_block_size` and `max_compress_block_size`.
+The setting can be specified only in `CREATE TABLE`: `ALTER` cannot add, change or remove it, or change the type, the
+codec or the TTL of a column that has it, or clear the column. The column cannot have a TTL. A table with such a column
+does not support the operations that bring in parts it did not write: `ATTACH PART` and `ATTACH PARTITION` from the
+detached directory, `ATTACH`, `REPLACE` and `MOVE PARTITION` between tables, `RESTORE` of data, and `ATTACH TABLE` with
+a definition.
+
+The setting has no effect at table level. 0 means that the setting is not used.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    id UInt64,
+    vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 768)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+)", 0, \
+        {"26.12", 0, 0, "New setting."}) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
 correspond to one primary key value.
@@ -3357,7 +3385,8 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     static const std::set<String> allowed_column_level_settings =
     {
         "min_compress_block_size",
-        "max_compress_block_size"
+        "max_compress_block_size",
+        "uncompressed_fixed_array_size"
     };
 
     for (const auto & change : changes)

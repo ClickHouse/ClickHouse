@@ -89,6 +89,11 @@ void CompressedWriteBuffer::nextImpl()
     else
         out.write(compressed_buffer.data(), compressed_size);
 
+    block_statistics.min_uncompressed_bytes = block_statistics.blocks
+        ? std::min(block_statistics.min_uncompressed_bytes, decompressed_size) : decompressed_size;
+    block_statistics.max_uncompressed_bytes = std::max(block_statistics.max_uncompressed_bytes, decompressed_size);
+    ++block_statistics.blocks;
+
     growAdaptiveBufferAfterFlush();
 }
 

@@ -1,0 +1,128 @@
+one part, setting on
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+one part, setting off
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+2000
+two parts, setting on
+123
+3160
+337
+2587
+1237
+1571
+3844
+2305
+3997
+2272
+two parts, setting off
+123
+3160
+337
+2587
+1237
+1571
+3844
+2305
+3997
+2272
+several rows per block, setting on
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+same sizes, setting on
+1785	64	0.869
+390	64	0.936
+389	64	0.034
+3187	64	0.595
+2573	64	-0.219
+show create
+CREATE TABLE tab_one_row_per_block (`id` UInt32, `vec` Array(Float32) CODEC(Quantized(\'int8\', 64, 0)) SETTINGS (uncompressed_fixed_array_size = 64)) 
+compact part	Compact	1
+rows after rejected inserts	12
+adaptive write buffer, setting on
+1	1	1	800
+adaptive write buffer, setting off
+1	1	1	800
+materialized column, setting on
+1	2	1	800
+merged part, setting on
+1785	0.869
+390	0.936
+389	0.034
+181	-0.468
+298	0.323
+vertical merge	Vertical
+vertically merged part, setting on
+1785	0.869
+390	0.936
+389	0.034
+2573	-0.219
+181	-0.468
+mutated part, setting on
+1785	0.869	1
+390	0.936	1
+389	0.034	1
+2573	-0.219	1
+181	-0.468	1
+mutated vectors, setting on
+1785	1.869	1
+390	1.936	1
+389	1.034	1
+2573	0.781	1
+181	0.532	1
+mutated vectors, setting off
+1785	1.869	1
+390	1.936	1
+389	1.034	1
+2573	0.781	1
+181	0.532	1
+renamed column, setting on
+1785	1.869
+390	1.936
+389	1.034
+2573	0.781
+181	0.532
+after alter
+vec	CODEC(NONE)	vectors
+rows after rejected imports	0	0
+lightweight update	1	[5,6]
+lightweight update	2	[3,4]
+codes in few blocks	1
+one_row_per_block_adaptive_on	1
+one_row_per_block_materialized_on	0
+one_row_per_block_merged_on	5
+one_row_per_block_mutated_on	5
+one_row_per_block_one_part_off	0
+one_row_per_block_one_part_on	100
+one_row_per_block_renamed_on	5
+one_row_per_block_same_sizes_on	3
+one_row_per_block_several_rows_per_block_on	0
+one_row_per_block_two_parts_off	0
+one_row_per_block_two_parts_on	49
+one_row_per_block_vec_mutated_on	5
+one_row_per_block_vertically_merged_on	5

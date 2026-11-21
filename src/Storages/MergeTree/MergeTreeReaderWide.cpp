@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnArray.h>
@@ -239,7 +241,24 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        if (!columns_cache_reads_possible && !columns_cache_writes_possible)
+        if (!one_row_per_block_readers.empty())
+        {
+            /// The columns with `OneRowPerBlockLayout` are not read from their streams, see `setSelectedRows`.
+            const size_t rows_from_streams = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns, shared_columns,
+                [&](size_t pos) -> std::optional<bool>
+                {
+                    if (one_row_per_block_readers[pos])
+                        return std::nullopt;
+                    return continue_reading;
+                });
+            read_rows = readOneRowPerBlock(from_mark, continue_reading, max_rows_to_read, res_columns, shared_columns);
+
+            /// No rows from the streams when all the columns that are read have `OneRowPerBlockLayout`.
+            if (rows_from_streams != 0 && rows_from_streams != read_rows)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Read {} rows of the columns with `OneRowPerBlockLayout` and {} rows of the other columns", read_rows, rows_from_streams);
+        }
+        else if (!columns_cache_reads_possible && !columns_cache_writes_possible)
         {
             /// Read from disk: every column that is in the part, continuing or seeking as asked.
             read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns, shared_columns,
@@ -286,6 +305,125 @@ size_t MergeTreeReaderWide::readRows(
     }
 
     return read_rows;
+}
+
+void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
+{
+    one_row_per_block_readers.clear();
+    selected_rows.clear();
+    next_row_for_selected_rows.reset();
+
+    /// The columns cache would store the empty arrays of the rows that are not read as their values,
+    /// and the uncompressed cache gives decompressed blocks instead of the blocks as they are stored.
+    if (!settings.use_one_row_per_block_layout || columns_cache_reads_possible || columns_cache_writes_possible
+        || uncompressed_cache || rows.empty())
+        return;
+
+    for (size_t i = 1; i < rows.size(); ++i)
+    {
+        if (rows[i] <= rows[i - 1])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows to read must be strictly increasing, got {} after {}", rows[i], rows[i - 1]);
+    }
+
+    const auto part = data_part_info_for_read->getDataPart();
+    if (!part)
+        return;
+
+    const auto & metadata = *storage_snapshot->metadata;
+
+    /// A column that the part does not have is filled after the read, before the filter that keeps the selected rows, from
+    /// its default expression, which could use the placeholder values of the rows that are not selected. A column without
+    /// a default expression is filled with the default value of its type, which does not depend on other columns.
+    if (hasDefaultExpressionWithIdentifiers(metadata))
+        return;
+
+    /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
+    std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
+    bool has_layouts = false;
+    auto requested_column = getColumns().begin();
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
+    {
+        const auto & column = columns_to_read[pos];
+        /// A skipped column, e.g. during a pending `CLEAR COLUMN`, is filled from its default instead of being read.
+        if (column.isSubcolumn() || isColumnSkipped(pos))
+            continue;
+
+        /// A column with another name in the part, during a pending rename, would be checked below against the metadata of
+        /// another column, which can have its old name.
+        if (column.getNameInStorage() != requested_column->getNameInStorage())
+            continue;
+
+        layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);
+        has_layouts = has_layouts || layouts[pos].has_value();
+    }
+
+    if (!has_layouts)
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
+    bool has_readers = false;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (!layouts[pos])
+            continue;
+
+        auto path_for_logs = (fs::path(part->getDataPartStorage().getRelativePath()) / layouts[pos]->file_name).string();
+        readers[pos] = std::make_unique<MergeTreeOneRowPerBlockReader>(std::move(*layouts[pos]), part->rows_count, std::move(path_for_logs));
+        has_readers = true;
+    }
+
+    if (!has_readers)
+        return;
+
+    one_row_per_block_readers = std::move(readers);
+    selected_rows.assign(rows);
+}
+
+size_t MergeTreeReaderWide::readOneRowPerBlock(
+    size_t from_mark, bool continue_reading, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns)
+{
+    /// The streams of the other columns keep their position between calls. These columns have none, so the position
+    /// is kept here, and checked: a call that continues must follow a read, and stay after the mark it started from.
+    const UInt64 mark_starting_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+    if (continue_reading && !next_row_for_selected_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot continue reading the columns with `OneRowPerBlockLayout`: nothing was read");
+    if (continue_reading && *next_row_for_selected_rows < mark_starting_row)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot continue reading the columns with `OneRowPerBlockLayout` at row {}, before row {} of mark {}",
+            *next_row_for_selected_rows, mark_starting_row, from_mark);
+    const UInt64 first_row = continue_reading ? *next_row_for_selected_rows : mark_starting_row;
+    const UInt64 part_rows = data_part_info_for_read->getRowCount();
+    const UInt64 num_rows = first_row < part_rows ? std::min<UInt64>(max_rows_to_read, part_rows - first_row) : 0;
+
+    for (size_t pos = 0; pos < one_row_per_block_readers.size(); ++pos)
+    {
+        if (!one_row_per_block_readers[pos])
+            continue;
+
+        auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
+        if (!column)
+            column = columns_to_read[pos].type->createColumn(*serializations[pos]);
+
+        try
+        {
+            /// The stream of the file of the array elements, which nothing else reads, as the column is not read with `readData`.
+            ISerialization::SubstreamPath elements_path;
+            elements_path.push_back(ISerialization::Substream::ArrayElements);
+            const auto & file_name = one_row_per_block_readers[pos]->getLayout().file_name;
+            auto & stream = getOrAddStream(elements_path, file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)));
+            /// As in `getStream`: a reader reused for another task keeps the read boundary of the previous one.
+            stream.adjustRightMark(last_mark_to_read);
+            one_row_per_block_readers[pos]->readRange(stream, first_row, num_rows, selected_rows, *column);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
+            throw;
+        }
+    }
+
+    next_row_for_selected_rows = first_row + num_rows;
+    return num_rows;
 }
 
 size_t MergeTreeReaderWide::readSegmentFromDisk(

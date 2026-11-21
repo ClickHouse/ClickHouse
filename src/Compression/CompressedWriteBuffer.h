@@ -51,6 +51,16 @@ public:
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
+    /// The number of blocks written so far, and the smallest and the largest number of uncompressed bytes in a block.
+    /// The writer of `MergeTree` parts uses them to tell whether every block holds exactly one row.
+    struct BlockStatistics
+    {
+        size_t blocks = 0;
+        UInt32 min_uncompressed_bytes = 0;
+        UInt32 max_uncompressed_bytes = 0;
+    };
+    BlockStatistics getBlockStatistics() const { return block_statistics; }
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
@@ -69,6 +79,8 @@ private:
     size_t requested_buf_size;
 
     PODArray<char> compressed_buffer;
+
+    BlockStatistics block_statistics;
 };
 
 }

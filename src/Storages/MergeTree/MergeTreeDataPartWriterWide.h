@@ -107,6 +107,10 @@ private:
     /// errors.
     void validateColumnOfFixedSize(const NameAndTypePair & name_type);
 
+    /// Checks that every block of the file of the elements of a column with the setting `uncompressed_fixed_array_size`
+    /// holds exactly one row stored without compression. Called after the streams are prefinalized.
+    void checkFixedArrayBlocks(const MergeTreeDataPartChecksums & checksums) const;
+
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
     /// Use information from just written granules to shift current mark
@@ -172,6 +176,19 @@ private:
 
     /// Some long stream names are replaced with hashes. Maps the actual stream name, possibly a hash, to the full one.
     std::unordered_map<String, String> stream_name_to_full_name;
+
+    /// The columns with the setting `uncompressed_fixed_array_size`. The elements of every row of such a column are written
+    /// as one block stored without compression, so that a row can be read at a computed position, see
+    /// `tryGetOneRowPerBlockLayout`.
+    struct FixedArrayColumn
+    {
+        /// The stream of the array elements.
+        String stream_name;
+        UInt64 array_size = 0;
+        UInt64 row_bytes = 0;
+        size_t rows = 0;
+    };
+    std::unordered_map<String, FixedArrayColumn> fixed_array_columns;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.

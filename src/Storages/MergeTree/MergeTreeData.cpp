@@ -77,6 +77,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -143,6 +144,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -10901,6 +10903,13 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     std::erase(part_names, "mutations");
 
+    /// Called by the restore of all the engines, also `StorageReplicatedMergeTree`.
+    if (!part_names.empty())
+    {
+        const auto metadata_for_restore = getInMemoryMetadataPtr(getContext(), false);
+        checkNoUncompressedFixedArrayColumns(metadata_for_restore->getColumns(), "RESTORE of data");
+    }
+
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
@@ -14033,6 +14042,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    checkNoUncompressedFixedArrayColumns(my_snapshot->getColumns(), "ATTACH, REPLACE or MOVE PARTITION between tables");
+    checkNoUncompressedFixedArrayColumns(src_snapshot->getColumns(), "ATTACH, REPLACE or MOVE PARTITION between tables");
+
     /// The definitions are compared as text, so the text must not depend on whether the user has
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
@@ -15236,6 +15248,33 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
     return {};
 }
 
+namespace
+{
+
+/// Checks the rows of the columns with the setting `uncompressed_fixed_array_size`, see `checkUncompressedFixedArraySizes`.
+class CheckUncompressedFixedArraySizesTransform final : public ISimpleTransform
+{
+public:
+    CheckUncompressedFixedArraySizesTransform(SharedHeader header_, StorageMetadataPtr metadata_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/ false)
+        , metadata(std::move(metadata_))
+    {
+    }
+
+    String getName() const override { return "CheckUncompressedFixedArraySizesTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        checkUncompressedFixedArraySizes(getInputPort().getHeader().cloneWithColumns(chunk.getColumns()), *metadata);
+    }
+
+private:
+    StorageMetadataPtr metadata;
+};
+
+}
+
 MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
 {
     auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
@@ -15315,6 +15354,17 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     {
         return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
+
+    /// The metadata of a patch part has no column settings, so its writer does not check the updated values of a column
+    /// with the setting `uncompressed_fixed_array_size`. They are checked against the metadata of the table here, as the
+    /// merges that apply the patch would fail on them.
+    if (std::ranges::any_of(metadata_snapshot->getColumns(), [](const auto & column) { return getUncompressedFixedArraySize(column) != 0; }))
+    {
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+        {
+            return std::make_shared<CheckUncompressedFixedArraySizesTransform>(header, StorageMetadataPtr(metadata_snapshot));
+        });
+    }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 

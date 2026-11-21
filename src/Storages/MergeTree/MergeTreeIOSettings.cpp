@@ -13,6 +13,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool merge_tree_use_one_row_per_block_layout;
     extern const SettingsUInt64 low_cardinality_max_dictionary_size;
     extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
     extern const SettingsUInt64 min_compress_block_size;
@@ -164,6 +165,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
+    result.use_one_row_per_block_layout = settings[Setting::merge_tree_use_one_row_per_block_layout];
     return result;
 }
 
