@@ -62,6 +62,28 @@ $CLICKHOUSE_CLIENT -q "
 "
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT runtime_filter_skip_finish_insert"
 
+# A seal-gated probe-side read must proceed without the refinement when the build-side filter is
+# not finished. A join sharded by primary key ranges reads ungated, so the sharding is turned off.
+GATED_SETTINGS="
+    SET enable_join_seal_gated_reading = 1;
+    SET query_plan_join_shard_by_pk_ranges = 0;
+"
+
+$CLICKHOUSE_CLIENT -q "
+    $JOIN_SETTINGS
+    $GATED_SETTINGS
+    SELECT 'gated', count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k) WHERE explain LIKE '%SealGatedRead%';
+"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT runtime_filter_skip_finish_insert"
+$CLICKHOUSE_CLIENT -q "
+    $JOIN_SETTINGS
+    $GATED_SETTINGS
+    SELECT 'unfinished_gated_rows', count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k
+    SETTINGS log_comment = '04681_unfinished_gated';
+"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT runtime_filter_skip_finish_insert"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 # Three separate counters, never summed: the lookup path ran at all, the filter was created,
@@ -87,6 +109,14 @@ $CLICKHOUSE_CLIENT -q "
         ProfileEvents['RuntimeFilterLookupsBeforeBuildFinished'] AS unfinished_branch_taken
     FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = '04681_finished' AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1;
+
+    SELECT
+        'unfinished_gated',
+        ProfileEvents['RuntimeFiltersCreated'] > 0 AS created,
+        ProfileEvents['RuntimeFilterLookupsBeforeBuildFinished'] > 0 AS unfinished_branch_taken
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04681_unfinished_gated' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds DESC LIMIT 1;
 "
 
