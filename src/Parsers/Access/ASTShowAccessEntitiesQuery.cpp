@@ -40,6 +40,13 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(WriteBuffer & ostr, const Forma
         ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
         ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
+
+    if (!like.empty())
+    {
+        ostr << (not_like ? " NOT" : "");
+        ostr << (case_insensitive_like ? " ILIKE " : " LIKE ");
+        ostr << quoteString(like);
+    }
 }
 
 
