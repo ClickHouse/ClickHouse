@@ -128,21 +128,46 @@ public:
         return std::make_shared<FunctionGetSpecialScalar>(context_, function_name_, scalar_name_);
     }
 
-    static ColumnWithTypeAndName createScalar(ContextPtr context_, const char * scalar_name_)
+    struct ResolvedScalar
     {
+        ColumnWithTypeAndName column;
+        bool resolved = false;
+    };
+
+    /// `resolved` is false when the returned column is the placeholder 0. A distributed
+    /// initiator has no shard index yet and must not fold that placeholder.
+    static ResolvedScalar createScalar(ContextPtr context_, const char * scalar_name_)
+    {
+        ResolvedScalar result;
+
         if (auto block = context_->tryGetSpecialScalar(scalar_name_))
-            return block->getByPosition(0);
+        {
+            result.column = block->getByPosition(0);
+            result.resolved = true;
+            return result;
+        }
+
         if (context_->hasQueryContext())
         {
             if (context_->getQueryContext()->hasScalar(scalar_name_))
-                return context_->getQueryContext()->getScalar(scalar_name_).getByPosition(0);
+            {
+                result.column = context_->getQueryContext()->getScalar(scalar_name_).getByPosition(0);
+                result.resolved = true;
+                return result;
+            }
         }
-        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), scalar_name_};
+
+        result.column = {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), scalar_name_};
+        return result;
     }
 
     FunctionGetSpecialScalar(ContextPtr context_, const char * function_name_, const char * scalar_name_)
-        : scalar(createScalar(context_, scalar_name_)), is_distributed(context_->isDistributed()), function_name(function_name_)
+        : function_name(function_name_)
     {
+        auto resolved_scalar = createScalar(context_, scalar_name_);
+        scalar = std::move(resolved_scalar.column);
+        scalar_resolved = resolved_scalar.resolved;
+        is_distributed = context_->isDistributed();
     }
 
     [[nodiscard]] String getName() const override
@@ -154,7 +179,10 @@ public:
 
     [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    /// A per-shard plan is copied from a distributed query, so `is_distributed` stays set, while
+    /// `buildContext` has already installed `_shard_num` / `_shard_count`. Fold in that case so the
+    /// index is stored on the DAG node and survives serialization onto a worker that has no scalar.
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return scalar_resolved || !is_distributed; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -187,7 +215,8 @@ public:
 
 private:
     ColumnWithTypeAndName scalar;
-    bool is_distributed;
+    bool scalar_resolved = false;
+    bool is_distributed = false;
     const char * function_name;
 };
 
