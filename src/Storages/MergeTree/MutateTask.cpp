@@ -1071,12 +1071,15 @@ static void splitAndModifyMutationCommands(
         {
             if (part_columns.has(rename_from))
             {
-                /// Actual rename
-                for_interpreter.push_back(
+                /// A formerly stored column may now be `EPHEMERAL` or `ALIAS`.
+                if (table_columns.hasPhysical(rename_to))
                 {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
-                });
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = rename_to,
+                    });
+                }
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
                 /// set of columns for new part and their serializations
@@ -1157,6 +1160,10 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
+                /// Historical part columns that became `EPHEMERAL` or `ALIAS` are omitted from the rewrite.
+                if (table_columns.has(column.name) && !table_columns.hasPhysical(column.name))
+                    continue;
+
                 if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
@@ -1231,6 +1238,42 @@ static void splitAndModifyMutationCommands(
                     .data_type = std::move(data_type),
                 }
             );
+        }
+
+        /// A secondary replica can have only historical nonphysical columns after replaying an `ALTER`.
+        /// Materialize a remaining physical column before the rewrite discards its last row-count source.
+        auto is_removed = [&](const String & name)
+        {
+            return dropped_columns.contains(name) || std::ranges::any_of(for_interpreter, [&](const auto & command)
+            {
+                return command.type == MutationCommand::DROP_COLUMN && command.column_name == name;
+            });
+        };
+        bool has_stored_column = std::ranges::any_of(part_columns, [&](const auto & column)
+        {
+            return !is_removed(column.name)
+                && (table_columns.hasPhysical(column.name) || metadata_snapshot->virtuals.has(column.name));
+        });
+        if (!has_stored_column)
+        {
+            for (const auto & column : table_columns.getAllPhysical())
+            {
+                if (is_removed(column.name))
+                    continue;
+
+                bool already_read = std::ranges::any_of(for_interpreter, [&](const auto & command)
+                {
+                    return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
+                });
+                if (!already_read)
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::READ_COLUMN,
+                        .column_name = column.name,
+                        .data_type = column.type,
+                    });
+                break;
+            }
         }
     }
     else

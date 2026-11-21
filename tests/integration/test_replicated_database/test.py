@@ -2158,6 +2158,77 @@ def test_ignore_cluster_name_setting(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+@pytest.mark.parametrize("materialized", [False, True], ids=["empty", "materialized"])
+def test_nonphysical_column_alter_replay(started_cluster, materialized):
+    db_name = f"test_nonphysical_replay_{int(materialized)}"
+    nodes = [main_node, dummy_node]
+    for node in nodes:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    try:
+        for node in nodes:
+            node.query(
+                f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+            )
+
+        main_node.query(
+            f"CREATE TABLE {db_name}.t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+            "SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"INSERT INTO {db_name}.t VALUES (7), (9)")
+        main_node.query(f"ALTER TABLE {db_name}.t ADD COLUMN b UInt64 DEFAULT 42")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+        # The initiator has either no parts or a part with stored `b`; the follower stores only `a`.
+        if materialized:
+            main_node.query(f"INSERT INTO {db_name}.t (a) VALUES (7), (9)")
+        columns_query = (
+            "SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND active"
+        )
+        assert main_node.query(columns_query) == (
+            "['a','b']\n" if materialized else "[]\n"
+        )
+        assert dummy_node.query(columns_query) == "['a']\n"
+
+        main_node.query(f"ALTER TABLE {db_name}.t MODIFY COLUMN a UInt64 EPHEMERAL 0")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        for node in nodes:
+            assert node.query(
+                "SELECT default_kind FROM system.columns "
+                f"WHERE database = '{db_name}' AND table = 't' AND name = 'a'"
+            ) == "EPHEMERAL\n"
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+
+        # The historical `a` must remain readable under a pending rename until `b` is materialized.
+        dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t")
+        main_node.query(f"ALTER TABLE {db_name}.t RENAME COLUMN a TO a_old SETTINGS mutations_sync = 0")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+        dummy_node.query(f"SYSTEM START MERGES {db_name}.t")
+        assert_eq_with_retry(
+            dummy_node,
+            f"SELECT count() FROM system.mutations WHERE database = '{db_name}' AND table = 't' AND NOT is_done",
+            "0",
+        )
+        assert dummy_node.query(columns_query) == "['b']\n"
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+
+        # A subsequent `ALTER` must also pass through the follower's metadata queue.
+        main_node.query(f"ALTER TABLE {db_name}.t ADD COLUMN c UInt64 DEFAULT 10")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        for node in nodes:
+            assert node.query(
+                "SELECT name FROM system.columns "
+                f"WHERE database = '{db_name}' AND table = 't' ORDER BY name"
+            ) == "a_old\nb\nc\n"
+        assert dummy_node.query(f"SELECT count(), sum(b), sum(c) FROM {db_name}.t") == "2\t84\t20\n"
+    finally:
+        for node in nodes:
+            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_attach_from(started_cluster):
     db_name_replicated = "test_attach_from_replicated"
     db_name_atomic = "test_attach_from_atomic"

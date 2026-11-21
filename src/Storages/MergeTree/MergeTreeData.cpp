@@ -6895,6 +6895,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     NameSet dropped_columns;
+    std::unordered_map<String, NameSet> dropped_columns_in_partitions;
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
@@ -6907,11 +6908,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
-        checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
-        /// Just validate partition expression
+        checkAlterCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+        /// Validate the partition expression and keep its scope for column removal checks.
+        std::optional<String> partition_id;
         if (command.partition)
         {
-            getPartitionIDFromQuery(command.partition, local_context);
+            partition_id = getPartitionIDFromQuery(command.partition, local_context);
         }
 
         if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
@@ -7067,15 +7069,16 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
             }
 
+            auto & command_dropped_columns = partition_id ? dropped_columns_in_partitions[*partition_id] : dropped_columns;
             if (old_metadata.columns.has(command.column_name))
             {
-                dropped_columns.emplace(command.column_name);
+                command_dropped_columns.emplace(command.column_name);
             }
             else
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)
-                    dropped_columns.emplace(nested_column.name);
+                    command_dropped_columns.emplace(nested_column.name);
             }
         }
         else if (command.type == AlterCommand::RESET_SETTING)
@@ -7585,14 +7588,40 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    if (!dropped_columns.empty())
+    /// Converting a physical column to `EPHEMERAL` or `ALIAS` also removes its stored data on rewrite.
+    /// Missing default columns must be materialized before the last stored physical column is removed.
+    auto name_after_alter = [&](String name)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::RENAME_COLUMN && command.column_name == name)
+                name = command.rename_to;
+        }
+        return name;
+    };
+    bool makes_columns_nonphysical = false;
+    for (const auto & command : commands)
+    {
+        if (isColumnMadeNonPhysical(command, old_metadata.columns, new_metadata.columns))
+        {
+            makes_columns_nonphysical = true;
+            /// A queued `READ_COLUMN` still needs a physical destination even if other columns survive.
+            /// Check every converted column, but do not block replay of an already committed `ALTER`.
+            if (!is_secondary_replay)
+                checkAlterCommandDoesntAffectInProgressMutations(
+                    command, unfinished_mutations, local_context, /*makes_column_nonphysical=*/true);
+        }
+    }
+
+    if (!dropped_columns.empty() || !dropped_columns_in_partitions.empty() || makes_columns_nonphysical)
     {
         auto parts = getDataPartsVectorForInternalUsage();
         auto parts_info = getPartsSnapshotInfo(parts);
 
         /// A part can carry a column under a name the table does not know, because a rename this part
         /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
-        /// pending rename is not mistaken for a column the table has lost.
+        /// pending rename is not mistaken for a column the table has lost. Pending `CLEAR COLUMN`
+        /// and `DROP COLUMN` also determine which stored columns survive.
         IMutationsSnapshot::Params params
         {
             .metadata_version = old_metadata.getMetadataVersion(),
@@ -7609,6 +7638,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         for (const auto & part : parts)
         {
+            auto part_dropped_columns = dropped_columns;
+            if (auto it = dropped_columns_in_partitions.find(part->info.getPartitionId()); it != dropped_columns_in_partitions.end())
+                part_dropped_columns.insert(it->second.begin(), it->second.end());
+
+            if (part_dropped_columns.empty() && !makes_columns_nonphysical)
+                continue;
+
             auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
 #if CLICKHOUSE_CLOUD
                 , nullptr
@@ -7616,6 +7652,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 );
 
             bool at_least_one_column_rest = false;
+            bool at_least_one_physical_column_rest = false;
             for (const auto & column : part->getColumns())
             {
                 auto name_in_table = alter_conversions->columnHasNewName(column.name)
@@ -7631,24 +7668,38 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
                 /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
                 /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
-                if (!dropped_columns.contains(name_in_table)
+                if (!part_dropped_columns.contains(name_in_table)
                     && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
                 {
                     at_least_one_column_rest = true;
-                    break;
+                }
+
+                if (!part_dropped_columns.contains(name_in_table)
+                    && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
+                    && (new_metadata.columns.hasPhysical(name_after_alter(name_in_table)) || old_metadata.virtuals.has(name_in_table)))
+                {
+                    at_least_one_physical_column_rest = true;
                 }
             }
 
             if (!at_least_one_column_rest)
             {
                 std::string postfix;
-                if (dropped_columns.size() > 1)
+                if (part_dropped_columns.size() > 1)
                     postfix = "s";
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot drop or clear column{} '{}', because all columns "
                                 "in part '{}' will be removed from disk. Empty parts are not allowed",
-                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+                                postfix, boost::algorithm::join(part_dropped_columns, ", "), part->name);
             }
+
+            /// Local parts may differ between replicas, so they must not prevent replay of a committed `ALTER`.
+            if (!is_secondary_replay && !at_least_one_physical_column_rest)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot alter table because part '{}' would have no stored physical columns. "
+                    "Materialize a remaining physical column first using "
+                    "ALTER TABLE ... MATERIALIZE COLUMN ... SETTINGS mutations_sync = 2",
+                    part->name);
         }
     }
 }
@@ -14972,10 +15023,20 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
-void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
-    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+bool MergeTreeData::isColumnMadeNonPhysical(
+    const AlterCommand & command, const ColumnsDescription & old_columns, const ColumnsDescription & new_columns)
 {
-    if (!command.isDropOrRename() || unfinished_mutations.empty())
+    return command.type == AlterCommand::MODIFY_COLUMN
+        && old_columns.hasPhysical(command.column_name)
+        && new_columns.has(command.column_name)
+        && !new_columns.hasPhysical(command.column_name);
+}
+
+void MergeTreeData::checkAlterCommandDoesntAffectInProgressMutations(
+    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations,
+    ContextPtr local_context, bool makes_column_nonphysical) const
+{
+    if ((!command.isDropOrRename() && !makes_column_nonphysical) || unfinished_mutations.empty())
         return;
 
     auto throw_exception = [] (
@@ -15009,9 +15070,10 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 throw_exception(mutation_name, "drop", "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN || makes_column_nonphysical)
             {
-                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
+                const std::string action = makes_column_nonphysical ? "make nonphysical"
+                    : (command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename");
 
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);

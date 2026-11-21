@@ -228,23 +228,40 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        /// Use the intersection of part columns and metadata columns to find the minimum size column.
-        /// The column must exist both physically in the part (to be readable) and in the current metadata
-        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
-        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
+        /// Resolve stored names through pending renames before checking the current metadata.
+        /// A historical column that became `EPHEMERAL` or `ALIAS` can still supply the row count:
+        /// it is read only as an injected column and is not returned as the column's current value.
         const auto & part_columns = data_part_info_for_reader.getColumns();
+        auto current_name = [&](const String & name)
+        {
+            return alter_conversions && alter_conversions->columnHasNewName(name)
+                ? alter_conversions->getColumnNewName(name) : name;
+        };
         NamesAndTypesList available_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
+            if (storage_snapshot->tryGetColumn(options, current_name(column.name)))
                 available_columns.push_back(column);
         }
 
         if (available_columns.empty())
-            available_columns = part_columns;
+        {
+            auto row_count_options = GetColumnsOptions(GetColumnsOptions::All)
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+            for (const auto & column : part_columns)
+            {
+                if (storage_snapshot->tryGetColumn(row_count_options, current_name(column.name)))
+                    available_columns.push_back(column);
+            }
+        }
+
+        if (available_columns.empty())
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Cannot read part {} because none of its stored columns exist in the current table schema",
+                data_part_info_for_reader.getPartName());
 
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
-        columns.push_back(minimum_size_column_name);
+        columns.push_back(current_name(minimum_size_column_name));
         /// correctly report added column
         injected_columns.insert(columns.back());
     }

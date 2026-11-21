@@ -1234,10 +1234,14 @@ public:
 
     static void checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings);
 
-    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
-    /// and we have unfinished mutation which need this column to finish.
-    void checkDropOrRenameCommandDoesntAffectInProgressMutations(
-        const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
+    static bool isColumnMadeNonPhysical(
+        const AlterCommand & command, const ColumnsDescription & old_columns, const ColumnsDescription & new_columns);
+
+    /// Reject dropping, renaming or making nonphysical a column needed by an unfinished mutation.
+    /// Also check dropped indices, projections and statistics.
+    void checkAlterCommandDoesntAffectInProgressMutations(
+        const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations,
+        ContextPtr context, bool makes_column_nonphysical = false) const;
 
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
