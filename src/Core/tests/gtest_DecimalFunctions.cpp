@@ -2,6 +2,8 @@
 
 #include <Core/DecimalFunctions.h>
 
+#include <limits>
+
 namespace
 {
 using namespace DB;
@@ -141,6 +143,40 @@ TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getWholePartDateTime64)
 TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64)
 {
     testGetFractional<DateTime64>(GetParam());
+}
+
+constexpr UInt32 MILLISECONDS_SCALE = 3;
+constexpr Int64 MAX_UINT32_TIMESTAMP_MS = Int64{std::numeric_limits<UInt32>::max()} * 1'000;
+
+TEST(DecimalUtilsTryConvertTo, negativeToUnsignedOfTheSameWidth)
+{
+    const DateTime64 one_second_before_epoch{-1'000};
+    UInt64 result = 0;
+
+    const bool converted = DecimalUtils::tryConvertTo<UInt64>(one_second_before_epoch, MILLISECONDS_SCALE, result);
+
+    ASSERT_FALSE(converted);
+}
+
+TEST(DecimalUtilsTryConvertTo, outOfRangeOfNarrowerInteger)
+{
+    const DateTime64 one_second_after_max_uint32{MAX_UINT32_TIMESTAMP_MS + 1'000};
+    UInt32 result = 0;
+
+    const bool converted = DecimalUtils::tryConvertTo<UInt32>(one_second_after_max_uint32, MILLISECONDS_SCALE, result);
+
+    ASSERT_FALSE(converted);
+}
+
+TEST(DecimalUtilsTryConvertTo, inRangeDropsFraction)
+{
+    const DateTime64 last_millisecond_of_max_uint32{MAX_UINT32_TIMESTAMP_MS + 999};
+    UInt32 result = 0;
+
+    const bool converted = DecimalUtils::tryConvertTo<UInt32>(last_millisecond_of_max_uint32, MILLISECONDS_SCALE, result);
+
+    ASSERT_TRUE(converted);
+    ASSERT_EQ(result, std::numeric_limits<UInt32>::max());
 }
 
 }

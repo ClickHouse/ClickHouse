@@ -27,7 +27,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>

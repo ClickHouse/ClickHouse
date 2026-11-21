@@ -1,0 +1,9 @@
+-- a tuple of three named elements
+[(110,2,'b'),(120,3,'c')]	Array(Tuple(ts UInt32, value Float64, label String))
+-- a tuple of one element
+[(110),(120)]	Array(Tuple(UInt32))
+-- the histogram tuples of a TimeSeries table keep their type, so the elements are addressed by name
+[('1970-01-01 00:01:50.000',2,[(0,2)]),('1970-01-01 00:02:00.000',3,[(0,3)])]	1
+-- the whole array is returned when the range covers it, an empty array when it misses it
+[(100,1,'a',[1]),(110,2,'b',[2])]	[]
+-- the first element must be a timestamp

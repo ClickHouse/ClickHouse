@@ -6,7 +6,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -22,8 +21,10 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/PrometheusTimestamps.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/addPrometheusHistogramsToTimeSeries.h>
 #include <optional>
 
 
@@ -85,12 +86,18 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples [, timeSeriesGroupArray(histograms) AS histograms]
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
     /// GROUP BY timeSeriesIdToGroup(id) AS group
+    /// The table function returns the columns `timestamp` and `value` instead of `samples` for a table storing one sample per row
+    /// (see `TimeSeriesSettings::hasBucketedSamples`), then the samples are merged with timeSeriesGroupArray(timestamp, value).
+    /// For a table storing histogram samples (`table_has_histograms`, see `TimeSeriesSettings::hasHistogramsInSamples`) the table
+    /// function is called with 'samples_and_histograms' and returns the column `histograms` too, merged with
+    /// timeSeriesGroupArray(histograms).
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         bool table_has_bucketed_samples,
+        bool table_has_histograms,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
         Int64 max_time_ms)
@@ -120,6 +127,13 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
+            if (table_has_histograms)
+            {
+                select_list_exp->children.push_back(
+                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histograms)));
+                select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Histograms);
+            }
+
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
 
@@ -133,7 +147,8 @@ namespace
                 make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
-                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+                make_intrusive<ASTLiteral>(String{table_has_histograms
+                    ? "samples_and_histograms" : (table_has_bucketed_samples ? "samples" : "timestamp_and_value")}));
 
             table_exp->children.emplace_back(table_exp->table_function);
 
@@ -196,6 +211,9 @@ namespace
 
         UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
+        /// The column with the histogram samples is present for a TimeSeries table storing them (see buildSelectQueryForReadingTimeSeries).
+        const auto * histograms_column = block.findByName(TimeSeriesColumnNames::Histograms);
+
         for (size_t i = 0; i != num_rows; ++i)
         {
             auto & new_time_series = *out_time_series.Add();
@@ -217,11 +235,15 @@ namespace
             {
                 Int64 timestamp = timestamps.getInt(j);
                 Float64 value = values.getFloat64(j);
-                Int64 timestamp_ms = DecimalUtils::convertTo<Decimal64>(3, Decimal64{timestamp}, timestamp_scale).value;
+                const Int64 timestamp_ms = PrometheusTimestamps::fromStored(timestamp, timestamp_scale);
                 auto & new_sample = *new_time_series.add_samples();
                 new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);
             }
+
+            /// The histogram samples are added after the float samples of the row: a float sample beats a histogram sample at the same timestamp.
+            if (histograms_column)
+                addPrometheusHistogramsToTimeSeries(*histograms_column->column, i, timestamp_scale, new_time_series);
         }
     }
 }
@@ -247,7 +269,12 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, time_series_storage->getStorageSettings()->hasBucketedSamples(), label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id,
+        time_series_storage->getStorageSettings()->hasBucketedSamples(),
+        time_series_storage->getStorageSettings()->hasHistogramsInSamples(),
+        label_matcher,
+        start_timestamp_ms,
+        end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());

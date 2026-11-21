@@ -1,0 +1,22 @@
+-- is_float is a value of its Bool type: text input is converted to it, binary input other than 0 and 1 is rejected by the validation
+-- counter_reset_hint is a value of its Enum8 type: a conversion rejects other values, binary input is rejected by the validation
+-- schema is -4..8 or -53
+-- the bucket indexes of a side increase strictly
+-- no count is negative
+-- the buckets and the zero bucket of an integer histogram add up to count_int, or to at most count_int when sum is NaN
+-- custom buckets: finite increasing bounds covering the positive side, no negative side, no zero bucket; exponential buckets have no bounds
+-- nothing of a rejected insert is written
+0	0	0
+-- the accepted histograms are stored as sent (one per timestamp)
+100000	false	unknown	0	0	0	0	0	[]	[]	0	[]	[]
+101000	false	gauge	0	0	0	0	0	[]	[]	0	[]	[]
+102000	false	unknown	-4	0	0	0	0	[]	[]	0	[]	[]
+103000	false	unknown	8	0	0	0	0	[]	[]	0	[]	[]
+104000	false	unknown	-53	0	0	0	0	[]	[]	0	[]	[]
+105000	false	unknown	0	0	0	3	1	[(0,2)]	[]	0	[]	[]
+106000	false	unknown	0	0	nan	5	0	[(0,1),(1,2)]	[]	0	[]	[]
+107000	false	unknown	0	0	0	1	0	[(0,0),(1,1),(2,0)]	[]	0	[]	[]
+108000	false	unknown	0	0	0	2	0	[(-5,1)]	[(3,1)]	0	[]	[]
+109000	true	unknown	0	0	0	0	0	[]	[]	100	[(0,1)]	[]
+110000	false	unknown	-53	0	0	15	0	[(0,1),(1,2),(2,4),(3,8)]	[]	0	[]	[0.1,0.5,1]
+111000	false	unknown	0	0	0	9223372036854775807	0	[(0,9223372036854775807)]	[]	0	[]	[]
