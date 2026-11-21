@@ -2,6 +2,9 @@
 -- Tag no-parallel: Messes with internal cache
 
 SET parallel_replicas_local_plan = 1;
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner estimate the rows to read first,
+-- and that estimate consults the query condition cache too, which changes the profile event counters.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 SET optimize_move_to_prewhere = 1;
 

@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-encrypted-storage
+-- Tags: no-ordinary-database, no-encrypted-storage, no-parallel-replicas
 -- Regression test for a TSAN data race in `executeASTFuzzerQueries` (STID: 2604-385d).
 --
 -- `executeASTFuzzerQueries` used to reset the transaction on the CALLER's query and

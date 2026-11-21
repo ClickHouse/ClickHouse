@@ -10,6 +10,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/131463
 SET parallel_replicas_plan_based = 0;
 
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner build one more plan
+-- (with different settings) to estimate the rows to read, which can create one more subquery cache entry.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
+
 DROP SETTINGS PROFILE IF EXISTS qc_on_05055;
 DROP SETTINGS PROFILE IF EXISTS qc_off_05055;
 DROP SETTINGS PROFILE IF EXISTS neutral_05055;
