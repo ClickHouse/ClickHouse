@@ -44,9 +44,9 @@ def inode(node, path):
     return node.exec_in_container(["stat", "-c", "%i", path], user="root").strip()
 
 
-def check_part(node, table):
+def check_part(node, table, part="all_0_0_0"):
     return node.query(
-        f"CHECK TABLE {table} PART 'all_0_0_0' SETTINGS check_query_single_value_result = 0"
+        f"CHECK TABLE {table} PART '{part}' SETTINGS check_query_single_value_result = 0"
     )
 
 
@@ -102,24 +102,111 @@ def test_broken_part_copy(started_cluster):
         drop_table(table)
 
 
-def test_incomplete_copy_is_kept(started_cluster):
-    table = "t_incomplete"
+def test_covered_by_broken_copy(started_cluster):
+    table = "t_covered"
     try:
-        path = setup_broken_part(table)
+        create_table(node1, table)
+        create_table(node2, table)
+        node1.query(f"SYSTEM STOP CLEANUP {table}")
+        node1.query(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(500)"
+        )
+        node1.query(
+            f"INSERT INTO {table} SELECT number + 500, toString(number) FROM numbers(500)"
+        )
+        node1.query(
+            f"OPTIMIZE TABLE {table} FINAL SETTINGS optimize_skip_merged_partitions = 1"
+        )
+        assert_eq_with_retry(
+            node1,
+            f"SELECT name FROM system.parts WHERE table = '{table}' AND active",
+            "all_0_1_1",
+        )
+        node2.query(f"SYSTEM SYNC REPLICA {table}")
+
+        path = data_path(node1, table)
         node1.exec_in_container(
-            ["rm", f"{path}detached/broken_all_0_0_0/key.bin"], user="root"
+            [
+                "bash",
+                "-c",
+                f"printf 'XXXXXXXX' | dd of={path}all_0_1_1/value.bin bs=1 seek=0 conv=notrunc",
+            ],
+            user="root",
+        )
+        check_part(node1, table, "all_0_1_1")
+        detached = ls(node1, path + "detached")
+        for name in [
+            "broken_all_0_1_1",
+            "covered-by-broken_all_0_0_0",
+            "covered-by-broken_all_1_1_0",
+        ]:
+            assert name in detached
+        # The cleanup thread removes an outdated part from Keeper before its directory.
+        zk = cluster.get_kazoo_client("zoo1")
+        for part in ["all_0_0_0", "all_1_1_0"]:
+            zk.delete(
+                f"/clickhouse/tables/{table}/replicas/node1/parts/{part}",
+                recursive=True,
+            )
+        zk.stop()
+        zk.close()
+
+        node1.restart_clickhouse(kill=True)
+
+        assert_eq_with_retry(node1, is_readonly(table), "0")
+        assert_eq_with_retry(node1, f"SELECT count() FROM {table}", "1000")
+        for part in ["all_0_0_0", "all_1_1_0"]:
+            node1.wait_for_log_line(
+                rf"default\.{table} .*Unexpected part {part} has the same files as detached part covered-by-broken_{part}"
+            )
+        files = ls(node1, path)
+        assert "all_0_0_0" not in files
+        assert "all_1_1_0" not in files
+        detached = ls(node1, path + "detached")
+        for name in [
+            "broken_all_0_1_1",
+            "covered-by-broken_all_0_0_0",
+            "covered-by-broken_all_1_1_0",
+        ]:
+            assert name in detached
+        assert not [name for name in detached if name.startswith("ignored_")]
+        assert check_part(node1, table, "all_0_1_1").split("\t")[1] == "1"
+    finally:
+        drop_table(table)
+
+
+def test_mismatched_copy_is_kept(started_cluster):
+    tables = ["t_incomplete", "t_relinked"]
+    try:
+        paths = {table: setup_broken_part(table) for table in tables}
+        # The copy misses a file.
+        node1.exec_in_container(
+            ["rm", f"{paths['t_incomplete']}detached/broken_all_0_0_0/key.bin"],
+            user="root",
+        )
+        # The copy has the same files, but one is a copy instead of a hard link.
+        copy = f"{paths['t_relinked']}detached/broken_all_0_0_0"
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cp {copy}/key.bin {copy}/key.bin.new && mv -f {copy}/key.bin.new {copy}/key.bin",
+            ],
+            user="root",
         )
 
         node1.restart_clickhouse(kill=True)
 
-        node1.wait_for_log_line(
-            rf"local set of parts of table default\.{table} .*TOO_MANY_UNEXPECTED_DATA_PARTS",
-            timeout=60,
-        )
-        assert node1.query(is_readonly(table)).strip() == "1"
-        assert "all_0_0_0" in ls(node1, path)
+        for table in tables:
+            node1.wait_for_log_line(
+                rf"local set of parts of table default\.{table} .*TOO_MANY_UNEXPECTED_DATA_PARTS",
+                timeout=60,
+            )
+            assert node1.query(is_readonly(table)).strip() == "1"
+            assert "all_0_0_0" in ls(node1, paths[table])
     finally:
-        drop_table(table)
+        for table in tables:
+            drop_table(table)
 
 
 def test_unexpected_part_copy(started_cluster):
@@ -195,6 +282,7 @@ def test_cloned_replica_copy(started_cluster):
         assert_eq_with_retry(node1, is_readonly(table), "0")
         assert "all_0_0_0" not in ls(node1, path)
         assert "clone_all_0_0_0" in ls(node1, path + "detached")
+        assert "ignored_all_0_0_0" not in ls(node1, path + "detached")
         assert node1.query(f"SELECT count() FROM {table}").strip() == "0"
     finally:
         drop_table(table)
