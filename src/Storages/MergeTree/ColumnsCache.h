@@ -278,12 +278,14 @@ public:
     UInt64 getInvalidationGeneration(const UUID & table_uuid);
 
     /// Remove all cached entries for a specific data part.
-    /// Called when the part leaves the table for good: from the destructor of the part, and for
-    /// outdated parts that nobody else holds any more (`isSharedPtrUnique`). A reader holds the
-    /// part through its `data_part_info_for_read` for as long as its deferred write is pending,
-    /// so no reader can still write entries for the part after this call, and unlike removeTable
-    /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
-    /// Part names are not reused within a table, so a later part cannot find these entries either.
+    /// Called when the part leaves the table: from the destructor of the part, for outdated parts that
+    /// nobody else holds any more (`isSharedPtrUnique`), and before a part is moved to `detached`.
+    /// A reader holds the part through its `data_part_info_for_read` for as long as its deferred write
+    /// is pending, so in the first two cases no reader can still write entries for the part after this
+    /// call, and unlike removeTable this needs no invalidation stamp: nothing per part is retained once
+    /// the entries are gone. A part moved to `detached` may still be held by a running read, and a part
+    /// with its name can come back, for example by `SYSTEM RESTORE REPLICA`. Otherwise part names are
+    /// not reused within a table, so a later part cannot find these entries.
     void removePart(const UUID & table_uuid, const String & part_name);
 
     /// Whether the cache holds any entry of the part. One lookup in the index, so that the cleanup
