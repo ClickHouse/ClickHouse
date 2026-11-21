@@ -110,6 +110,13 @@ CREATE TABLE rt (k Tuple(b UInt8, a String)) ENGINE = MergeTree ORDER BY tuple()
 INSERT INTO rt VALUES ((5, '1'));
 SELECT count() FROM pt JOIN g ON pt.id = g.id JOIN rt ON CAST(pt.t, 'Tuple(b UInt8, a String)') = rt.k WHERE pt.b + g.flag = 2;
 
+-- A `String` vs `FixedString` tuple key is cast to the common type, which can throw on its other elements.
+CREATE TABLE ptup (id UInt64, b UInt8, t Tuple(String, Decimal64(0))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ptup SELECT number, number % 2 AS b, tuple(if(b = 0, 'bad', 'ok'), if(b = 0, 900000000000000000, 1)) FROM numbers(100000);
+CREATE TABLE rtup (k Tuple(FixedString(3), Decimal64(9))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rtup VALUES (('ok', 1));
+SELECT count() FROM ptup JOIN g ON ptup.id = g.id JOIN rtup ON ptup.t = rtup.k WHERE ptup.b + g.flag = 2;
+
 -- The cast of an `Int32` key to `Float64` cannot throw, so the key keeps its runtime filter.
 CREATE TABLE fi (k Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO fi SELECT number FROM numbers(10);
