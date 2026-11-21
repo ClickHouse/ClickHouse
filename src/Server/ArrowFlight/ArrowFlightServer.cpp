@@ -898,6 +898,8 @@ arrow::Status ArrowFlightServer::GetSchema(
                         }
                     }
 
+                    /// The pipeline was not run, so it is reset before `onFinish` to not write an empty result into the query result cache.
+                    block_io.resetPipeline(/*cancel=*/ true);
                     block_io.onFinish();
                     query_finished = true;
                 }

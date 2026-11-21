@@ -2439,7 +2439,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+Waits for the running refresh to complete, including a due refresh that is still waiting for its `refresh_coordination_jitter_ms` delay. If no refresh is running or due, returns immediately. If the latest refresh attempt failed, reports an error.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 

@@ -84,7 +84,9 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
             else
                 first = false;
 
-            formatSettingName(key, ostr);
+            /// The parser reads each key of `DELETE` as one identifier, unlike the keys of `SET`.
+            /// Thus `formatSettingName` is not applicable: it writes `a.b` without quotes.
+            ostr << backQuoteIfNeed(key);
         }
     }
 }
