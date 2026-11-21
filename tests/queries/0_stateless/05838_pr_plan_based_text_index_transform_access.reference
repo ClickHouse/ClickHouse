@@ -1,0 +1,12 @@
+--- granted: the read is shipped
+1
+1
+--- denied: the read stays local
+1
+1
+1
+1
+0
+--- the check adds nothing to the privileges the query reports
+1
+1

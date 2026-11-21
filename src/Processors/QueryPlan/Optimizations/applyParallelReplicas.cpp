@@ -9,6 +9,8 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -390,6 +392,53 @@ static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
 {
     UnorderedSetWithMemoryTracking<const FutureSetFromSubquery *> visited;
     return checkQueryPlanActionDAGs(node, [&](const ActionsDAG & dag) { return dagReferencesUnshippableSubquerySet(dag, visited); });
+}
+
+static bool dagHasFunctionDeniedOnReplica(const ActionsDAG & dag, const ContextPtr & context);
+
+static bool functionIsDeniedOnReplica(const IFunctionBase & function, const ContextPtr & context)
+{
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return dagHasFunctionDeniedOnReplica(capture->getAcionsDAG(), context);
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return dagHasFunctionDeniedOnReplica(expression->getAcionsDAG(), context);
+
+    try
+    {
+        if (auto resolver = FunctionFactory::instance().tryGet(function.getName(), context))
+            resolver->checkAccessOnBuild();
+    }
+    catch (const Exception & e)
+    {
+        LOG_DEBUG(
+            getLogger("ApplyParallelReplicas"),
+            "Keeping the plan fragment local: a replica would not build function '{}': {}",
+            function.getName(),
+            e.message());
+        return true;
+    }
+    return false;
+}
+
+static bool dagHasFunctionDeniedOnReplica(const ActionsDAG & dag, const ContextPtr & context)
+{
+    for (const auto & node : dag.getNodes())
+        if (!allNodeFunctions(node, [&](const IFunctionBase & function) { return !functionIsDeniedOnReplica(function, context); }))
+            return true;
+    return false;
+}
+
+/// A replica rebuilds every shipped function under the query's access rights, while the plan may hold functions
+/// built under the global context, such as a text index transform.
+static bool fragmentHasFunctionDeniedOnReplica(const QueryPlan::Node * node, const ContextPtr & context)
+{
+    if (!context)
+        return false;
+
+    /// The probe must not add to the privileges the query reports.
+    auto probe_context = Context::createCopy(context);
+    probe_context->setQueryPrivilegesInfo(std::make_shared<QueryPrivilegesInfo>());
+    return checkQueryPlanActionDAGs(node, [&](const ActionsDAG & dag) { return dagHasFunctionDeniedOnReplica(dag, probe_context); });
 }
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor>
@@ -794,6 +843,9 @@ public:
         /// fragment unserializable. Keep it local: leaving the split marker unconverted makes it a
         /// pass-through, so the read runs single-node.
         if (fragmentHasUnshippableSubquerySet(plan_fragment->getRootNode()))
+            return;
+
+        if (fragmentHasFunctionDeniedOnReplica(plan_fragment->getRootNode(), context))
             return;
 
         auto parallel_replicas_plan = ClusterProxy::createParallelReplicasPlan(std::move(plan_fragment), context);
