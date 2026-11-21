@@ -38,6 +38,8 @@ queue
 quorum
 replicas
 table_shared_id
+task_queue
+tasks
 temp
 -------------------------
 1
@@ -80,4 +82,6 @@ queue
 quorum
 replicas
 table_shared_id
+task_queue
+tasks
 temp

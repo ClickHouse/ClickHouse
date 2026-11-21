@@ -623,7 +623,7 @@ private:
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
-    void syncPinnedPartUUIDs(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void syncPinnedPartUUIDs(bool startup, const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /** Check that the part's checksum is the same as the checksum of the same part on some other replica.
       * If no one has such a part, nothing checks.
@@ -669,6 +669,9 @@ private:
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
+
+    /// Update the move_part task result in the queue checks for the quorum
+    void updateMovePartTask(const LogEntry & entry, bool result);
 
     /// Running jobs from the queue.
 

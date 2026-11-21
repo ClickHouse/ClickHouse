@@ -239,7 +239,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.clearOldTemporaryDirectories(0, MergeTreeData::ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
-    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
+    storage.syncPinnedPartUUIDs(/* startup = */ true, /* zookeeper_retries_info = */ {});
 
     std::lock_guard lock(storage.table_shared_id_mutex);
     storage.createTableSharedID(/* zookeeper_retries_info = */ {});
