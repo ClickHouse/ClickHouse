@@ -4,14 +4,14 @@
 namespace DB
 {
 
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, bool stop_at_semicolon)
 {
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
-    /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
+    /// We have to iterate through the current statement to avoid false positive "Unmatched parentheses" error
     /// when parser failed in the middle of the query.
-    for (TokenIterator it = begin; it.isValid(); ++it)
+    for (TokenIterator it = begin; it.isValid() && (!stop_at_semicolon || it->type != TokenType::Semicolon); ++it)
     {
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
         {
