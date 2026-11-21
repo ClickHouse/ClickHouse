@@ -124,5 +124,10 @@
     tuple(39857, 78712), tuple(47185, 52074), tuple(9879, 51807), tuple(92457, 92377), tuple(36082, 17723), tuple(21905, 43398), tuple(35902, 54380), tuple(21791, 6804), tuple(50774, 35200), tuple(11540, 83934), tuple(54574, 57602), tuple(99878, 35568), tuple(28171, 68210), tuple(58132, 17222), tuple(91755, 80585), tuple(18944, 65785), tuple(78535, 70725), tuple(42599, 65291), tuple(62274, 97160), tuple(76487, 23798), tuple(34741, 36988), tuple(7286, 61119), tuple(36824, 29665), tuple(82478, 60722), tuple(90995, 28025), tuple(71438, 40230), tuple(83152, 45104), tuple(1812, 91619))
     </query>
 
+    <!-- The subquery repeats its keys, so most blocks of the set add few new elements. -->
+    <query>SELECT count() FROM test_in WHERE a IN (SELECT toUInt32(intHash64(number) % 1000000) FROM numbers_mt(50000000))</query>
+    <!-- Every key of the subquery is new. -->
+    <query>SELECT count() FROM test_in WHERE a IN (SELECT toUInt32(number) FROM numbers_mt(5000000))</query>
+
     <drop_query>DROP TABLE IF EXISTS test_in</drop_query>
 </test>
