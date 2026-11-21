@@ -1255,9 +1255,11 @@ void executeQueryWithParallelReplicas(
         /// sent instead carries nothing pushed into this copy.
         ReadFromLocalParallelReplicaStep::LeftOutConjuncts left_out_conjuncts;
         if (!remote_query_plan)
-            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, local_context](const ActionsDAG::Node & condition)
+            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, processed_stage, local_context](
+                const ActionsDAG::Node & condition)
             {
-                return conjunctsLeftOutOfRemoteQuery(condition, forwarded_query_ast, query_tree, planner_context, local_context);
+                return conjunctsLeftOutOfRemoteQuery(
+                    condition, forwarded_query_ast, query_tree, planner_context, processed_stage, local_context);
             };
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(

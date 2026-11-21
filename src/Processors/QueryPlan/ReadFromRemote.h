@@ -179,8 +179,10 @@ private:
 
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const NameSet & projection_names,
-    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    /// What to write for an input of `dag`. A condition on an input that is not here is not converted.
+    const UnorderedMapWithMemoryTracking<std::string, ASTPtr> & input_name_to_ast,
+    /// The value of `enable_named_columns_in_function_tuple` for the remote query.
+    bool named_columns_in_function_tuple,
     Tables * external_tables,
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
@@ -193,6 +195,7 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
+    QueryProcessingStage::Enum stage,
     const ContextPtr & rewrite_context);
 
 }
