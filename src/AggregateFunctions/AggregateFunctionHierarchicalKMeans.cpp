@@ -1005,12 +1005,13 @@ public:
                 "hierarchicalKMeans: sample_cap ({}) must be at least k ({}), otherwise the reservoir cannot "
                 "hold enough points to train k centroids", sample_cap, k);
 
-        /// Any float width is accepted and converted to the Float32 the kernels use, so a plain array
-        /// literal - which is Array(Float64) - works without an explicit CAST.
+        /// Any float width, Int8 and UInt8 are accepted and converted to the Float32 the kernels use, so a plain
+        /// array literal - Array(Float64) or Array(UInt8) - works without an explicit CAST.
         const auto * array_type = typeid_cast<const DataTypeArray *>(args[0].get());
-        if (!array_type || !isFloat(array_type->getNestedType()))
+        const DataTypePtr nested = array_type ? array_type->getNestedType() : nullptr;
+        if (!nested || !(isFloat(nested) || isInt8(nested) || isUInt8(nested)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function hierarchicalKMeans requires an array of floats");
+                "Aggregate function hierarchicalKMeans requires an array of Float32, Float64, BFloat16, Int8 or UInt8");
         nested_type = WhichDataType(array_type->getNestedType()).idx;
     }
 
@@ -1048,6 +1049,8 @@ public:
             {
                 case TypeIndex::Float32: return assert_cast<const ColumnFloat32 &>(nested_col).getData()[start + coord];
                 case TypeIndex::Float64: return static_cast<Float>(assert_cast<const ColumnFloat64 &>(nested_col).getData()[start + coord]);
+                case TypeIndex::Int8:    return static_cast<Float>(assert_cast<const ColumnInt8 &>(nested_col).getData()[start + coord]);
+                case TypeIndex::UInt8:   return static_cast<Float>(assert_cast<const ColumnUInt8 &>(nested_col).getData()[start + coord]);
                 default:                 return static_cast<Float>(assert_cast<const ColumnBFloat16 &>(nested_col).getData()[start + coord]);
             }
         };
@@ -1214,8 +1217,8 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
     FunctionDocumentation::Syntax syntax = "hierarchicalKMeans(k[, branching[, max_iter[, sample_cap[, seed[, cosine_distance]]]]])(vec)";
     FunctionDocumentation::Arguments arguments = {
         {"vec", "Vectors to cluster. Every row must have the same dimension, and every coordinate must be finite. "
-                "Widths other than `Float32` are converted to `Float32`, which is what the training kernels use.",
-         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)"}}
+                "Element types other than `Float32` are converted to `Float32`, which is what the training kernels use.",
+         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)", "Array(Int8)", "Array(UInt8)"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"k", "Number of centroids to train. Must be greater than 0 and must not exceed `sample_cap`.", {"UInt*"}},

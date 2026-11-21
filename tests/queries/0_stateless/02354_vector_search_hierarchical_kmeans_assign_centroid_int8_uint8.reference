@@ -1,0 +1,15 @@
+-- hierarchicalKMeans: four distinct points, so the centroids are exactly those points
+[[0,255],[80,175],[160,95],[240,15]]
+[[-128,127],[-48,47],[32,-33],[112,-113]]
+[[0,1],[0.4158,0.9095],[0.8599,0.5105],[0.9981,0.0624]]
+-- assignCentroid: the vector is not shifted, so [200, 250] is nearest to [200, 250], not to [72, 122]
+2
+1
+-- integer centroid literals are accepted too
+1
+1
+-- same ids as the explicit CAST to Array(Float32), on many rows
+0	0	1	1
+-- LowCardinality elements are accepted, as for floats
+[[1,2]]	1
+-- other integer widths and Nullable elements are still rejected
