@@ -63,8 +63,6 @@ public:
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
-    bool supportsParallelInsert() const override { return true; }
-
     bool supportsStreaming() const override { return true; }
 
     CursorPromotersMap buildPromoters() override;
@@ -361,7 +359,7 @@ private:
     /// `admission_epoch` is the leadership epoch captured by the caller at the DDL's admission
     /// gate; it is re-checked immediately before the covering empty parts are published (see
     /// `assertWritableLeaderAtEpoch`).
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch, bool remove_covered_parts_immediately);
 
     /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
     /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
@@ -385,10 +383,6 @@ private:
     MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
     ActionLock stopMergesAndWaitForPartition(String partition_id);
-
-    /// Allocate block number for new mutation, write mutation to disk
-    /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
 
     /// Result of `prepareMutationEntry`. Holds the block-number reservation
     /// that must outlive the call to `addPreparedMutationEntry`.
@@ -423,6 +417,10 @@ private:
     /// takeover reload owns the mutation then.
     /// Takes `currently_processing_in_background_mutex` itself.
     void restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry, UInt64 admission_epoch);
+
+    /// Register a mutation prepared by `prepareMutationEntry` in the in-memory structures
+    /// and wake up the merge-mutation task. Returns the mutation version.
+    Int64 startMutation(PreparedMutationEntry prepared, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
