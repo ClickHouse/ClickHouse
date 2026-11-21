@@ -9988,7 +9988,7 @@ With [`use_datalake_metadata_statistics`](#use_datalake_metadata_statistics) ena
     DECLARE(Bool, use_parquet_metadata_statistics, false, R"(
 With [`use_statistics`](#use_statistics) enabled, estimate a read of plain Parquet files from object storage (the `s3`, `azureBlobStorage`, `hdfs` table functions and table engines, not data lakes) for join reordering from the footers of the files, which are read at planning: the rows from the row groups, the NULL counts of the columns from the statistics of their column chunks, and the numbers of distinct values from the dictionary pages of column chunks whose data pages are all dictionary-encoded (the largest one, from the headers of a few dictionary pages per file), or from the compressed size of the column (see [`estimate_distinct_values_from_metadata`](#estimate_distinct_values_from_metadata)). A read of more than 100 files, or of compressed or archived files, gets no estimate. With [`use_parquet_metadata_cache`](#use_parquet_metadata_cache) the footers are cached for the read.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate reads of plain Parquet files for join reordering from their footers."}) \
+        {"26.12", false, false, "New setting to estimate reads of plain Parquet files for join reordering from their footers."}) \
     DECLARE(Bool, estimate_distinct_values_from_metadata, true, R"(
 With [`use_statistics`](#use_statistics) enabled, estimate the number of distinct values of a column that has no `uniq` statistics from the metadata of its data, without reading the data: for MergeTree tables from the compressed size of the column in the parts, and for Iceberg tables (with [`use_datalake_metadata_statistics`](#use_datalake_metadata_statistics)) from the `column_sizes` of the data files in the manifest files.
 
@@ -9998,7 +9998,7 @@ The first column of the primary key of a MergeTree table is estimated from the m
 
 The estimate drives join reordering only and never changes query results. As it can be much below the actual number of distinct values, the selectivity of an equality between join keys also takes the row count of a key without a known number of distinct values.
 )", 0, \
-        {"26.11", true, true, "New setting to estimate the number of distinct values of columns without `uniq` statistics from the compressed size of the column for join reordering."}) \
+        {"26.12", false, true, "New setting to estimate the number of distinct values of columns without `uniq` statistics from the compressed size of the column for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
