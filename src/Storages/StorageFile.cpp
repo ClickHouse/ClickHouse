@@ -1421,6 +1421,22 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     return getTableStructureAndFormatFromFileImpl(std::nullopt, paths, compression_method, format_settings, context, archive_info);
 }
 
+void StorageFile::moveReadBufferFromFileDescriptorTo(StorageFile & other)
+{
+    if (!has_peekable_read_buffer_from_fd)
+        return;
+
+    if (!other.use_table_fd || other.table_fd != table_fd || other.read_buffer_from_fd)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move the read buffer of a file descriptor to another storage");
+
+    has_peekable_read_buffer_from_fd = false;
+
+    /// The peekable buffer refers to `read_buffer_from_fd`, so both move.
+    other.read_buffer_from_fd = std::move(read_buffer_from_fd);
+    other.peekable_read_buffer_from_fd = std::move(peekable_read_buffer_from_fd);
+    other.has_peekable_read_buffer_from_fd = true;
+}
+
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);

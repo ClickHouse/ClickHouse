@@ -1,0 +1,44 @@
+--- given columns
+1	hello
+2	world
+1	hello	1
+2	world	1
+1	hello
+2	world
+--- given columns and a virtual column
+1	hello	1
+2	world	1
+--- inferred columns in another order
+hello	1
+world	2
+--- inferred columns and another one
+1	hello
+2	world
+--- a materialized column among the inferred columns
+1
+2
+--- a subcolumn among the inferred columns
+42
+--- a dynamic subcolumn among the inferred columns
+7
+--- fewer given columns than a format that cannot read a subset of its columns has
+0	1
+1	1
+--- fewer given columns than a format that can read a subset of its columns has
+1	0
+--- given columns of a file in a hive-style partition, which the inferred columns also have
+1	hello
+2	world
+--- given columns and the partition column of a file in a hive-style partition
+1	hello	7
+2	world	7
+7
+7
+--- fewer given columns than a format detected from the data, which can read a subset of its columns, has
+1
+--- given columns with defaults that use the given columns
+5	6
+--- a default that uses an alias column, which the storage cannot have
+--- url
+1	a
+1	a
