@@ -1,0 +1,20 @@
+-- LIKE without a fixed prefix on a key column runs before the LIKE on the large column
+1
+197
+-- LIKE with a fixed prefix is a key condition and stays last
+1
+47
+-- The next key column is not moved to the end either, as the first key column has no key condition
+1
+197
+-- match without a fixed prefix runs first, with one it stays last
+1
+197
+1
+473
+-- The join runtime filter on the large column runs after the LIKE
+1
+10
+-- The same with statistics
+1
+10

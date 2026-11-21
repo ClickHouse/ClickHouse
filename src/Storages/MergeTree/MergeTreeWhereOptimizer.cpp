@@ -25,6 +25,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -259,6 +260,25 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
+/// KeyCondition builds no key atom from a String constant its builder rejects, e.g. a LIKE pattern without a fixed prefix.
+static bool keyConditionAcceptsConstant(const RPNBuilderFunctionTreeNode & function_node, const String & function_name)
+{
+    if (function_node.getArgumentsSize() != 2)
+        return true;
+
+    auto constant = function_node.getArgumentAt(1);
+    if (!constant.isConstant() || !isStringOrFixedString(removeLowCardinalityAndNullable(constant.getConstantColumn().type)))
+        return true;
+
+    Field value;
+    DataTypePtr type;
+    if (!constant.tryGetConstant(value, type) || value.isNull())
+        return true;
+
+    KeyCondition::RPNElement element;
+    return KeyCondition::atom_map.at(function_name)(element, value);
+}
+
 static void collectColumns(
     const RPNBuilderTreeNode & node,
     const RPNBuilderTreeNode * parent,
@@ -313,6 +333,10 @@ static void collectColumns(
                 may_use_primary_index = false;
             }
         }
+    }
+    else if (!parent && !keyConditionAcceptsConstant(function_node, function_name))
+    {
+        may_use_primary_index = false;
     }
 
 

@@ -1,0 +1,29 @@
+<test>
+    <!-- A LIKE or match without a fixed prefix on the first sorting key column cannot use the primary key,
+         so it must run before a costly condition on a large column, e.g. a join runtime filter. -->
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>CREATE TABLE prewhere_like_probe (c1 DateTime, c2 String, c3 String, c4 Float64) ENGINE = MergeTree ORDER BY (c2, c1)</create_query>
+    <create_query>CREATE TABLE prewhere_like_build (k String) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>
+        INSERT INTO prewhere_like_probe SELECT
+            toDateTime('2020-01-01 00:00:00') + number,
+            if(number % 200 = 0, concat('K', toString(number % 7), 'Q[AB]@Z'), concat('K', toString(number % 997), '@Z')),
+            concat(hex(sipHash128(number)), hex(sipHash128(toString(number)))),
+            number / 7
+        FROM numbers(20000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_like_probe FINAL</fill_query>
+    <fill_query>INSERT INTO prewhere_like_build SELECT c3 FROM prewhere_like_probe WHERE c2 LIKE '%Q[AB]@%'</fill_query>
+
+    <query>SELECT count(), sum(p.c4) FROM prewhere_like_probe AS p INNER JOIN prewhere_like_build AS b ON p.c3 = b.k WHERE p.c2 LIKE '%Q[AB]@%' SETTINGS enable_join_runtime_filters = 1</query>
+    <query>SELECT count(), sum(c4) FROM prewhere_like_probe WHERE c2 LIKE '%Q[AB]@%' AND c3 LIKE '%AB%'</query>
+    <query>SELECT count(), sum(c4) FROM prewhere_like_probe WHERE match(c2, 'Q.AB.@') AND c3 LIKE '%AB%'</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_like_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_like_build</drop_query>
+</test>
