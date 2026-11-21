@@ -120,10 +120,13 @@ INSERT INTO test_join_a SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 
+-- `05453_hash_join_below_threshold_probe_width` covers the widened join-to-sort pipeline;
+-- use an explicit serial layout to keep the stream count of the probe input here.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
-ORDER BY k, v LIMIT 2, 3 BY k;
+ORDER BY k, v LIMIT 2, 3 BY k
+SETTINGS hash_join_layout = 'serial';
 
 -- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
 -- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to

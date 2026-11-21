@@ -86,6 +86,7 @@ public:
 
     bool supportParallelJoin() const override;
     size_t getMaxBuildThreads() const override;
+    bool resizeProbeSideToMaxStreams() const override;
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 
