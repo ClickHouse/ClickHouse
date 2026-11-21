@@ -1,5 +1,5 @@
 -- The injected `SHUFFLE` must survive conversion back to SQL on parallel replicas with its user gate disabled.
-SET allow_experimental_shuffle_query = 0;
+SET allow_shuffle_query = 0;
 SET make_distributed_plan = 0, serialize_query_plan = 0;
 SET automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 0, parallel_replicas_plan_based = 0;
 SET max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

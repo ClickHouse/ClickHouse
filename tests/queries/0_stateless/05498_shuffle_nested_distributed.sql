@@ -1,7 +1,7 @@
 -- `SHUFFLE` over nested `Distributed` tables: the intermediate servers receive the streams that are already shuffled
 -- by the shards below, with the internal key column, and must merge them instead of adding another key.
 
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 
 DROP TABLE IF EXISTS shuffle_outer_dist;
 DROP TABLE IF EXISTS shuffle_inner_dist;

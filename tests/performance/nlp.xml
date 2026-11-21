@@ -1,6 +1,6 @@
 <test>
     <settings>
-        <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+        <allow_nlp_functions>1</allow_nlp_functions>
     </settings>
 
     <create_query>CREATE TABLE hits_100m_words (words Array(String), UserID UInt64) ENGINE Memory</create_query>

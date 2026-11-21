@@ -1,7 +1,7 @@
 -- Statistical checks that `SHUFFLE` returns a uniformly random order and a uniformly random sample,
 -- including when several streams are merged. The bounds are very loose (more than 10 standard deviations).
 
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 SET max_threads = 8, max_block_size = 1000;
 
 -- The order is not the original one.

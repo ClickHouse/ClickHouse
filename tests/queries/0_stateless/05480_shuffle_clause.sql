@@ -2,10 +2,10 @@
 -- (the order is random, so the results are checked in an order-independent way).
 
 -- The clause is experimental.
-SET allow_experimental_shuffle_query = 0;
+SET allow_shuffle_query = 0;
 SELECT number FROM numbers(10) SHUFFLE; -- { serverError SUPPORT_IS_DISABLED }
 
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 
 SELECT 'Syntax';
 SELECT formatQuerySingleLine('SELECT number FROM numbers(10) SHUFFLE LIMIT 3');

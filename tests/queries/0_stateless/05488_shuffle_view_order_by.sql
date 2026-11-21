@@ -1,4 +1,4 @@
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 SET analyzer_inline_views = 0;
 SET prefer_column_name_to_alias = 0, extremes = 0, exact_rows_before_limit = 0;
 
