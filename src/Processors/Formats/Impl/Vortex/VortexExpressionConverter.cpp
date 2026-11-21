@@ -95,7 +95,7 @@ VortexExpressionConverter::VortexExpressionConverter(
     const arrow::Schema & file_schema_,
     const FormatSettings & format_settings_,
     const FormatSettings & comparison_format_settings_,
-    const std::unordered_map<String, String> * file_column_names_)
+    const ColumnNameMap * file_column_names_)
     : header(header_)
     , file_schema(file_schema_)
     , format_settings(format_settings_)
@@ -104,11 +104,11 @@ VortexExpressionConverter::VortexExpressionConverter(
 {
 }
 
-const std::unordered_map<std::string_view, VortexExpressionConverter::Handler> & VortexExpressionConverter::handlers()
+const UnorderedMapWithMemoryTracking<std::string_view, VortexExpressionConverter::Handler> & VortexExpressionConverter::handlers()
 {
     /// `nullIn`/`globalNullIn` (`transform_null_in = 1`) are absent on purpose: they match NULL
     /// against NULL elements, while a Vortex comparison with NULL never matches.
-    static const std::unordered_map<std::string_view, Handler> map = {
+    static const UnorderedMapWithMemoryTracking<std::string_view, Handler> map = {
         {"and", &VortexExpressionConverter::convertAnd},
         {"or", &VortexExpressionConverter::convertOr},
         {"not", &VortexExpressionConverter::convertNot},
@@ -118,6 +118,9 @@ const std::unordered_map<std::string_view, VortexExpressionConverter::Handler> &
         {"lessOrEquals", &VortexExpressionConverter::convertComparison},
         {"greater", &VortexExpressionConverter::convertComparison},
         {"greaterOrEquals", &VortexExpressionConverter::convertComparison},
+        /// `optimize_empty_string_comparisons` rewrites `s = ''` and `s != ''` into these.
+        {"empty", &VortexExpressionConverter::convertEmpty},
+        {"notEmpty", &VortexExpressionConverter::convertEmpty},
         {"isNull", &VortexExpressionConverter::convertIsNull},
         {"isNotNull", &VortexExpressionConverter::convertIsNotNull},
         {"in", &VortexExpressionConverter::convertIn},
@@ -631,6 +634,25 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
         return makeFloatComparison(*column, *op, std::move(literal), literal_is_float_zero, allow_widening);
 
     return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_compare(*op, column->expr.get(), literal.get())), allow_widening);
+}
+
+VortexExpressionPtr VortexExpressionConverter::convertEmpty(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
+{
+    if (node.getArgumentsSize() != 1)
+        return nullptr;
+
+    /// `empty` and `notEmpty` also take arrays, maps and UUIDs; only for a `String` is the empty
+    /// value the empty string. A NULL string gives NULL either way, which the scan drops too.
+    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::Required);
+    if (!column || !isString(column->cmp_type))
+        return nullptr;
+
+    auto literal = makeLiteral(*column->field->type(), column->cmp_type, Field(String()), std::make_shared<DataTypeString>());
+    if (!literal)
+        return nullptr;
+
+    const auto op = node.getFunctionName() == "empty" ? FFI_VortexComparisonOperator::Eq : FFI_VortexComparisonOperator::NotEq;
+    return VortexExpressionPtr(vortex_ffi_expr_compare(op, column->expr.get(), literal.get()));
 }
 
 VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
