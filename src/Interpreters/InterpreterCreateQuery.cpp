@@ -1035,7 +1035,6 @@ std::optional<AccessRightsElement> InterpreterCreateQuery::getRequiredAccessOfTa
             return AccessRightsElement(AccessType::TABLE_ENGINE, engine_name);
         return {};
     }
-    /// `filesystem` has no engine: it needs the grants that imply `TABLE ENGINE` on the engines of its source.
     if (const auto source = table_function->getSourceAccessObject())
         return AccessRightsElement(AccessType::READ | AccessType::WRITE, toStringSource(*source));
     return {};
