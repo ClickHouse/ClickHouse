@@ -243,6 +243,13 @@ DataTypePtr removeNullable(const DataTypePtr & type)
     return type;
 }
 
+const IDataType & removeNullable(const IDataType & type)
+{
+    if (type.isNullable())
+        return *static_cast<const DataTypeNullable &>(type).getNestedType();
+    return type;
+}
+
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
 {
     if (isNullableOrLowCardinalityNullable(type))

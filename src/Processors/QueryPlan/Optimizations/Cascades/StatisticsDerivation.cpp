@@ -431,6 +431,7 @@ void addDistinctValuesFromMetadata(
         auto & column_stats = statistics.column_statistics[column_name];
         column_stats.num_distinct_values = distinct_values;
         column_stats.num_distinct_values_from_metadata = true;
+        column_stats.ndv_provenance = {.origin = ColumnStatsOrigin::SyntheticFallback};
     }
 }
 

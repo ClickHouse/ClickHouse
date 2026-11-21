@@ -176,6 +176,9 @@ def catalog_url(path, instance=None):
 
 
 def get_keeper():
+    # The server may write through another Keeper replica, and a replica answers reads from its own state.
+    # `sync` makes this client's replica apply every acknowledged write, so the reads after the call see them.
+    keeper.sync("/")
     return keeper
 
 
@@ -338,6 +341,28 @@ def assert_main_at(snapshot_id):
     return [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": snapshot_id}]
 
 
+def table_change(ns, table, requirements, updates):
+    return {
+        "identifier": {"namespace": [ns], "name": table},
+        "requirements": requirements,
+        "updates": updates,
+    }
+
+
+def commit_transaction(changes, expected_code=204, auth=None):
+    return catalog_request(
+        "POST",
+        "/v1/my_warehouse/transactions/commit",
+        json={"table-changes": changes},
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+def load_table(ns, table):
+    return catalog_request("GET", tables_url(ns, table)).json()
+
+
 def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
     return create_table(ns, name, schema=schema, expected_code=expected_code, **{"stage-create": True, **extra})
 
@@ -399,6 +424,7 @@ def test_config(started_cluster):
     assert result["endpoints"] == [
         "GET /v1/config",
         "POST /v1/{prefix}/tables/rename",
+        "POST /v1/{prefix}/transactions/commit",
         "GET /v1/{prefix}/namespaces",
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
@@ -763,6 +789,11 @@ def test_table_ddl_rejects_readonly(started_cluster):
     assert_error_shape(response, "ForbiddenException")
     # A commit is a data change, so `allow_ddl = 0` does not block it.
     commit_table(ns, "existing", [], [], auth=("no_ddl_user", ""))
+
+    change = [table_change(ns, "existing", [], [])]
+    response = commit_transaction(change, auth=("readonly_user", ""), expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+    commit_transaction(change, auth=("no_ddl_user", ""))
 
     assert list_tables(ns) == ["existing"]
 
@@ -1256,20 +1287,19 @@ def test_rename_keeps_commit_version(started_cluster):
     commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
 
     # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
-    zk = get_keeper()
     store_root = keeper_store_root()
     uuid_path = f"{store_root}/tables_by_uuid/{table_uuid}"
-    assert zk.get(uuid_path)[1].version == 1
+    assert get_keeper().get(uuid_path)[1].version == 1
 
     # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
     rename_table([ns], "a", [ns], "b")
     rename_table([ns], "b", [ns], "a")
-    assert zk.get(uuid_path)[1].version == 1
-    assert zk.get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+    assert get_keeper().get(uuid_path)[1].version == 1
+    assert get_keeper().get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
 
     committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
     assert committed["metadata"]["current-snapshot-id"] == 200
-    assert zk.get(uuid_path)[1].version == 2
+    assert get_keeper().get(uuid_path)[1].version == 2
 
 
 def test_report_metrics(started_cluster):
@@ -1767,6 +1797,92 @@ def test_commit_concurrent(started_cluster):
         codes = sorted(executor.map(commit, [100, 200]))
     assert codes == [200, 409]
     assert len(list_metadata_files(location)) == 2
+
+
+def test_commit_transaction(started_cluster):
+    ns = f"transaction_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    locations = {t: create_table(ns, t).json()["metadata"]["location"] for t in ["a", "b"]}
+
+    # Both tables move in one commit. The response has no body, unlike a single-table commit.
+    response = commit_transaction(
+        [
+            table_change(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1))),
+            table_change(ns, "b", assert_main_at(None), append_updates(fake_snapshot(200, 1))),
+        ]
+    )
+    assert response.text == ""
+    committed_locations = {}
+    for table, snapshot_id in [("a", 100), ("b", 200)]:
+        loaded = load_table(ns, table)
+        assert loaded["metadata-location"].startswith(f"{locations[table]}/metadata/v2-")
+        assert loaded["metadata"]["current-snapshot-id"] == snapshot_id
+        assert len(list_metadata_files(locations[table])) == 2
+        committed_locations[table] = loaded["metadata-location"]
+
+    # A failed requirement on the second table rejects the whole transaction. No file is written for either table.
+    response = commit_transaction(
+        [
+            table_change(ns, "a", assert_main_at(100), append_updates(fake_snapshot(101, 2))),
+            table_change(ns, "b", assert_main_at(999), append_updates(fake_snapshot(201, 2))),
+        ],
+        expected_code=409,
+    )
+    assert_error_shape(response, "CommitFailedException")
+    for table in ["a", "b"]:
+        assert load_table(ns, table)["metadata-location"] == committed_locations[table]
+        assert len(list_metadata_files(locations[table])) == 2
+
+    # A table with empty updates only has its requirements checked. Its pointer and files stay.
+    files_of_a = list_metadata_files(locations["a"])
+    commit_transaction(
+        [
+            table_change(ns, "a", assert_main_at(100), []),
+            table_change(ns, "b", assert_main_at(200), append_updates(fake_snapshot(201, 2))),
+        ]
+    )
+    assert load_table(ns, "a")["metadata-location"] == committed_locations["a"]
+    assert list_metadata_files(locations["a"]) == files_of_a
+    assert load_table(ns, "b")["metadata"]["current-snapshot-id"] == 201
+
+    # An empty transaction is a no-op.
+    commit_transaction([])
+
+
+def test_commit_transaction_rejects_bad_request(started_cluster):
+    ns = f"transaction_bad_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "a")
+    location = load_table(ns, "a")["metadata-location"]
+    change_a = table_change(ns, "a", assert_main_at(None), append_updates(fake_snapshot(1, 1)))
+
+    # A missing table fails the transaction before anything is written.
+    response = commit_transaction(
+        [change_a, table_change(ns, "missing", [], append_updates(fake_snapshot(1, 1)))],
+        expected_code=404,
+    )
+    assert_error_shape(response, "NoSuchTableException")
+    assert load_table(ns, "a")["metadata-location"] == location
+
+    # Each table may appear once.
+    response = commit_transaction([change_a, change_a], expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert "more than once" in response.json()["error"]["message"]
+
+    # A staged create cannot be committed through a transaction.
+    response = commit_transaction(
+        [table_change(ns, "a", [{"type": "assert-create"}], [])], expected_code=400
+    )
+    assert_error_shape(response, "UnsupportedOperationException")
+
+    # `table-changes` must be an array.
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/transactions/commit",
+        json={"table-changes": {}},
+        expected_code=400,
+    )
+    assert_error_shape(response, "BadRequestException")
 
 
 def test_pyiceberg_append(started_cluster):
