@@ -14,31 +14,37 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
     const std::vector<std::pair<std::string, std::string>> cases = {
         /// Ordinary URIs with credentials.
         {"http://user:password@host", "http://user:[HIDDEN]@host"},
+        {"http://user:password@host|http://user:password@host2", "http://user:[HIDDEN]@host|http://user:[HIDDEN]@host2"},
         {"https://user:password@host:8080/path?query=1", "https://user:[HIDDEN]@host:8080/path?query=1"},
         {"amqp://guest:guest@localhost:5672/", "amqp://guest:[HIDDEN]@localhost:5672/"},
         {"mongodb://u:p@h1:27017,h2:27017/db?replicaSet=r", "mongodb://u:[HIDDEN]@h1:27017,h2:27017/db?replicaSet=r"},
         {"http://u:p@[::1]:8123/", "http://u:[HIDDEN]@[::1]:8123/"},
+        {"http://u:p@[::1]:8123/|http://u:p@[::2]:8123/", "http://u:[HIDDEN]@[::1]:8123/|http://u:[HIDDEN]@[::2]:8123/"},
         {"http://user:pass:word@host", "http://user:[HIDDEN]@host"},
         {"http://user%3Aname:password@host", "http://user%3Aname:[HIDDEN]@host"},
         {"http://:password@host", "http://:[HIDDEN]@host"},
+        {"http://:password@host|http://:password@host2", "http://:[HIDDEN]@host|http://:[HIDDEN]@host2"},
         {"mysql://root:@host", "mysql://root:[HIDDEN]@host"},
 
         /// A '@' after the authority is not the end of a userinfo.
         {"http://localhost:11111/x?email=a@b.com", "http://localhost:11111/x?email=a@b.com"},
         {"http://host/user:password@x", "http://host/user:password@x"},
         {"http://u:p@a/b@host", "http://u:[HIDDEN]@a/b@host"},
-        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
 
-        /// No password: a userinfo without ':' is a user name, and an authority without '@' has no userinfo.
-        {"http://user@host", "http://user@host"},
+        /// No password: a userinfo without ':' is a password, and an authority without '@' has no userinfo.
+        {"http://user@host", "http://[HIDDEN]@host"},
         {"http://host:8080", "http://host:8080"},
         {"http://[::1]:8123/path@x", "http://[::1]:8123/path@x"},
         {"file:///etc/passwd", "file:///etc/passwd"},
         {"http://user:password", "http://user:password"},
-        {"user:password@host", "user:password@host"},
+        {"user:password@host", "user:[HIDDEN]@host"},
         {"just some text", "just some text"},
         {"", ""},
         {"://", "://"},
+        {"////", "////"},
+        {"////@", "////@"},
+        {"http://", "http://"},
+        {"https://TOKEN@host?next=http://u:SECRET@other/x", "https://[HIDDEN]@host?next=http://u:[HIDDEN]@other/x"},
 
         /// Fails closed: a raw '@' in the password extends the userinfo to the last '@' of the authority.
         {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
@@ -58,9 +64,20 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         /// Here the first authority is `host ftp:`, which is not `host[:port]`, so it fails closed.
         {"http://host ftp://user:password@elsewhere", "http://host ftp:[HIDDEN]@elsewhere"},
         {"https://host/key?redirect=http://u:p@elsewhere", "https://host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://u:p@host/key?redirect=http://u:p@elsewhere", "https://u:[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://token@host/key?redirect=http://u:p@elsewhere", "https://[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://token@host/key?redirect_schema=http://", "https://[HIDDEN]@host/key?redirect_schema=http://"},
+        {"https://token@host/key?redirect_schema={a}p:/", "https://[HIDDEN]@host/key?redirect_schema={a}p:/"},
+        {"a\np:/", "a\np:/"},
+        {"a\npppp:/", "a\npppp:/"},
+        {"}pp}ppp:/", "}pp}ppp:/"},
+        {"http://user:s3cret@[", "http://user:[HIDDEN]@["},
+        {"http://s3cret@[", "http://[HIDDEN]@["},
+        {"https://host/}pppp:/", "https://host/}pppp:/"},
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
         {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
+        {"'mongodb://usr:999999?TOPSECRET@localhost:27017/db'", "'mongodb://usr:[HIDDEN]@localhost:27017/db'"},
         {"http://host#frag:x@y", "http://host#frag:[HIDDEN]@y"},
     };
 
@@ -70,19 +87,54 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://host#frag:x@y", "http://host#frag:x@y"},
         {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
         {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
+        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
+        {"://token@host", "://[HIDDEN]@host"},
+        {"//token@host", "//[HIDDEN]@host"},
+        {"//token@host|//other_token@host2", "//[HIDDEN]@host|//[HIDDEN]@host2"},
+        {"//token@host|http://host2", "//[HIDDEN]@host|http://host2"},
+        {"http://host2|//token@host", "http://host2|//[HIDDEN]@host"},
+        {"//TOKEN1@one/x|//TOKEN2@two/x", "//[HIDDEN]@one/x|//[HIDDEN]@two/x"},
+        {"//TOKEN1@one/x|TOKEN2@two/x", "//[HIDDEN]@one/x|[HIDDEN]@two/x"},
+        {"http://u:TOPSECRET|tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"//TOKEN@host/x?next=http://u:p@other/x", "//[HIDDEN]@host/x?next=http://u:[HIDDEN]@other/x"},
+        {"//TOKEN@host/x/?next=http://u:p@other/x", "//[HIDDEN]@host/x/?next=http://u:[HIDDEN]@other/x"},
+        {"http://TOKEN@host/x/?next=http://u:p@other/x&next2=http://u:p@other2",
+         "http://[HIDDEN]@host/x/?next=http://u:[HIDDEN]@other/x&next2=http://u:[HIDDEN]@other2"},
+        {"http://TOKEN@host/x/?foo=bar&next=http://u:p@other/x&next2=http://u:p@other2",
+         "http://[HIDDEN]@host/x/?foo=bar&next=http://u:[HIDDEN]@other/x&next2=http://u:[HIDDEN]@other2"},
+        {"http://user:s3cret@[", "http://user:[HIDDEN]@["},
+        {"http://s3cret@[", "http://[HIDDEN]@["},
+        {" http://s3cret@[", " http://[HIDDEN]@["},
+        {"'http://s3cret@['", "'http://[HIDDEN]@['"},
+        {"https://SEKRIT@PW@localhost:11111/x", "https://[HIDDEN]@localhost:11111/x"},
+        {"https://TOKEN@localhost:11111/x?next=http://u:p@other/x", "https://[HIDDEN]@localhost:11111/x?next=http://u:[HIDDEN]@other/x"},
+        {"http://host/a|b|cdefgh", "http://host/a|b|cdefgh"},
+        {"http://host/123://user:pw@other/x", "http://host/123://user:[HIDDEN]@other/x"},
+        {"http://TOPSECRET|tail@localhost:11111/x", "http://[HIDDEN]@localhost:11111/x"},
+        {"http://TOKEN1@one:80|http://TOKEN2@two/x", "http://[HIDDEN]@one:80|http://[HIDDEN]@two/x"},
+        {"http://TOKEN@[::1]|http://TOKEN2@two/x", "http://[HIDDEN]@[::1]|http://[HIDDEN]@two/x"},
+        {"http://TOKEN1@one/x|TOKEN2@two/x|http://three/x", "http://[HIDDEN]@one/x|[HIDDEN]@two/x|http://three/x"},
+        {"http://TOKEN1@one/x|anonymous/x|http://TOKEN2@two/x", "http://[HIDDEN]@one/x|anonymous/x|http://[HIDDEN]@two/x"},
+        {"http://TOKEN1@one/x|anonymous/x|TOKEN2@two/x", "http://[HIDDEN]@one/x|anonymous/x|[HIDDEN]@two/x"},
+        {"http://TOKEN@localhost:+80/x", "http://[HIDDEN]@localhost:+80/x"},
+        {"http://TOKEN@localhost:+80/x?email=a@b.com", "http://[HIDDEN]@localhost:+80/x?email=a@b.com"},
+        {"http://u:p@localhost:bad?next=http://u:TOPSECRET@other/x", "http://u:[HIDDEN]@localhost:bad?next=http://u:[HIDDEN]@other/x"},
+        {"http://usr:OUTERSECRET@host|http://usr:INNERSECRET@other/x", "http://usr:[HIDDEN]@host|http://usr:[HIDDEN]@other/x"},
+        {"/TOKEN@localhost:11111/x", "/[HIDDEN]@localhost:11111/x"},
+        {"http://TOKEN@localhost:+80|http://u:SECRET@other/x", "http://[HIDDEN]@localhost:+80|http://u:[HIDDEN]@other/x"},
     };
 
     for (const auto & [input, expected] : cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 
     for (const auto & [input, expected] : rfc_cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 }
@@ -90,14 +142,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
 TEST(MaskURIPassword, MasksThePassword)
 {
     std::string uri = "https://user:hunter2@example.com:443/db";
-    EXPECT_TRUE(maskURIPassword(&uri));
+    EXPECT_TRUE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://user:[HIDDEN]@example.com:443/db");
 }
 
 TEST(MaskURIPassword, LeavesURIsWithoutAPasswordAlone)
 {
     std::string uri = "https://example.com/db";
-    EXPECT_FALSE(maskURIPassword(&uri));
+    EXPECT_FALSE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://example.com/db");
 }
 

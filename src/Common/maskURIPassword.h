@@ -149,14 +149,146 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
     return {std::string_view::npos, std::string_view::npos};
 }
 
-/// Replace the password `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
-inline bool maskURIPassword(std::string * uri, std::string_view authority_terminators = "/")
+
+/// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
+inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    auto [password_begin, password_end] = findURIPasswordRange(*uri, authority_terminators);
-    if (password_begin == std::string::npos)
+    enum token
+    {
+        SCHEMA_SEPARATOR,
+        PIPE,
+        AUTHORITY_TERMINATOR,
+        AT,
+        COLON
+    };
+    std::vector<std::pair<token, size_t>> tokens_and_offset;
+    for (size_t i = 0; i < uri.length(); ++i)
+    {
+        switch (const char c = uri[i]; c)
+        {
+            case '@': {
+                if (const size_t tokens_so_far = tokens_and_offset.size(); tokens_so_far > 2
+                    && (tokens_and_offset[tokens_so_far - 3].first == AUTHORITY_TERMINATOR
+                        || tokens_and_offset[tokens_so_far - 3].first == SCHEMA_SEPARATOR)
+                    && tokens_and_offset[tokens_so_far - 2].first == COLON
+                    && (tokens_and_offset[tokens_so_far - 1].first == AUTHORITY_TERMINATOR
+                        || tokens_and_offset[tokens_so_far - 1].first == PIPE))
+                    tokens_and_offset.back() = {AT, i};
+                else if (
+                    tokens_so_far == 2
+                    && (tokens_and_offset[0].first == AUTHORITY_TERMINATOR || tokens_and_offset[0].first == SCHEMA_SEPARATOR)
+                    && (tokens_and_offset[1].first == COLON || tokens_and_offset[1].first == PIPE))
+                {
+                    if (tokens_and_offset[1].first == COLON)
+                        tokens_and_offset[0] = tokens_and_offset[1];
+                    tokens_and_offset[1] = {AT, i};
+                }
+                else if (tokens_so_far > 0 && tokens_and_offset.back().first == AT)
+                    tokens_and_offset.back() = {AT, i};
+                else if (
+                    tokens_so_far == 0 || tokens_and_offset.back().first != SCHEMA_SEPARATOR || tokens_and_offset.back().second + 2 != i)
+                    tokens_and_offset.push_back({AT, i});
+                break;
+            }
+            case '|': {
+                if (i + 2 < uri.length() && uri[i + 1] == '/' && uri[i + 2] == '/')
+                {
+                    tokens_and_offset.push_back({SCHEMA_SEPARATOR, i + 1});
+                    i += 2;
+                }
+                else
+                    tokens_and_offset.push_back({PIPE, i});
+                break;
+            }
+            case ':': {
+                if (i + 2 < uri.length() && uri[i + 1] == '/' && uri[i + 2] == '/')
+                {
+                    if (tokens_and_offset.empty() || tokens_and_offset.back().first != SCHEMA_SEPARATOR)
+                        tokens_and_offset.push_back({SCHEMA_SEPARATOR, i + 1});
+                    else
+                        tokens_and_offset.push_back({COLON, i});
+                    i += 2;
+                }
+                else if (tokens_and_offset.empty() || tokens_and_offset.back().first != COLON)
+                    tokens_and_offset.push_back({COLON, i});
+                break;
+            }
+            case '/': {
+                if (i + 1 < uri.length() && uri[i + 1] == '/')
+                {
+                    tokens_and_offset.push_back({SCHEMA_SEPARATOR, i});
+                    i += 1;
+                    break;
+                }
+                [[fallthrough]];
+            }
+            default:
+                if (authority_terminators.contains(c))
+                {
+                    if (tokens_and_offset.size() == 2 && tokens_and_offset[0].first == SCHEMA_SEPARATOR
+                        && tokens_and_offset[1].first == COLON
+                        && isURIHostAndPort(
+                            std::string_view(uri).substr(tokens_and_offset[0].second + 2, i - tokens_and_offset[0].second - 2)))
+                        tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                    else if (tokens_and_offset.empty() || tokens_and_offset.back().first != AUTHORITY_TERMINATOR)
+                        tokens_and_offset.push_back({AUTHORITY_TERMINATOR, i});
+                    else
+                        tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                }
+        }
+    }
+    while (!tokens_and_offset.empty() && tokens_and_offset.back().first != AT)
+        tokens_and_offset.pop_back();
+
+    if (tokens_and_offset.empty())
         return false;
 
-    uri->replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
+    size_t copied_offset = 0;
+    std::string result;
+    size_t i = 0;
+    if (tokens_and_offset[0].first == AUTHORITY_TERMINATOR && uri[0] == '/')
+        ++i;
+
+    if (i + 1 < tokens_and_offset.size() && tokens_and_offset[i].first == COLON && tokens_and_offset[i + 1].first == AT)
+    {
+        result.append(uri, 0, tokens_and_offset[i].second + 1);
+        result.append("[HIDDEN]");
+        copied_offset = tokens_and_offset[i + 1].second;
+        i++;
+    }
+    else if (tokens_and_offset[i].first == AT)
+    {
+        if (i > 0)
+            result.append(uri, copied_offset, tokens_and_offset[i - 1].second + 1);
+
+        result.append("[HIDDEN]");
+        copied_offset = tokens_and_offset[i].second;
+    }
+    for (; i < tokens_and_offset.size(); ++i)
+    {
+        if (const auto first_token = tokens_and_offset[i].first; first_token == SCHEMA_SEPARATOR || first_token == PIPE)
+        {
+            if (i + 2 < tokens_and_offset.size() && tokens_and_offset[i + 1].first == COLON && tokens_and_offset[i + 2].first == AT)
+            {
+                result.append(uri, copied_offset, tokens_and_offset[i + 1].second - copied_offset + 1);
+                result.append("[HIDDEN]");
+                copied_offset = tokens_and_offset[i + 2].second;
+                i += 2;
+            }
+            else if (i + 1 < tokens_and_offset.size() && tokens_and_offset[i + 1].first == AT)
+            {
+                const size_t first_token_length = first_token == SCHEMA_SEPARATOR ? 2 : 1;
+                result.append(uri, copied_offset, tokens_and_offset[i].second - copied_offset + first_token_length);
+                result.append("[HIDDEN]");
+                copied_offset = tokens_and_offset[i + 1].second;
+                i++;
+            }
+        }
+    }
+    if (result.empty())
+        return false;
+    result.append(uri, copied_offset);
+    uri = result;
     return true;
 }
 
