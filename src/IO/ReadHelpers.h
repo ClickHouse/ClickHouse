@@ -171,11 +171,6 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
-/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
-/// to the declared size first, so that a size declared by the peer cannot become an allocation on
-/// its own when the payload never follows.
-void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
-
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -1932,8 +1927,7 @@ void readBinary(V & x, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large array size {} (maximum: {})", size, DEFAULT_MAX_STRING_SIZE);
+        throw Poco::Exception("Too large vector size.");
 
     x.resize(size);
     for (size_t i = 0; i < size; ++i)

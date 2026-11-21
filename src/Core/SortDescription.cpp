@@ -369,12 +369,15 @@ namespace
 
 /// The plan may be client-supplied (`TCPHandler::receiveQueryPlan`), so an out-of-range enum value has
 /// to be rejected instead of cast into the enum: `FillingTransform::getStepFunction` switches on it
-/// without a default case.
+/// without a default case. Same check as `decodeDataType` does for an `Interval` type.
 IntervalKind readIntervalKind(ReadBuffer & in)
 {
     UInt8 kind = 0;
     readIntBinary(kind, in);
-    return IntervalKind::fromBinary(kind);
+    if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unknown IntervalKind in a serialized WITH FILL description: {0:#04x}", UInt64(kind));
+    return IntervalKind(static_cast<IntervalKind::Kind>(kind));
 }
 
 /// The `WITH FILL` bounds of one column. `step_func`/`staleness_step_func` are not written: they are
@@ -403,11 +406,11 @@ void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuf
 
     writeFieldBinary(fill.fill_step, out);
     if (fill.step_kind)
-        writeIntBinary(fill.step_kind->toBinary(), out);
+        writeIntBinary(static_cast<UInt8>(fill.step_kind->kind), out);
 
     writeFieldBinary(fill.fill_staleness, out);
     if (fill.staleness_kind)
-        writeIntBinary(fill.staleness_kind->toBinary(), out);
+        writeIntBinary(static_cast<UInt8>(fill.staleness_kind->kind), out);
 }
 
 void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer & in, size_t max_type_complexity)

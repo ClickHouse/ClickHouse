@@ -416,52 +416,6 @@ def parse_settings_history_changes(patch, file_lines):
     return result
 
 
-# Paths whose changed lines decide whether a PR is "small" for the purpose of
-# skipping the stress tests, fuzzers and SQL suites (see `filter_job.py`): the product-code
-# part of `build_digest_config.include_paths`, i.e. everything whose change ends
-# up in the built server. Tests, docs and CI scripts do not count: only changes
-# to the server itself can introduce the bugs those jobs look for.
-#
-# `contrib/` and `.gitmodules` are deliberately absent. A submodule bump is two
-# lines in the diff and an arbitrary amount of new code in the binary, so its
-# line count means nothing; `filter_job.py` never treats such a PR as small.
-PRODUCT_CODE_PATHS = (
-    "src/",
-    "base/",
-    "programs/",
-    "rust/",
-    "cmake/",
-    "CMakeLists.txt",
-    "PreLoad.cmake",
-)
-
-
-def get_product_changed_lines(info):
-    """Lines changed (additions + deletions) under `PRODUCT_CODE_PATHS` in the PR,
-    per GitHub's per-file `changes` counter from the paginated `pulls/{pr}/files`
-    listing.
-
-    A renamed file counts when either side of the rename is product code, so that
-    moving a source file out of `src/` and editing it on the way counts as the
-    product-code change it is, instead of as nothing.
-
-    Raises on any failure: the caller decides whether a missing count is fatal."""
-    selector = " or ".join(f'startswith("{path}")' for path in PRODUCT_CODE_PATHS)
-    # One `select` per side of a rename; an entry matching both is still counted once.
-    jq = (
-        f'[.[] | select((.filename | {selector}) '
-        f'or ((.previous_filename // "") | {selector})) | .changes] | add // 0'
-    )
-    out = GH.get_output_with_retries(
-        f"gh api repos/{info.repo_name}/pulls/{info.pr_number}/files --paginate "
-        f"--jq '{jq}'",
-        verbose=True,
-        strict=True,
-    )
-    # `--paginate` with `--jq` prints one line per page.
-    return sum(int(line) for line in out.split())
-
-
 def store_settings_history_changes(info, path=SETTINGS_HISTORY_FILE):
     """Record what the settings-history style check needs: the added setting entries, or
     else why they could not be determined.
@@ -550,16 +504,6 @@ if __name__ == "__main__":
             commits.pop(0)
 
         info.store_kv_data("master_track_commits_sha", commits)
-
-    if info.pr_number > 0:
-        # Store how many lines of product code the PR changes: `filter_job.py` skips
-        # the stress tests, fuzzers and SQL suites on small PRs. On failure the key stays absent,
-        # and the hook then runs those jobs rather than skipping them on a missing
-        # count.
-        try:
-            info.store_kv_data("product_changed_lines", get_product_changed_lines(info))
-        except Exception as e:
-            print(f"Failed to count changed lines of product code: {e}")
 
     merge_base_commit_sha = ""
     if info.pr_number > 0:

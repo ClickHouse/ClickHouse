@@ -13,8 +13,6 @@ SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET use_query_condition_cache = 0;
--- The lazy-cursor counters below are only incremented when a posting segment is decoded, so keep them independent of what earlier queries have already put into the server-wide postings cache.
-SET use_text_index_postings_cache = 0;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_optimize_count_from_text_index = 0;
 

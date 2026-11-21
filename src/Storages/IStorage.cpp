@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsMaxThreads max_threads;
@@ -42,7 +43,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int TABLE_IS_BEING_RESTARTED;
 }
@@ -56,60 +56,18 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
 }
 
-[[noreturn]] void IStorage::throwLockTimedOut(const RWLock & rwlock, RWLockImpl::Type type, const Poco::Timespan & acquire_timeout) const
-{
-    const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-    throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-        "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
-        type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
-}
-
 RWLockImpl::LockHolder IStorage::tryLockTimed(
     const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
     if (!lock_holder)
-        throwLockTimedOut(rwlock, type, acquire_timeout);
-    return lock_holder;
-}
-
-RWLockImpl::LockHolder IStorage::tryLockTimedSliced(
-    const RWLock & rwlock,
-    RWLockImpl::Type type,
-    const String & query_id,
-    const Poco::Timespan & acquire_timeout,
-    const std::function<bool()> & need_stop,
-    const Poco::Timespan & check_period) const
-{
-    const auto total_timeout = std::chrono::milliseconds(acquire_timeout.totalMilliseconds());
-    const auto slice = std::chrono::milliseconds(check_period.totalMilliseconds());
-    const bool infinite_timeout = total_timeout == std::chrono::milliseconds::zero();
-
-    if (slice <= std::chrono::milliseconds::zero())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The lock acquisition check period must be positive, got {} ms", slice.count());
-
-    auto remaining = total_timeout;
-    while (true)
     {
-        /// `getLock` treats a zero timeout as an infinite wait, so the slice is never zero here:
-        /// it is `slice` in the infinite case and at least 1 ms otherwise (`remaining` is positive).
-        const auto attempt_timeout = infinite_timeout ? slice : std::min(remaining, slice);
-
-        /// Unlike `tryLockTimed`, an expired slice is not an exception here: `getLock` returns a nullptr
-        /// on a timeout, and the loop retries after polling `need_stop`.
-        if (auto lock_holder = rwlock->getLock(type, query_id, attempt_timeout))
-            return lock_holder;
-
-        if (!infinite_timeout)
-        {
-            remaining -= attempt_timeout;
-            if (remaining <= std::chrono::milliseconds::zero())
-                throwLockTimedOut(rwlock, type, acquire_timeout);
-        }
-
-        if (need_stop())
-            return nullptr;
+        const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
+            type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
     }
+    return lock_holder;
 }
 
 TableLockHolder IStorage::lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
@@ -128,23 +86,6 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const Poco::Time
 TableLockHolder IStorage::tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-
-    auto table_id = getStorageID();
-    if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
-        // Table was dropped or is being restarted while acquiring the lock
-        result = nullptr;
-    return result;
-}
-
-TableLockHolder IStorage::tryLockForShare(
-    const String & query_id,
-    const Poco::Timespan & acquire_timeout,
-    const std::function<bool()> & need_stop,
-    const Poco::Timespan & check_period)
-{
-    TableLockHolder result = tryLockTimedSliced(drop_lock, RWLockImpl::Read, query_id, acquire_timeout, need_stop, check_period);
-    if (!result)
-        return nullptr;
 
     auto table_id = getStorageID();
     if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
@@ -430,9 +371,17 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         if (view_metadata->select.inner_query)
         {
             const auto & select_query = view_metadata->select.inner_query;
-            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
-            auto query_tree = interpreter.getQueryTree();
-            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
+            Names required_columns;
+            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
+                auto query_tree = interpreter.getQueryTree();
+                required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
+            }
+            else
+            {
+                required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
+            }
 
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);

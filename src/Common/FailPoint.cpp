@@ -43,13 +43,11 @@ static struct InitFiu
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
-    REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
-    REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
@@ -85,6 +83,8 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(s3_copy_inject_etag_mismatch) \
+    REGULAR(s3_head_omit_etag) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -118,7 +118,6 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
-    PAUSEABLE(remote_fs_gather_pause_in_read) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -133,6 +132,7 @@ static struct InitFiu
     REGULAR(object_storage_queue_fail_after_insert) \
     REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
+    REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(smt_simulate_part_removed_during_load) \
@@ -229,7 +229,6 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
-    ONCE(plain_object_storage_fail_after_copy_on_file_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
@@ -256,7 +255,6 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
-    REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
@@ -339,7 +337,6 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
-    REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
@@ -364,8 +361,6 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     REGULAR(transaction_slow_resolve_removal_csn) \
-    PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
-    PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
     PAUSEABLE(mt_pause_before_register_mutation) \
     ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
@@ -403,10 +398,7 @@ static struct InitFiu
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
-    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
-    REGULAR(aggregate_function_state_transfer_throw) \
-    REGULAR(aggregate_function_state_transfer_throw_after_child) \
-    REGULAR(marks_loader_hold_task_until_canceled)
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
 
 namespace FailPoints
 {
@@ -511,28 +503,6 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
-}
-
-void FailPointInjection::disableAllFailPoints()
-{
-    std::lock_guard lock(mu);
-
-    /// Wake whoever is blocked on a pauseable failpoint first, the same way
-    /// `disableFailPoint` does: after this call nothing may still be parked.
-    for (auto & [_, channel] : fail_point_wait_channels)
-    {
-        ++channel->resume_epoch;
-        channel->disabled = true;
-        channel->resume_cv.notify_all();
-        channel->pause_cv.notify_all();
-    }
-    fail_point_wait_channels.clear();
-
-    /// `fiu_disable` on a failpoint that is not enabled is a no-op, so walk the whole
-    /// registry rather than asking `fiu_status` which of them to skip.
-#define M(NAME) fiu_disable(FailPoints::NAME);
-    APPLY_FOR_FAILPOINTS(M, M, M, M)
-#undef M
 }
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
@@ -656,10 +626,6 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 }
 
 void FailPointInjection::disableFailPoint(const String &)
-{
-}
-
-void FailPointInjection::disableAllFailPoints()
 {
 }
 

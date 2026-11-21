@@ -34,12 +34,6 @@ public:
     }
 
     bool readsFromOtherTables() const override { return true; }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = tryGetTargetTable())
-            return {target};
-        return {};
-    }
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;

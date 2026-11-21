@@ -24,6 +24,11 @@ std::string PlainRewritableLayout::constructRootFilesDirectoryKey() const
     return object_storage_common_key_prefix / ROOT_DIRECTORY_TOKEN;
 }
 
+std::string PlainRewritableLayout::constructScratchFileObjectKey(const std::string & file_name) const
+{
+    return object_storage_common_key_prefix / SCRATCH_DIRECTORY_TOKEN / file_name;
+}
+
 std::string PlainRewritableLayout::constructFilesDirectoryKey(const std::string & directory_remote_path) const
 {
     return object_storage_common_key_prefix / directory_remote_path;

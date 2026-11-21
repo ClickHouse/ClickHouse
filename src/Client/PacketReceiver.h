@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <Client/IConnections.h>
 #include <Common/StackfulCoroutine.h>

@@ -28,16 +28,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
     </span>
   );
 
-  const handleReleaseChannelClick = (event) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const href = event.currentTarget.getAttribute("href");
-    window.location.href = (window.location.pathname.startsWith("/docs") ? "/docs" : "") + href.slice("/docs".length);
-  };
-
   return (
     <table>
       <colgroup />
@@ -48,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">Versión</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades" onClick={handleReleaseChannelClick}>Canal rápido</a>
+            <a href="/docs/manage/updates#fast-release-channel-early-upgrades">Canal rápido</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel" onClick={handleReleaseChannelClick}>Canal regular</a>
+            <a href="/docs/manage/updates#regular-release-channel">Canal regular</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades" onClick={handleReleaseChannelClick}>Canal lento</a>
+            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">Canal lento</a>
           </th>
         </tr>
         <tr>

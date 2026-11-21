@@ -123,13 +123,8 @@ public:
         MutableColumns columns = sample_block.cloneEmptyColumns();
 
         RedisArray values = storage.multiGet(scan_keys);
-        for (size_t i = 0; i < scan_keys.size(); ++i)
+        for (size_t i = 0; i < scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
         {
-            /// MGET answers by position, and a scanned key can hold another Redis type or expire
-            /// before the MGET runs, so a nil marks one absent value, not the end of the batch.
-            if (values.get<RedisBulkString>(i).isNull())
-                continue;
-
             fillColumns(scan_keys.get<RedisBulkString>(i).value(),
                         values.get<RedisBulkString>(i).value(),
                         primary_key_pos, sample_block, columns
@@ -466,7 +461,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
             "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
             null_map->size(), keys.size());
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < values.size(); ++i)
     {
         if (null_map && !(*null_map)[i])
         {
@@ -522,18 +517,7 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
     for (size_t i = 0; i < keys.size(); ++i)
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
-    RedisArray values = connection->client->execute<RedisArray>(cmd_mget);
-
-    /// Callers pair the reply with the request by position, into arrays sized from `keys`.
-    if (values.isNull() || values.size() != keys.size())
-        throw Exception(
-            ErrorCodes::INTERNAL_REDIS_ERROR,
-            "Redis table {} returned {} values for MGET of {} keys",
-            getStorageID().getFullNameNotQuoted(),
-            values.isNull() ? 0 : values.size(),
-            keys.size());
-
-    return values;
+    return connection->client->execute<RedisArray>(cmd_mget);
 }
 
 void StorageRedis::multiSet(const RedisArray & data) const

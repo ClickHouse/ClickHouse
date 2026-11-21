@@ -15,16 +15,12 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_json_metadata_streams;
     CREATE TABLE t_json_metadata_streams (t UInt32, json JSON)
     ENGINE = MergeTree ORDER BY t
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1, disk = 'default';
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1;
 
     SYSTEM STOP MERGES t_json_metadata_streams;
 
     INSERT INTO t_json_metadata_streams SELECT number, concat('{\"a\":', toString(number), ',\"b\":\"s', toString(number), '\",\"c\":[', toString(number), '],\"d\":', toString(number / 2), ',\"e\":true}')::JSON FROM numbers(5);
 "
-
-# The table is on the local disk: for a part on a remote disk the prefetch is governed by
-# `remote_filesystem_read_prefetch` instead, and that case is checked by
-# `05217_json_metadata_streams_not_prefetched_remote`.
 
 # Read a granule that is not the first one and count the opened files. The mark cache is cleared before every query,
 # so that the number of opened mark files is the same in both runs.

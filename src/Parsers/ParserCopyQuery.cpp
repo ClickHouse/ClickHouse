@@ -28,7 +28,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -133,184 +132,6 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return parseOptions(pos, copy_element, expected);
 }
 
-namespace
-{
-
-String toLowerCase(std::string_view name)
-{
-    String result(name);
-    std::transform(result.begin(), result.end(), result.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
-    return result;
-}
-
-void setFormat(const String & format_name, boost::intrusive_ptr<ASTCopyQuery> node)
-{
-    /// `text` is what PostgreSQL calls its default format, and it is tab separated; `tsv` is accepted
-    /// under its ClickHouse name.
-    if (format_name == "text" || format_name == "tsv")
-        node->format = ASTCopyQuery::Formats::TSV;
-    else if (format_name == "csv")
-        node->format = ASTCopyQuery::Formats::CSV;
-    else if (format_name == "binary")
-        node->format = ASTCopyQuery::Formats::Binary;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format from postgresql copy command {}", format_name);
-}
-
-/// A bare word, a quoted identifier or a number - whatever it is, the caller decides what to make of it.
-bool parseWord(IParser::Pos & pos, String & word)
-{
-    if (pos->type != TokenType::BareWord && pos->type != TokenType::Number && pos->type != TokenType::QuotedIdentifier)
-        return false;
-
-    word = String(pos->begin, pos->end);
-    if (pos->type == TokenType::QuotedIdentifier)
-        word = word.substr(1, word.size() - 2);
-
-    ++pos;
-    return true;
-}
-
-/// The value of an option, with PostgreSQL's optional noise word `AS` in front of it.
-bool parseOptionValue(IParser::Pos & pos, Expected & expected, String & value)
-{
-    ParserKeyword s_as(Keyword::AS);
-    s_as.ignore(pos, expected);
-
-    ASTPtr literal;
-    if (ParserStringLiteral().parse(pos, literal, expected))
-    {
-        value = literal->as<ASTLiteral &>().value.safeGet<String>();
-        return true;
-    }
-
-    return parseWord(pos, value);
-}
-
-/// The options whose value decides how the data is written. They are accepted when the client asks
-/// for what ClickHouse writes anyway - `psycopg2` spells the defaults out on every `copy_to` and
-/// `copy_from` - and refused otherwise: writing a different shape than the client asked for is
-/// exactly what this option list used to do silently.
-struct DataShapeOptions
-{
-    std::optional<String> delimiter;
-    std::optional<String> null_value;
-    std::optional<String> quote;
-};
-
-void checkDataShapeOptions(const DataShapeOptions & options, const ASTCopyQuery & node)
-{
-    const bool is_csv = node.format == ASTCopyQuery::Formats::CSV;
-    const bool is_binary = node.format == ASTCopyQuery::Formats::Binary;
-
-    /// The binary format has neither a field separator nor a textual representation of NULL, so
-    /// there is no value of these options it could honour. PostgreSQL refuses them there as well.
-    if (is_binary)
-    {
-        if (options.delimiter)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Option DELIMITER of the postgresql copy command is not supported with the binary format");
-        if (options.null_value)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Option NULL of the postgresql copy command is not supported with the binary format");
-    }
-
-    if (options.delimiter && *options.delimiter != (is_csv ? "," : "\t"))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Option DELIMITER of the postgresql copy command is only supported with the default delimiter of the {} format",
-            toString(node.format));
-
-    /// The representation of NULL in both the TSV and the CSV format of ClickHouse.
-    if (options.null_value && *options.null_value != "\\N")
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Option NULL of the postgresql copy command is only supported with the value '\\N'");
-
-    if (options.quote)
-    {
-        if (!is_csv)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option QUOTE of the postgresql copy command applies to the csv format only");
-        if (*options.quote != "\"")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option QUOTE of the postgresql copy command is only supported with the value '\"'");
-    }
-}
-
-void checkHeaderOption(const ASTCopyQuery & node)
-{
-    /// There is no header in the binary format, and PostgreSQL refuses the option there as well.
-    if (node.header && node.format == ASTCopyQuery::Formats::Binary)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Option HEADER of the postgresql copy command is not supported with the binary format");
-}
-
-bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTCopyQuery> node, DataShapeOptions & data_shape_options)
-{
-    const String option_as_written(pos->begin, pos->end);
-
-    String option;
-    if (!parseWord(pos, option))
-        return false;
-    option = toLowerCase(option);
-
-    if (option == "format")
-    {
-        String format_name;
-        if (!parseOptionValue(pos, expected, format_name))
-            return false;
-        setFormat(toLowerCase(format_name), node);
-    }
-    else if (option == "csv" || option == "binary" || option == "text")
-    {
-        /// The legacy spelling of the format: WITH [BINARY] [CSV].
-        setFormat(option, node);
-    }
-    else if (option == "header")
-    {
-        /// `true`/`false`/`on`/`off`/`1`/`0`, or nothing at all, which PostgreSQL reads as `true`.
-        String value;
-        auto value_pos = pos;
-        if (!parseOptionValue(pos, expected, value))
-        {
-            node->header = true;
-            return true;
-        }
-
-        const String lower_value = toLowerCase(value);
-        if (lower_value == "true" || lower_value == "on" || lower_value == "1")
-            node->header = true;
-        else if (lower_value == "false" || lower_value == "off" || lower_value == "0")
-            node->header = false;
-        else
-        {
-            pos = value_pos;
-            node->header = true;
-        }
-    }
-    else if (option == "delimiter" || option == "null" || option == "quote")
-    {
-        String value;
-        if (!parseOptionValue(pos, expected, value))
-            return false;
-
-        if (option == "delimiter")
-            data_shape_options.delimiter = value;
-        else if (option == "null")
-            data_shape_options.null_value = value;
-        else
-            data_shape_options.quote = value;
-    }
-    else
-    {
-        /// ENCODING, ESCAPE, FORCE_QUOTE and the rest change the data as well, and there is no
-        /// version of them this protocol can serve.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option {} of the postgresql copy command is not supported", option_as_written);
-    }
-
-    return true;
-}
-
-}
-
 bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
     ParserIdentifier s_output_identifier;
@@ -319,58 +140,31 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         return false;
 
     ParserKeyword s_with(Keyword::WITH);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    ParserToken comma(TokenType::Comma);
+    ParserKeyword s_format(Keyword::FORMAT);
 
-    auto assert_end = [&]
-    {
-        /// Transferring the data in the default format because the rest of the command was not
-        /// understood would hand the client rows it cannot parse, or store rows parsed the wrong way,
-        /// so say that it was not understood instead.
-        if (!pos->isEnd())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Unknown part of the postgresql copy command: {}", String(pos->begin, pos->end));
-    };
+    s_with.ignore(pos, expected);
 
-    if (!s_with.ignore(pos, expected))
+    if (s_format.ignore(pos, expected))
     {
-        assert_end();
-        return true;
+        ParserIdentifier s_format_identifier;
+        ASTPtr format;
+        if (!s_format_identifier.parse(pos, format, expected))
+            return false;
+
+        String format_name = format->as<ASTIdentifier>()->full_name;
+        std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](char c){ return std::tolower(c); });
+        if (format->as<ASTIdentifier>()->full_name == "csv")
+            node->format = ASTCopyQuery::Formats::CSV;
+        else if (format->as<ASTIdentifier>()->full_name == "tsv")
+            node->format = ASTCopyQuery::Formats::CSV;
+        else if (format->as<ASTIdentifier>()->full_name == "binary")
+            node->format = ASTCopyQuery::Formats::Binary;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format from postgresql copy command {}", format->as<ASTIdentifier>()->full_name);
     }
 
-    DataShapeOptions data_shape_options;
-
-    /// The form every modern client sends: WITH (FORMAT csv, HEADER true, ...).
-    if (open_bracket.ignore(pos, expected))
-    {
-        bool is_first_option = true;
-        while (!close_bracket.ignore(pos, expected))
-        {
-            if (!is_first_option && !comma.ignore(pos, expected))
-                return false;
-            is_first_option = false;
-
-            if (!parseOption(pos, expected, node, data_shape_options))
-                return false;
-        }
-    }
-    else
-    {
-        /// The legacy spelling, which `psql` and the client libraries still use:
-        /// WITH [BINARY] [CSV [HEADER]] [DELIMITER [AS] 'c'] [NULL [AS] 's'] [QUOTE [AS] 'c'].
-        /// `WITH FORMAT csv` is not PostgreSQL syntax at all, but this protocol has accepted it from
-        /// the beginning, so it is parsed here too.
-        while (!pos->isEnd())
-        {
-            if (!parseOption(pos, expected, node, data_shape_options))
-                return false;
-        }
-    }
-
-    checkDataShapeOptions(data_shape_options, *node);
-    checkHeaderOption(*node);
-    assert_end();
+    while (!pos->isEnd())
+        ++pos;
 
     return true;
 }

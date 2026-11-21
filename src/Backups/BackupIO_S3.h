@@ -59,7 +59,11 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) override;
+
+    String getFileGeneration(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFilePinnedToGeneration(
+        const String & file_name, std::optional<size_t> expected_file_size, const String & generation) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
@@ -72,6 +76,20 @@ public:
     std::map<String, String> getSerializedSettings() const override;
 
 private:
+    struct CheckedBackupFile
+    {
+        /// The `ETag` every request of the read is pinned to, or empty for an unpinned read.
+        String generation;
+        /// The size of the object, when one `HeadObject` measured it.
+        std::optional<size_t> size;
+    };
+
+    /// One `HeadObject` of a file of the backup, when a read of it needs one: checks the size the
+    /// backup metadata records against the object (a longer replacement would otherwise be restored
+    /// as its first bytes, or copied whole), checks a generation named by the caller, and names the
+    /// generation a plain read is pinned to. Throws `S3_OBJECT_CHANGED_DURING_READ` on a mismatch.
+    CheckedBackupFile checkBackupFile(const String & file_name, std::optional<size_t> expected_file_size, const String & generation) const;
+
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                         WriteMode write_mode);
@@ -80,6 +98,10 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+
+    /// `s3_validate_etag_on_read` at the time the backup was opened: whether an ordinary read of a
+    /// file of an unversioned backup is pinned to the generation one `HeadObject` names for it.
+    const bool pin_plain_reads_to_generation;
 
     BlobStorageLogWriterPtr blob_storage_log;
 };
@@ -126,6 +148,9 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
+    /// `s3_validate_etag_on_read` at the time the backup was opened: whether the S3-to-S3 copies of
+    /// this writer are pinned to one generation of their source (see `copyFileFromDisk`).
+    const bool pin_copies_to_generation;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;
