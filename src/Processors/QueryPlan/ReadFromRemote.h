@@ -73,7 +73,6 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
-    UInt32 shard_count;
     /// A resolvable cluster name, also assigned to `cluster_for_parallel_replicas`.
     const String cluster_name;
     /// Identifies the shard numbering the shipped `_shard_num` belongs to; not necessarily a cluster name.
@@ -86,13 +85,6 @@ private:
     Pipes addPipes(
         const ClusterProxy::SelectStreamFactory::Shards & used_shards,
         const SharedHeader & out_header,
-        const UnavailableShardTrackerPtr & tracker);
-
-    void addLazyPipe(
-        Pipes & pipes,
-        const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const SharedHeader & out_header,
-        size_t parallel_marshalling_threads,
         const UnavailableShardTrackerPtr & tracker);
 
     void addPipe(

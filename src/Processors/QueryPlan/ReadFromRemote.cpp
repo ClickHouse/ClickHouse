@@ -26,7 +26,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -81,16 +80,12 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int ALL_REPLICAS_ARE_STALE;
     extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
 {
-    extern const char use_delayed_remote_source[];
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
@@ -204,7 +199,7 @@ ReadFromRemote::ReadFromRemote(
     Scalars scalars_,
     Tables external_tables_,
     LoggerPtr log_,
-    UInt32 shard_count_,
+    UInt32 /*shard_count*/,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_,
     const String & shard_scope_identity_,
@@ -220,7 +215,6 @@ ReadFromRemote::ReadFromRemote(
     , external_tables(std::move(external_tables_))
     , storage_limits(std::move(storage_limits_))
     , log(log_)
-    , shard_count(shard_count_)
     , cluster_name(cluster_name_)
     , shard_scope_identity(shard_scope_identity_)
     , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
@@ -671,196 +665,6 @@ static bool shardQueryHasTotals(const ClusterProxy::SelectStreamFactory::Shard &
     return select && select->group_by_with_totals;
 }
 
-void ReadFromRemote::addLazyPipe(
-    Pipes & pipes,
-    const ClusterProxy::SelectStreamFactory::Shard & shard,
-    const SharedHeader & out_header,
-    size_t parallel_marshalling_threads,
-    const UnavailableShardTrackerPtr & tracker)
-{
-    bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals = false;
-    bool add_extremes = false;
-    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
-    const bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-
-    if (stage == QueryProcessingStage::Complete)
-    {
-        add_totals = shardQueryHasTotals(shard);
-        add_extremes = context->getSettingsRef()[Setting::extremes];
-    }
-
-    /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
-    /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
-    /// execution can mismatch the parallel replicas cluster shard count, causing a crash
-    /// in prepareClusterForParallelReplicas (STID 5066).
-    if (context->canUseTaskBasedParallelReplicas())
-    {
-        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
-        {
-            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-            if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(
-                    log,
-                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
-                    "used: {}",
-                    cluster_for_parallel_replicas,
-                    cluster_name);
-        }
-
-        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
-        context->setSetting("cluster_for_parallel_replicas", cluster_name);
-    }
-
-    /// The storage is only consumed by the stale-replica branch below, which applies solely to
-    /// replicated tables. Table functions have an empty main table and reach this path only when the
-    /// use_delayed_remote_source failpoint forces a lazy read, and that branch is skipped for them, so
-    /// resolving the empty StorageID would needlessly throw. This mirrors the guard in addPipe.
-    StoragePtr storage;
-    if (!table_func_ptr)
-    {
-        const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-        storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-        if (!storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
-    }
-
-    /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
-    /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
-    ASTPtr remote_query = shard.query;
-    if (filter_actions_dag)
-    {
-        remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
-    }
-
-    auto lazily_create_stream = [
-            my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = tracker, my_cluster_name = cluster_name,
-            query = shard.query, remote_query, header = shard.header,
-            my_context = context, my_throttler = throttler, my_log = log,
-            my_main_table = main_table, my_table_func_ptr = table_func_ptr,
-            my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
-            add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
-            parallel_marshalling_threads]() mutable
-        -> QueryPipelineBuilder
-    {
-        auto current_settings = my_context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
-                            .getSaturated(current_settings[Setting::max_execution_time]);
-
-        // In case reading from parallel replicas is allowed, lazy case is not triggered,
-        // so in this case it's required to get only one connection from the pool
-        std::vector<ConnectionPoolWithFailover::TryResult> try_results; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `ConnectionPoolWithFailover::getManyChecked`, which returns std::vector
-        std::exception_ptr exception_ptr;
-        try
-        {
-            if (my_table_func_ptr)
-                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_ONE);
-            else
-                try_results = my_shard.shard_info.pool->getManyChecked(
-                    timeouts, current_settings, PoolMode::GET_ONE,
-                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
-        }
-        catch (const Exception & ex)
-        {
-            exception_ptr = std::current_exception();
-            if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
-                    "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
-            else
-                throw;
-        }
-
-        UInt32 max_remote_delay = 0;
-        for (const auto & try_result : try_results)
-        {
-            if (!try_result.is_up_to_date)
-                max_remote_delay = std::max(try_result.delay, max_remote_delay);
-        }
-
-        bool use_delayed_remote_source = false;
-        fiu_do_on(FailPoints::use_delayed_remote_source,
-        {
-            use_delayed_remote_source = true;
-        });
-
-        // The stale-local-replica logic below applies only to real replicated tables. A table function
-        // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
-        if (!use_delayed_remote_source && !my_table_func_ptr)
-        {
-            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
-            if (!replicated_storage)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
-            }
-            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
-
-            if (try_results.empty() && local_delay >= max_allowed_delay)
-            {
-                throw Exception(
-                    ErrorCodes::ALL_REPLICAS_ARE_STALE,
-                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
-                    local_delay
-                );
-            }
-
-            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
-            {
-                /// We are falling back from a remote replica to the local one. A shard limit drops
-                /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
-                /// those rows. DelayedSource cannot place the counter before a plan that does not exist
-                /// yet, so build this fallback without a shard limit.
-                auto local_stage = my_stage;
-                if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-                    local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
-                auto plan = createLocalPlan(
-                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
-
-                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
-            }
-        }
-
-        /// We assumed when we caught an exception during obtaining connections, that it was possible to fallback to local replica,
-        /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
-        /// so we need to rethrow exception here, to avoid creating connections with zero replicas
-        if (exception_ptr)
-            std::rethrow_exception(exception_ptr);
-
-        ConnectionPoolEntries connections;
-        connections.reserve(try_results.size());
-        for (auto & try_result : try_results)
-            connections.emplace_back(std::move(try_result.entry));
-
-        String query_string = formattedAST(remote_query);
-        auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
-
-        my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
-        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
-            my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
-        remote_query_executor->setLogger(my_log);
-        remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
-        remote_query_executor->setQueryPlanFallbackStage(my_stage);
-        remote_query_executor->setDistributedFanout(my_distributed_fanout);
-        /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
-        /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
-        remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
-
-        auto pipe = createRemoteSourcePipe(
-            remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
-        QueryPipelineBuilder builder;
-        builder.init(std::move(pipe));
-        return builder;
-    };
-
-    pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, context);
-}
-
 void ReadFromRemote::addPipe(
     Pipes & pipes,
     const ClusterProxy::SelectStreamFactory::Shard & shard,
@@ -1015,10 +819,7 @@ Pipes ReadFromRemote::addPipes(
     {
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
-        if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
-        else
-            addPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
+        addPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
     }
 
     return pipes;
