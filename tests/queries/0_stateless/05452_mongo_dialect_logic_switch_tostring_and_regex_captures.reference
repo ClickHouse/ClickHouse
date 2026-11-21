@@ -1,0 +1,28 @@
+-- an empty filter in a logical operator
+1
+2
+1
+1
+2
+-- the truth of $expr
+1
+2
+1
+2
+2
+-- $switch without a default
+one
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- $toString of a date
+2018-03-27T16:58:51.538Z	2018-03-27T16:58:51.538Z	1
+2020-01-01T00:00:00.000Z	2018-03-27T16:58:51.538Z	2
+-- the captures of $regexFind
+b	0	[NULL]
+b	0	['']
+ab	0	[NULL,'a','b']
+(b	1	['b']
+-- the order of an unwound array
+\N	[20,10]
+\N	[20,10]	[20]	[10]
+-- the size of the translation of $dateToString
+(TOO_BIG_AST)
