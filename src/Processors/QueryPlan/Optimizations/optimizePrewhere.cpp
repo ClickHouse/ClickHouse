@@ -11,17 +11,20 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -191,6 +194,62 @@ static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
     return normalized->getOutputs()[0]->getHash();
 }
 
+/// An expensive function like `aiFilter` is stateful only to count its calls, so it may run on the rows that passed PREWHERE.
+static bool hasRowDependentFunctions(const ActionsDAG & dag)
+{
+    return std::ranges::any_of(dag.getNodes(), [](const ActionsDAG::Node & node)
+    {
+        return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isStateful() && !node.function_base->isExpensive();
+    });
+}
+
+/// The reader fills the default of a column missing in a part after PREWHERE, on the rows that passed it.
+static bool hasStatefulDefaultOfMissingColumn(
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const RangesInDataParts & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    NameSet & visited_columns)
+{
+    checkStackSize();
+
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    String name_in_storage = column ? column->getNameInStorage() : column_name;
+    if (!visited_columns.insert(name_in_storage).second)
+        return false;
+
+    auto column_default = columns.getDefault(name_in_storage);
+    if (!column_default || !column_default->expression)
+        return false;
+
+    auto is_present_in_part = [&](const auto & part)
+    {
+        if (!part.data_part->getColumnsDescription().has(name_in_storage))
+            return false;
+        if (!mutations_snapshot)
+            return true;
+        AlterConversions conversions(mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part), PatchPartsForReader{}, context);
+        return !conversions.isColumnDropped(name_in_storage);
+    };
+    if (std::ranges::all_of(parts, is_present_in_part))
+        return false;
+
+    TablesWithColumns tables;
+    ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
+    ExpressionInfoVisitor(expression_info).visit(column_default->expression);
+    if (expression_info.is_stateful_function)
+        return true;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+    for (const auto & identifier : identifiers)
+        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, mutations_snapshot, context, visited_columns))
+            return true;
+
+    return false;
+}
+
 static void setQueryConditionCacheAttribution(
     PrewhereInfo & prewhere_info, const ReadFromMergeTree & read_from_merge_tree_step, const Settings & settings)
 {
@@ -286,7 +345,23 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
         return;
 
+    /// A stateful function in the filter expression would be calculated only on the rows that passed PREWHERE.
+    if (hasRowDependentFunctions(filter_step->getExpression()))
+        return;
+
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
+
+    if (read_from_merge_tree_step)
+    {
+        const auto & columns = storage_snapshot->metadata->getColumns();
+        NameSet visited_columns;
+        for (const auto & column : queried_columns)
+        {
+            if (hasStatefulDefaultOfMissingColumn(
+                    column, columns, read_from_merge_tree_step->getParts(), read_from_merge_tree_step->getMutationsSnapshot(), context, visited_columns))
+                return;
+        }
+    }
 
     /// Statistics are only used to reorder conditions, so skip if there is just one.
     const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
