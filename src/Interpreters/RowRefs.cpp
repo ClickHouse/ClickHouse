@@ -1,9 +1,12 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -358,6 +361,63 @@ void StoredColumnsIndex::invalidateEmitTable()
     ++blocks_generation;
 }
 
+/// Counts the share of `column_bytes` held by the rows the block's selector keeps, as `StoredBlock::allocatedBytes` does.
+static void addLiveRowsBytes(StoredColumnsIndex::EmitColumn & emit_column, const StoredBlock & block, size_t column_bytes)
+{
+    const size_t block_rows = block.blockRows();
+    if (block_rows == 0)
+        return;
+    emit_column.emit_bytes += column_bytes * block.selector.size() / block_rows;
+    emit_column.emit_rows += block.selector.size();
+}
+
+/// Non-shared `LowCardinality` dictionaries in `column`, which `byteSize` counts once rather than per row.
+static size_t getDictionariesByteSize(const IColumn & column)
+{
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        return low_cardinality->isSharedDictionary() ? 0 : low_cardinality->getDictionary().byteSize();
+    size_t bytes = 0;
+    column.forEachSubcolumn([&](const auto & subcolumn) { bytes += getDictionariesByteSize(*subcolumn); });
+    return bytes;
+}
+
+size_t getMaterializedByteSize(const IColumn & column)
+{
+    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// Row 0 of the values is the default, the other rows are the non-default rows.
+        const IColumn & sparse_values = sparse->getValuesColumn();
+        const size_t values_bytes = getMaterializedByteSize(sparse_values);
+        const size_t default_bytes = std::min(values_bytes, sparse_values.byteSizeAt(0));
+        return values_bytes - default_bytes + default_bytes * sparse->getNumberOfDefaultRows();
+    }
+
+    const IColumn * values = nullptr;
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
+        values = replicated->getNestedColumn().get();
+    else if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+        values = &const_column->getDataColumn();
+    else
+    {
+        const size_t bytes = column.byteSize();
+        size_t subcolumns_bytes = 0;
+        size_t subcolumns_materialized_bytes = 0;
+        column.forEachSubcolumn(
+            [&](const auto & subcolumn)
+            {
+                subcolumns_bytes += subcolumn->byteSize();
+                subcolumns_materialized_bytes += getMaterializedByteSize(*subcolumn);
+            });
+        return bytes - std::min(bytes, subcolumns_bytes) + subcolumns_materialized_bytes;
+    }
+    if (values->empty())
+        return column.byteSize();
+
+    const size_t values_bytes = getMaterializedByteSize(*values);
+    const size_t dictionaries_bytes = std::min(values_bytes, getDictionariesByteSize(*values));
+    return (values_bytes - dictionaries_bytes) / values->size() * column.size() + dictionaries_bytes;
+}
+
 void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather)
 {
@@ -413,6 +473,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                     resolveRowStoreGatherNode(
                         emit_column->gather_root, request.type, *row_store, row_store->getFieldLayout(request.access.index), b, num_blocks);
                     emit_column->in_row_store = true;
+                    addLiveRowsBytes(*emit_column, *block, row_store->fieldByteSize(request.access.index));
                     continue;
                 }
 
@@ -443,7 +504,10 @@ void StoredColumnsIndex::resolveEmitColumns(
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Too many deduplicated rows in right table block for HashJoin: {}",
                             column->size());
+                    addLiveRowsBytes(*emit_column, *block, getMaterializedByteSize(*replicated));
                 }
+                else
+                    addLiveRowsBytes(*emit_column, *block, column->byteSize());
 
                 resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
             }
@@ -464,7 +528,9 @@ void StoredColumnsIndex::resolveEmitColumns(
         out_gather[pos]
             = {.node = &emit_column.gather_root,
                .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data(),
-               .in_row_store = emit_column.in_row_store};
+               .in_row_store = emit_column.in_row_store,
+               .emit_bytes = emit_column.emit_bytes,
+               .emit_rows = emit_column.emit_rows};
     }
 }
 

@@ -88,6 +88,7 @@ struct LazyOutput
     ColumnAccessIndexes output_access_indexes;
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
+    size_t emit_bytes_per_row = 0;
 
     [[nodiscard]] const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     [[nodiscard]] size_t getRowCount() const { return row_count; }
@@ -134,6 +135,8 @@ struct EmitPlan
     std::vector<GatherColumn> gather;
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
+    /// Average bytes the output columns take per stored right row; 0 when not resolved.
+    size_t emit_bytes_per_row = 0;
 };
 
 /// `type_name` is parallel to `positions`. `with_gather` is false for joinGet, whose output type may
@@ -219,6 +222,7 @@ public:
         lazy_output.emit_gather = std::move(plan.gather);
         lazy_output.row_store_row_length = plan.row_store_row_length;
         lazy_output.has_columns = plan.has_columns;
+        lazy_output.emit_bytes_per_row = plan.emit_bytes_per_row;
     }
 
     [[nodiscard]] size_t size() const { return columns.size(); }

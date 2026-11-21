@@ -1,0 +1,21 @@
+<test>
+    <create_query>CREATE TABLE t1 (c1 String, c2 LowCardinality(String), c3 Nullable(String), c4 LowCardinality(String), c5 LowCardinality(String), c6 LowCardinality(String), c7 Nullable(String), c8 Date, c9 LowCardinality(String), c10 LowCardinality(String), c11 LowCardinality(String), c12 Float64, c13 Nullable(Float64)) ENGINE = MergeTree PARTITION BY c2 ORDER BY c8</create_query>
+    <create_query>CREATE TABLE t2 (c2 LowCardinality(String), c1 String, c14 LowCardinality(String), c15 Nullable(String), c16 DateTime64(3)) ENGINE = MergeTree ORDER BY (c2, c16)</create_query>
+
+    <fill_query>INSERT INTO t1 SELECT concat('i', toString(intDiv(number, 157979)), repeat('x', 34)), 'm1', concat('u', toString(n % 15), repeat('z', 256)), concat('b', toString(n % 3)), concat('k', toString(n % 5 % 4)), concat('p', toString(n % 15 % 3)), NULL, toDate('2020-01-01') + intDiv(n, 1170), concat('v', toString(intDiv(n, 15) % 78), repeat('w', 40)), concat('s', toString(intDiv(n, 15) % 78 % 13)), concat('y', toString(intDiv(n, 15) % 78 % 10)), ((n * 7919) % 100000) / 7., (n % 1000) / 3. FROM (SELECT number, number % 157979 AS n FROM numbers(315958))</fill_query>
+    <fill_query>INSERT INTO t2 SELECT concat('m', toString(number % 30)), toString(number), multiIf(number IN (1, 31), 'success', number % 4 = 0, 'started', number % 4 = 2, 'in_progress', 'skipped'), NULL, toDateTime64('2024-01-01 00:00:00', 3) + number FROM numbers(84)</fill_query>
+    <fill_query>OPTIMIZE TABLE t1 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE t2 FINAL</fill_query>
+
+    <!-- The right side keeps 2 rows of one granule, each left row matches both: the join output is split by max_joined_block_size_bytes. -->
+    <query>
+        WITH
+            w1 AS (SELECT * FROM t1 INNER JOIN t2 ON (t2.c2 = t1.c2) AND (t2.c14 = 'success') WHERE c2 = 'm1' QUALIFY ROW_NUMBER() OVER (PARTITION BY c2, c4, c5, c6, c7, c9, c10, c11, c8 ORDER BY t2.c16 DESC) = 1),
+            w2 AS (SELECT c9, SUM(ABS(c12)) AS c17 FROM w1 GROUP BY c9)
+        SELECT *, 'x' AS c18, concat(c4, '/', c5, '/', c6) AS c19 FROM w1 WHERE c9 IN (SELECT c9 FROM w2 WHERE c17 > 0)
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t2</drop_query>
+</test>

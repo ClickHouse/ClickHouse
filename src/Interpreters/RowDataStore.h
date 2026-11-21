@@ -88,6 +88,9 @@ public:
     [[nodiscard]] const FieldLayout & getFieldLayout(size_t input_col_index) const;
     [[nodiscard]] FieldPlanes getPlanes(const FieldLayout & field) const;
 
+    /// `IColumn::byteSize` of the column the field was packed from.
+    [[nodiscard]] size_t fieldByteSize(size_t input_col_index) const { return field_byte_sizes[input_col_index]; }
+
     [[nodiscard]] const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     [[nodiscard]] size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
     [[nodiscard]] size_t allocatedBytes() const;
@@ -101,6 +104,7 @@ private:
     RowLayoutPtr layout;
     size_t row_length;
     Chars overflow;
+    std::vector<size_t> field_byte_sizes;
 
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.

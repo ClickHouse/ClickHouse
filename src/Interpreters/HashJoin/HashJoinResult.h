@@ -62,6 +62,7 @@ private:
     size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
+    size_t copied_right_keys_bytes_per_row = 0;
     std::optional<size_t> matched_right_rows;
 
     struct GenerateCurrentRowState
