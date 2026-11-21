@@ -1,0 +1,9 @@
+-- no grants, mismatching declared schema
+ACCESS_DENIED
+declared column hidden
+-- no grants, matching declared schema
+ACCESS_DENIED
+declared column hidden
+-- granted, mismatching declared schema
+TYPE_MISMATCH
+declared column shown
