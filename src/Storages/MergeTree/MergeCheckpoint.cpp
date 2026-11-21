@@ -14,6 +14,8 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 
+#include <base/pathToString.h>
+
 #include <filesystem>
 
 namespace ProfileEvents
@@ -200,8 +202,8 @@ void MergeCheckpoint::save(IDataPartStorage & part, const MergeCheckpointState &
     {
         const std::filesystem::path directory = getDirectory();
         part.rename(
-            directory.parent_path(),
-            directory.filename(),
+            pathToGenericString(directory.parent_path()),
+            pathToGenericString(directory.filename()),
             /*log=*/nullptr,
             /*remove_new_dir_if_exists=*/false,
             /*fsync_part_dir=*/false);

@@ -27,7 +27,12 @@ constexpr UInt64 RETRY_MAX_BACKOFF_MS = 2000;
 /// `filesystem_error` branch has no `EIO`.
 bool isTransientWriteErrno(int err)
 {
-    return err == ENOSPC || err == EDQUOT || err == EROFS || err == EIO || err == EBUSY || err == ETIMEDOUT || err == EAGAIN;
+#if defined(EDQUOT)
+    /// The Windows CRT has no quotas in `errno`.
+    if (err == EDQUOT)
+        return true;
+#endif
+    return err == ENOSPC || err == EROFS || err == EIO || err == EBUSY || err == ETIMEDOUT || err == EAGAIN;
 }
 
 /// `isRetryableException` adjusted for a write: plus the write-side errnos, however they are

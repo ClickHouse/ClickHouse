@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -592,8 +593,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 *global_ctx->data,
                 global_ctx->future_part->name,
                 local_single_disk_volume,
-                directory.parent_path(),
-                directory.filename(),
+                pathToGenericString(directory.parent_path()),
+                pathToGenericString(directory.filename()),
                 getReadSettings(),
                 PartDirIntent::OpenExisting);
             builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
@@ -1262,7 +1263,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     /// The streams of the finished columns, including the shared offsets, are not written again.
                     for (const auto & [file_name, _] : state.checksums.files)
                         if (fs::path(file_name).extension() == IMergeTreeDataPart::DATA_FILE_EXTENSION)
-                            global_ctx->written_offset_substreams.insert(fs::path(file_name).stem());
+                            global_ctx->written_offset_substreams.insert(pathToGenericString(fs::path(file_name).stem()));
                     for (const auto & [column_name, statistics] : state.statistics)
                         global_ctx->gathered_data.statistics[column_name] = statistics;
                     global_ctx->resumed_columns = state.completed_columns;

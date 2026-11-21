@@ -999,8 +999,8 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         return;
     }
 
-    const auto buckets_path = std::filesystem::path(zk_path) / "buckets";
-    const auto table_metadata_path = std::filesystem::path(zk_path) / "metadata";
+    const std::string buckets_path = zkutil::joinZooKeeperPath(zk_path, "buckets");
+    const std::string table_metadata_path = zkutil::joinZooKeeperPath(zk_path, "metadata");
 
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
@@ -1017,7 +1017,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
             missing_bucket_paths.push_back(buckets_path);
         for (size_t i = 0; i < value; ++i)
         {
-            const std::string bucket_path = buckets_path / toString(i);
+            const std::string bucket_path = zkutil::joinZooKeeperPath(buckets_path, toString(i));
             if (!zk_client->exists(bucket_path))
                 missing_bucket_paths.push_back(bucket_path);
         }

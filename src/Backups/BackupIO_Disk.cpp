@@ -184,10 +184,11 @@ void BackupWriterDisk::removeEmptyRootDirectory()
 {
     if (root_path.empty())
         return;
-    if (disk->isSymlinkSupported() && disk->isSymlinkNoThrow(root_path))
+    const String root = pathToGenericString(root_path);
+    if (disk->isSymlinkSupported() && disk->isSymlinkNoThrow(root))
         return;
-    if (disk->existsDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
+    if (disk->existsDirectory(root) && disk->isDirectoryEmpty(root))
+        disk->removeDirectory(root);
 }
 
 void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)

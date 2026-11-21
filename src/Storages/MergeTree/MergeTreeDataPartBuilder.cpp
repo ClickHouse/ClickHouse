@@ -212,7 +212,7 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageForRemoval(
     const ReadSettings & read_settings)
 {
     using Type = MergeTreeDataPartStorageType;
-    for (auto it = volume_->getDisk()->iterateDirectory(fs::path(root_path_) / part_dir_); it->isValid(); it->next())
+    for (auto it = volume_->getDisk()->iterateDirectory(pathToGenericString(fs::path(root_path_) / part_dir_)); it->isValid(); it->next())
     {
         if (it->name() == DataPartStorageOnDiskPacked::DATA_FILE_NAME)
             return getPartStorageByType(Type::Packed, volume_, root_path_, part_dir_, /*initialize=*/false, read_settings);
