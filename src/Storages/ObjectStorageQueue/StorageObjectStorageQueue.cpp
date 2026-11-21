@@ -323,6 +323,12 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
     }
+
+    /// All files share one processed position, so they must be committed by one INSERT at a time.
+    bool isOrderedWithoutBuckets(const ObjectStorageQueueMetadata & metadata)
+    {
+        return metadata.getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED && !metadata.useBucketsForProcessing();
+    }
 }
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
@@ -518,6 +524,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
+
+    if (task_count > 1 && isOrderedWithoutBuckets(*temp_metadata))
+        LOG_WARNING(log, "Setting `parallel_inserts` has no effect in ordered mode without buckets: files are inserted by one INSERT");
 
     for (size_t i = 0; i < task_count; ++i)
     {
@@ -954,6 +963,12 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
+    else if (streaming_tasks_index > 0 && isOrderedWithoutBuckets(*metadata))
+    {
+        /// Not rescheduled: tasks are scheduled again when buckets are added (ALTER) or on startup.
+        LOG_TEST(log, "Streaming task {} is idle: ordered mode without buckets", streaming_tasks_index);
+        return;
+    }
     else
     {
         try
@@ -1078,7 +1093,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const size_t threads = parallel_inserts ? 1 : processing_threads_num;
+    const bool use_parallel_inserts = parallel_inserts && !isOrderedWithoutBuckets(*metadata);
+    const size_t threads = use_parallel_inserts ? 1 : processing_threads_num;
 
     LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
