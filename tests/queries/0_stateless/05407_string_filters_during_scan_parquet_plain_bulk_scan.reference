@@ -1,0 +1,32 @@
+A | s LIKE '%needle%' | 0 | 2690	2415294333453041593	269624902
+A | s LIKE '%needle%' | 1 | 2690	2415294333453041593	269624902
+A | s LIKE '%needle%' AND s LIKE '%1%' | 0 | 1898	512245149898569407	227165028
+A | s LIKE '%needle%' AND s LIKE '%1%' | 1 | 1898	512245149898569407	227165028
+A | s LIKE '%needle%' AND endsWith(s, '7') | 0 | 290	6494321557770547392	27880140
+A | s LIKE '%needle%' AND endsWith(s, '7') | 1 | 290	6494321557770547392	27880140
+A | s LIKE '%value%' | 0 | 130643	12081552028274937382	13063641765
+A | s LIKE '%value%' | 1 | 130643	12081552028274937382	13063641765
+B | position(s, 'abzz') > 0 | 0 | 1000	8578447766716292328	3000000
+B | position(s, 'abzz') > 0 | 1 | 1000	8578447766716292328	3000000
+B | position(s, 'g') > 0 | 0 | 0	0	0
+B | position(s, 'g') > 0 | 1 | 0	0	0
+B | position(s, 'o') > 0 | 0 | 1000	17360432100539901376	3001000
+B | position(s, 'o') > 0 | 1 | 1000	17360432100539901376	3001000
+B | position(s, 'oo') > 0 | 0 | 1000	17360432100539901376	3001000
+B | position(s, 'oo') > 0 | 1 | 1000	17360432100539901376	3001000
+B | position(s, '\x0A\0\0\0ab') > 0 | 0 | 1000	8578447766716292328	3000000
+B | position(s, '\x0A\0\0\0ab') > 0 | 1 | 1000	8578447766716292328	3000000
+B | s LIKE '%ab%' | 0 | 1000	8578447766716292328	3000000
+B | s LIKE '%ab%' | 1 | 1000	8578447766716292328	3000000
+B | s LIKE '%oo%' AND s LIKE '%z%' | 0 | 1000	17360432100539901376	3001000
+B | s LIKE '%oo%' AND s LIKE '%z%' | 1 | 1000	17360432100539901376	3001000
+C | position(s, '\x01xxx') > 0 | 0 | 0	0	0
+C | position(s, '\x01xxx') > 0 | 1 | 0	0	0
+05407_plain_bulk_scan_applied	197310
+05407_plain_bulk_scan_large_prefix	100000
+05407_plain_bulk_scan_one_eighth	34992
+05407_plain_bulk_scan_other_conditions	198102
+05407_plain_bulk_scan_prefixes	6000
+05407_plain_bulk_scan_prefixes_zero	6000
+05407_ranges_after_prewhere_step	1
+05407_dense_matches	1
