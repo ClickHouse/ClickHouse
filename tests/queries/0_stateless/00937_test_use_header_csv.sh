@@ -32,7 +32,8 @@ echo -ne 'd,unknown,str,more,u,fields\n2019-04-18,blahblah,Line12,,1,\n2019-04-1
 echo -ne 'd,u\n2019-04-18,1\n2019-04-18,2\n'            | eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'str,u\nLine16,1\nLine17,2\n'                  | eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'd,str\n2019-04-18,Line18\n2019-04-18,Line19\n'| eval "$INSERT_QUERY" $USE_HEADER
-echo -ne 'unknown\n\n\n'                                | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN
+# A header without any column of the table: most likely the data is wrong.
+echo -ne 'unknown\n\n\n'                                | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN 2>&1 | grep -o -m1 'INCORRECT_DATA'
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY ALL"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS csv"

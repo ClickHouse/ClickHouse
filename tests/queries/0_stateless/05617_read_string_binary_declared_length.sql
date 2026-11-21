@@ -2,7 +2,7 @@
 SELECT * FROM format(RowBinaryWithNames, 'x UInt8', unhex('018CFFFFFF03'))
     SETTINGS log_comment = 'read_string_binary_c1_header_name'; -- { serverError CANNOT_READ_ALL_DATA }
 SELECT * FROM format(RowBinaryWithNamesAndTypes, 'x UInt8', unhex('01017906537472696E678CFFFFFF03'))
-    SETTINGS input_format_skip_unknown_fields = 1, log_comment = 'read_string_binary_c2_skipped_string'; -- { serverError CANNOT_READ_ALL_DATA }
+    SETTINGS input_format_skip_unknown_fields = 1, input_format_with_names_throw_if_no_column_matches = 0, log_comment = 'read_string_binary_c2_skipped_string'; -- { serverError CANNOT_READ_ALL_DATA }
 SELECT finalizeAggregation(CAST(unhex('018CFFFFFF03') AS AggregateFunction(distinctDynamicTypes, Dynamic)))
     SETTINGS log_comment = 'read_string_binary_c3_distinct_dynamic_types'; -- { serverError CANNOT_READ_ALL_DATA }
 SELECT finalizeAggregation(CAST(unhex('0000000000000000008CFFFFFF03') AS AggregateFunction(groupArraySample(1), UInt8)))

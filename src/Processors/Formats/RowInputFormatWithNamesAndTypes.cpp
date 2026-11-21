@@ -19,6 +19,7 @@
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 
+#include <algorithm>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -97,6 +98,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Skip prefix before names and types.
     format_reader->skipPrefixBeforeHeader();
 
+    /// Empty input is read as a header with a single empty name.
+    const bool is_empty_input = in->eof();
+
     VectorWithMemoryTracking<String> column_names;
     VectorWithMemoryTracking<String> type_names;
     if (with_names)
@@ -115,7 +119,23 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!column_names.empty())
     {
         if (format_settings.with_names_use_header)
+        {
             column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
+
+            /// If no name from the header is a column of the table, every row would be inserted as defaults.
+            /// Most likely, the data is not what we think: for example, CSV with a different delimiter
+            /// looks like a single unknown column.
+            const auto & header = getPort().getHeader();
+            if (format_settings.with_names_throw_if_no_column_matches && !is_empty_input && header.columns() != 0
+                && std::ranges::none_of(column_mapping->column_indexes_for_input_fields, [](const auto & index) { return index.has_value(); }))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "None of the column names in the header of the input data ({}) matches a column of the table ({}). "
+                    "Most likely, the format settings (for example, the delimiter) do not match the data. "
+                    "To read the columns by their positions, set `input_format_with_names_use_header = 0`, "
+                    "to read rows with default values, set `input_format_with_names_throw_if_no_column_matches = 0`",
+                    fmt::join(column_names, ", "), fmt::join(header.getNames(), ", "));
+        }
         else
             column_mapping->setupByHeader(getPort().getHeader());
     }

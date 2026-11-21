@@ -372,6 +372,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.values.interpret_expressions = settings[Setting::input_format_values_interpret_expressions];
     format_settings.values.escape_quote_with_quote = settings[Setting::output_format_values_escape_quote_with_quote];
     format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
+    format_settings.with_names_throw_if_no_column_matches = settings[Setting::input_format_with_names_throw_if_no_column_matches];
     format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
     format_settings.write_statistics = settings[Setting::output_format_write_statistics];
     format_settings.into_outfile_create_parent_directories = settings[Setting::into_outfile_create_parent_directories];
