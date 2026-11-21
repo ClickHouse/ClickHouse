@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- The Prometheus HTTP API under `/prometheus/api/v1`, used by tests of the query endpoints.
+         No table is configured, so each request names it with the `database` and `table` parameters. -->
+    <http_handlers>
+        <rule_prometheus_api_v1>
+            <url_prefix>/prometheus/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+            </handler>
+        </rule_prometheus_api_v1>
+    </http_handlers>
+</clickhouse>
