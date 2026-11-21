@@ -46,10 +46,10 @@ class VortexFile
 public:
     static std::unique_ptr<VortexFile> open(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped);
 
-    size_t size() const { return file_size; }
+    [[nodiscard]] size_t size() const { return file_size; }
     /// Whether several threads may read at once.
-    bool isThreadSafe() const { return !seekable_in || read_at; }
-    bool isInMemory() const { return !seekable_in; }
+    [[nodiscard]] bool isThreadSafe() const { return !seekable_in || read_at; }
+    [[nodiscard]] bool isInMemory() const { return !seekable_in; }
 
     /// Reads exactly `length` bytes at `offset`, or throws.
     void readAt(char * to, size_t length, size_t offset);
