@@ -237,6 +237,7 @@ StorageKafka2::~StorageKafka2()
 void StorageKafka2::partialShutdown()
 {
     // This is called in a background task within a catch block, thus this function shouldn't throw
+    std::lock_guard lock(partial_shutdown_mutex);
     LOG_TRACE(log, "Cancelling streams");
     for (auto & task : tasks)
     {
@@ -631,6 +632,13 @@ void StorageKafka2::shutdown(bool)
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
+}
+
+void StorageKafka2::stopBackgroundWrites()
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::stopBackgroundWrites");
+    activating_task->deactivate();
+    partialShutdown();
 }
 
 void StorageKafka2::drop()

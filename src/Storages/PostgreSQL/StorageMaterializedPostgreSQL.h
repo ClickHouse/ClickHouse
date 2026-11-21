@@ -87,6 +87,10 @@ public:
 
     void shutdown(bool is_drop) override;
 
+    /// A standalone table stops its replication here and keeps the nested table writable until `shutdown`.
+    void stopBackgroundWrites() override;
+    bool hasBackgroundWrites() const override { return !is_materialized_postgresql_database; }
+
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
@@ -182,6 +186,8 @@ private:
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
+    /// Server shutdown can stop the handler while a concurrent `DROP TABLE` resets it.
+    std::mutex replication_handler_mutex;
 
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.
