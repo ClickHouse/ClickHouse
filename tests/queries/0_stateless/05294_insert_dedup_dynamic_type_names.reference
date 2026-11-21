@@ -1,0 +1,16 @@
+Bool and Int8 kept	2	['Bool','Int8']
+DateTime and IPv4 kept	2
+rows with a changed type kept	6
+identical value deduplicated	1
+identical rows deduplicated	3
+other value of the same type kept	2
+Array(Dynamic) kept	2
+Tuple(Dynamic) kept	2
+Map(String, Dynamic) kept	2
+JSON path kept	2	['Float64','Int64']
+JSON typed Dynamic path kept	2
+identical JSON deduplicated	1
+ReplicatedMergeTree kept	2
+JSON retry before the merge	1
+JSON retry after the merge	1
+Dynamic retry after the merge	1
