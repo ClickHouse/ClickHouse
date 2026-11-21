@@ -24,4 +24,5 @@ SelectivityEstimate computeSelectivity(
     const BitSet & left,
     const BitSet & right);
 
+
 }

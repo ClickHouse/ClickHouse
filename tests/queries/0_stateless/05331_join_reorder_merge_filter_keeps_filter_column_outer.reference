@@ -1,0 +1,12 @@
+-- LEFT JOIN, filter column selected
+1
+-- LEFT JOIN below another join, filter column selected
+2	1
+-- LEFT JOIN below another join, expression over filter column selected
+2	2
+-- RIGHT JOIN below another join, filter column selected
+1	1
+-- join_use_nulls = 1, NULL-extended rows are filtered out
+-- all join order algorithms agree
+2	1
+2	1
