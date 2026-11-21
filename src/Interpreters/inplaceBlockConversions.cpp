@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <unordered_set>
 #include <utility>
 
 #include <Core/Block.h>
@@ -12,6 +13,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Columns/ColumnArray.h>
@@ -66,6 +69,136 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Names bound in a default expression itself, which shadow the columns of the table:
+/// aliases of expressions (visible in the whole expression) and parameters of lambdas (visible in their bodies).
+using BoundNames = std::unordered_set<String>;
+
+void collectExpressionAliases(const ASTPtr & ast, BoundNames & aliases)
+{
+    /// A subquery has its own scope.
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>())
+        return;
+
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()))
+    {
+        String alias = with_alias->tryGetAlias();
+        if (!alias.empty())
+            aliases.insert(std::move(alias));
+    }
+
+    for (const auto & child : ast->children)
+        collectExpressionAliases(child, aliases);
+}
+
+/// Whether an identifier may be bound to a name of the expression rather than to a column of the table.
+/// An identifier is bound by its whole name or by its leading parts, e.g. `x.n.v` is bound to the lambda parameter `x`.
+bool isBoundInExpression(const ASTIdentifier & identifier, const BoundNames & bound_names)
+{
+    if (bound_names.empty())
+        return false;
+
+    String prefix;
+    for (const auto & part : identifier.name_parts)
+    {
+        if (!prefix.empty())
+            prefix += '.';
+        prefix += part;
+        if (bound_names.contains(prefix))
+            return true;
+    }
+    return bound_names.contains(identifier.name());
+}
+
+/// Returns the parameters of a lambda, or nullptr if the function is not a well-formed lambda.
+const ASTs * tryGetLambdaParameters(const ASTFunction & function)
+{
+    if (function.name != "lambda" || !function.arguments || function.arguments->children.size() != 2)
+        return nullptr;
+
+    const auto * parameters = function.arguments->children[0]->as<ASTFunction>();
+    if (!parameters || parameters->name != "tuple" || !parameters->arguments)
+        return nullptr;
+
+    return &parameters->arguments->children;
+}
+
+/// Finds the column of the table that owns the subcolumn `name`, and the name of the subcolumn inside it.
+/// Several columns may own a subcolumn with the same full name, e.g. `x.n.v` is a subcolumn of both
+/// `x Tuple(n Tuple(v UInt8))` and `` `x.n` Tuple(v UInt8) ``. The owner is chosen exactly as the analyzer does it
+/// (see `TableExpressionData::tryGetSubcolumnInfo`): the shortest prefix that names a column whose type has such
+/// a subcolumn. The choice must not depend on the set of columns in the block or on the order of the columns
+/// in the table, otherwise the same default expression would read different columns for different inserts.
+std::optional<std::pair<String, String>> tryGetColumnOwningSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        auto column = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), String(column_name));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return std::pair{String(column_name), String(subcolumn_name)};
+    }
+    return {};
+}
+
+/// A default expression may reference a subcolumn of another column, e.g. `c.n.x` of the column `c.n`.
+/// When that column is missing from the block, it is computed by its own default expression under its
+/// name as an alias. An identifier is bound to an alias by its first part, so `c.n.x` cannot be bound to
+/// the alias `c.n`. Rewrite such a reference as an explicit `getSubcolumn` of its column, which then is
+/// a required column of the default expression as well.
+/// A reference whose owning column is in the block is left as is: the analyzer binds it to the same column.
+/// Identifiers bound to aliases or lambda parameters of the expression itself are not references to columns.
+void replaceReferencesToSubcolumnsOfMissingColumnsImpl(
+    ASTPtr & ast, const Block & block, const ColumnsDescription & columns, const BoundNames & bound_names)
+{
+    /// A subquery has its own scope.
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableIdentifier>())
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const String & name = identifier->name();
+        if (block.has(name) || columns.has(name) || isBoundInExpression(*identifier, bound_names))
+            return;
+
+        auto owner = tryGetColumnOwningSubcolumn(columns, name);
+        if (!owner || block.has(owner->first))
+            return;
+
+        auto subcolumn = makeASTFunction(
+            "getSubcolumn",
+            make_intrusive<ASTIdentifier>(owner->first),
+            make_intrusive<ASTLiteral>(owner->second));
+        subcolumn->setAlias(identifier->tryGetAlias());
+        ast = std::move(subcolumn);
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (const auto * parameters = tryGetLambdaParameters(*function))
+        {
+            /// Do not rewrite the declarations of the parameters, and let them shadow the columns in the body.
+            BoundNames body_bound_names = bound_names;
+            for (const auto & parameter : *parameters)
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                    body_bound_names.insert(parameter_identifier->name());
+
+            replaceReferencesToSubcolumnsOfMissingColumnsImpl(function->arguments->children[1], block, columns, body_bound_names);
+            return;
+        }
+    }
+
+    for (auto & child : ast->children)
+        replaceReferencesToSubcolumnsOfMissingColumnsImpl(child, block, columns, bound_names);
+}
+
+void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & block, const ColumnsDescription & columns)
+{
+    BoundNames aliases;
+    collectExpressionAliases(ast, aliases);
+    replaceReferencesToSubcolumnsOfMissingColumnsImpl(ast, block, columns, aliases);
+}
+
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
     const Block & block,
@@ -93,6 +226,7 @@ void addDefaultRequiredExpressionsRecursively(
     {
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         auto column_default_expr = column_default->expression->clone();
+        replaceReferencesToSubcolumnsOfMissingColumns(column_default_expr, block, columns);
 
         /// Our default may depend on columns with default expr which not present in block
         /// we have to add them to block too

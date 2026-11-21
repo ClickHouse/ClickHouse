@@ -25,6 +25,12 @@ ASTPtr ASTNameTypePair::clone() const
         res->children.push_back(res->type);
     }
 
+    if (default_expression)
+    {
+        res->default_expression = default_expression->clone();
+        res->children.push_back(res->default_expression);
+    }
+
     return res;
 }
 
@@ -34,6 +40,10 @@ void ASTNameTypePair::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "NameTypePair");
     w.writeString("name", name);
     w.writeChild("name_type", type);
+    /// A `Tuple`/`Nested` element can carry a `DEFAULT` expression (`Tuple(a UInt8 DEFAULT 1)`),
+    /// which `pullUpTupleElementDefaults` normalizes away only after parsing. Serialize it, or the
+    /// round-trip would silently drop the default.
+    w.writeChild("default_expression", default_expression);
 }
 
 void ASTNameTypePair::readJSON(const Poco::JSON::Object & json)
@@ -56,12 +66,24 @@ void ASTNameTypePair::readJSON(const Poco::JSON::Object & json)
     if (!dynamic_cast<const ASTDataType *>(type.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`NameTypePair` 'name_type' must be a data type during AST JSON deserialization");
     children.push_back(type);
+
+    /// The optional element `DEFAULT` expression is an arbitrary expression, so it stays untyped
+    /// (like the 'default_expression' of `ColumnDeclaration`).
+    default_expression = r.readChild("default_expression");
+    if (default_expression)
+        children.push_back(default_expression);
 }
 
 void ASTNameTypePair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << backQuoteIfNeed(name) << ' ';
     type->format(ostr, settings, state, frame);
+
+    if (default_expression)
+    {
+        ostr << " DEFAULT ";
+        default_expression->format(ostr, settings, state, frame);
+    }
 }
 
 }

@@ -75,6 +75,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTPartition.h>
@@ -3091,6 +3092,30 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn, bool always)
     codec_fn.arguments->children.push_back(first_applicable);
 }
 
+/// DEFAULT expressions for named Tuple elements, e.g. `Tuple(a UInt8 DEFAULT 1)`, exist only at
+/// the syntax level: the main DDL paths pull them up to a column-level DEFAULT before a real data
+/// type is constructed from the AST, and `DataTypeTuple::create` throws if one survives. The
+/// fuzzer reifies the raw column type below, so strip them here to keep valid inputs valid.
+static void stripTupleElementDefaults(IAST & type)
+{
+    if (auto * pair = type.as<ASTNameTypePair>())
+    {
+        if (pair->default_expression)
+        {
+            pair->default_expression = nullptr;
+            pair->children.clear();
+            if (pair->type)
+                pair->children.push_back(pair->type);
+        }
+        if (pair->type)
+            stripTupleElementDefaults(*pair->type);
+        return;
+    }
+
+    for (const auto & child : type.children)
+        stripTupleElementDefaults(*child);
+}
+
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 {
     const auto parse_clause = [](IParser & parser, const String & text)
@@ -3107,6 +3132,7 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
     if (auto type = column.getType())
     {
+        stripTupleElementDefaults(*type);
         auto data_type = fuzzDataType(DataTypeFactory::instance().get(type));
 
         ParserDataType parser;
