@@ -1559,9 +1559,9 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## SYSTEM CLEAR|DROP AGGREGATE CACHE {#drop-aggregate-cache}
 
-:::note
+<Note>
 The partial aggregate cache is experimental. Enable it with `use_partial_aggregate_cache`.
-:::
+</Note>
 
 ```sql
 SYSTEM CLEAR AGGREGATE CACHE [ON CLUSTER cluster_name]
@@ -1577,7 +1577,7 @@ SYSTEM DROP PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
 SYSTEM CLEAR PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
 ```
 
-Requires the `SYSTEM DROP AGGREGATE CACHE` privilege (see [GRANT](/sql-reference/statements/grant#privileges)). Additional names are accepted in `GRANT` for compatibility; the SQL forms above match the parser.
+Requires the `SYSTEM DROP AGGREGATE CACHE` privilege (see [GRANT](/reference/statements/grant#privileges)). Additional names are accepted in `GRANT` for compatibility; the SQL forms above match the parser.
 
 ## SYSTEM CLEAR|DROP SCHEMA CACHE {#drop-schema-cache}
 
