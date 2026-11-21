@@ -5,11 +5,10 @@
 
 #include <Core/SettingsSecrets.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Parsers/SecretArguments.h>
+#include <Parsers/FieldVisitorToSetting.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorHash.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
@@ -37,51 +36,6 @@ std::optional<String> renderSecretChangeValue(const SettingChange & change)
     /// The table and database engine settings, declared by each engine in its `SecretArgumentsSpec`.
     return getSecretArgumentsFinder().renderSecretSetting(setting_name, change.value);
 }
-
-
-class FieldVisitorToSetting : public StaticVisitor<String>
-{
-public:
-    template <class T>
-    String operator() (const T & x) const
-    {
-        FieldVisitorToString visitor;
-        return visitor(x);
-    }
-
-    String operator() (const Map & x) const
-    {
-        WriteBufferFromOwnString wb;
-
-        wb << '{';
-
-        auto it = x.begin();
-        while (it != x.end())
-        {
-            if (it != x.begin())
-                wb << ", ";
-            wb << applyVisitor(*this, *it);
-            ++it;
-        }
-        wb << '}';
-
-        return wb.str();
-    }
-
-    String operator() (const Tuple & x) const
-    {
-        WriteBufferFromOwnString wb;
-
-        for (auto it = x.begin(); it != x.end(); ++it)
-        {
-            if (it != x.begin())
-                wb << ":";
-            wb << applyVisitor(*this, *it);
-        }
-
-        return wb.str();
-    }
-};
 
 
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

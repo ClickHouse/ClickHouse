@@ -270,6 +270,8 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
         auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
 
         catalog.assertDatabaseDoesntExist(new_name);
+        if (typeid_cast<const DatabaseReplicated *>(db.get()))
+            getContext()->checkReplicatedDatabaseNameIsNotSQLCluster(new_name);
         db->renameDatabase(getContext(), new_name);
     }
 

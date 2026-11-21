@@ -39,6 +39,7 @@
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -210,6 +211,11 @@ namespace DistributedSetting
     extern const DistributedSettingsBool flush_on_detach;
     extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_queue_pause_after_version_snapshot[];
 }
 
 namespace ErrorCodes
@@ -2072,20 +2078,85 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    std::lock_guard lock(cluster_nodes_mutex);
-    auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+    /// `Address::operator==` identifies a replica (host, port, user, ...). The queue's connection pool
+    /// also snapshots the inter-server secret, compression, priority, chunked protocol and quota key
+    /// (`ConnectionPoolFactory::Key`). A change to only those fields must still replace the pool in
+    /// place: `PoolWithFailoverBase` copies `priority` once, at construction. An in-flight `sendBatch`
+    /// keeps the pool it already borrowed.
+    auto addresses_changed = [](const Cluster::Addresses & lhs, const Cluster::Addresses & rhs)
     {
-        node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = getContext()->getClustersVersion();
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-        node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
+        if (lhs != rhs)
+            return true;
+        for (size_t i = 0; i < lhs.size(); ++i)
+        {
+            const auto & left = lhs[i];
+            const auto & right = rhs[i];
+            if (left.cluster != right.cluster
+                || left.cluster_secret != right.cluster_secret
+                || left.compression != right.compression
+                || left.priority.value != right.priority.value
+                || left.proto_send_chunked != right.proto_send_chunked
+                || left.proto_recv_chunked != right.proto_recv_chunked
+                || left.quota_key != right.quota_key)
+                return true;
+        }
+        return false;
+    };
+
+    std::lock_guard lock(cluster_nodes_mutex);
+    auto it = cluster_nodes_data.find(key);
+    if (it == cluster_nodes_data.end() || !it->second.directory_queue)
+    {
+        /// Build the node off the map. `operator[]` would insert a default entry, whose
+        /// `directory_queue` is null, before `parseAddresses` or `createPool` can throw
+        /// (`CLUSTER_DOESNT_EXIST` after `DROP CLUSTER`). `system.distribution_queue`,
+        /// `SYSTEM FLUSH DISTRIBUTED`, `TRUNCATE` and `RENAME` then dereference that null.
+        ///
+        /// Sample the version before the topology. `parseAddresses` and `getClustersVersion` take
+        /// `clusters_mutex` separately, so an `ALTER CLUSTER` can land between them. Recording the
+        /// version first keeps it behind the addresses when that happens, and the next insert
+        /// refreshes the pool. Recording it afterwards can store the new version with the old host,
+        /// after which every insert skips the refresh and keeps sending to the removed host.
+        const auto clusters_version = getContext()->getClustersVersion();
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_after_version_snapshot);
+
+        /// One cluster object for the addresses and the pool. A later `getCluster` could already
+        /// be the next `ALTER CLUSTER` and would lend that generation's pool to this generation's addresses.
+        const auto cluster = getCluster();
+        ClusterNodeData new_node;
+        new_node.addresses = parseAddresses(name, *cluster);
+        new_node.clusters_version = clusters_version;
+        new_node.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_node.addresses, *cluster, *this);
+        new_node.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
-            node_data.connection_pool,
+            new_node.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+        auto queue = new_node.directory_queue;
+        cluster_nodes_data.insert_or_assign(key, std::move(new_node));
+        return queue;
+    }
+
+    auto & node_data = it->second;
+    if (const auto clusters_version = getContext()->getClustersVersion(); node_data.clusters_version < clusters_version)
+    {
+        /// If the node changes, only replace the connection pool of the existing queue. A new queue over the same
+        /// directory would start a second sender, which could send a file that the old one is still sending.
+        const auto cluster = getCluster();
+        auto addresses = parseAddresses(name, *cluster);
+        if (addresses_changed(node_data.addresses, addresses))
+        {
+            /// Build the replacement pool from the cluster copied above before publishing the addresses.
+            /// `DROP CLUSTER` while `createPool` is paused does not change that copy. Publishing the
+            /// addresses first would leave them on the new endpoint and the queue pool on the old one;
+            /// the next refresh would see equal addresses, record the version, and keep sending to the
+            /// removed endpoint.
+            auto pool = DistributedAsyncInsertDirectoryQueue::createPool(addresses, *cluster, *this);
+            node_data.addresses = std::move(addresses);
+            node_data.connection_pool = std::move(pool);
+            node_data.directory_queue->updatePool(node_data.connection_pool);
+        }
+        node_data.clusters_version = clusters_version;
     }
     return node_data.directory_queue;
 }
@@ -2100,13 +2171,12 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     return statuses;
 }
 
-Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) const
+Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name, const Cluster & cluster) const
 {
     Cluster::Addresses addresses;
 
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
-    const auto & shards_addresses = cluster->getShardsAddresses();
+    const auto & shards_info = cluster.getShardsInfo();
+    const auto & shards_addresses = cluster.getShardsAddresses();
 
     auto address = Cluster::Address::tryParseFullString(name);
 
@@ -2811,7 +2881,9 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
+Clusters can be defined in the [server configuration file](/concepts/features/configuration/server-config/configuration-files) or with SQL using [`CREATE CLUSTER`](/reference/statements/create/cluster). SQL-managed clusters are stored in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters) and appear in [`system.clusters`](/reference/system-tables/clusters) with `source = 'SQL'`.
+
+The XML format below is still supported:
 
 ```xml
 <remote_servers>
@@ -2896,7 +2968,7 @@ You can specify as many clusters as you wish in the configuration.
 
 To view your clusters, use the `system.clusters` table.
 
-The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
+The `Distributed` engine allows working with a cluster like a local server. Config-defined clusters are updated on the fly, without restarting the server. SQL-managed clusters are loaded at startup and updated immediately when created, altered, or dropped with DDL. Usually, all servers in a cluster will have the same cluster config (though this is not required).
 
 If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 

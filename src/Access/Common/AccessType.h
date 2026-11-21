@@ -319,6 +319,10 @@ enum class AccessType : uint16_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
+    M(CREATE_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute CREATE CLUSTER for SQL-managed clusters */ \
+    M(ALTER_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute ALTER CLUSTER for SQL-managed clusters */ \
+    M(DROP_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute DROP CLUSTER for SQL-managed clusters */ \
+    M(SQL_CLUSTER_ADMIN, "", GROUP, ALL) /* not a part of CREATE/ALTER/DROP: the `secret` of a SQL-managed cluster establishes inbound interserver trust */ \
     M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, HANDLER_ADMIN) /* allows to see SQL-defined HTTP handlers in system.handlers */\
     M(HANDLER_ADMIN, "", GROUP, ALL) /* allows to create, alter, drop and see SQL-defined HTTP handlers */\
     M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\

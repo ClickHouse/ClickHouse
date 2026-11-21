@@ -35,6 +35,7 @@
 #include <Parsers/ParserRegistry.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserSQLClusterQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -60,6 +61,7 @@ void registerParsers()
 
     registry.registerParser<ParserAlterNamedCollectionQuery>();
     registry.registerParser<ParserAlterQuery>();
+    registry.registerParser<ParserAlterSQLClusterQuery>();
     registry.registerParser<ParserCheckGrantQuery>();
     registry.registerParser<ParserCheckQuery>();
     registry.registerParser<ParserColumnsTransformers>();
@@ -68,6 +70,7 @@ void registerParsers()
     registry.registerParser<ParserCreateMaskingPolicy>();
     registry.registerParser<ParserCreateQuery>();
     registry.registerParser<ParserCreateQuotaQuery>();
+    registry.registerParser<ParserCreateSQLClusterQuery>();
     registry.registerParser<ParserCreateRoleQuery>();
     registry.registerParser<ParserCreateRowPolicyQuery>();
     registry.registerParser<ParserCreateSettingsProfileQuery>();

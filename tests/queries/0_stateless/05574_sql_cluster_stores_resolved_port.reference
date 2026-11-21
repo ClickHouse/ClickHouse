@@ -1,0 +1,7 @@
+CREATE CLUSTER test_sql_cluster_05574 (SHARD (host = \'127.0.0.1\', port = <tcp_port>), SHARD (host = \'127.0.0.2\', port = <tcp_port>), SHARD (REPLICA (host = \'127.0.0.3\', port = <tcp_port>), REPLICA (host = \'127.0.0.4\', port = <tcp_port>), REPLICA (host = \'127.0.0.5\', port = 1234)))
+1	1	127.0.0.1	1
+2	1	127.0.0.2	1
+3	1	127.0.0.3	1
+3	2	127.0.0.4	1
+3	3	127.0.0.5	0
+CREATE CLUSTER test_sql_cluster_05574 (SHARD (REPLICA (host = \'127.0.0.6\', port = <tcp_port>)))

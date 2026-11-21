@@ -1,0 +1,7 @@
+<clickhouse>
+    <cluster_metadata>
+        <type>keeper</type>
+        <path>/clickhouse/sql_cluster_metadata_keeper</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </cluster_metadata>
+</clickhouse>

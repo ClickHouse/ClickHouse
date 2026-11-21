@@ -1,0 +1,8 @@
+<clickhouse>
+    <cluster_metadata>
+        <type>keeper_encrypted</type>
+        <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+        <path>/clickhouse/sql_cluster_metadata_keeper_encrypted</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </cluster_metadata>
+</clickhouse>

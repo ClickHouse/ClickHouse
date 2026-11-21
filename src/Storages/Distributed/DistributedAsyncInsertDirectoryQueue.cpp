@@ -18,6 +18,7 @@
 #include <Disks/IDisk.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -68,6 +69,11 @@ namespace DistributedSetting
     extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
     extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
     extern const DistributedSettingsBool fsync_directories;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_queue_pause_before_pool_cluster_lookup[];
 }
 
 namespace ErrorCodes
@@ -165,6 +171,18 @@ DistributedAsyncInsertDirectoryQueue::~DistributedAsyncInsertDirectoryQueue()
         pending_files.clearAndFinish();
         task_handle->deactivate();
     }
+}
+
+void DistributedAsyncInsertDirectoryQueue::updatePool(ConnectionPoolWithFailoverPtr new_pool)
+{
+    std::lock_guard lock{pool_mutex};
+    pool = std::move(new_pool);
+}
+
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::getPool() const
+{
+    std::lock_guard lock{pool_mutex};
+    return pool;
 }
 
 void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & settings_changes)
@@ -286,13 +304,17 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(
+    const Cluster::Addresses & addresses, const Cluster & cluster, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto & shards_info = cluster.getShardsInfo();
+    const auto & shards_addresses = cluster.getShardsAddresses();
+
+    const auto pool_factory = [&] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
-        const auto & cluster = storage.getCluster();
-        const auto & shards_info = cluster->getShardsInfo();
-        const auto & shards_addresses = cluster->getShardsAddresses();
+        /// The cluster snapshot is already fixed. An `ALTER CLUSTER` while this is paused must not
+        /// make the queue store that snapshot's addresses and another generation's pool.
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_before_pool_cluster_lookup);
 
         /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -309,7 +331,14 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
                     address.port == replica_address.port &&
                     address.default_database == replica_address.default_database &&
                     address.secure == replica_address.secure &&
-                    address.bind_host == replica_address.bind_host)
+                    address.bind_host == replica_address.bind_host &&
+                    address.cluster == replica_address.cluster &&
+                    address.cluster_secret == replica_address.cluster_secret &&
+                    address.compression == replica_address.compression &&
+                    address.priority.value == replica_address.priority.value &&
+                    address.proto_send_chunked == replica_address.proto_send_chunked &&
+                    address.proto_recv_chunked == replica_address.proto_recv_chunked &&
+                    address.quota_key == replica_address.quota_key)
                 {
                     return shards_info[shard_index].per_replica_pools[replica_index];
                 }
@@ -463,8 +492,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+        const auto current_pool = getPool();
+        auto results = current_pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto result = current_pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",

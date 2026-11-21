@@ -1,0 +1,16 @@
+2
+-- a user with CREATE DATABASE and TABLE ENGINE ON * cannot take over the name of a SQL cluster
+CLUSTER_ALREADY_EXISTS
+-- neither can the administrator
+CLUSTER_ALREADY_EXISTS
+0
+2
+-- nor rename a Replicated database to that name
+CLUSTER_ALREADY_EXISTS
+2
+-- a database of another engine does not own a cluster name
+OK
+2
+-- and a SQL cluster cannot take the name of a Replicated database
+CLUSTER_ALREADY_EXISTS
+1
