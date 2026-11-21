@@ -688,7 +688,7 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 template <typename T>
 DataTypePtr createDecimalMaxPrecision(UInt64 scale)
 {
-    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
+    return createDecimal<DataTypeDecimal>(DecimalUtils::max_precision<T>, scale);
 }
 
 template DataTypePtr createDecimalMaxPrecision<Decimal32>(UInt64 scale);
