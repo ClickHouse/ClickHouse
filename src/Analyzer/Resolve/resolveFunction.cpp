@@ -3326,7 +3326,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             AggregateFunctionProperties properties;
             function_node.resolveAsAggregateFunction(
-                aggregate_function_factory.get(aggregate_function_name, action, argument_types, parameters, properties, AggregateFunctionStateVariant::Window));
+                aggregate_function_factory.get(aggregate_function_name, action, argument_types, parameters, properties));
         }
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;

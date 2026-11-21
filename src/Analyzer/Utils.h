@@ -235,7 +235,6 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
-/// A node that carries a window definition takes the window variant of the aggregate function.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
 /// Returns single source of expression node.

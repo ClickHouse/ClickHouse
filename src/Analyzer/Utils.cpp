@@ -982,11 +982,11 @@ inline Array getParameterValues(const FunctionNode & function_node)
     return parameters;
 }
 
-inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), getParameterValues(function_node), properties, state_variant);
+    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), getParameterValues(function_node), properties);
 }
 
 inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
@@ -1000,16 +1000,6 @@ inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & functio
             arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
 
     return window_function_factory.get(function_name, NullsAction::EMPTY, argument_types, getParameterValues(function_node));
-}
-
-inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
-{
-    return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Aggregation);
-}
-
-inline AggregateFunctionPtr resolveWindowAggregateFunction(FunctionNode & function_node, const String & function_name)
-{
-    return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Window);
 }
 
 inline GeneralWindowFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
@@ -1103,10 +1093,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
 
-        if (function_node->hasWindow())
-            function_node->resolveAsAggregateFunction(resolveWindowAggregateFunction(*function_node, name));
-        else
-            function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, name));
     }
     else if (function_node->getFunctionKind() == FunctionKind::WINDOW)
     {
@@ -1247,11 +1234,7 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node with a window definition takes the window variant of the aggregate function.
-    if (function_node.hasWindow())
-        function_node.resolveAsAggregateFunction(resolveWindowAggregateFunction(function_node, function_name));
-    else
-        function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
+    function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
