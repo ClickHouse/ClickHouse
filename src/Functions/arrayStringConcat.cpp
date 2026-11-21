@@ -117,7 +117,7 @@ private:
             null_map);
     }
 
-    ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type) const
+    [[nodiscard]] ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type) const
     {
         DataTypePtr type = nested_type;
         ColumnPtr column = col_arr.getDataPtr();

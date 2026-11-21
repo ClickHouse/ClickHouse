@@ -1747,7 +1747,7 @@ private:
             const auto & elements = column_array.getData();
             const size_t max_common_length = *std::max_element(gathered.common_lengths.begin(), gathered.common_lengths.end());
             /// The bytes of the first `k` elements of the constant row, which starts at position 0.
-            std::vector<size_t> prefix_bytes(max_common_length + 1);
+            std::vector<size_t> prefix_bytes(max_common_length + 1); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             for (size_t k = 0; k < max_common_length; ++k)
                 prefix_bytes[k + 1] = prefix_bytes[k] + elements.byteSizeAt(k);
             size_t gathered_bytes = 0;

@@ -260,7 +260,7 @@ public:
 
     void updateHash(SipHash & hash) const override { impl.updateHash(hash); }
 
-    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return impl.getFixedStringToStringStripTrailingZeros(); }
+    [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return impl.getFixedStringToStringStripTrailingZeros(); }
 
 private:
     FunctionCastOrDefault impl;

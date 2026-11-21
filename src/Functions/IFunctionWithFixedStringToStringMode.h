@@ -15,7 +15,7 @@ public:
 
     /// Whether the function removes the trailing zero bytes of a `FixedString` converted to `String`,
     /// or nullopt if the result of the function does not depend on it.
-    virtual std::optional<bool> getFixedStringToStringStripTrailingZeros() const = 0;
+    [[nodiscard]] virtual std::optional<bool> getFixedStringToStringStripTrailingZeros() const = 0;
 };
 
 }
