@@ -610,12 +610,12 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             # release server, which rejects join_algorithm values it does not
             # know yet and would fail every query, so skip the values that are
             # newer than the previous release.
-            join_algorithms += ["parallel_full_sorting_merge", "ie_join"]
+            join_algorithms += ["parallel_full_sorting_merge", "inequality"]
         selected = random.sample(
             join_algorithms, k=random.randint(1, len(join_algorithms))
         )
-        if selected == ["ie_join"]:
-            # ie_join applies only to inequality joins; alone it would fail every plain
+        if selected == ["inequality"]:
+            # `inequality` applies only to joins with inequality conditions; alone it would fail every plain
             # equality join with NOT_IMPLEMENTED.
             selected.append("hash")
         client_options.append("join_algorithm='{}'".format(",".join(selected)))
