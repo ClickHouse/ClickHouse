@@ -93,6 +93,34 @@ ObjectStorageQueueSettings::ObjectStorageQueueSettings(const ObjectStorageQueueS
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept = default;
 
+namespace
+{
+
+std::optional<std::string_view> adjustSettingName(std::string_view name)
+{
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+
+    bool modified = false;
+    if (name.starts_with(s3queue_prefix))
+    {
+        modified = true;
+        name = name.substr(s3queue_prefix.size());
+    }
+
+    if (name == "enable_logging_to_s3queue_log")
+    {
+        modified = true;
+        name = "enable_logging_to_queue_log";
+    }
+
+    if (modified)
+        return name;
+
+    return std::nullopt;
+}
+
+}
+
 void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
@@ -108,12 +136,16 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
 
     /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
     /// Therefore check if the setting was changed via table metadata.
+    /// The metadata keeps the names as written in `CREATE TABLE`, which can have the legacy `s3queue_` prefix.
     const auto & settings_changes = settings_changes_ast->as<ASTSetQuery>()->changes;
     auto is_changed = [&](const std::string & setting_name) -> bool
     {
         return settings_changes.end() != std::find_if(
             settings_changes.begin(), settings_changes.end(),
-            [&](const SettingChange & change){ return change.name == setting_name; });
+            [&](const SettingChange & change)
+            {
+                return adjustSettingName(change.name).value_or(change.name) == setting_name;
+            });
     };
     auto is_changeable = [&](const std::string & setting_name) -> bool
     {
@@ -153,34 +185,6 @@ OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, IMPLEM
 void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
-}
-
-namespace
-{
-
-std::optional<std::string_view> adjustSettingName(std::string_view name)
-{
-    static constexpr std::string_view s3queue_prefix = "s3queue_";
-
-    bool modified = false;
-    if (name.starts_with(s3queue_prefix))
-    {
-        modified = true;
-        name = name.substr(s3queue_prefix.size());
-    }
-
-    if (name == "enable_logging_to_s3queue_log")
-    {
-        modified = true;
-        name = "enable_logging_to_queue_log";
-    }
-
-    if (modified)
-        return name;
-
-    return std::nullopt;
-}
-
 }
 
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
