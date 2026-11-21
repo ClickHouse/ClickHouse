@@ -163,12 +163,12 @@ public:
     }
 
     /// The date of the credential scope in the `YYYYMMDD` form.
-    const String & getDate() const { return date; }
-    const String & getRegion() const { return region; }
-    const String & getService() const { return service; }
-    const String & getStringToSign() const { return string_to_sign; }
+    [[nodiscard]] const String & getDate() const { return date; }
+    [[nodiscard]] const String & getRegion() const { return region; }
+    [[nodiscard]] const String & getService() const { return service; }
+    [[nodiscard]] const String & getStringToSign() const { return string_to_sign; }
     /// Lowercase hex.
-    const String & getSignature() const { return signature; }
+    [[nodiscard]] const String & getSignature() const { return signature; }
 
 private:
     String date;
