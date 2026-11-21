@@ -129,6 +129,44 @@ namespace
         }
     }
 
+    void parseURLRoutingFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        PrometheusRequestHandlerConfig & res)
+    {
+        if (config.has(config_prefix + ".enable_table_name_url_routing"))
+        {
+            res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
+
+            if (res.enable_table_name_url_routing
+                && (!res.time_series_table_name.database.empty() || !res.time_series_table_name.table.empty()))
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Setting 'enable_table_name_url_routing' cannot be combined with a configured 'database' or 'table'");
+            }
+        }
+    }
+
+    void validateURLRoutingHandlerType(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        PrometheusRequestHandlerConfig::Type type,
+        std::string_view full_type)
+    {
+        if (!config.has(config_prefix + ".enable_table_name_url_routing"))
+            return;
+
+        if (type == PrometheusRequestHandlerConfig::Type::Write || type == PrometheusRequestHandlerConfig::Type::APIv1)
+            return;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "Setting 'enable_table_name_url_routing' is not supported for Prometheus handler type '{}'; "
+            "it is supported only for remote-write handlers and 'prometheus_api_v1'",
+            full_type);
+    }
+
     /// Parses a configuration like this:
     /// <!-- <type>write</type> (Implied, not actually parsed) -->
     /// <table>db.time_series_table_name</table>
@@ -137,6 +175,7 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::Write;
         parseTableNameFromConfig(config, config_prefix, res);
+        parseURLRoutingFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         parseUserFromConfig(config, config_prefix, res);
         return res;
@@ -176,6 +215,7 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::APIv1;
         parseTableNameFromConfig(config, config_prefix, res);
+        parseURLRoutingFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         parseUserFromConfig(config, config_prefix, res);
         return res;
@@ -220,7 +260,9 @@ namespace
     /// <table>db.time_series_table_name</table>
     PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        auto type = parseHandlerType(config.getString(config_prefix + ".type"));
+        const auto full_type = config.getString(config_prefix + ".type");
+        auto type = parseHandlerType(full_type);
+        validateURLRoutingHandlerType(config, config_prefix, type, full_type);
         switch (type)
         {
             case PrometheusRequestHandlerConfig::Type::Metrics:
