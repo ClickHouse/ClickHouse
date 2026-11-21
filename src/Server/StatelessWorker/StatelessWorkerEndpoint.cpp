@@ -265,6 +265,18 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
+        if (params.has("sched_id"))
+        {
+            task_description.sched_id = params.get("sched_id");
+            task_description.sched_workload = params.get("sched_workload", "");
+            auto & settings = task_description.sched_settings;
+            settings.weight = parse<Float64>(params.get("sched_weight", "1"));
+            settings.weight_lowering_factor = parse<Float64>(params.get("sched_weight_lowering_factor", "1"));
+            settings.weight_lowering_age_seconds = parse<Float64>(params.get("sched_weight_lowering_age_seconds", "0"));
+            settings.weight_lowering_cpu_seconds = parse<Float64>(params.get("sched_weight_lowering_cpu_seconds", "0"));
+            settings.weight_lowering_io_bytes = parse<Float64>(params.get("sched_weight_lowering_io_bytes", "0"));
+            settings.priority = Priority{parse<Priority::Value>(params.get("sched_priority", "0"))};
+        }
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
