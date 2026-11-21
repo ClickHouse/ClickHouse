@@ -63,6 +63,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -313,6 +314,7 @@ namespace ProfileEvents
     extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
@@ -393,6 +395,7 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_read_end_tasks_per_stream;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
@@ -751,7 +754,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId()};
 
     /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
@@ -1138,7 +1141,7 @@ Pipe ReadFromMergeTree::readInOrder(
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica),
-            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+            getReplicasCountForParallelReading(),
             std::move(stream_id)};
 
         CoordinationMode mode = read_type == ReadType::InOrder
@@ -1343,7 +1346,8 @@ Pipe ReadFromMergeTree::read(
     ReadType read_type,
     size_t max_streams,
     size_t min_marks_for_concurrent_read,
-    bool use_uncompressed_cache)
+    bool use_uncompressed_cache,
+    size_t min_marks_per_task_at_read_end)
 {
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
@@ -1358,6 +1362,7 @@ Pipe ReadFromMergeTree::read(
         .threads = max_streams,
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .min_marks_per_task_at_read_end = min_marks_per_task_at_read_end,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_columns_cache = settings[Setting::use_columns_cache],
@@ -1493,8 +1498,22 @@ Pipe ReadFromMergeTree::readByLayers(
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
+        /// Only the prefix of the sorting key that the merge of a layer and the range filters of the layers use
+        /// has to be computed: reading the rest of the key would read and decode columns the query does not need.
+        size_t sorting_key_prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+        if (!split_parts.borders.empty())
+            sorting_key_prefix_size = std::max(sorting_key_prefix_size, split_parts.borders.front().size());
+
+        auto sorting_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        sorting_key_prefix_ast->children.resize(sorting_key_prefix_size);
+        auto syntax_result = TreeRewriter(context).analyze(
+            sorting_key_prefix_ast,
+            storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        auto sorting_expr = std::make_shared<ExpressionActions>(
+            ExpressionAnalyzer(sorting_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+
         /// Add columns needed to calculate the sorting expression
-        for (const auto & column_name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        for (const auto & column_name : sorting_expr->getRequiredColumns())
         {
             if (column_names_set.contains(column_name))
                 continue;
@@ -1502,7 +1521,6 @@ Pipe ReadFromMergeTree::readByLayers(
             in_order_column_names_to_read.push_back(column_name);
             column_names_set.insert(column_name);
         }
-        auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 
@@ -1988,6 +2006,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (0 == info.sum_marks)
         return {};
 
+    /// The size of the tasks at the end of the read, or zero when the end of the read is cut like the rest.
+    size_t min_marks_per_task_at_read_end = 0;
+
     if (num_streams > 1)
     {
         const size_t initial_num_streams = num_streams;
@@ -2024,18 +2045,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         const bool is_local_unordered_read
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
-        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
-        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, local prefetched pool not allowed). With the columns cache, the pool does not align
-        /// tasks to the stripes of the cache when a stripe exceeds the share of a stream, so the small tasks stay small.
-        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity()
-            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
+        /// Only the plain read pool cuts tasks of exactly `info.min_marks_for_concurrent_read` marks
+        /// (adaptive granularity, local prefetched pool not allowed), so only its task size is lowered.
+        const bool pool_cuts_tasks_of_exact_size = is_local_unordered_read && data.canUseAdaptiveGranularity()
+            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem];
+
+        /// Returns the task size that cuts the share of each of `streams` streams into `tasks_per_stream`
+        /// tasks. It only lowers the current task size, and not below `merge_tree_min_read_task_size`.
+        const auto task_marks_for_share = [&](size_t streams, size_t tasks_per_stream)
+        {
+            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
+            return std::min(
+                info.min_marks_for_concurrent_read, std::max(info.sum_marks / streams / tasks_per_stream, min_task_marks));
+        };
+
+        /// If the reduction above left some streams without a task, use smaller tasks, not below
+        /// `merge_tree_min_read_task_size`. A single stream stays one (it reads in order). With the columns
+        /// cache, the pool does not align tasks to the stripes of the cache when a stripe exceeds the share
+        /// of a stream, so the small tasks stay small.
+        if (allow_spreading_small_read && pool_cuts_tasks_of_exact_size
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
-            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
-            const size_t task_marks = std::min(
-                info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            const size_t task_marks = task_marks_for_share(initial_num_streams, tasks_per_stream);
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
                 tasks += std::max<size_t>(1, part_marks / task_marks);
@@ -2053,6 +2085,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(
                 num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
+
+        /// The number of streams is final here, which fixes the share of the marks that a stream gets. A
+        /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
+        /// so the last streams of a read work alone for up to one task each. The pool therefore cuts the end
+        /// of the read (see `MergeTreeReadPool::adjustTaskSizeToReadEnd`) into smaller tasks, of
+        /// 1/`merge_tree_read_end_tasks_per_stream` of a share, unless that needs tasks below
+        /// `merge_tree_min_read_task_size`; 0 cuts the end like the rest of the read. The default of 32 keeps
+        /// that time at about 3% of a share. For example, 192 streams over 12,288 marks have 64 marks each:
+        /// the default task is 24 marks, and the tasks at the end of the read are the smallest task of 8
+        /// marks. 16 streams have 768 marks each, which is 32 default tasks, so all their tasks are default
+        /// ones.
+        const size_t read_end_tasks_per_stream = settings[Setting::merge_tree_read_end_tasks_per_stream];
+        if (pool_cuts_tasks_of_exact_size && num_streams > 1 && read_end_tasks_per_stream)
+        {
+            const size_t task_marks = task_marks_for_share(num_streams, read_end_tasks_per_stream);
+            if (task_marks < info.min_marks_for_concurrent_read)
+                min_marks_per_task_at_read_end = task_marks;
+        }
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -2118,7 +2168,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
-            info.use_uncompressed_cache);
+            info.use_uncompressed_cache,
+            min_marks_per_task_at_read_end);
 
         if (merging_pipes.empty())
             return non_intersecting_parts_ranges_read_pipe;
@@ -2148,7 +2199,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
+        info.use_uncompressed_cache,
+        min_marks_per_task_at_read_end);
 }
 
 static ActionsDAG createProjection(const Block & header)
@@ -3080,7 +3132,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true,
-        skip_ranges_analysis);
+        skip_ranges_analysis,
+        /*report_index_usage=*/true,
+        /*stop_at_first_match=*/false);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -3093,7 +3147,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
     /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
-    return selectRangesToRead(
+    analyzed_result_for_estimation_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
         vector_search_parameters,
@@ -3114,7 +3168,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         allow_top_k_prewhere_query_condition_cache && allow_query_condition_cache_,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false,
-        /*skip_ranges_analysis=*/false);
+        /*skip_ranges_analysis=*/false,
+        /*report_index_usage=*/false,
+        /*stop_at_first_match=*/false);
+    return analyzed_result_for_estimation_ptr;
 }
 
 bool ReadFromMergeTree::hasThrowingReadRowLimit() const
@@ -3882,7 +3939,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
     bool check_row_limits,
-    bool skip_ranges_analysis)
+    bool skip_ranges_analysis,
+    bool report_index_usage,
+    bool stop_at_first_match)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -3985,6 +4044,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log,
         result.index_stats);
 
+    /// the estimation passes prune the same parts again on their own, only the index analysis counts
+    if (report_index_usage)
+        ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey,
+            result.index_stats.front().num_granules_after - result.index_stats.back().num_granules_after);
+
     /// Loading statistics costs a few reads per part, which is more than a small read that pruning by
     /// statistics could save, so parts are pruned by statistics only if the primary key leaves enough marks.
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
@@ -4067,6 +4131,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .is_parallel_reading_from_replicas = is_parallel_reading_from_replicas_,
         .has_projections = has_projections,
         .check_row_limits = check_row_limits,
+        .report_index_usage = report_index_usage,
+        .stop_at_first_match = stop_at_first_match,
         .result = result,
     };
 
@@ -4472,6 +4538,14 @@ String ReadFromMergeTree::getParallelReplicasStreamId() const
     }
 
     return data.getStorageID().getFullTableName();
+}
+
+size_t ReadFromMergeTree::getReplicasCountForParallelReading()
+{
+    if (!replicas_count_for_parallel_reading)
+        replicas_count_for_parallel_reading
+            = ClusterProxy::getReplicasCountForParallelReplicas(context, context->getClusterForParallelReplicas());
+    return *replicas_count_for_parallel_reading;
 }
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
@@ -4954,21 +5028,24 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 /// parallel (the input is scattered by the hash of the window `PARTITION BY` columns and every stream is
 /// sorted and processed by its own window transform), so per-partition processing must provide comparable
 /// parallelism (enough partitions, no dominant partition) to make skipping the scatter worthwhile.
-void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+bool ReadFromMergeTree::canOutputEachPartitionThroughSeparatePortForWindow() const
 {
     if (isQueryWithFinal())
-        return;
+        return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With window-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
-        return;
+        return false;
 
-    if (!context->getSettingsRef()[Setting::force_window_partitions_independently]
-        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Window))
-        return;
+    return context->getSettingsRef()[Setting::force_window_partitions_independently]
+        || isPartitionIndependentProcessingProfitable(ProcessorKind::Window);
+}
 
-    output_each_partition_through_separate_port = true;
+void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+{
+    if (canOutputEachPartitionThroughSeparatePortForWindow())
+        output_each_partition_through_separate_port = true;
 }
 
 ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() const
@@ -5209,6 +5286,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
     cloned_step->no_rows_needed = no_rows_needed;
+    /// A copy that replaces this read puts its parts where the lazy read of this one reads them from.
+    cloned_step->shareLazyReadOf(*this);
     /// Plan-based parallel replicas clone the subtree to ship a fragment, and the fragment's local plan is
     /// optimized with `enable_join_runtime_filters = false` (the filters are already in it), so the
     /// optimization that attaches these descriptors does not run there and cannot put them back.
@@ -5305,7 +5384,10 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
-    has_lazily_read_columns = true;
+
+    lazy_read_rows = std::make_shared<LazyMaterializingRows>();
+    new_reading->setLazyMaterializingRows(lazy_read_rows);
+    columns_read_lazily = columns_to_remove;
 
     return new_reading;
 }
@@ -5607,6 +5689,10 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
+    if (lazy_read_rows)
+        lazy_read_rows->addPartsOfMainRead(result.parts_with_ranges, storage_snapshot);
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
@@ -6815,7 +6901,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId());
 }
 
@@ -6830,7 +6916,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId()};
 
     auto get_coordination_mode = [&]
@@ -7397,8 +7483,18 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
         data.getLogName());
 
     auto result = applyColumnPruning(pruning);
-    has_lazily_read_columns = true;
+
+    lazy_read_rows = std::make_shared<LazyMaterializingRows>();
+    lazy_reading->setLazyMaterializingRows(lazy_read_rows);
+    columns_read_lazily = std::move(columns_to_read_lazily);
+
     return {std::move(result), std::move(lazy_reading)};
+}
+
+void ReadFromMergeTree::shareLazyReadOf(const ReadFromMergeTree & other)
+{
+    lazy_read_rows = other.lazy_read_rows;
+    columns_read_lazily = other.columns_read_lazily;
 }
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)

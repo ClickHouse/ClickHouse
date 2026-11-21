@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

@@ -25,6 +25,7 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
+        bool apply_ttl_,
         bool force_,
         std::shared_ptr<WriteBuffer> ttl_skip_flags_ = nullptr
     );
@@ -48,6 +49,9 @@ private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
+    /// If false, only fills default values for `expired_columns`: no TTL algorithm runs and the part keeps its TTL infos.
+    /// TODO: move the fill into its own step, build `TTLStep` only when the merge applies TTL, and drop this flag.
+    const bool apply_ttl = true;
     /// If set, `consume` writes one byte per input row to it: 1 if dropped, 0 if kept, as the skip flag of `RowSourcePart`.
     const std::shared_ptr<WriteBuffer> ttl_skip_flags;
     /// The column in which `consume` tags each row with its position in the chunk, if `ttl_skip_flags` is set.

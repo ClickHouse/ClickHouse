@@ -4,10 +4,13 @@
 -- such a small read down by itself; with the cap ignored (`automatic_parallel_replicas_ignore_thresholds`)
 -- the cost model declines it only from 3 threads per replica on, because with fewer, reading in parallel
 -- saves more than shipping the keys costs. Hence `max_threads` is pinned rather than left to the randomizer.
+-- The shipped keys are priced with ZSTD(3), so the table pins that codec too: CI randomizes the default codec,
+-- and an LZ4 part prices the read at about twice the shipped bytes, which makes the cost model apply.
 
 DROP TABLE IF EXISTS t_autopr_rejected_by_cost_model;
 
-CREATE TABLE t_autopr_rejected_by_cost_model (key UInt64) ENGINE = MergeTree ORDER BY key;
+CREATE TABLE t_autopr_rejected_by_cost_model (key UInt64) ENGINE = MergeTree ORDER BY key
+SETTINGS default_compression_codec = 'ZSTD(3)';
 
 INSERT INTO t_autopr_rejected_by_cost_model SELECT number FROM numbers(100000);
 
