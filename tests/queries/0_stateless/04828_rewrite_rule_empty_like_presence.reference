@@ -1,0 +1,16 @@
+1
+1
+1
+1
+1
+SHOW TABLES LIKE \'\'
+SHOW TABLES NOT LIKE \'\'
+SHOW TABLES ILIKE \'\'
+SHOW COLUMNS FROM tbl NOT LIKE \'\'
+TRUNCATE TABLES FROM db NOT LIKE \'\'
+tables empty-like exact: rejected
+tables empty-like vs plain: not rejected
+tables plain exact: rejected
+tables plain vs empty-like: not rejected
+truncate empty-like exact: rejected
+truncate empty-like vs plain: not rejected

@@ -1,0 +1,4 @@
+submitted oversized query with low max_ast_elements:
+TOO_BIG_AST
+same query with the default limit (rewritten to the small result):
+42

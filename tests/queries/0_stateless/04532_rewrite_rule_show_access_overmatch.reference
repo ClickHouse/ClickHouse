@@ -1,0 +1,10 @@
+show policies exact: rejected
+show policies other name: not rejected
+show grants final exact: rejected
+show grants without final: not rejected
+show grants for exact: rejected
+show grants for other name: not rejected
+show create user exact: rejected
+show create user other name: not rejected
+show create policy exact: rejected
+show create policy other name: not rejected

@@ -1,0 +1,24 @@
+mysql: SHOW WARNINGS
+1
+mysql: SHOW VARIABLES
+1
+mysql: SET SQL_SELECT_LIMIT = 10
+1
+mysql: SET NAMES utf8
+1
+mysql: SELECT 1
+1
+postgresql: BEGIN
+1
+postgresql: COMMIT
+1
+postgresql: SET application_name = 'test'
+1
+postgresql: RESET ALL
+1
+postgresql: PREPARE p_05325 AS SELECT 1
+1
+postgresql: DEALLOCATE p_05325
+1
+postgresql: SELECT 1
+1

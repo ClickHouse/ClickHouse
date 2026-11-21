@@ -179,6 +179,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
 
+        {"applied_rules", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of the query rewrite rules (see system.query_rules) that were applied to the query, in the order they were applied. Empty if no rule matched."},
         {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
     };
 }
@@ -402,6 +403,15 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    {
+        auto & column_applied_rules = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_applied_rules_data = typeid_cast<ColumnString &>(column_applied_rules.getData());
+        for (const auto & rule_name : applied_rules)
+            column_applied_rules_data.insertData(rule_name.data(), rule_name.size());
+        auto & offsets = column_applied_rules.getOffsets();
+        offsets.push_back(offsets.back() + applied_rules.size());
+    }
 
     {
         auto & query_plan_column = *columns[i++];

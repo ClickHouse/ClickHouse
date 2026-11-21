@@ -1,0 +1,8 @@
+SYSTEM SCHEDULE MERGE t PARTS 'p1', 'p2': rejected
+SYSTEM SCHEDULE MERGE t PARTS 'p1', 'p3': not rejected
+CREATE USER u HOST NAME 'ab', 'c': rejected
+CREATE USER u HOST NAME 'a', 'bc': not rejected
+CREATE USER u HOST REGEXP 'ab', 'c': rejected
+CREATE USER u HOST REGEXP 'a', 'bc': not rejected
+CREATE USER u HOST LIKE 'ab', 'c': rejected
+CREATE USER u HOST LIKE 'a', 'bc': not rejected

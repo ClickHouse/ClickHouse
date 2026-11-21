@@ -1,0 +1,12 @@
+grant exact: rejected
+grant different object: not rejected
+role exact: rejected
+role different name: not rejected
+quota exact: rejected
+quota different limit: not rejected
+profile exact: rejected
+profile different value: not rejected
+policy exact: rejected
+policy different filter: not rejected
+named collection exact: rejected
+named collection different value: not rejected

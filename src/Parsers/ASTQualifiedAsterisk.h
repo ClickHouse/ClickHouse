@@ -21,14 +21,15 @@ public:
         auto clone = make_intrusive<ASTQualifiedAsterisk>(*this);
         clone->children.clear();
 
+        /// Keep the order of `children` the parser produces, so that a clone has the same tree hash.
+        clone->qualifier = qualifier->clone();
+        clone->children.push_back(clone->qualifier);
+
         if (transformers)
         {
             clone->transformers = transformers->clone();
             clone->children.push_back(clone->transformers);
         }
-
-        clone->qualifier = qualifier->clone();
-        clone->children.push_back(clone->qualifier);
 
         return clone;
     }

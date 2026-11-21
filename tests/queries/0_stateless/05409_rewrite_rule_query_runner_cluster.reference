@@ -1,0 +1,3 @@
+runner_missing_rule	ExceptionWhileProcessing	REWRITE_RULE_DOESNT_EXIST
+runner_not_matching	QueryFinish	OK
+runner_rejected	ExceptionWhileProcessing	REWRITE_RULE_REJECTION

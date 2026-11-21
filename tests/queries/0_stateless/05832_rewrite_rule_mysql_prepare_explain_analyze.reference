@@ -1,0 +1,4 @@
+EXPLAIN ANALYZE: refused: EXPLAIN ANALYZE
+Nested EXPLAIN ANALYZE: refused: EXPLAIN ANALYZE
+EXPLAIN: num_columns=1
+Nested EXPLAIN: num_columns=1

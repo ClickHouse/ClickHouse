@@ -1,0 +1,6 @@
+inline VALUES in source template:
+SYNTAX_ERROR
+inline VALUES in result template:
+SYNTAX_ERROR
+INSERT ... SELECT (no inline data) is allowed:
+1
