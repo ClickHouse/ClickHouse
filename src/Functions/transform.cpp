@@ -109,7 +109,7 @@ namespace
         /// The captured setting decides the value of a `FixedString` argument converted to `String`.
         void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
-        std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
+        [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
         bool isVariadic() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -740,6 +740,12 @@ namespace
         const DataTypePtr & from_array_nested_type
             = typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
 
+        /// A `FixedString` entry looked up by a `String` value matches like `equals` does, zero-padded:
+        /// `transform('ab', [toFixedString('ab', 4)], ...)` finds the entry, as `'ab' = toFixedString('ab', 4)` is true.
+        /// So the entries are converted without their trailing zero bytes, whatever the setting is.
+        const bool from_entries_are_fixed_strings_looked_up_by_string = isString(removeNullable(from_type))
+            && isFixedString(removeNullable(from_array_nested_type));
+
         cache->from_column = castColumn(
             {
                 from_column_uncast,
@@ -748,7 +754,7 @@ namespace
             },
             from_type,
             nullptr,
-            cast_fixed_string_to_string_strip_trailing_zeros);
+            cast_fixed_string_to_string_strip_trailing_zeros || from_entries_are_fixed_strings_looked_up_by_string);
 
         cache->to_column = castColumn(
             {
