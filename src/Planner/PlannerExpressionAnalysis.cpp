@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <memory>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
@@ -40,6 +42,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsBool make_distributed_plan;
 }
 
 namespace ErrorCodes
@@ -146,6 +151,49 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
     return true;
 }
 
+/// A function of constants only. After aggregation such a key is computed again from the expression.
+bool isFunctionOfConstants(const QueryTreeNodePtr & key)
+{
+    if (!key->as<FunctionNode>())
+        return false;
+
+    std::stack<const IQueryTreeNode *> nodes;
+    nodes.push(key.get());
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (node->as<ConstantNode>())
+            continue;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node || !function_node->isOrdinaryFunction() || function_node->getFunctionName() == "arrayJoin"
+            || !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            return false;
+
+        for (const auto & child : function_node->getArguments())
+            nodes.push(child.get());
+        for (const auto & child : function_node->getParameters())
+            nodes.push(child.get());
+    }
+
+    return true;
+}
+
+/// A key that is a constant expression the analyzer has not folded, which it does not do for a value of 1 MiB or more.
+bool isUnfoldedConstantKey(const QueryTreeNodePtr & key, const ActionsDAG::NodeRawConstPtrs & dag_nodes)
+{
+    if (dag_nodes.size() != 1)
+        return false;
+
+    const auto * column_const = dag_nodes[0]->column ? typeid_cast<const ColumnConst *>(dag_nodes[0]->column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy())
+        return false;
+
+    return isFunctionOfConstants(key);
+}
+
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
@@ -189,6 +237,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
     bool check_constants_for_group_by_key = is_secondary_query || is_distributed_query;
 
+    /// Removing a key changes the keys of this plan only, so it is done only when no other server runs a part of the aggregation.
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    bool aggregation_is_local = !check_constants_for_group_by_key
+        && planner_context->getQueryContext()->getClientInfo().distributed_depth == 0
+        && !settings[Setting::allow_experimental_parallel_reading_from_replicas]
+        && !settings[Setting::automatic_parallel_replicas_mode]
+        && !settings[Setting::make_distributed_plan];
+
     if (query_node.hasGroupBy())
     {
         if (query_node.isGroupByWithGroupingSets())
@@ -209,6 +265,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                     auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, grouping_set_key_node);
                     correlated_subtrees.assertEmpty("in aggregation keys");
+
+                    if (!constant_key && aggregation_is_local && isUnfoldedConstantKey(grouping_set_key_node, expression_dag_nodes))
+                    {
+                        group_by_with_constant_keys = true;
+                        if (!group_by_use_nulls && !aggregates_descriptions.empty())
+                            continue;
+                    }
+
                     aggregation_keys.reserve(expression_dag_nodes.size());
 
                     for (auto & expression_dag_node : expression_dag_nodes)
@@ -256,6 +320,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
             /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
             /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
             bool keep_constant_keys = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube();
+            /// Without aggregate functions such a key is removed only when another key stays, so that rows are still grouped.
+            bool remove_unfolded_constant_keys = !keep_constant_keys
+                && (!aggregates_descriptions.empty()
+                    || std::ranges::any_of(query_node.getGroupBy().getNodes(), [](const auto & key) { return !isFunctionOfConstants(key); }));
 
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
@@ -268,6 +336,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
                 correlated_subtrees.assertEmpty("in aggregation keys");
+
+                if (!constant_key && aggregation_is_local && isUnfoldedConstantKey(group_by_key_node, expression_dag_nodes))
+                {
+                    group_by_with_constant_keys = true;
+                    if (remove_unfolded_constant_keys)
+                        continue;
+                }
+
                 aggregation_keys.reserve(expression_dag_nodes.size());
 
                 for (auto & expression_dag_node : expression_dag_nodes)
