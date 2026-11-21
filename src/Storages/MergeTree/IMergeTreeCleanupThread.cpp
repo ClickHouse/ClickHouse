@@ -97,6 +97,10 @@ void IMergeTreeCleanupThread::run()
         return;
     }
 
+    /// The shutdown waits for a running iteration; what is left is removed after the restart.
+    if (data.getContext()->isShutdownCalled())
+        return;
+
     SCOPE_EXIT({ is_running.store(false, std::memory_order_relaxed); });
     is_running.store(true, std::memory_order_relaxed);
 
