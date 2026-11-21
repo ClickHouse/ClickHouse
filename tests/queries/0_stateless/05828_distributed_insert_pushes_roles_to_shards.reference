@@ -1,0 +1,16 @@
+-- sync
+-- sync, push_external_roles_in_interserver_queries = 0
+ACCESS_DENIED
+-- async
+-- async, batch
+-- async, push_external_roles_in_interserver_queries = 0
+ACCESS_DENIED
+-- async, batch, role revoked before the send
+ACCESS_DENIED
+-- target
+1
+2
+3
+4
+5
+7

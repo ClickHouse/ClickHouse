@@ -313,7 +313,8 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 remote = std::make_unique<RemoteInserter>(*connection, timeouts,
                     distributed_header.insert_query,
                     insert_settings,
-                    distributed_header.client_info);
+                    distributed_header.client_info,
+                    parent.storage.getContext()->getAccessControl());
                 remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
@@ -380,7 +381,8 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 RemoteInserter remote(*connection, timeouts,
                     distributed_header.insert_query,
                     insert_settings,
-                    distributed_header.client_info);
+                    distributed_header.client_info,
+                    parent.storage.getContext()->getAccessControl());
                 remote.initialize();
 
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);

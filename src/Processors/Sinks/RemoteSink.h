@@ -14,8 +14,9 @@ public:
         const String & query_,
         const Settings & settings_,
         const ClientInfo & client_info_,
+        const AccessControl & access_control_,
         QueryStatusPtr process_list_element_ = nullptr)
-      : RemoteInserter(connection_, timeouts, query_, settings_, client_info_, std::move(process_list_element_))
+      : RemoteInserter(connection_, timeouts, query_, settings_, client_info_, access_control_, std::move(process_list_element_))
       , SinkToStorage(std::make_shared<const Block>(RemoteInserter::initializeAndGetHeader()))
     {
     }

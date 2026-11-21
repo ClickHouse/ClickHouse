@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Types_fwd.h>
 #include <IO/ConnectionTimeouts.h>
 
 #include <memory>
@@ -8,6 +9,7 @@
 namespace DB
 {
 
+class AccessControl;
 class ClientInfo;
 class Connection;
 class ReadBuffer;
@@ -27,6 +29,7 @@ public:
         const String & query_,
         const Settings & settings_,
         const ClientInfo & client_info_,
+        const AccessControl & access_control_,
         QueryStatusPtr process_list_element_ = nullptr);
 
     void initialize();
@@ -55,6 +58,7 @@ private:
 
     const Settings & insert_settings;
     const ClientInfo & client_info;
+    const Strings external_roles;
     const ConnectionTimeouts & timeouts;
 
     /// The query on behalf of which the data is inserted, to charge it with the profile events of the

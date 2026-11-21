@@ -18,6 +18,8 @@ namespace DB
 {
 
 class Context;
+class AccessControl;
+struct Settings;
 
 struct UnavailableShardTracker;
 using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
@@ -469,4 +471,8 @@ private:
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
+
+/// The names of the roles granted to `user_name` on this server that an interserver query passes to the remote server,
+/// or none if `push_external_roles_in_interserver_queries` is disabled.
+Strings getExternalRolesToPush(const AccessControl & access_control, const Settings & settings, const String & user_name);
 }

@@ -117,6 +117,27 @@ ThrottlerPtr getThrottler(const ContextPtr & context)
     return throttler;
 }
 
+Strings getExternalRolesToPush(const AccessControl & access_control, const Settings & settings, const String & user_name)
+{
+    Strings local_granted_roles;
+    if (settings[Setting::push_external_roles_in_interserver_queries])
+    {
+        auto user = access_control.read<User>(user_name, false);
+        boost::container::flat_set<String> granted_roles;
+        if (user)
+        {
+            for (const auto & e : user->granted_roles.getElements())
+            {
+                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
+                auto names = access_control.tryReadNames(e.ids);
+                granted_roles.insert(names.begin(), names.end());
+            }
+        }
+        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
+    }
+    return local_granted_roles;
+}
+
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
@@ -766,24 +787,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
     modified_client_info.collaborate_with_initiator = extension.has_value();
 
-    // Collect all roles granted on this node and pass those to the remote node
-    Strings local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
-    {
-        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
-        boost::container::flat_set<String> granted_roles;
-        if (user)
-        {
-            const auto & access_control = context->getAccessControl();
-            for (const auto & e : user->granted_roles.getElements())
-            {
-                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
-                auto names = access_control.tryReadNames(e.ids);
-                granted_roles.insert(names.begin(), names.end());
-            }
-        }
-        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
-    }
+    Strings local_granted_roles = getExternalRolesToPush(
+        context->getAccessControl(), context->getSettingsRef(), modified_client_info.initial_user);
 
     if (distributed_fanout > 0)
         connections->setDistributedFanout(distributed_fanout);
