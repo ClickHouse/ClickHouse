@@ -36,6 +36,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , row_level_filter_after_read(other.row_level_filter_after_read)
         , optimize_constant_columns_after_filter(other.optimize_constant_columns_after_filter)
     {}
 
@@ -58,6 +59,9 @@ public:
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
 
+    /// The filter applies a row-level security filter that the read could not take (`SelectQueryInfo::row_level_filter_after_read`).
+    void markAsRowLevelFilterAfterRead() { row_level_filter_after_read = true; }
+    [[nodiscard]] bool isRowLevelFilterAfterRead() const { return row_level_filter_after_read; }
     /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
     /// It can differ from the value in the query context, e.g. for a subquery with its own `SETTINGS`.
     /// If not set, `FilterTransform` reads the setting from the query context.
@@ -164,8 +168,20 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool row_level_filter_after_read = false;
 
     std::optional<bool> optimize_constant_columns_after_filter;
 };
+
+/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
+/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
+/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
+bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom);
+
+/// Does the AND chain have a column or constant atom? Such an atom is never split off, so it is evaluated in the last filter of the chain.
+bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter);
+
+/// Can every atom of the AND chain be evaluated before the atoms that precede it (see `canBeMovedToTheFrontOfAndChain`)?
+bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter);
 
 }
