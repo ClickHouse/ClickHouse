@@ -2312,6 +2312,8 @@ Controls whether granules returned by a skipping index are expanded in newer par
 
 Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
 
+For `SummingMergeTree`, `AggregatingMergeTree` and `CoalescingMergeTree`, whose `FINAL` row can combine values from several rows, this mode uses only the skip indexes over columns that `FINAL` takes from one row: the partition and sorting key columns, and for `AggregatingMergeTree` also the columns that are not aggregate states.
+
 Possible values:
 
 - 0 — Disabled.

@@ -612,7 +612,8 @@ public:
         [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
         [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
         const ContextPtr & query_context,
-        bool is_final);
+        bool is_final,
+        const std::optional<NameSet> & final_one_row_columns);
 
     /// The primary-key condition of `buildIndexes`.
     static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
