@@ -1,7 +1,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
+#include <Columns/ColumnVector.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
@@ -17,6 +22,15 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace
@@ -212,12 +226,94 @@ using FuncQuantilesPrometheusHistogram = AggregateFunctionQuantile<
     true,
     false>;
 
-template <template <typename, typename> class Function>
+template <typename Value, typename CumulativeHistogramValue>
+struct QuantilePrometheusHistogramWithLevel
+{
+    QuantilePrometheusHistogram<Value, CumulativeHistogramValue> histogram;
+    Float64 level = std::numeric_limits<Float64>::quiet_NaN();
+};
+
+/// timeSeriesQuantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value, level) takes the level from an argument.
+template <typename Value, typename CumulativeHistogramValue>
+class FuncTimeSeriesQuantilePrometheusHistogram final
+    : public IAggregateFunctionDataHelper<
+          QuantilePrometheusHistogramWithLevel<Value, CumulativeHistogramValue>,
+          FuncTimeSeriesQuantilePrometheusHistogram<Value, CumulativeHistogramValue>>
+{
+public:
+    FuncTimeSeriesQuantilePrometheusHistogram(const DataTypes & argument_types_, const Array & params)
+        : IAggregateFunctionDataHelper<
+              QuantilePrometheusHistogramWithLevel<Value, CumulativeHistogramValue>,
+              FuncTimeSeriesQuantilePrometheusHistogram<Value, CumulativeHistogramValue>>(argument_types_, params, argument_types_[0])
+    {
+        if (!isNativeNumber(argument_types_[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the level argument of aggregate function {}",
+                argument_types_[2]->getName(), getName());
+    }
+
+    String getName() const override { return "timeSeriesQuantilePrometheusHistogram"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        Float64 level = columns[2]->getFloat64(row_num);
+        if (isNaN(level) || level < 0 || level > 1)
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Quantile level is out of range [0..1]");
+
+        auto & data = this->data(place);
+        setLevel(data.level, level);
+
+        Value upper_bound = assert_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num];
+        if constexpr (std::is_same_v<CumulativeHistogramValue, UInt64>)
+            data.histogram.add(upper_bound, columns[1]->getUInt(row_num));
+        else
+            data.histogram.add(upper_bound, columns[1]->getFloat64(row_num));
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        auto & data = this->data(place);
+        const auto & rhs_data = this->data(rhs);
+        if (!isNaN(rhs_data.level))
+            setLevel(data.level, rhs_data.level);
+        data.histogram.merge(rhs_data.histogram);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        writeBinaryLittleEndian(this->data(place).level, buf);
+        this->data(place).histogram.serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        readBinaryLittleEndian(this->data(place).level, buf);
+        this->data(place).histogram.deserialize(buf);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        const auto & data = this->data(place);
+        assert_cast<ColumnVector<Value> &>(to).getData().push_back(data.histogram.get(data.level));
+    }
+
+private:
+    void setLevel(Float64 & level, Float64 new_level) const
+    {
+        if (!isNaN(level) && level != new_level)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} requires the same level for all aggregated rows, got {} and {}", getName(), level, new_level);
+        level = new_level;
+    }
+};
+
+template <template <typename, typename> class Function, size_t num_arguments = 2>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    if (argument_types.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two arguments", name);
+    if (argument_types.size() != num_arguments)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires {} arguments", name, num_arguments == 2 ? "two" : "three");
 
     const DataTypePtr & upper_bound_argument_type = argument_types[0];
     WhichDataType which_upper_bound(upper_bound_argument_type);
@@ -245,6 +341,21 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
                     upper_bound_argument_type->getName(), name);
+}
+
+AggregateFunctionPtr createAggregateFunctionTimeSeriesQuantilePrometheusHistogram(
+    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
+{
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0
+        && (*settings)[Setting::enable_time_series_table] == 0)
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is in private preview and disabled by default. "
+            "Enable it with setting enable_time_series_aggregate_functions",
+            name);
+
+    assertNoParameters(name, params);
+    return createAggregateFunctionQuantile<FuncTimeSeriesQuantilePrometheusHistogram, 3>(name, argument_types, params, settings);
 }
 
 }
@@ -332,6 +443,50 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
     FunctionDocumentation documentation_quantilesPrometheusHistogram = {description_quantilesPrometheusHistogram, syntax_quantilesPrometheusHistogram, arguments_quantilesPrometheusHistogram, parameters_quantilesPrometheusHistogram, returned_value_quantilesPrometheusHistogram, examples_quantilesPrometheusHistogram, introduced_in_quantilesPrometheusHistogram, category_quantilesPrometheusHistogram};
 
     factory.registerFunction(NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, documentation_quantilesPrometheusHistogram, properties});
+
+    FunctionDocumentation::Description description_timeSeriesQuantilePrometheusHistogram = R"(
+Computes a quantile of a histogram like `quantilePrometheusHistogram`, but takes the quantile level as an argument instead of a parameter.
+
+The level must be the same for all aggregated rows of a group, so different groups can use different levels.
+Merging aggregation states with different levels throws an exception.
+
+This function implements the PromQL function `histogram_quantile()` with a quantile level which changes from one time step to another.
+
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions = 1`.
+</Note>
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesQuantilePrometheusHistogram = R"(
+timeSeriesQuantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value, level)
+    )";
+    FunctionDocumentation::Arguments arguments_timeSeriesQuantilePrometheusHistogram = {
+        {"bucket_upper_bound", "Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`.", {"Float*"}},
+        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases.", {"UInt*", "Float*"}},
+        {"level", "Level of quantile from 0 to 1. Must be the same for all aggregated rows.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::Examples examples_timeSeriesQuantilePrometheusHistogram = {
+    {
+        "A different level for each group",
+        R"(
+SET enable_time_series_aggregate_functions = 1;
+SELECT g, timeSeriesQuantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value, level)
+FROM VALUES('g UInt8, level Float64, bucket_upper_bound Float64, cumulative_bucket_value UInt64',
+    (1, 0.25, 0.5, 5), (1, 0.25, 1, 8), (1, 0.25, inf, 10),
+    (2, 0.75, 0.5, 5), (2, 0.75, 1, 8), (2, 0.75, inf, 10))
+GROUP BY g ORDER BY g;
+        )",
+        R"(
+┌─g─┬─timeSeriesQuantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value, level)─┐
+│ 1 │                                                                                      0.25 │
+│ 2 │                                                                        0.9166666666666667 │
+└───┴───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantilePrometheusHistogram = {26, 11};
+    FunctionDocumentation documentation_timeSeriesQuantilePrometheusHistogram = {description_timeSeriesQuantilePrometheusHistogram, syntax_timeSeriesQuantilePrometheusHistogram, arguments_timeSeriesQuantilePrometheusHistogram, {}, returned_value_quantilePrometheusHistogram, examples_timeSeriesQuantilePrometheusHistogram, introduced_in_timeSeriesQuantilePrometheusHistogram, category_quantilePrometheusHistogram};
+
+    factory.registerFunction("timeSeriesQuantilePrometheusHistogram", {createAggregateFunctionTimeSeriesQuantilePrometheusHistogram, documentation_timeSeriesQuantilePrometheusHistogram});
 }
 
 }
