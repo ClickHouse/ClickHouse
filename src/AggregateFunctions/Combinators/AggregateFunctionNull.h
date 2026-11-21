@@ -593,6 +593,61 @@ public:
         }
     }
 
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatchImpl<false>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatchImpl<true>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        if (!memoryIsZero(column->getNullMapData().data(), row_begin, row_end))
+        {
+            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchLookupTable8(
+                row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+            return;
+        }
+
+        /// The nested addBatchLookupTable8 reorders the rows of a key, which changes order-dependent functions such as deltaSum.
+        PaddedPODArray<AggregateDataPtr> places(row_end);
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            AggregateDataPtr & place = map[key[i]];
+            if (unlikely(!place))
+                init(place);
+            places[i] = place;
+        }
+
+        addBatchWithoutNulls<true>(row_begin, row_end, places.data(), place_offset, &column->getNestedColumn(), arena);
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -630,6 +685,68 @@ public:
 
 #endif
 
+private:
+    template <bool places_are_non_null>
+    void addBatchImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        if (if_argument_pos >= 0 || !memoryIsZero(column->getNullMapData().data(), row_begin, row_end))
+        {
+            if constexpr (places_are_non_null)
+                IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchWithNonNullPlaces(
+                    row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            else
+                IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatch(
+                    row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        addBatchWithoutNulls<places_are_non_null>(row_begin, row_end, places, place_offset, &column->getNestedColumn(), arena);
+    }
+
+    template <bool places_are_non_null>
+    void addBatchWithoutNulls(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn * nested_column,
+        Arena * arena) const
+    {
+        auto add_to_nested = [&](size_t begin, size_t end)
+        {
+            if constexpr (places_are_non_null)
+                this->nested_function->addBatchWithNonNullPlaces(
+                    begin, end, places, place_offset + this->prefix_size, &nested_column, arena, -1);
+            else
+                this->nested_function->addBatch(begin, end, places, place_offset + this->prefix_size, &nested_column, arena, -1);
+        };
+
+        if constexpr (!result_is_nullable)
+        {
+            add_to_nested(row_begin, row_end);
+        }
+        else
+        {
+            /// Setting the flags of a chunk right before adding it keeps the states of the chunk in the cache.
+            static constexpr size_t chunk_size = 256;
+            for (size_t chunk_begin = row_begin; chunk_begin < row_end; chunk_begin += chunk_size)
+            {
+                const size_t chunk_end = std::min(chunk_begin + chunk_size, row_end);
+                for (size_t i = chunk_begin; i < chunk_end; ++i)
+                    if (places_are_non_null || places[i])
+                        this->setFlag(places[i] + place_offset);
+                add_to_nested(chunk_begin, chunk_end);
+            }
+        }
+    }
 };
 
 
