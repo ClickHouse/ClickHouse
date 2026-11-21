@@ -1,0 +1,6 @@
+2024-05-29 23:16:12.256	DateTime64(3, \'UTC\')
+2024-05-29 23:16:12.256	DateTime64(3, \'UTC\')
+['2024-05-29 23:16:12.256']	Array(DateTime64(3, \'UTC\'))
+{"x": "ISODate(1)"}	String
+["ISODate(1)"]	String
+ok	String

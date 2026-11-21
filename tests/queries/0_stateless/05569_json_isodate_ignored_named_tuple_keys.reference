@@ -1,0 +1,8 @@
+(1)
+(2)
+(3)
+str	String
+(4)	Tuple(id UInt8)
+2024-05-29 23:16:12.256	DateTime64(3)
+(5)	Tuple(id UInt8)
+(0)	Tuple(id UInt8)
