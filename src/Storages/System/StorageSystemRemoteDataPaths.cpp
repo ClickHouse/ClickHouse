@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
 }
 
-
 class SystemRemoteDataPathsSource : public ISource
 {
 public:
@@ -48,10 +47,8 @@ public:
         , context(std::move(context_))
     {
         for (const auto & disk : disks_)
-        {
-            if (disk.second->isRemote())
+            if (isDiskObjectStorage(disk.second))
                 disks.push_back(disk);
-        }
 
         auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::SystemRemoteDataPathsSource");
         /// Position at the first disk
