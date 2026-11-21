@@ -37,7 +37,7 @@ protected:
     {
         /// By the time this method is called, `inputs_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
         /// initialized in either `initializeQueue` or `updateCursor`
-        if (lhs.source_stream_index == rhs.source_stream_index && inputs_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+        if (lhs.source_stream_index == rhs.source_stream_index && sourceHasUniqueKeys(lhs.source_stream_index))
             return true;
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
@@ -53,7 +53,25 @@ protected:
 
     SharedHeader header;
 
+    /// Set by a derived algorithm before `initializeQueue` if it takes the batches from sources with unique keys whole.
+    bool uses_batches_of_unique_keys = false;
+
+    bool has_long_batches_of_unique_keys = false;
+
+    static constexpr size_t min_batch_size_to_take = 8;
+    /// At most 1 / `max_share_of_rows_to_check` of the rows is sampled.
+    static constexpr size_t max_share_of_rows_to_check = 8;
+
+    /// Whether at the beginning of the only non-empty source most rows have a key different from the next row.
+    bool singleSourceHasMostlyDistinctKeys() const;
+
+    /// Whether the current chunk of the source comes from a part without duplicate keys: a part with a non-zero level.
+    bool sourceHasUniqueKeys(size_t source_num) const { return inputs_origin_merge_tree_part_level[source_num] > 0; }
+
 private:
+    /// Whether most rows at the beginning of the merge come in batches of at least `min_batch_size_to_take` rows.
+    bool sourcesHaveLongBatchesOfUniqueKeys() const;
+
     /// Inputs currently being merged.
     Inputs current_inputs;
     SortCursorImpls cursors;
