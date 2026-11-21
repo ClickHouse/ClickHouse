@@ -27,7 +27,11 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared);
+    ColumnLowCardinality(
+        MutableColumnPtr && column_unique,
+        MutableColumnPtr && indexes,
+        bool is_shared,
+        bool has_single_dictionary_for_part);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -35,7 +39,11 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
+    static Ptr create(
+        const ColumnPtr & column_unique_,
+        const ColumnPtr & indexes_,
+        bool is_shared,
+        bool has_single_dictionary_for_part = false)
     {
         /// Per the doc comment above, callers may keep their own immutable references — the
         /// underlying `ColumnUnique`/indexes columns may be shared (e.g. with the source dictionary
@@ -48,12 +56,17 @@ public:
         return ColumnLowCardinality::create(
             const_cast<IColumn *>(column_unique_.get())->getPtr(),
             const_cast<IColumn *>(indexes_.get())->getPtr(),
-            is_shared);
+            is_shared,
+            has_single_dictionary_for_part);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
+    static MutablePtr create(
+        MutableColumnPtr && column_unique,
+        MutableColumnPtr && indexes,
+        bool is_shared,
+        bool has_single_dictionary_for_part = false)
     {
-        return Base::create(std::move(column_unique), std::move(indexes), is_shared);
+        return Base::create(std::move(column_unique), std::move(indexes), is_shared, has_single_dictionary_for_part);
     }
 
     std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
@@ -88,7 +101,8 @@ public:
     {
         if (start == 0 && length == size())
             return getPtr();
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary(), hasSingleDictionaryForPart());
     }
 
     void insert(const Field & x) override;
@@ -145,7 +159,10 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(
-            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+            dictionary.getColumnUniquePtr(),
+            getIndexes().filter(filt, result_size_hint),
+            isSharedDictionary(),
+            hasSingleDictionaryForPart());
     }
 
     void filter(const Filter & filt) override
@@ -160,12 +177,14 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary(), hasSingleDictionaryForPart());
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary(), hasSingleDictionaryForPart());
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -196,7 +215,8 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary(), hasSingleDictionaryForPart());
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
@@ -362,6 +382,15 @@ public:
     void setSharedDictionary(const ColumnPtr & column_unique);
     bool isSharedDictionary() const { return dictionary.isShared(); }
 
+    /// Set only after the `MergeTree` reader has verified that the entire part uses one dictionary.
+    /// Unlike `isSharedDictionary`, this guarantees that dictionary indexes have the same meaning
+    /// in every block read from the part.
+    void setHasSingleDictionaryForPart(bool value) { has_single_dictionary_for_part = value; }
+    bool hasSingleDictionaryForPart() const { return has_single_dictionary_for_part; }
+
+    /// Append an index whose dictionary is already bound to this column.
+    void insertDictionaryIndex(UInt64 index);
+
     /// Create column with new dictionary from column part.
     /// Dictionary will have only keys that are mentioned in index.
     MutablePtr cutAndCompact(size_t start, size_t length) const;
@@ -415,6 +444,9 @@ private:
 
     Dictionary dictionary;
     ColumnIndex idx;
+    bool has_single_dictionary_for_part = false;
+
+    void tryAdoptSharedDictionary(const ColumnLowCardinality & source);
 
     void compactInplace();
     void compactInplaceToNullable();
