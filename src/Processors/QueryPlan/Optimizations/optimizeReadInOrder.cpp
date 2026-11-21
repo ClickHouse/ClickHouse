@@ -973,8 +973,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (order_key_prefix_descr.empty())
         return {};
 
-    /// No ORDER BY column after the first key column skipped for its set is read in order.
-    if (split_values && read_direction == 0)
+    /// The streams of the values are merged only by the read prefix, so it has to be the whole ORDER BY: otherwise `FinishSorting`
+    /// sorts whole groups of rows with an equal prefix, read by these few streams, e.g. for `ORDER BY intDiv(ts, 1000), ts DESC`.
+    if (split_values && (read_direction == 0 || order_key_prefix_descr.size() < description.size()))
         return {};
 
     /// If all ORDER BY columns were fixed (constant), read_direction is still 0.

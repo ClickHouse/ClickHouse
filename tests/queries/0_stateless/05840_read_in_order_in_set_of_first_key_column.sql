@@ -151,6 +151,22 @@ UPDATE t_in_set_order_patch SET v = 0 WHERE k = '1' SETTINGS enable_lightweight_
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_patch WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS apply_patch_parts = 1)
 WHERE explain ILIKE '%Read in order by values%';
 
+SELECT 'whole order and exact condition';
+-- An ORDER BY read in order only by a prefix, a set of the second key column and OR keep the usual plan.
+DROP TABLE IF EXISTS t_in_set_order_exact;
+CREATE TABLE t_in_set_order_exact (k String, ts UInt64)
+ENGINE = MergeTree ORDER BY (k, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_exact SELECT toString(number % 3), number * 2 FROM numbers(30000);
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') ORDER BY intDiv(ts, 1000000), ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') AND ts IN range(1, 60000, 512) ORDER BY ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') AND (ts < 100 OR ts > 1000) ORDER BY ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+
+DROP TABLE t_in_set_order_exact;
 DROP TABLE t_in_set_order_name;
 DROP TABLE t_in_set_order_key_name;
 DROP TABLE t_in_set_order_proj;

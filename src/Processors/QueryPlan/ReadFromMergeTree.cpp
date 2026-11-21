@@ -1213,6 +1213,29 @@ static bool isReadingByFirstKeyColumnValuesCheap(const RangesInDataParts & parts
     return streams && marks / streams >= min_marks_per_stream;
 }
 
+/// Whether the rows of the granules that `element` selects pass it, apart from a set of the first key column: a set or an inexact
+/// atom on another column, e.g. a sparse `ts IN (...)`, or a disjunction may select granules with few matching rows.
+static bool isExactForReadingByFirstKeyColumnValues(const KeyCondition::RPNElement & element)
+{
+    using Element = KeyCondition::RPNElement;
+    switch (element.function)
+    {
+        case Element::FUNCTION_IN_RANGE:
+        case Element::FUNCTION_NOT_IN_RANGE:
+            return !element.relaxed;
+        case Element::FUNCTION_IN_SET:
+        case Element::FUNCTION_NOT_IN_SET:
+            return element.key_columns.size() == 1 && element.key_columns.front() == 0;
+        case Element::FUNCTION_AND:
+        case Element::FUNCTION_NOT:
+        case Element::ALWAYS_TRUE:
+        case Element::ALWAYS_FALSE:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static ExpressionActionsPtr makeFirstKeyColumnValueFilter(
     const Block & header, const String & key_column, const Field & value, const String & filter_column, const ContextPtr & context)
 {
@@ -4783,16 +4806,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis->parts_with_ranges, *split_values, context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]))
             return false;
 
-        /// The streams stop early only if the primary key uses the whole filter: another selective condition makes them scan.
+        /// The streams stop early only if the primary key uses the whole filter exactly: another selective condition makes them scan.
         if (!indexes || !indexes->key_condition)
             return false;
         const auto & key_condition = indexes->key_condition->generateUnsubstituted();
-        if (key_condition.alwaysUnknownOrTrue() || key_condition.hasUnknownAtoms() || key_condition.hasMonotonicFunctionsChain()
-            || key_condition.getUsedKeyPrefixSize() > 2)
+        if (key_condition.alwaysUnknownOrTrue() || key_condition.hasMonotonicFunctionsChain() || key_condition.getUsedKeyPrefixSize() > 2
+            || !std::ranges::all_of(key_condition.getRPN(), isExactForReadingByFirstKeyColumnValues))
             return false;
 
-        /// Nor if the read drops rows that the condition does not describe: deleted rows, mutations or patch parts applied on the fly.
+        /// Nor if the read drops or changes rows that the condition does not describe: deleted rows, mutations, patch parts or
+        /// masking policies applied on the fly.
         if ((mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            || data.hasEnabledMaskingPolicies(context)
             || std::ranges::any_of(
                 analysis->parts_with_ranges, [](const RangesInDataPart & part) { return part.data_part->hasLightweightDelete(); }))
             return false;
