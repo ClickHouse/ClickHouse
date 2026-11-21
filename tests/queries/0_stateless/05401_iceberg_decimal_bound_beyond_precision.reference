@@ -1,0 +1,19 @@
+--- the data files hold values beyond the precision ---
+-18000000	18000000
+1.6
+--- a filter returns every matching row ---
+1
+1
+1
+1
+--- a bound widened past the precision is no endpoint for a monotonic function ---
+1
+1
+2
+2
+1
+--- bounds inside the precision still prune ---
+0
+2
+1
+2
