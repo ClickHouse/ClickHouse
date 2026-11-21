@@ -6561,7 +6561,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
                     renames.push_back({command.column_name, command.rename_to});
 
-            auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
+            auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause, bool index_arguments = false)
             {
                 if (!new_ast)
                     return;
@@ -6569,7 +6569,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     ASTPtr renamed = old_ast->clone();
                     for (auto & rename : renames)
-                        RenameColumnVisitor(rename).visit(renamed);
+                    {
+                        if (index_arguments)
+                            renameColumnInIndexArguments(renamed, rename);
+                        else
+                            RenameColumnVisitor(rename).visit(renamed);
+                    }
                     if (renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false))
                         return;
                 }
@@ -6614,7 +6619,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     ? &old_metadata.secondary_indices.getByName(old_name) : nullptr;
                 check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
                 check(old_index ? old_index->expression_list_ast : nullptr, index.expression_list_ast, "INDEX " + index.name);
-                check(old_index ? old_index->arguments : nullptr, index.arguments, "INDEX " + index.name);
+                check(old_index ? old_index->arguments : nullptr, index.arguments, "INDEX " + index.name, /*index_arguments=*/ true);
             }
 
             for (const auto & constraint : new_metadata.constraints.getConstraints())

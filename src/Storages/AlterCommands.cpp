@@ -1377,35 +1377,58 @@ void AlterCommand::apply(
         RenameColumnVisitor rename_visitor(rename_data);
         RenameColumnData key_rename_data{column_name, rename_to, /*rename_subcolumns=*/true, &metadata.columns};
         RenameColumnVisitor key_rename_visitor(key_rename_data);
+        RenameColumnConflicts conflicts(rename_data);
+        auto rename_in = [&](ASTPtr & expression_ast, const String & where)
+        {
+            conflicts.add(expression_ast, where);
+            rename_visitor.visit(expression_ast);
+        };
+        auto rename_key_in = [&](ASTPtr & key_ast, const String & where)
+        {
+            conflicts.add(key_ast, where);
+            key_rename_visitor.visit(key_ast);
+        };
+
+        std::vector<std::pair<ASTPtr, String>> defaults;
+        for (const auto & column : metadata.columns)
+            if (column.default_desc.expression)
+                defaults.emplace_back(
+                    column.default_desc.expression,
+                    fmt::format("the {} expression of column {}", toString(column.default_desc.kind), backQuote(column.name)));
+        conflicts.addColumnDefaults(defaults);
+
+        /// The analyzer resolves the defaults of all columns as one list.
+        RenameColumnData default_rename_data{.column_name = column_name, .rename_to = rename_to, .new_analyzer_binding = true};
+        RenameColumnVisitor default_rename_visitor(default_rename_data);
         for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
             {
                 if (column_to_modify.default_desc.expression)
-                    rename_visitor.visit(column_to_modify.default_desc.expression);
+                    default_rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
-                    rename_visitor.visit(column_to_modify.ttl);
+                    rename_in(column_to_modify.ttl, fmt::format("the TTL of column {}", backQuote(column_to_modify.name)));
             });
         }
         if (metadata.table_ttl.definition_ast)
-            rename_visitor.visit(metadata.table_ttl.definition_ast);
+            rename_in(metadata.table_ttl.definition_ast, "the table TTL");
 
         auto constraints_data = metadata.constraints.getConstraints();
         for (auto & constraint : constraints_data)
-            rename_visitor.visit(constraint);
+            rename_in(constraint, fmt::format("constraint {}", backQuote(constraint->as<const ASTConstraintDeclaration &>().name)));
         metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
-            key_rename_visitor.visit(metadata.sorting_key.definition_ast);
+            rename_key_in(metadata.sorting_key.definition_ast, "the sorting key");
 
         if (metadata.isPrimaryKeyDefined())
-            key_rename_visitor.visit(metadata.primary_key.definition_ast);
+            rename_key_in(metadata.primary_key.definition_ast, "the primary key");
 
         if (metadata.isSamplingKeyDefined())
-            key_rename_visitor.visit(metadata.sampling_key.definition_ast);
+            rename_key_in(metadata.sampling_key.definition_ast, "the sampling key");
 
         if (metadata.isPartitionKeyDefined())
-            key_rename_visitor.visit(metadata.partition_key.definition_ast);
+            rename_key_in(metadata.partition_key.definition_ast, "the partition key");
 
         if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
             metadata.dropImplicitIndicesForColumn(column_name);
@@ -1424,8 +1447,11 @@ void AlterCommand::apply(
                     index.column_names = {rename_to};
             }
             else
-                rename_visitor.visit(index.definition_ast);
+                rename_in(index.definition_ast, fmt::format("index {}", backQuote(index.name)));
         }
+
+        if (!isSecondaryDDLReplay(context))
+            conflicts.throwIfAny();
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
