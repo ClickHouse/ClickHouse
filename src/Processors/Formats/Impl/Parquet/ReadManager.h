@@ -4,6 +4,12 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/SharedMutex.h>
 
+namespace DB
+{
+struct InputFormatStreamMemory;
+using InputFormatStreamMemoryPtr = std::shared_ptr<InputFormatStreamMemory>;
+}
+
 namespace DB::Parquet
 {
 
@@ -53,10 +59,13 @@ public:
     /// even better way.)
     /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
     /// are read by other readers of the same query, so they are not counted as pruned by this one.
+    /// If `defer_decoding`, nothing is decoded before the first `read`, see `deferTasks`.
     void init(
         FormatParserSharedResourcesPtr parser_shared_resources_,
         RowGroupSelection row_groups_to_read_,
-        bool other_row_groups_are_read_by_other_readers = false);
+        bool other_row_groups_are_read_by_other_readers = false,
+        bool defer_decoding = false,
+        InputFormatStreamMemoryPtr stream_memory_ = nullptr);
 
     ~ReadManager();
 
@@ -167,6 +176,15 @@ private:
     /// Slots held by all row groups.
     std::atomic<size_t> column_data_read_ahead_count {0};
 
+    /// Shared with the reader of the other file of the same source. Null if the reader is not created by such a source.
+    InputFormatStreamMemoryPtr stream_memory;
+
+    /// Cleared by the first `read` with `column_data_prefetch_mutex` locked, unless an exception is stored.
+    std::atomic<bool> decoding_deferred {false};
+    bool first_row_group_read_ahead = false;
+    /// Modified with `column_data_prefetch_mutex` locked.
+    bool first_row_group_read_ahead_done = false;
+
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks);
     /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
     MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
@@ -182,7 +200,14 @@ private:
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const VectorWithMemoryTracking<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
+    /// Whether the tasks of the stage wait for the first `read`. For `ColumnData`, reads the first row group ahead instead.
+    bool deferTasks(ReadStage stage_idx);
     void readAheadColumnData();
+    /// Called with `column_data_prefetch_mutex` locked.
+    void readAheadFirstRowGroup();
+    void addMemoryUsage(size_t stage_idx, ssize_t bytes);
+    /// With `stream_memory`, that of both readers of the source, which share one stream's budget.
+    size_t getColumnDataMemoryUsage() const;
     void addColumnDataPrefetches(const Task & task, VectorWithMemoryTracking<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);

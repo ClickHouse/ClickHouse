@@ -47,6 +47,7 @@ public:
     }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
+    void prefetch(const InputFormatStreamMemoryPtr & stream_memory, bool start_reading_data) override { underlying->prefetch(stream_memory, start_reading_data); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
