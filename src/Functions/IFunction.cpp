@@ -586,6 +586,9 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     {
         if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
         {
+            if (auto res = executeForLowCardinalityResultImpl(arguments, result_type, input_rows_count))
+                return res;
+
             ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
 
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments(arguments);
