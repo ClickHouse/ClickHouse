@@ -26,6 +26,7 @@
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
@@ -1718,7 +1719,39 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
             continue;
 
         if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get()))
+        {
+            if (column.type->equals(*data_type))
+                return decision;
+
+            /// Adding values to an Enum keeps every existing value, so it stays a metadata-only change.
+            auto strip_containers = [](const IDataType * nested)
+            {
+                while (true)
+                {
+                    if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested))
+                        nested = array_type->getNestedType().get();
+                    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested))
+                        nested = nullable_type->getNestedType().get();
+                    else
+                        return nested;
+                }
+            };
+            if (WhichDataType(*strip_containers(column.type.get())).isEnum() && WhichDataType(*strip_containers(data_type.get())).isEnum())
+                return decision;
+
+            /// The stored bytes do not change, but a MATERIALIZED column computed from this one can
+            /// (e.g. `toString` of an `Enum8` converted to `Int8`), so run a mutation that recalculates it.
+            MaterializedColumnDependencies materialized_dependencies(metadata.columns, context);
+            for (const auto & materialized : metadata.columns.getMaterialized())
+            {
+                if (!materialized_dependencies.findColumnsToRecalculate(materialized.name, {column_name}).empty())
+                {
+                    decision.requires_mutation = true;
+                    break;
+                }
+            }
             return decision;
+        }
 
         decision.lazy_settings = getLazyMetadataConversionSettings(column.type.get(), data_type.get(), context);
         decision.requires_mutation = decision.lazy_settings.empty();

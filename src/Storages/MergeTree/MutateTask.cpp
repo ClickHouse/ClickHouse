@@ -2977,13 +2977,6 @@ struct MutationContext
     /// One per mutation, i.e. per root part directory: shared by the writer(s), the carried-index
     /// registration and MergeTextIndexesTask. Projections get their own instances.
     StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
-    /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
-    /// block so that the writer reuses them instead of evaluating them itself. Held here rather
-    /// than appended where they are collected, because they have to be evaluated on the block the
-    /// TTL has already worked on - a column TTL resets its column, and a `MATERIALIZED` column
-    /// derived from it is recomputed, so an expression evaluated before that describes the old
-    /// values while the part stores the new ones.
-    ASTPtr indices_recalc_expr_list;
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -3643,14 +3636,23 @@ void PartMergerWriter::tryCleanupTemporaryFiles() const noexcept
 /// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
 static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
 {
-    if (!ctx->indices_recalc_expr_list)
+    if (ctx->indices_to_recalc.empty() && ctx->text_indices_to_recalc.empty())
         return;
 
-    auto syntax_result
-        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
+    MergeTreeIndices recalc_indices(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end());
+    recalc_indices.insert(recalc_indices.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
-    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    /// Build the index expression against the storage columns so a subcolumn (e.g. `t.a`) resolves to a
+    /// subcolumn input under the index's original output name (`plus(t.a, 1)`, not a `getSubcolumn` form
+    /// that would not match IndexDescription::column_names). The mutation stream carries only the whole
+    /// column `t`, so extract the required subcolumns from it first, like the whole-part mutation path.
+    auto indices_expression_dag = ctx->data->getSkipIndicesExpression(ctx->metadata_snapshot, recalc_indices)->getActionsDAG().clone();
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder.getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+    if (!extracting_subcolumns_dag.getNodes().empty())
+        indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(
+        builder.getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
     builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
@@ -4932,12 +4934,10 @@ namespace
 void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 {
     const MergeTreeDataPartPtr & source_part = ctx->source_part;
-    QueryPipelineBuilder & builder = ctx->mutating_pipeline_builder;
     const StorageMetadataPtr & metadata_snapshot = ctx->metadata_snapshot;
 
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_per_file_part_storage = isPerFilePartStorage(source_part->getDataPartStorage());
 
@@ -4965,7 +4965,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         if (need_recalculate)
         {
-            bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
             /// Inert indices (a removed index type kept only for attach compatibility) have no data
@@ -4975,16 +4974,9 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 continue;
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
-                inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
+                ctx->text_indices_to_recalc.insert(index_ptr);
             else
-                inserted = ctx->indices_to_recalc.insert(index_ptr).second;
-
-            if (inserted)
-            {
-                ASTPtr expr_list = index.expression_list_ast->clone();
-                for (const auto & expr : expr_list->children)
-                    indices_recalc_expr_list->children.push_back(expr->clone());
-            }
+                ctx->indices_to_recalc.insert(index_ptr);
         }
     }
 
@@ -5165,15 +5157,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
     }
 
-    if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
-    {
-        /// We can update only one column, but some skip idx expression may depend on several
-        /// columns (c1 + c2 * c3). It works because this stream was created with help of
-        /// MutationsInterpreter which knows about skip indices and stream 'in' already has
-        /// all required columns.
-        /// TODO move this logic to single place.
-        ctx->indices_recalc_expr_list = indices_recalc_expr_list;
-    }
 }
 }
 

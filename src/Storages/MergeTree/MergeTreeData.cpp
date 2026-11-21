@@ -87,13 +87,13 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Planner/TableExpressionData.h>
-#include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
+#include <Interpreters/expressionSourceColumns.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
@@ -6136,33 +6136,6 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
-/// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
-/// table. keep_alias_columns=false expands ALIAS chains to their base columns.
-Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
-{
-    if (!ast)
-        return {};
-
-    auto analysis_context = Context::createCopy(context);
-    auto expression = buildQueryTree(ast, analysis_context);
-
-    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
-    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
-
-    QueryAnalyzer analyzer(/*only_analyze=*/ true);
-    analyzer.resolve(expression, table_node, analysis_context);
-
-    auto global_planner_context
-        = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
-    auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
-    collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
-
-    /// ALIAS columns are inlined above, so the physical columns their expressions read are the dependencies.
-    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getColumnNames();
-    return {};
-}
-
 }
 
 void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
@@ -6882,7 +6855,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!index.isImplicitlyCreated())
         {
-            for (const String & col : index.expression->getRequiredColumns())
+            /// An index may read a subcolumn (e.g. `t.a`) or an ALIAS column; resolve its expression to
+            /// the columns it is stored in so an ALTER of such a column is matched against
+            /// alter_column_secondary_index_mode, just like an index on a whole column.
+            for (const String & col : expressionSourceColumnsInStorage(index.expression_list_ast, old_metadata.getColumns(), local_context))
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }
@@ -6894,6 +6870,37 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             columns_in_projections.emplace(col, projection.name);
     }
 
+    /// A MATERIALIZED column that is part of a key is computed from other columns, so changing the type
+    /// of one of them can change its values, even when the conversion keeps the values of the source
+    /// (e.g. `toTypeName(x)`). A mutation cannot apply that to an existing part: the sort order and the
+    /// partition id are fixed when the part is written, which is also why MATERIALIZE COLUMN refuses key
+    /// columns. So changing the type of such a source column is forbidden.
+    /// The engine's sign/version columns fix merge semantics like a key and are likewise not recomputed
+    /// in an existing part. They can be subcolumns (`ReplacingMergeTree(m.v)`), so resolve them to the
+    /// column they are stored in to match a MATERIALIZED parent (`m`), as getKeyColumns does.
+    auto storage_column_of = [&](const String & name) -> String
+    {
+        if (name.empty())
+            return {};
+        auto resolved = old_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return resolved ? resolved->getNameInStorage() : name;
+    };
+    const String sign_storage_column = storage_column_of(merging_params.sign_column);
+    const String version_storage_column = storage_column_of(merging_params.version_column);
+
+    Names key_materialized_columns;
+    for (const auto & column : old_metadata.getColumns())
+    {
+        /// column_to_subcolumns_used_in_keys catches a key that is a subcolumn of this column (`ORDER BY m.a`).
+        if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
+            && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)
+                || column.name == sign_storage_column || column.name == version_storage_column))
+            key_materialized_columns.push_back(column.name);
+    }
+
+    /// Nothing is analysed until a column is asked about below.
+    MaterializedColumnDependencies materialized_dependencies(old_metadata.getColumns(), local_context);
+
     NameSet dropped_columns;
 
     std::map<String, const IDataType *> old_types;
@@ -6901,6 +6908,31 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
+
+    /// Rejects a type change of a column that a key MATERIALIZED column is computed from (see key_materialized_columns).
+    auto check_key_materialized_sources = [&](const AlterCommand & command)
+    {
+        if (!command.data_type)
+            return;
+
+        auto it = old_types.find(command.column_name);
+        if (it == old_types.end() || it->second->equals(*command.data_type))
+            return;
+
+        for (const auto & key_materialized : key_materialized_columns)
+        {
+            /// The altered column can reach the key column through other MATERIALIZED columns.
+            if (materialized_dependencies.findColumnsToRecalculate(key_materialized, {command.column_name}).empty())
+                continue;
+
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} from type {} to type {} is forbidden because it is used by "
+                            "the MATERIALIZED column {}, which is part of a key expression and cannot be "
+                            "recalculated", backQuoteIfNeed(command.column_name),
+                            it->second->getName(), command.data_type->getName(),
+                            backQuoteIfNeed(key_materialized));
+        }
+    };
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
@@ -6931,9 +6963,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (auto new_type = getNewTypeOfSpecialColumn("version", *version_column, command))
                     checkVersionColumnTypesConversion(version_column->type.get(), new_type.get(), version_column->name);
 
-                /// No other checks required for the version column itself, unlike for a column that contains it.
+                /// No other checks required for the version column itself, unlike for a column that contains it,
+                /// except that a key MATERIALIZED column computed from it cannot be recalculated.
                 if (!version_column->isSubcolumn())
+                {
+                    check_key_materialized_sources(command);
                     continue;
+                }
             }
         }
 
@@ -7167,6 +7203,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
+                check_key_materialized_sources(command);
+
                 if (old_metadata.getColumns().has(command.column_name))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
@@ -7215,7 +7253,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// For structures with no prebuilt ExpressionActions (MATERIALIZED columns, projection group/WHERE keys).
             auto ast_uses_changed_subcolumn = [&](const ASTPtr & ast) -> bool
             {
-                return names_use_changed_subcolumn(expressionSourceColumns(ast, old_columns_desc, local_context));
+                return names_use_changed_subcolumn(expressionSourceColumnNames(ast, old_columns_desc, local_context));
             };
 
             /// Primary/sorting key: forbidden (a full mutation cannot alter a key subcolumn either).
@@ -7322,9 +7360,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// already covered above).
             auto ttl_offending_expr = [&](const TTLDescription & ttl) -> ASTPtr
             {
-                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.expression_ast, old_columns_desc, local_context)))
+                if (names_use_changed_subcolumn(expressionSourceColumnNames(ttl.expression_ast, old_columns_desc, local_context)))
                     return ttl.expression_ast;
-                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.where_expression_ast, old_columns_desc, local_context)))
+                if (names_use_changed_subcolumn(expressionSourceColumnNames(ttl.where_expression_ast, old_columns_desc, local_context)))
                     return ttl.where_expression_ast;
                 return nullptr;
             };

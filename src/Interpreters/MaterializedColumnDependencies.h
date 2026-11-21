@@ -20,7 +20,7 @@ class ColumnsDescription;
 /// resolves the same defaults, so the two must agree: a dependency they spell differently leaves the
 /// pending mutation unapplied for that read task and returns the stale stored value.
 ///
-/// Analysing a default costs a `TreeRewriter` run, and this graph is built per read task per part, so
+/// Analysing a default costs a query analyzer run, and this graph is built per read task per part, so
 /// nothing is analysed until it is asked for.
 ///
 /// Must not outlive the `ColumnsDescription` it was built from.
