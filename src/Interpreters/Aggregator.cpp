@@ -2325,7 +2325,13 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        if (inst->has_low_cardinality_argument)
+        if (inst->constant_argument_rows)
+        {
+            const size_t rows = aggregate_functions[i]->ignoresRepeatedValues() ? 1 : row_end - row_begin;
+            for (size_t added = 0; added < rows; added += inst->constant_argument_rows)
+                addBatchSinglePlace(0, std::min(inst->constant_argument_rows, rows - added), inst, res + inst->state_offset, arena);
+        }
+        else if (inst->has_low_cardinality_argument)
         {
             const IColumn * argument = inst->batch_arguments[0];
             auto it = std::find_if(
@@ -2473,13 +2479,39 @@ void Aggregator::prepareAggregateInstructions(
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
 
+        size_t constant_argument_rows = 0;
+        if (params.keys_size == 0 && !aggregate_columns[i].empty())
+        {
+            const size_t rows = columns.at(aggregates_positions[i][0])->size();
+            bool all_constant = rows > 0;
+            size_t row_bytes = 0;
+            for (size_t j = 0; all_constant && j < aggregate_columns[i].size(); ++j)
+            {
+                const auto * column_const = typeid_cast<const ColumnConst *>(columns.at(aggregates_positions[i][j]).get());
+                if (column_const)
+                    row_bytes += recursiveRemoveLowCardinality(column_const->getDataColumnPtr())->byteSize();
+                else
+                    all_constant = false;
+            }
+
+            static constexpr size_t max_bytes_of_constant_copy = 1_MiB;
+            if (all_constant)
+                constant_argument_rows = aggregate_functions[i]->ignoresRepeatedValues()
+                    ? 1
+                    : std::clamp(max_bytes_of_constant_copy / std::max<size_t>(row_bytes, 1), static_cast<size_t>(1), rows);
+        }
+
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = aggregates_positions[i][j];
             aggregate_columns[i][j] = columns.at(pos).get();
 
+            ColumnPtr column = columns.at(pos);
+            if (constant_argument_rows)
+                column = column->cloneResized(constant_argument_rows);
+
             /// Only the converted columns have to be held here, the original ones are held by the caller.
-            auto converted_column = columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            auto converted_column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             if (converted_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.push_back(std::move(converted_column));
@@ -2522,6 +2554,7 @@ void Aggregator::prepareAggregateInstructions(
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
+        aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
 }
 
@@ -5713,6 +5746,10 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
         mergeAndDestroyRowOrDefer(dst, src, arena, deferred);
         src = nullptr;
     });
+
+    /// The merged cells are null by now, so this destroys the states of the keys missing from `table_dst`.
+    if (!all_aggregates_has_trivial_destructor)
+        destroyImpl<Method>(table_src);
     table_src.clearAndShrink();
 }
 

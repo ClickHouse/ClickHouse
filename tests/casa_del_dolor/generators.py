@@ -12,6 +12,11 @@ from pathlib import Path
 from environment import set_environment_variables
 from properties import (
     KAFKA_INTERNAL_PORT,
+    NATS_INTERNAL_PORT,
+    RABBITMQ_INTERNAL_PORT,
+    RABBITMQ_PASSWORD,
+    RABBITMQ_USER,
+    STREAMING_NAMED_COLLECTIONS,
     KEEPER_SESSION_EXPIRE_SLEEP_SECONDS,
     MONGO_INTERNAL_PORT,
     NGINX_INTERNAL_PORT,
@@ -26,6 +31,8 @@ from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,
+    nats_user,
+    nats_pass,
 )
 
 # A restart of `node0` takes the load generator's connection down, so its reconnect budget
@@ -205,7 +212,9 @@ class BuzzHouseGenerator(Generator):
         # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
         # can park a background task in a sleep, and shutdown waits on that task's mutex forever
         buzz_config["enable_failpoints"] = False
-        if args.with_spark or args.with_kafka:
+        # Without Spark the dolor connection serves only the streaming tables, e.g. in CI
+        buzz_config["dolor_spark_tables"] = args.with_spark
+        if args.with_spark or args.with_kafka or args.with_nats or args.with_rabbitmq:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
@@ -246,6 +255,23 @@ class BuzzHouseGenerator(Generator):
                     "port": KAFKA_INTERNAL_PORT,
                     "user": "",
                     "password": "",
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["kafka"],
+                }
+            if args.with_nats:
+                buzz_config["nats"] = {
+                    "server_hostname": cluster.nats_host,
+                    "port": NATS_INTERNAL_PORT,
+                    "user": nats_user,
+                    "password": nats_pass,
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["nats"],
+                }
+            if args.with_rabbitmq:
+                buzz_config["rabbitmq"] = {
+                    "server_hostname": cluster.rabbitmq_host,
+                    "port": RABBITMQ_INTERNAL_PORT,
+                    "user": RABBITMQ_USER,
+                    "password": RABBITMQ_PASSWORD,
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["rabbitmq"],
                 }
 
         with tempfile.NamedTemporaryFile(
