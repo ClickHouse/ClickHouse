@@ -1,0 +1,11 @@
+t_ttl_dynamic	['id','ts']
+t_ttl_dynamic_future	['id','ts','c']
+t_ttl_json	['id','ts']
+t_ttl_string	['id','ts']
+t_ttl_dynamic	1
+t_ttl_json	1
+1	2020-01-01 00:00:00	\N
+1	2020-01-01 00:00:00	{}
+1	2020-01-01 00:00:00	hello
+1
+1
