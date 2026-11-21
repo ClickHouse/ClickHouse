@@ -720,6 +720,9 @@ void Planner::buildPlanForUnionNode()
         /// siblings. Sticky options still travel downwards, because the copy carries them in.
         SelectQueryOptions branch_select_query_options = select_query_options;
         Planner query_planner(query_node, branch_select_query_options, planner_context->getGlobalPlannerContext());
+        /// The read limits of the enclosing queries apply to a branch as well, as they do to a subquery in `FROM`:
+        /// otherwise a branch with its own `SETTINGS` would not check them at all.
+        query_planner.addStorageLimits(storage_limits);
         if (!allow_propagation_to_arms)
             query_planner.disableQueryCacheForSubqueriesPropagation();
 
