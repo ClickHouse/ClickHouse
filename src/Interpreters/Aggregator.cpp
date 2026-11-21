@@ -208,10 +208,12 @@ void initDataVariantsWithSizeHint(
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
 }
 
-/// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
+/// Collection and use of the statistics should be enabled. `verdict` is the adaptive verdict of the run (see
 /// `Aggregator::adaptiveStagingVerdict`), if it measured one.
 void updateStatistics(
-    const DB::ManyAggregatedDataVariants & data_variants, std::optional<bool> repeat_dominated, const DB::StatsCollectingParams & params)
+    const DB::ManyAggregatedDataVariants & data_variants,
+    std::optional<DB::Aggregator::AdaptiveStagingVerdict> verdict,
+    const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -230,20 +232,19 @@ void updateStatistics(
     for (const auto & variants : data_variants)
         sum_of_sizes_with_empty_string += variants->sizeWithEmptyString();
 
-    /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
-    /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
+    /// A run carries the stored verdicts over and replaces only the one it measured itself, which is the
+    /// verdict of its own kind of run. So the runs that a verdict keeps off the adaptive path do not erase
+    /// it: runs of a kind marked repeat-dominated are not measured again until the entry is evicted.
     auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
-    if (!repeat_dominated)
-    {
-        const auto prev = stats.getSizeHint(params);
-        repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
-    }
-    stats.update(
-        {.sum_of_sizes = sum_of_sizes,
-         .median_size = *median_size,
-         .sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string,
-         .adaptive_staging_repeat_dominated = *repeat_dominated},
-        params);
+    DB::AggregationEntry entry;
+    if (const auto prev = stats.getSizeHint(params))
+        entry = *prev;
+    entry.sum_of_sizes = sum_of_sizes;
+    entry.median_size = *median_size;
+    entry.sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string;
+    if (verdict)
+        entry.adaptiveStagingRepeatDominated(verdict->lone_producer) = verdict->repeat_dominated;
+    stats.update(entry, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
