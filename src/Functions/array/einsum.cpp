@@ -915,7 +915,11 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Argument {} of function {} with a lambda function must be an array, got {}",
                     i + 3, getName(), arguments[i + 2]->getName());
-            element_types.push_back(getTensorType(arguments[i + 2]).element);
+            /// The default implementation for `LowCardinality` converts the tensors with `recursiveRemoveLowCardinality`
+            /// before the execution, so the lambda function gets the elements of the converted tensors, as in `arrayMap`.
+            /// The same conversion of the whole type is used here, so that the types are the same in every case,
+            /// also when the conversion does not look inside a type, like `FixedArray`.
+            element_types.push_back(getTensorType(recursiveRemoveLowCardinality(arguments[i + 2])).element);
         }
 
         arguments[1] = std::make_shared<DataTypeFunction>(element_types);
