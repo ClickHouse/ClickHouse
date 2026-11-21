@@ -38,6 +38,7 @@ private:
     std::vector<size_t> sort_column_positions;
 
     UInt64 rows_read = 0; /// including the last read block
+    UInt64 rows_skipped_before = 0;
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
@@ -91,7 +92,16 @@ public:
     void markAsShardLimit() { is_shard_limit = true; }
     bool isShardLimit() const { return is_shard_limit; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override
+    {
+        rows_before_limit_at_least.swap(counter);
+        if (rows_before_limit_at_least && rows_skipped_before)
+            rows_before_limit_at_least->add(rows_skipped_before);
+    }
+
+    /// Rows before the first row of the input that were never read (the read skipped them for the offset), so that
+    /// `rows_before_limit_at_least` counts them too.
+    void setRowsSkippedBefore(UInt64 rows) { rows_skipped_before = rows; }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }
 };
 
