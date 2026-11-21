@@ -3162,7 +3162,7 @@ protected:
     static std::vector<std::vector<FloatType>> series(size_t size)
     {
         std::vector<std::vector<FloatType>> res;
-        std::mt19937_64 rng(42);
+        std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
         auto add = [&](auto && generator)
         {
             std::vector<FloatType> values(size);
@@ -3236,7 +3236,7 @@ TEST_F(WallabyTest, RoundTripOfSpecialValues)
         compressAndCheck(special);
 
         /// Sprinkled over decimals, rare and frequent, at the start and at the end.
-        std::mt19937_64 rng(1);
+        std::mt19937_64 rng(1); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
         for (size_t period : {2, 7, 100, 3000})
         {
             std::vector<FloatType> values(10000);
@@ -3267,7 +3267,7 @@ TEST_F(WallabyTest, RoundTripOfSpecialValues)
 
 TEST_F(WallabyTest, CompressesWhatItIsMadeFor)
 {
-    std::mt19937_64 rng(7);
+    std::mt19937_64 rng(7); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     const size_t size = 8192;
     auto bytesOf = [&](auto && generator)
     {
@@ -3290,7 +3290,11 @@ TEST_F(WallabyTest, CompressesWhatItIsMadeFor)
     /// A few distinct values, whatever they are: a dictionary. 16 values: 4 bits.
     EXPECT_LT(bytesOf([&](size_t) { return std::sqrt(static_cast<Float64>(rng() % 16 + 2)); }), size * 5 / 8);
     /// Long runs take almost nothing.
-    EXPECT_LT(bytesOf([](size_t i) { return static_cast<Float64>(i / 1000) * 1.5; }), 150u);
+    EXPECT_LT(bytesOf([](size_t i)
+    {
+        const size_t step = i / 1000;
+        return static_cast<Float64>(step) * 1.5;
+    }), 150u);
     /// A linear trend with a small noise: the differences are coded, not the values.
     EXPECT_LT(bytesOf([&](size_t i) { return static_cast<Float64>(i * 1000 + rng() % 8); }), size * 4 / 8);
     /// Rare values among zeros.
@@ -3321,7 +3325,7 @@ TEST_F(WallabyTest, TruncatedDataIsRejected)
 TEST_F(WallabyTest, CorruptedDataDoesNotCrash)
 {
     /// The decoder must survive any input: it either throws or produces some values.
-    std::mt19937_64 rng(3);
+    std::mt19937_64 rng(3); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     size_t thrown = 0;
     size_t total = 0;
     for (const auto & values : series<Float64>(2500))

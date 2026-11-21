@@ -1,6 +1,7 @@
 #include <Compression/Wallaby.h>
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
@@ -10,7 +11,6 @@
 #include <memory>
 #include <numeric>
 #include <type_traits>
-#include <vector>
 
 /** Wallaby: lossless compression of `Float32` and `Float64` columns.
   *
@@ -189,7 +189,7 @@ struct Scratch
     }
 
     T * data() { return holder.get(); }
-    const T * data() const { return holder.get(); }
+    [[nodiscard]] const T * data() const { return holder.get(); }
 };
 
 /// LSB-first bit writer. Needs 8 writable bytes after the current position.
@@ -333,7 +333,7 @@ struct BitReader
         return neg ? Int64(UInt64(0) - mag) : Int64(mag);
     }
 
-    size_t bytesConsumed() const { return size_t((pos + 7) >> 3); }
+    [[nodiscard]] size_t bytesConsumed() const { return size_t((pos + 7) >> 3); }
 };
 
 /// The length in bits of the Exp-Golomb code.
@@ -359,15 +359,19 @@ struct AnsEncodeSymbol
 /// log2 of the integers up to the largest frequency plus one.
 const double * log2Table()
 {
-    static std::vector<double> table = []
+    struct Table
     {
-        std::vector<double> t((1u << MAX_TABLE_LOG) + 2);
-        t[0] = 0;
-        for (UInt32 i = 1; i < t.size(); ++i)
-            t[i] = std::log2(double(i));
-        return t;
-    }();
-    return table.data();
+        double values[(1u << MAX_TABLE_LOG) + 2] = {};
+
+        Table()
+        {
+            values[0] = 0;
+            for (UInt32 i = 1; i < std::size(values); ++i)
+                values[i] = std::log2(double(i));
+        }
+    };
+    static const Table table;
+    return table.values;
 }
 
 using HeapItem = std::pair<double, UInt32>;
@@ -394,7 +398,7 @@ void replaceHeapTop(HeapItem * heap, size_t size, HeapItem item, Before before)
 
 /// Scales the counts to frequencies with the sum of exactly 2^table_log; every present symbol gets at least 1.
 /// Greedy by the change of the total code length, which is optimal for this separable convex objective.
-void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, UInt16 * freqs, std::vector<HeapItem> & heap)
+void normalizeCounts(const UInt32 * counts, UInt32 alphabet, UInt32 table_log, UInt16 * freqs, VectorWithMemoryTracking<HeapItem> & heap)
 {
     const UInt32 size = 1u << table_log;
     UInt64 total = 0;
@@ -571,8 +575,10 @@ void buildDecodeTable(const UInt16 * freqs, UInt32 alphabet, UInt32 table_log, c
 
 struct AnsEncodeTable
 {
-    std::vector<AnsEncodeSymbol> symbols;
-    std::vector<UInt16> states;
+    VectorWithMemoryTracking<AnsEncodeSymbol> symbols;
+    VectorWithMemoryTracking<UInt16> states;
+    VectorWithMemoryTracking<UInt32> cum;
+    VectorWithMemoryTracking<UInt32> fill;
     UInt32 table_log = 0;
 
     void build(const UInt16 * freqs, UInt32 alphabet, UInt32 table_log_)
@@ -581,12 +587,12 @@ struct AnsEncodeTable
         const UInt32 size = 1u << table_log;
         symbols.assign(alphabet, {});
         states.assign(size, 0);
-        std::vector<UInt32> cum(alphabet + 1, 0);
+        cum.assign(alphabet + 1, 0);
         for (UInt32 s = 0; s < alphabet; ++s)
             cum[s + 1] = cum[s] + freqs[s];
         UInt16 spread[1u << MAX_TABLE_LOG];
         spreadSymbols(freqs, alphabet, table_log, spread);
-        std::vector<UInt32> fill(cum.begin(), cum.end() - 1);
+        fill.assign(cum.begin(), cum.end() - 1);
         for (UInt32 x = 0; x < size; ++x)
             states[fill[spread[x]]++] = UInt16(x);
         for (UInt32 s = 0; s < alphabet; ++s)
@@ -643,7 +649,7 @@ struct ClassLayout
         num_classes = cid;
     }
 
-    inline UInt32 classOf(UInt64 mag) const
+    [[nodiscard]] inline UInt32 classOf(UInt64 mag) const
     {
         if (mag < (UInt64(1) << split))
             return UInt32(mag);
@@ -677,42 +683,63 @@ struct ClassLayout
 constexpr UInt32 MAX_SPLIT = 6;
 constexpr UInt32 MAX_MSB = 4;
 
+/// The number of pairs (split, msb), and the number of classes of the finest pair.
+constexpr UInt32 layoutPairs()
+{
+    UInt32 pairs = 0;
+    for (UInt32 s = 0; s <= MAX_SPLIT; ++s)
+        pairs += std::min(s, MAX_MSB) + 1;
+    return pairs;
+}
+
+constexpr UInt32 finestClasses()
+{
+    UInt32 classes = 1u << MAX_SPLIT;
+    for (UInt32 e = MAX_SPLIT; e < 64; ++e)
+        classes += 1u << (e > MAX_RAW_BITS + MAX_MSB ? e - MAX_RAW_BITS : MAX_MSB);
+    return classes;
+}
+
 /// For every pair (split, msb): the class and the number of raw bits of the values of every class of the finest
 /// pair. The analysis of a stream makes one histogram of the finest classes and folds it for the other pairs.
 struct LayoutFolding
 {
-    UInt32 fine_classes = 0;
-    std::vector<UInt8> split;
-    std::vector<UInt8> msb;
-    std::vector<UInt16> coarse;     /// [pair * fine_classes + class of the finest pair]
-    std::vector<UInt8> raw;
+    static constexpr UInt32 PAIRS = layoutPairs();
+    static constexpr UInt32 FINE_CLASSES = finestClasses();
+
+    UInt8 split[PAIRS] = {};
+    UInt8 msb[PAIRS] = {};
+    UInt16 coarse[PAIRS][FINE_CLASSES] = {};
+    UInt8 raw[PAIRS][FINE_CLASSES] = {};
 
     LayoutFolding()
     {
         ClassLayout fine;
         fine.init(MAX_SPLIT, MAX_MSB);
-        fine_classes = fine.num_classes;
+        if (fine.num_classes != FINE_CLASSES)
+            logicalError("wrong number of classes");
+        UInt32 pair = 0;
         for (UInt32 s = 0; s <= MAX_SPLIT; ++s)
         {
-            for (UInt32 m = 0; m <= std::min(s, MAX_MSB); ++m)
+            for (UInt32 m = 0; m <= std::min(s, MAX_MSB); ++m, ++pair)
             {
                 ClassLayout layout;
                 layout.init(s, m);
-                split.push_back(UInt8(s));
-                msb.push_back(UInt8(m));
-                for (UInt32 cid = 0; cid < fine_classes; ++cid)
+                split[pair] = UInt8(s);
+                msb[pair] = UInt8(m);
+                for (UInt32 cid = 0; cid < FINE_CLASSES; ++cid)
                 {
                     UInt64 mag_base = 0;
                     UInt32 unused_bits = 0;
                     fine.classRange(cid, mag_base, unused_bits);
-                    coarse.push_back(UInt16(layout.classOf(mag_base)));
+                    coarse[pair][cid] = UInt16(layout.classOf(mag_base));
                     UInt32 raw_bits = 0;
                     if (mag_base >= (UInt64(1) << s))
                     {
                         UInt32 e = 63 - UInt32(std::countl_zero(mag_base));
                         raw_bits = e - layout.exp_msb[e];
                     }
-                    raw.push_back(UInt8(raw_bits));
+                    raw[pair][cid] = UInt8(raw_bits);
                 }
             }
         }
@@ -736,22 +763,22 @@ struct StreamModel
     Int64 fmin = 0;
     bool runs = false;
     UInt16 run_mask = 0;
-    std::vector<Int64> dict;
-    std::vector<UInt32> bin_ids;
+    VectorWithMemoryTracking<Int64> dict;
+    VectorWithMemoryTracking<UInt32> bin_ids;
     UInt8 nctx = 1;
     UInt8 thresholds[MAX_CONTEXTS - 1] = {};
     UInt8 table_log = MIN_TABLE_LOG;
-    std::vector<UInt16> freqs;   /// nctx * alphabet
+    VectorWithMemoryTracking<UInt16> freqs;   /// nctx * alphabet
 
-    UInt32 alphabet() const { return UInt32(dict.size() + bin_ids.size()) + std::popcount(run_mask); }
+    [[nodiscard]] UInt32 alphabet() const { return UInt32(dict.size() + bin_ids.size()) + std::popcount(run_mask); }
 };
 
 /// The bins of the alphabet, as needed for decoding and for the context classes.
 struct TokenTable
 {
-    Int64 lo[MAX_ALPHABET];
-    UInt8 nbits[MAX_ALPHABET];
-    UInt8 ctx[MAX_ALPHABET];
+    Int64 lo[MAX_ALPHABET] = {};
+    UInt8 nbits[MAX_ALPHABET] = {};
+    UInt8 ctx[MAX_ALPHABET] = {};
     UInt32 alphabet = 0;
     UInt32 first_run = 0;
 
@@ -794,8 +821,8 @@ struct TokenTable
             layout.init(m.split, m.msb);
             for (UInt32 id : m.bin_ids)
             {
-                UInt64 mag_base;
-                UInt32 nb;
+                UInt64 mag_base = 0;
+                UInt32 nb = 0;
                 if (!layout.classRange(id >> 1, mag_base, nb))
                     return false;
                 bool neg = id & 1;
@@ -1030,7 +1057,7 @@ void readModel(BitReader & r, StreamModel & m)
                 corrupt("bad frequency coding");
             for (UInt32 s = 0; s + 1 < alphabet; ++s)
             {
-                UInt64 value;
+                UInt64 value = 0;
                 if (kf == 15)
                 {
                     UInt32 len = UInt32(r.get(4));
@@ -1053,15 +1080,19 @@ void readModel(BitReader & r, StreamModel & m)
 /// x * log2(x) for small integers.
 const double * xlog2xTable()
 {
-    static std::vector<double> table = []
+    struct Table
     {
-        std::vector<double> t(CHUNK_MAX + 2);
-        t[0] = 0;
-        for (UInt32 i = 1; i < t.size(); ++i)
-            t[i] = i * std::log2(double(i));
-        return t;
-    }();
-    return table.data();
+        double values[CHUNK_MAX + 2] = {};
+
+        Table()
+        {
+            values[0] = 0;
+            for (UInt32 i = 1; i < std::size(values); ++i)
+                values[i] = i * std::log2(double(i));
+        }
+    };
+    static const Table table;
+    return table.values;
 }
 
 struct StreamDecoder
@@ -1141,8 +1172,8 @@ struct StreamDecoder
         }
     }
 
-    size_t payloadSize() const { return size_t(ans_bytes) + raw_bytes; }
-    bool hasRuns() const { return model.runs; }
+    [[nodiscard]] size_t payloadSize() const { return size_t(ans_bytes) + raw_bytes; }
+    [[nodiscard]] bool hasRuns() const { return model.runs; }
 
     /// Adds one more constant to every decoded value.
     void setExtra(Int64 value)
@@ -1169,9 +1200,9 @@ struct StreamDecoder
         if (UInt64(ANS_LANES) * table_log > c.ans_limit)
             corrupt("truncated token stream");
         UInt64 w = loadLE64(payload);
-        for (UInt32 lane = 0; lane < ANS_LANES; ++lane)
+        for (UInt32 & lane_state : c.x)
         {
-            c.x[lane] = UInt32(w & lowMask(table_log));
+            lane_state = UInt32(w & lowMask(table_log));
             w >>= table_log;
         }
         c.apos = UInt64(ANS_LANES) * table_log;
@@ -1194,7 +1225,10 @@ struct StreamDecoder
         const UInt64 raw_limit = c.raw_limit;
         UInt64 apos = c.apos;
         UInt64 rpos = c.rpos;
-        UInt32 x0 = c.x[0], x1 = c.x[1], x2 = c.x[2], x3 = c.x[3];
+        UInt32 x0 = c.x[0];
+        UInt32 x1 = c.x[1];
+        UInt32 x2 = c.x[2];
+        UInt32 x3 = c.x[3];
         UInt32 i = 0;
         if (table.alphabet == 1)
         {
@@ -1217,8 +1251,14 @@ struct StreamDecoder
                 if (apos > ans_limit)
                     corrupt("truncated token stream");
                 UInt64 w = loadLE64(ans + (apos >> 3)) >> (apos & 7);
-                UInt32 e0 = d[x0], e1 = d[x1], e2 = d[x2], e3 = d[x3];
-                UInt32 n0 = (e0 >> 12) & 15, n1 = (e1 >> 12) & 15, n2 = (e2 >> 12) & 15, n3 = (e3 >> 12) & 15;
+                UInt32 e0 = d[x0];
+                UInt32 e1 = d[x1];
+                UInt32 e2 = d[x2];
+                UInt32 e3 = d[x3];
+                UInt32 n0 = (e0 >> 12) & 15;
+                UInt32 n1 = (e1 >> 12) & 15;
+                UInt32 n2 = (e2 >> 12) & 15;
+                UInt32 n3 = (e3 >> 12) & 15;
                 out[i] = lo[e0 & 0xfff];
                 out[i + 1] = lo[e1 & 0xfff];
                 out[i + 2] = lo[e2 & 0xfff];
@@ -1243,8 +1283,14 @@ struct StreamDecoder
                 if (apos > ans_limit)
                     corrupt("truncated token stream");
                 UInt64 w = loadLE64(ans + (apos >> 3)) >> (apos & 7);
-                UInt64 e0 = f[x0], e1 = f[x1], e2 = f[x2], e3 = f[x3];
-                UInt32 n0 = UInt32(e0 >> 16) & 15, n1 = UInt32(e1 >> 16) & 15, n2 = UInt32(e2 >> 16) & 15, n3 = UInt32(e3 >> 16) & 15;
+                UInt64 e0 = f[x0];
+                UInt64 e1 = f[x1];
+                UInt64 e2 = f[x2];
+                UInt64 e3 = f[x3];
+                UInt32 n0 = UInt32(e0 >> 16) & 15;
+                UInt32 n1 = UInt32(e1 >> 16) & 15;
+                UInt32 n2 = UInt32(e2 >> 16) & 15;
+                UInt32 n3 = UInt32(e3 >> 16) & 15;
                 x0 = UInt32(e0 & 0xffff) + UInt32(w & ((1u << n0) - 1));
                 w >>= n0;
                 x1 = UInt32(e1 & 0xffff) + UInt32(w & ((1u << n1) - 1));
@@ -1254,8 +1300,13 @@ struct StreamDecoder
                 x3 = UInt32(e3 & 0xffff) + UInt32(w & ((1u << n3) - 1));
                 apos += n0 + n1 + n2 + n3;
 
-                UInt32 r0 = UInt32(e0 >> 20) & 63, r1 = UInt32(e1 >> 20) & 63, r2 = UInt32(e2 >> 20) & 63, r3 = UInt32(e3 >> 20) & 63;
-                UInt64 p1 = rpos + r0, p2 = p1 + r1, p3 = p2 + r2;
+                UInt32 r0 = UInt32(e0 >> 20) & 63;
+                UInt32 r1 = UInt32(e1 >> 20) & 63;
+                UInt32 r2 = UInt32(e2 >> 20) & 63;
+                UInt32 r3 = UInt32(e3 >> 20) & 63;
+                UInt64 p1 = rpos + r0;
+                UInt64 p2 = p1 + r1;
+                UInt64 p3 = p2 + r2;
                 UInt64 w0 = loadLE64(raws + (rpos >> 3)) >> (rpos & 7);
                 UInt64 w1 = loadLE64(raws + (p1 >> 3)) >> (p1 & 7);
                 UInt64 w2 = loadLE64(raws + (p2 >> 3)) >> (p2 & 7);
@@ -1275,9 +1326,18 @@ struct StreamDecoder
                 if (apos > ans_limit)
                     corrupt("truncated token stream");
                 UInt64 w = loadLE64(ans + (apos >> 3)) >> (apos & 7);
-                UInt32 e0 = d[x0], e1 = d[x1], e2 = d[x2], e3 = d[x3];
-                UInt32 n0 = (e0 >> 12) & 15, n1 = (e1 >> 12) & 15, n2 = (e2 >> 12) & 15, n3 = (e3 >> 12) & 15;
-                UInt32 s0 = e0 & 0xfff, s1 = e1 & 0xfff, s2 = e2 & 0xfff, s3 = e3 & 0xfff;
+                UInt32 e0 = d[x0];
+                UInt32 e1 = d[x1];
+                UInt32 e2 = d[x2];
+                UInt32 e3 = d[x3];
+                UInt32 n0 = (e0 >> 12) & 15;
+                UInt32 n1 = (e1 >> 12) & 15;
+                UInt32 n2 = (e2 >> 12) & 15;
+                UInt32 n3 = (e3 >> 12) & 15;
+                UInt32 s0 = e0 & 0xfff;
+                UInt32 s1 = e1 & 0xfff;
+                UInt32 s2 = e2 & 0xfff;
+                UInt32 s3 = e3 & 0xfff;
                 x0 = (e0 >> 16) + UInt32(w & ((1u << n0) - 1));
                 w >>= n0;
                 x1 = (e1 >> 16) + UInt32(w & ((1u << n1) - 1));
@@ -1287,8 +1347,13 @@ struct StreamDecoder
                 x3 = (e3 >> 16) + UInt32(w & ((1u << n3) - 1));
                 apos += n0 + n1 + n2 + n3;
 
-                UInt32 r0 = nbv[s0], r1 = nbv[s1], r2 = nbv[s2], r3 = nbv[s3];
-                UInt64 p1 = rpos + r0, p2 = p1 + r1, p3 = p2 + r2;
+                UInt32 r0 = nbv[s0];
+                UInt32 r1 = nbv[s1];
+                UInt32 r2 = nbv[s2];
+                UInt32 r3 = nbv[s3];
+                UInt64 p1 = rpos + r0;
+                UInt64 p2 = p1 + r1;
+                UInt64 p3 = p2 + r2;
                 UInt64 w0 = loadLE64(raws + (rpos >> 3)) >> (rpos & 7);
                 UInt64 w1 = loadLE64(raws + (p1 >> 3)) >> (p1 & 7);
                 UInt64 w2 = loadLE64(raws + (p2 >> 3)) >> (p2 & 7);
@@ -1357,15 +1422,24 @@ struct StreamDecoder
         const UInt32 * d = dec.data();
         const UInt64 ans_limit = c.ans_limit;
         UInt64 apos = c.apos;
-        UInt32 x0 = c.x[0], x1 = c.x[1], x2 = c.x[2], x3 = c.x[3];
+        UInt32 x0 = c.x[0];
+        UInt32 x1 = c.x[1];
+        UInt32 x2 = c.x[2];
+        UInt32 x3 = c.x[3];
         UInt32 i = 0;
         for (; i + 4 <= ntok; i += 4)
         {
             if (apos > ans_limit)
                 corrupt("truncated token stream");
             UInt64 w = loadLE64(payload + (apos >> 3)) >> (apos & 7);
-            UInt32 e0 = d[x0], e1 = d[x1], e2 = d[x2], e3 = d[x3];
-            UInt32 n0 = (e0 >> 12) & 15, n1 = (e1 >> 12) & 15, n2 = (e2 >> 12) & 15, n3 = (e3 >> 12) & 15;
+            UInt32 e0 = d[x0];
+            UInt32 e1 = d[x1];
+            UInt32 e2 = d[x2];
+            UInt32 e3 = d[x3];
+            UInt32 n0 = (e0 >> 12) & 15;
+            UInt32 n1 = (e1 >> 12) & 15;
+            UInt32 n2 = (e2 >> 12) & 15;
+            UInt32 n3 = (e3 >> 12) & 15;
             t[i] = UInt16(e0 & 0xfff);
             t[i + 1] = UInt16(e1 & 0xfff);
             t[i + 2] = UInt16(e2 & 0xfff);
@@ -1510,9 +1584,9 @@ struct StreamEncoder
     const V * data = nullptr;
     UInt32 n = 0;
     ClassLayout fine;
-    std::vector<UInt32> fine_hist;
-    std::vector<UInt32> fine_used;
-    std::vector<UInt32> fixed_hist;
+    VectorWithMemoryTracking<UInt32> fine_hist;
+    VectorWithMemoryTracking<UInt32> fine_used;
+    VectorWithMemoryTracking<UInt32> fixed_hist;
     ClassLayout layout;
     double estimated_bits = 0;       /// the payload: estimated by `analyze`, exact after `complete`
     double counted_bits = 0;         /// the payload and the model: estimated by `count` from the counts of the tokens
@@ -1520,21 +1594,21 @@ struct StreamEncoder
     /// --- Tokens.
     StreamModel model;
     TokenTable table;
-    std::vector<UInt16> tok;
-    std::vector<UV> raw;
-    std::vector<UInt8> rawbits;
-    std::vector<UInt32> token_counts;
-    std::vector<UInt32> ctx_counts;
+    VectorWithMemoryTracking<UInt16> tok;
+    VectorWithMemoryTracking<UV> raw;
+    VectorWithMemoryTracking<UInt8> rawbits;
+    VectorWithMemoryTracking<UInt32> token_counts;
+    VectorWithMemoryTracking<UInt32> ctx_counts;
     UInt32 ntok = 0;
 
     /// --- Scratch.
-    std::vector<UInt32> prov;
-    std::vector<UInt32> bin_counts;
-    std::vector<std::pair<Int64, UInt32>> promoted;
-    std::vector<UInt64> sort_scratch;
-    std::vector<UV> hash_keys;
-    std::vector<UInt32> hash_counts;
-    std::vector<UInt32> hash_slots;
+    VectorWithMemoryTracking<UInt32> prov;
+    VectorWithMemoryTracking<UInt32> bin_counts;
+    VectorWithMemoryTracking<std::pair<Int64, UInt32>> promoted;
+    VectorWithMemoryTracking<UInt64> sort_scratch;
+    VectorWithMemoryTracking<UV> hash_keys;
+    VectorWithMemoryTracking<UInt32> hash_counts;
+    VectorWithMemoryTracking<UInt32> hash_slots;
     Scratch<UInt8> model_bytes;
     UInt64 model_bits = 0;
     /// The exact counts of the values, when `countValues` has made them: the slot of every value in a table
@@ -1542,22 +1616,22 @@ struct StreamEncoder
     bool counted = false;
     bool direct_slots = false;       /// the slot of a value is its offset from the minimum, not a hash
     UInt32 table_capacity = 0;
-    std::vector<UInt16> slots;
-    std::vector<UInt16> slot_tok;
+    VectorWithMemoryTracking<UInt16> slots;
+    VectorWithMemoryTracking<UInt16> slot_tok;
     Int64 vmin = 0;                  /// the exact range of the values
     Int64 vmax = 0;
     /// The zero runs of a counted stream, when `collectRuns` has found them: (length << 16) | start.
     bool runs_collected = false;
-    std::vector<UInt32> run_list;
-    std::vector<UInt8> zero_flags;
+    VectorWithMemoryTracking<UInt32> run_list;
+    VectorWithMemoryTracking<UInt8> zero_flags;
     UInt32 run_tok[MAX_RUN_EXP + 1] = {};
-    std::vector<UInt16> id2tok;
-    std::vector<UInt16> ans_bits;
-    std::vector<UInt8> ans_nbits;
-    std::vector<UInt32> tmp;
-    std::vector<UInt32> touched;
-    std::vector<UInt16> freq_scratch;
-    std::vector<HeapItem> heap_scratch;
+    VectorWithMemoryTracking<UInt16> id2tok;
+    VectorWithMemoryTracking<UInt16> ans_bits;
+    VectorWithMemoryTracking<UInt8> ans_nbits;
+    VectorWithMemoryTracking<UInt32> tmp;
+    VectorWithMemoryTracking<UInt32> touched;
+    VectorWithMemoryTracking<UInt16> freq_scratch;
+    VectorWithMemoryTracking<HeapItem> heap_scratch;
     AnsEncodeTable enc_tables[MAX_CONTEXTS];
 
     StreamEncoder()
@@ -1572,7 +1646,7 @@ struct StreamEncoder
     static constexpr UInt32 PROV_RUN = 1u << 29;
     static constexpr UInt16 NO_TOKEN = 0xffff;
 
-    inline UInt32 binIdOf(Int64 v) const
+    [[nodiscard]] inline UInt32 binIdOf(Int64 v) const
     {
         if (model.fixed)
             return UInt32((UInt64(v) - UInt64(model.fmin)) >> model.shift);
@@ -1580,7 +1654,7 @@ struct StreamEncoder
     }
 
     /// The number of raw bits of the bin that holds the value.
-    inline UInt32 valueBits(Int64 v) const
+    [[nodiscard]] inline UInt32 valueBits(Int64 v) const
     {
         if (model.fixed)
             return model.shift;
@@ -1632,7 +1706,7 @@ struct StreamEncoder
         }
         slots.resize(n);
         UInt16 * const slot_of = slots.data();
-        UInt32 cap;
+        UInt32 cap = 0;
         UInt32 num_slots = 0;
         if (direct_slots)
         {
@@ -1753,7 +1827,7 @@ struct StreamEncoder
     }
 
     /// The slot of a counted value, or ~0u if there is no such value.
-    UInt32 slotOf(Int64 v) const
+    [[nodiscard]] UInt32 slotOf(Int64 v) const
     {
         if (direct_slots)
         {
@@ -1939,11 +2013,11 @@ struct StreamEncoder
         /// --- Logarithmic classes: derive every (split, msb) histogram from the fine one.
         {
             const LayoutFolding & folding = layoutFolding();
-            tmp.assign(size_t(folding.fine_classes) * 2, 0);
-            for (size_t pair = 0; pair < folding.split.size(); ++pair)
+            tmp.assign(size_t(LayoutFolding::FINE_CLASSES) * 2, 0);
+            for (UInt32 pair = 0; pair < LayoutFolding::PAIRS; ++pair)
             {
-                const UInt16 * coarse = folding.coarse.data() + pair * folding.fine_classes;
-                const UInt8 * raw_of = folding.raw.data() + pair * folding.fine_classes;
+                const UInt16 * coarse = folding.coarse[pair];
+                const UInt8 * raw_of = folding.raw[pair];
                 touched.clear();
                 UInt64 raw_bits = 0;
                 for (UInt32 id : fine_used)
@@ -2222,7 +2296,7 @@ struct StreamEncoder
 
     /// What `complete` is going to find, short of the gain of the contexts: the size of the payload with the
     /// frequencies rounded to the table, and the size of the model.
-    double estimateFromCounts() const
+    [[nodiscard]] double estimateFromCounts() const
     {
         const double * lg = log2Table();
         const UInt32 alphabet = table.alphabet;
@@ -2238,7 +2312,7 @@ struct StreamEncoder
         for (UInt32 t = 0; t < alphabet; ++t)
         {
             UInt32 c = token_counts[t];
-            UInt32 f = std::max<UInt32>(1, UInt32(c * scale + 0.5));
+            UInt32 f = std::max<UInt32>(1, UInt32(std::floor(c * scale + 0.5)));
             sum += f;
             bits += c * (double(tl) - lg[f]);
             raw_bits += UInt64(c) * table.nbits[t];
@@ -2330,7 +2404,7 @@ struct StreamEncoder
             for (UInt32 k = 0; k < ntok; ++k)
             {
                 UInt32 p = prov[k];
-                UInt32 t;
+                UInt32 t = 0;
                 if (p & PROV_RUN)
                 {
                     UInt32 i = p & ~PROV_RUN;
@@ -2375,7 +2449,7 @@ struct StreamEncoder
         double best_ctx_bits = entropyOf(token_counts.data(), ntok) + 8.0 * usedOf(token_counts.data());
         UInt32 best_nctx = 1;
         UInt8 best_thr[MAX_CONTEXTS - 1] = {};
-        std::vector<UInt32> & trial = tmp;
+        VectorWithMemoryTracking<UInt32> & trial = tmp;
         if (ntok >= 256 && alphabet >= 2 && alphabet * 4 <= ntok)
         {
             UInt8 magbits[MAX_ALPHABET];
@@ -2554,7 +2628,7 @@ struct StreamEncoder
 
     /// Writes the model into the header and returns the payload: [ANS region][raw region].
     /// The header gets: number of tokens - 1 (14 bits), sizes of the two regions in bytes (16 and 18 bits).
-    void write(BitWriter & header, std::vector<UInt8> & payload)
+    void write(BitWriter & header, VectorWithMemoryTracking<UInt8> & payload)
     {
         UInt32 alphabet = table.alphabet;
         for (UInt32 c = 0; c < model.nctx; ++c)
@@ -2621,8 +2695,8 @@ struct StreamEncoder
 
         payload.resize(size_t(ntok) * 9 + 64);
         BitWriter w(payload.data());
-        for (UInt32 lane = 0; lane < ANS_LANES; ++lane)
-            w.put(state[lane] - size, model.table_log);
+        for (UInt32 lane_state : state)
+            w.put(lane_state - size, model.table_log);
         /// The bits of four tokens (at most 12 each) make one write.
         static_assert(MAX_TABLE_LOG * ANS_LANES <= 56);
         UInt32 k = 0;
@@ -2832,7 +2906,10 @@ double minimalDenominator(F v, double max_den)
     if (!(x < 1e15))
         return 0;
     F target = F(x);
-    double h0 = 0, h1 = 1, k0 = 1, k1 = 0;
+    double h0 = 0;
+    double h1 = 1;
+    double k0 = 1;
+    double k1 = 0;
     double r = x;
     for (int iter = 0; iter < 48; ++iter)
     {
@@ -3003,10 +3080,10 @@ struct Decoder
     StreamDecoder gap_stream;
     StreamDecoder exc_stream;
     Scratch<Int64> values;
-    std::vector<Int64> adj;
-    std::vector<Int64> gaps;
-    std::vector<Int64> exc_values;
-    std::vector<UInt32> positions;
+    VectorWithMemoryTracking<Int64> adj;
+    VectorWithMemoryTracking<Int64> gaps;
+    VectorWithMemoryTracking<Int64> exc_values;
+    VectorWithMemoryTracking<UInt32> positions;
 
     /// Decodes one chunk of n values; returns the number of consumed bytes.
     /// The source must have 8 readable bytes after `src + size`.
@@ -3331,32 +3408,32 @@ struct Encoder
     /// The chunk converted with the DIV or MUL front-end.
     struct Converted
     {
-        std::vector<L> lat;            /// integers of the regular values
-        std::vector<L> adj;            /// their adjustments
-        std::vector<UInt16> exc_pos;    /// positions of the exceptions
-        std::vector<UInt16> inexact;    /// positions of the regular values with a non-zero adjustment
+        VectorWithMemoryTracking<L> lat;            /// integers of the regular values
+        VectorWithMemoryTracking<L> adj;            /// their adjustments
+        VectorWithMemoryTracking<UInt16> exc_pos;    /// positions of the exceptions
+        VectorWithMemoryTracking<UInt16> inexact;    /// positions of the regular values with a non-zero adjustment
         bool mul = false;
         bool single = false;
         double scale = 1;
         double den = 1;
     };
 
-    std::vector<L> lat_bits;
+    VectorWithMemoryTracking<L> lat_bits;
     Converted conv;
     Converted conv_saved;
-    std::vector<L> diff[2];
+    VectorWithMemoryTracking<L> diff[2];
     static constexpr UInt32 MAX_CANDIDATES = 3;
     static constexpr double PROXY_BAND = 1.35;        /// between the proxies of the candidates that are looked at
     static constexpr double VERY_CLOSE_CALL = 1.003;  /// between the estimates from the counts of the tokens
-    std::vector<L> resid[MAX_CANDIDATES];
-    std::vector<L> gaps;
-    std::vector<L> exc_values;
-    std::vector<UInt8> payload_main;
-    std::vector<UInt8> payload_adj;
-    std::vector<UInt8> payload_gap;
-    std::vector<UInt8> payload_exc;
-    std::vector<UInt8> scratch;
-    std::vector<UInt64> bitmap;
+    VectorWithMemoryTracking<L> resid[MAX_CANDIDATES];
+    VectorWithMemoryTracking<L> gaps;
+    VectorWithMemoryTracking<L> exc_values;
+    VectorWithMemoryTracking<UInt8> payload_main;
+    VectorWithMemoryTracking<UInt8> payload_adj;
+    VectorWithMemoryTracking<UInt8> payload_gap;
+    VectorWithMemoryTracking<UInt8> payload_exc;
+    VectorWithMemoryTracking<UInt8> scratch;
+    VectorWithMemoryTracking<UInt64> bitmap;
     StreamEncoder<L> streams[MAX_CANDIDATES];
     StreamEncoder<L> adj_stream;
     StreamEncoder<L> gap_stream;
@@ -3390,7 +3467,10 @@ struct Encoder
                 s += xlx[std::min<UInt32>(hist[b], CHUNK_MAX)];
                 /// Classes 1 and 2 are +-1; then two classes (the signs) per bit length.
                 if (b >= 3)
-                    raw += double((b - 1) / 2) * hist[b];
+                {
+                    const UInt32 raw_bits = (b - 1) / 2;
+                    raw += double(raw_bits) * hist[b];
+                }
             }
         }
         return xlx[total] - s + raw;
@@ -3421,15 +3501,15 @@ struct Encoder
 
     /// Evaluates the differencing orders for the latent `m` (wrapping arithmetic) and appends the promising plans.
     /// `distinct` is the estimated number of distinct values, for the dictionary variant of order 0.
-    void choosePredictor(const L * m, UInt32 n, double distinct, std::vector<Plan> & plans)
+    void choosePredictor(const L * m, UInt32 n, double distinct, VectorWithMemoryTracking<Plan> & plans)
     {
         /// The orders are compared on a sample: a few stripes of consecutive values.
         constexpr UInt32 STRIPES = 8;
         constexpr UInt32 LENGTH = 256;
         L buf[STRIPES * LENGTH];
         L sorted[STRIPES * LENGTH];
-        UInt32 nstripes;
-        UInt32 length;
+        UInt32 nstripes = 0;
+        UInt32 length = 0;
         if (n <= STRIPES * LENGTH)
         {
             nstripes = 1;
@@ -3533,7 +3613,7 @@ struct Encoder
             max_abs = std::max(max_abs, std::fabs(double(sample[i])));
             for (UInt32 e = 0; e <= FloatTraits<F>::MAX_DECIMAL; ++e)
             {
-                Int64 q;
+                Int64 q = 0;
                 if (toRational(sample[i], POW10[e], q))
                 {
                     scale[i] = e;
@@ -3575,7 +3655,7 @@ struct Encoder
             if (best_cost < before)
                 best_e = e;
         }
-        if (best_e != 255 && best_e <= FloatTraits<F>::SUSPICIOUS_DECIMAL && best_failures * 20 <= ns)
+        if (best_e <= FloatTraits<F>::SUSPICIOUS_DECIMAL && best_failures * 20 <= ns)
             return best_den;
 
         /// Not a clean short decimal: look for another common denominator.
@@ -3584,7 +3664,7 @@ struct Encoder
             UInt32 failures = 0;
             for (UInt32 i = 0; i < ns; ++i)
             {
-                Int64 q;
+                Int64 q = 0;
                 failures += !toRational(sample[i], den, q);
             }
             return failures;
@@ -3634,7 +3714,7 @@ struct Encoder
                     bool pass = true;
                     for (UInt32 i = 0; i < quick && pass; ++i)
                     {
-                        Int64 q;
+                        Int64 q = 0;
                         pass = toRational(sample[i * (ns / quick)], den, q);
                     }
                     if (!pass)
@@ -3655,9 +3735,9 @@ struct Encoder
         /// decimals, so it is preferred to a multiplication; single precision is faster than double.
         struct Variant
         {
-            bool mul;
-            bool single;
-            double scale;
+            bool mul = false;
+            bool single = false;
+            double scale = 1;
         };
         Variant variants[5];
         UInt32 nvar = 0;
@@ -3681,7 +3761,7 @@ struct Encoder
             UInt32 exact = 0;
             for (UInt32 i = 0; i < ns; ++i)
             {
-                Int64 q;
+                Int64 q = 0;
                 if (integerCandidate(sample[i], den, q))
                     exact += floatBits(reconstruct<F>(q, variants[c].mul, variants[c].single, variants[c].scale)) == floatBits(sample[i]);
             }
@@ -3698,8 +3778,8 @@ struct Encoder
     /// Turns the few values that need an adjustment into exceptions, so that the chunk needs no adjustment stream.
     void demoteInexact(UInt32 n, Converted & c)
     {
-        std::vector<L> lat;
-        std::vector<UInt16> exc;
+        VectorWithMemoryTracking<L> lat;
+        VectorWithMemoryTracking<UInt16> exc;
         lat.reserve(c.lat.size());
         exc.reserve(c.exc_pos.size() + c.inexact.size());
         size_t e = 0;
@@ -3743,7 +3823,7 @@ struct Encoder
         for (UInt32 i = 0; i < n; ++i)
         {
             F v = loadFloat<F>(src + size_t(i) * sizeof(F));
-            Int64 q;
+            Int64 q = 0;
             if (!integerCandidate(v, den, q))
             {
                 c.exc_pos.push_back(UInt16(i));
@@ -3765,7 +3845,7 @@ struct Encoder
     }
 
     /// The residuals of the plan for the latent, into `resid`; fills the initial values of the predictor.
-    UInt32 computeResiduals(const std::vector<L> & lat, const Plan & plan, ChunkParams & p, std::vector<L> & out)
+    UInt32 computeResiduals(const VectorWithMemoryTracking<L> & lat, const Plan & plan, ChunkParams & p, VectorWithMemoryTracking<L> & out)
     {
         UInt32 n = UInt32(lat.size());
         p.order = plan.order;
@@ -3776,14 +3856,14 @@ struct Encoder
             std::copy(lat.begin(), lat.end(), out.begin());
             return n;
         }
-        std::vector<L> & a = diff[0];
-        std::vector<L> & b = diff[1];
+        VectorWithMemoryTracking<L> & a = diff[0];
+        VectorWithMemoryTracking<L> & b = diff[1];
         a.assign(lat.begin(), lat.end());
         p.initial[0] = a[0];
         for (UInt32 order = 1; order <= p.order; ++order)
         {
-            std::vector<L> & from = (order & 1) ? a : b;
-            std::vector<L> & to = (order & 1) ? b : a;
+            VectorWithMemoryTracking<L> & from = (order & 1) ? a : b;
+            VectorWithMemoryTracking<L> & to = (order & 1) ? b : a;
             to.resize(n);
             for (UInt32 i = order; i < n; ++i)
                 to[i] = L(UL(from[i]) - UL(from[i - 1]));
@@ -3816,7 +3896,7 @@ struct Encoder
 
     /// Base (a sampled median) and the common divisor of the differences from it. The bit patterns have no
     /// divisor, and their differences may wrap around. Returns the bit length of the widest result.
-    static UInt32 prepareLatent(std::vector<L> & lat, ChunkParams & p, bool with_gcd)
+    static UInt32 prepareLatent(VectorWithMemoryTracking<L> & lat, ChunkParams & p, bool with_gcd)
     {
         UInt32 n = UInt32(lat.size());
         p.base = sampledMedian(lat.data(), n, !with_gcd);
@@ -3925,9 +4005,9 @@ struct Encoder
             double den = ns ? detectDenominator(sample, ns) : 1;
             if (den > 0)
             {
-                bool mul;
-                bool single;
-                double scale;
+                bool mul = false;
+                bool single = false;
+                double scale = 1;
                 chooseReconstruction(sample, ns, den, mul, single, scale);
                 convert(src, n, den, mul, single, scale, conv);
                 /// Many inexact values: the sample may have missed a finer denominator. Derive it from them.
@@ -3951,7 +4031,7 @@ struct Encoder
                             UInt32 fixed = 0;
                             for (UInt32 i = 0; i < num_inexact; ++i)
                             {
-                                Int64 q;
+                                Int64 q = 0;
                                 if (integerCandidate(inexact_sample[i], l, q))
                                     fixed += floatBits(reconstruct<F>(q, mul, single, scale)) == floatBits(inexact_sample[i]);
                             }
@@ -3975,8 +4055,8 @@ struct Encoder
         const UInt32 nreg = n - nexc;
 
         /// --- Candidates: (front-end, order), ranked by a cheap proxy; the tokens of the best few are counted.
-        std::vector<Candidate> candidates;
-        std::vector<Plan> plans;
+        VectorWithMemoryTracking<Candidate> candidates;
+        VectorWithMemoryTracking<Plan> plans;
         double div_side_bits = 0;
         double div_exception_bits = 0;
         const bool have_adj = have_div && !conv.inexact.empty();
@@ -4056,7 +4136,7 @@ struct Encoder
             if (evaluated >= MAX_CANDIDATES)
                 break;
             ChunkParams p = c.div ? pd : pb;
-            const std::vector<L> & lat = c.div ? conv.lat : lat_bits;
+            const VectorWithMemoryTracking<L> & lat = c.div ? conv.lat : lat_bits;
             /// Without differencing the residuals are the latent itself.
             const L * residuals = lat.data();
             UInt32 nres = UInt32(lat.size());
@@ -4187,7 +4267,7 @@ struct Encoder
         UInt8 * out = dst;
         copyBytes(out, scratch.data(), header_size);
         out += header_size;
-        for (const std::vector<UInt8> * part : {&payload_main, &payload_adj, &payload_gap, &payload_exc})
+        for (const VectorWithMemoryTracking<UInt8> * part : {&payload_main, &payload_adj, &payload_gap, &payload_exc})
         {
             copyBytes(out, part->data(), part->size());
             out += part->size();
