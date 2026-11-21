@@ -10,6 +10,10 @@ class BackgroundSchedulePoolTaskInfo;
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
 
+class BackgroundSchedulePool;
+
+using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
+
 class BackgroundSchedulePoolTaskHolder
 {
 public:
@@ -29,7 +33,7 @@ public:
 
     /// Get the shared pointer to the task info.
     /// Useful when you need to extend the lifetime of the task.
-    BackgroundSchedulePoolTaskInfoPtr getTaskInfoPtr() const;
+    [[nodiscard]] BackgroundSchedulePoolTaskInfoPtr getTaskInfoPtr() const;
 
 private:
     BackgroundSchedulePoolTaskInfoPtr task_info;

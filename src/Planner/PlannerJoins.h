@@ -87,7 +87,7 @@ public:
     }
 
     /// Get left key nodes
-    const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
     {
         return left_key_nodes;
     }
@@ -99,7 +99,7 @@ public:
     }
 
     /// Get right key nodes
-    const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
     {
         return right_key_nodes;
     }
@@ -110,25 +110,25 @@ public:
         return right_key_nodes;
     }
 
-    bool isNullsafeCompareKey(size_t idx) const
+    [[nodiscard]] bool isNullsafeCompareKey(size_t idx) const
     {
         return nullsafe_compare_key_indexes.contains(idx);
     }
 
     /// Returns true if JOIN clause has ASOF conditions, false otherwise
-    bool hasASOF() const
+    [[nodiscard]] bool hasASOF() const
     {
         return !asof_conditions.empty();
     }
 
     /// Get ASOF conditions
-    const std::vector<ASOFCondition> & getASOFConditions() const
+    [[nodiscard]] const std::vector<ASOFCondition> & getASOFConditions() const
     {
         return asof_conditions;
     }
 
     /// Get left filter condition nodes
-    const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
     {
         return left_filter_condition_nodes;
     }
@@ -140,7 +140,7 @@ public:
     }
 
     /// Get right filter condition nodes
-    const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
     {
         return right_filter_condition_nodes;
     }
@@ -161,7 +161,7 @@ public:
         residual_filter_condition_nodes.push_back(condition_node);
     }
 
-    const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
     {
         return residual_filter_condition_nodes;
     }
@@ -170,7 +170,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump clause
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
     /// Combines two join clauses into a single join clause with `AND` logic.
     /// Example:
@@ -246,10 +246,12 @@ struct JoinAlgorithmParams
     bool join_any_take_last_row;
 
     UInt64 hash_table_key_hash;
+    UInt64 join_output_key_hash;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
     UInt64 parallel_hash_join_threshold;
+    HashJoinLayout hash_join_layout;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
@@ -259,10 +261,16 @@ struct JoinAlgorithmParams
 
     UInt64 max_bytes_before_external_join = 0;
 
+    bool enable_hash_join_row_store = true;
+    Float64 min_rows_ratio_for_hash_join_row_store = 0;
+    UInt64 min_rows_for_packed_string_keys_in_hash_join = 0;
+    UInt64 min_string_column_bytes_for_hash_join_row_store = 0;
+
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
+    std::optional<UInt64> result_rows_estimation;
 
     explicit JoinAlgorithmParams(const Context & context);
 
@@ -270,6 +278,7 @@ struct JoinAlgorithmParams
         const JoinSettings & join_settings,
         UInt64 max_threads_,
         UInt64 hash_table_key_hash_,
+        UInt64 join_output_key_hash_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);
@@ -287,7 +296,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
-TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
+TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node);
 
 std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const IQueryTreeNode * expression_root_node,
@@ -296,7 +305,5 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const JoinNode & join_node);
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
-
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
 
 }

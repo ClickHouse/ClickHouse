@@ -69,7 +69,7 @@ struct AggregateFunctionWindowFunnelData
     bool sorted = true;
     TimestampEvents events_list;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -132,7 +132,8 @@ struct AggregateFunctionWindowFunnelData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(T) + sizeof(UInt8))));
 
         T timestamp{};
         UInt8 event = 0;
@@ -179,7 +180,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     UInt64 next_unique_id = 1;
     bool sorted = true;
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return events_list.size();
     }
@@ -254,7 +255,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(events_size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(events_size, buf.available() / (sizeof(T) + sizeof(UInt8) + sizeof(UInt64))));
 
         T timestamp{};
         UInt8 event_type = 0;
@@ -504,7 +506,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "windowFunnel";
     }
@@ -546,7 +548,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
@@ -662,7 +664,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", arguments.front().get()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", arguments.front()->getName(), name);
 }
 
 }
@@ -670,7 +672,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {.description = R"DOC(Searches for a chain of events in a sliding time window and returns the maximum number of events from the chain that occurred in order (the length of the longest matching prefix).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

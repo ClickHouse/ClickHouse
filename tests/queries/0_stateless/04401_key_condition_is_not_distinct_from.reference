@@ -1,0 +1,153 @@
+--- IS NOT DISTINCT FROM prunes via primary key (non-Nullable key) ---
+1
+--- (k = c) IS TRUE prunes via primary key (non-Nullable key) ---
+1
+--- IS NOT DISTINCT FROM prunes via primary key (Nullable key) ---
+1
+--- (k = c) IS TRUE prunes via primary key (Nullable key) ---
+1
+--- const on the left side prunes too ---
+1
+--- (k < c) IS TRUE prunes an ordered condition ---
+1
+--- IS NOT DISTINCT FROM prunes via minmax skip index ---
+1
+--- (v = c) IS TRUE prunes via minmax skip index ---
+1
+--- b = true prunes partitions (baseline) ---
+1
+--- b IS TRUE prunes partitions the same as b = true ---
+1
+--- b IS NOT DISTINCT FROM true prunes partitions the same as b = true ---
+1
+--- (k = c) != false prunes via primary key ---
+1
+--- (v = c) != false prunes via minmax skip index ---
+1
+--- b != false prunes partitions the same as b = true ---
+1
+--- (k = c) != true does NOT get the IS TRUE pruning ---
+0
+--- (k = c) IN (true) prunes via primary key ---
+1
+--- (k = c) IN (true, true) prunes via primary key ---
+1
+--- (v = c) IN (true) prunes via minmax skip index ---
+1
+--- b IN (true) prunes partitions the same as b = true ---
+1
+--- (k = c) IN (false) does NOT get the pruning ---
+0
+--- (k = c) IN (true, false) does NOT get the pruning ---
+0
+--- (k = c) NOT IN (true) does NOT get the pruning ---
+0
+--- IS NOT DISTINCT FROM NULL prunes to the NULL granule like IS NULL ---
+1
+--- NULL IS NOT DISTINCT FROM key prunes too (const on the left) ---
+1
+--- bare IS NULL prunes to the NULL granule (reference for the above) ---
+1
+--- ifNull(k, 0) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- ifNull(k, 0) IS NOT DISTINCT FROM NULL does NOT prune with coalesce rewrite off (0/) ---
+0
+--- coalesce(k, 0) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- assumeNotNull(k) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- bare isNull(ifNull(k, 0)) does NOT prune to the NULL granule (0/) ---
+0
+--- CAST(k, non-Nullable) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- bare isNull(CAST(k, non-Nullable)) does NOT prune to the NULL granule (0/) ---
+0
+--- toUInt32(k) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- toUInt32(ifNull(k, 0)) IS NOT DISTINCT FROM NULL does NOT prune to the NULL granule (0/) ---
+0
+--- ifNull(k, Nullable non-NULL fallback) IS NOT DISTINCT FROM NULL does NOT prune (0/) ---
+0
+--- coalesce(k, Nullable non-NULL fallback) IS NOT DISTINCT FROM NULL does NOT prune (0/) ---
+0
+--- isNull(toDateTime(d)) does NOT prune, keeps all granules ---
+0
+--- toDateTime(d) IS NOT DISTINCT FROM NULL does NOT prune ---
+0
+--- isNull(intDiv(k, 0)) does NOT prune, keeps all granules ---
+0
+--- intDiv(k, 0) IS NOT DISTINCT FROM NULL does NOT prune ---
+0
+--- isNull(intDiv(k, 2)) (also wrapped) does NOT prune ---
+0
+--- startsWith(s, p) IS TRUE prunes via primary key like the bare atom ---
+1
+--- bare startsWith(s, p) prunes via primary key (reference) ---
+1
+--- startsWith(s, p) != false prunes via primary key like the bare atom ---
+1
+--- startsWith(s, p) IN (true) prunes via primary key like the bare atom ---
+1
+--- ifNull(k = 42, 0) IS TRUE prunes via primary key like the bare wrapped atom ---
+1
+--- bare ifNull(k = 42, 0) prunes via primary key (reference) ---
+1
+--- coalesce(k = 42, 0) IS TRUE prunes via primary key like the bare wrapped atom ---
+1
+--- ifNull(k = 42, 0) != false prunes via primary key like the bare wrapped atom ---
+1
+--- ifNull(k = 42, 0) IN (true) prunes via primary key like the bare wrapped atom ---
+1
+--- ifNull(k = 42, 0) IS TRUE does NOT prune when allow_key_condition_coalesce_rewrite = 0 (0/) ---
+0
+--- correctness is preserved across all forms ---
+ndf_nonnull	1
+eq_nonnull	1
+istrue_eq	1
+istrue_lt	42
+ndf_nullable	1
+ndf_null_is_null	5000
+is_null	5000
+k_istrue_means_eq_1	1
+kplus1_istrue_means_eq_1	1
+isfalse	99999
+ne_false_eq	1
+ne_true_eq	99999
+in_true_eq	1
+in_truetrue_eq	1
+in_false_eq	99999
+in_truefalse_eq	100000
+notin_true_eq	99999
+k_in_true_means_eq_1	1
+ndf_null_left	5000
+ifnull_ndf_null	0
+coalesce_ndf_null	0
+assumenotnull_ndf_null	0
+ifnull_isnull	0
+ifnull_ndf_null_corw_off	0
+touint32_ndf_null	5000
+touint32_ifnull_ndf_null	0
+ifnull_nfb_ndf_null	0
+coalesce_nfb_ndf_null	0
+ifnull_nfb_ndf_null_iproj	0
+todatetime_ndf_null_ignore	100
+intdiv2_ndf_null	1
+ifnull_bare	1
+ifnull_istrue	1
+coalesce_istrue	1
+ifnull_ne_false	1
+ifnull_in_true	1
+startswith_bare	111
+startswith_istrue	111
+startswith_ne_false	111
+startswith_in_true	111
+part_eq	2
+part_istrue	2
+part_ndf	2
+part_ne_false	2
+part_in_true	2
+explain_in_subquery_not_built	1
+lc_less	8
+lc_eq	16
+lc_istrue	8
+lc_ndf	16

@@ -1,0 +1,69 @@
+<test>
+    <settings>
+        <use_skip_indexes>1</use_skip_indexes>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_trivial_count (id UInt64, text String,
+            INDEX idx text TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- The same data with `pfor` postings: multi-block posting lists are counted with posting-list cursors.
+         Parts have 1M rows, so a smaller block size is needed for the posting lists to span multiple blocks. -->
+    <create_query>
+        CREATE TABLE text_index_trivial_count_pfor (id UInt64, text String,
+            INDEX idx text TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfor') GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS text_index_posting_list_block_size = 131072
+    </create_query>
+
+    <!-- Merges are stopped and both tables get the same 20 parts of 1M rows, so that both compared servers
+         read the same parts. -->
+    <fill_query>SYSTEM STOP MERGES text_index_trivial_count</fill_query>
+    <fill_query>SYSTEM STOP MERGES text_index_trivial_count_pfor</fill_query>
+
+    <fill_query>
+        INSERT INTO text_index_trivial_count
+        SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0
+        SELECT number,
+               arrayStringConcat(arrayFilter(x -> x != '', [
+                   if(number % 2 = 0, 'thecommon', ''),
+                   if(number % 1000 = 0, 'rareword', ''),
+                   concat('w', toString(number % 5000))]), ' ')
+        FROM numbers(20000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO text_index_trivial_count_pfor
+        SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0
+        SELECT number,
+               arrayStringConcat(arrayFilter(x -> x != '', [
+                   if(number % 2 = 0, 'thecommon', ''),
+                   if(number % 1000 = 0, 'rareword', ''),
+                   concat('w', toString(number % 5000))]), ' ')
+        FROM numbers(20000000)
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(count() != 40 OR min(rows) != 1000000 OR max(rows) != 1000000,
+            'text_index_trivial_count: expected 20 active parts of 1000000 rows per table')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table IN ('text_index_trivial_count', 'text_index_trivial_count_pfor') AND active
+    </fill_query>
+
+    <!-- query_plan_optimize_count_from_text_index (on by default) answers count() over a text predicate
+         from the text index instead of reading rows. -->
+    <query>SELECT count() FROM text_index_trivial_count WHERE hasToken(text, 'thecommon')</query>
+    <query>SELECT count() FROM text_index_trivial_count WHERE hasToken(text, 'rareword')</query>
+    <query>SELECT count() FROM text_index_trivial_count WHERE hasAnyTokens(text, ['rareword', 'thecommon'])</query>
+    <query>SELECT count() FROM text_index_trivial_count WHERE hasAllTokens(text, ['rareword', 'thecommon'])</query>
+
+    <query>SELECT count() FROM text_index_trivial_count_pfor WHERE hasAnyTokens(text, ['rareword', 'thecommon'])</query>
+    <query>SELECT count() FROM text_index_trivial_count_pfor WHERE hasAllTokens(text, ['rareword', 'thecommon'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_trivial_count</drop_query>
+    <drop_query>DROP TABLE IF EXISTS text_index_trivial_count_pfor</drop_query>
+</test>

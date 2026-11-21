@@ -24,7 +24,10 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 #include <ranges>
 #include <string_view>
 
@@ -72,16 +75,16 @@ namespace
 {
 
 /// The only indexing method currently supported by USearch
-const std::set<String> methods = {"hnsw"};
+[[clang::no_destroy]] const std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
-const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
+[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
     {"cosineDistance", unum::usearch::metric_kind_t::cos_k},
     {"dotProduct", unum::usearch::metric_kind_t::ip_k}};
 
 /// Maps from user-facing name to internal name
-const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
+[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
     {"f64", unum::usearch::scalar_kind_t::f64_k},
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
@@ -89,6 +92,10 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"i8", unum::usearch::scalar_kind_t::i8_k},
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
+
+/// Limits as in Lucene.
+constexpr UInt64 max_hnsw_max_connections_per_layer = 512;
+constexpr UInt64 max_hnsw_candidate_list_size_for_construction = 3200;
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
@@ -307,9 +314,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check two things to prevent undefined behavior further down in Usearch
+/// Check a few things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
+/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -342,9 +349,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
         throw Exception(error_code,
-            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>
@@ -374,12 +381,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        /// Check if the query has been cancelled. USearch internally does not check for cancellation,
-        /// and a single `add` call can take a very long time under sanitizers. Without this check, KILL QUERY
-        /// cannot stop the index building. The check is cheap (reads an atomic flag).
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            if (auto query_status = query_context->getProcessListElementSafe())
-                query_status->throwIfKilled();
+        /// USearch internally does not check for cancellation, and a single `add` call can take a very long time
+        /// under sanitizers. Without this check, KILL QUERY or cancelling a merge cannot stop the index building.
+        CurrentThread::checkIfNotCancelled();
 
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
 
@@ -410,14 +414,51 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
 
     size_t index_size = index->size();
+
+    /// Stop waiting at the first error (e.g. cancellation) instead of waiting for every queued row: the pool is shared with
+    /// other index builds, so the rest of our rows may sit behind a lot of their work. The runner's destructor drops them.
+    std::mutex mutex;
+    std::condition_variable finished_or_failed;
+    size_t remaining_rows = rows;
+    std::exception_ptr first_exception;
+    std::atomic<bool> failed = false;
+    auto add_row = [&](USearchIndex::vector_key_t key, size_t row)
+    {
+        if (failed)
+            return;
+        try
+        {
+            add_vector_to_index(key, row);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(mutex);
+            if (!first_exception)
+                first_exception = std::current_exception();
+            failed = true;
+            finished_or_failed.notify_all();
+            return;
+        }
+        std::lock_guard lock(mutex);
+        if (--remaining_rows == 0)
+            finished_or_failed.notify_all();
+    };
+
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-    for (size_t row = 0; row < rows; ++row)
+    /// Enqueueing can block on a full pool queue for a long time, so it must stop on an error too
+    for (size_t row = 0; row < rows && !failed; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        /// Passing add_vector_to_index by reference is safe because it outlives the runner
-        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        /// Passing add_row by reference is safe because it outlives the runner
+        runner.enqueueAndKeepTrack([&add_row, key, row] { add_row(key, row); });
     }
 
+    {
+        std::unique_lock lock(mutex);
+        finished_or_failed.wait(lock, [&] { return remaining_rows == 0 || first_exception; });
+        if (first_exception)
+            std::rethrow_exception(first_exception);
+    }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
 
@@ -501,15 +542,16 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
 {
-    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
+    static constexpr auto MIN_INDEX_FETCH_MULTIPLIER = 1.0f;
+    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0f;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}", MIN_INDEX_FETCH_MULTIPLIER, MAX_INDEX_FETCH_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
@@ -558,9 +600,14 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
+    {
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
+        /// The product is compared with the cap while it is still a double: a LIMIT close to the maximum of UInt64 multiplied by the
+        /// factor exceeds the range of size_t, and the conversion of such a value is undefined behavior.
+        const double scaled_limit = static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier);
+        limit = (scaled_limit >= static_cast<double>(max_limit)) ? max_limit : static_cast<size_t>(scaled_limit);
+    }
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
@@ -704,6 +751,11 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+
+        if (connectivity > max_hnsw_max_connections_per_layer)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Fifth argument (hnsw_max_connections_per_layer) of vector similarity index must not be greater than {}", max_hnsw_max_connections_per_layer);
+        if (expansion_add > max_hnsw_candidate_list_size_for_construction)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Sixth argument (hnsw_candidate_list_size_for_construction) of vector similarity index must not be greater than {}", max_hnsw_candidate_list_size_for_construction);
     }
 
     /// Check that the index is created on a single column

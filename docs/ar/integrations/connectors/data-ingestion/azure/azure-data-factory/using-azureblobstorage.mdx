@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُعد هذه واحدة من أكثر الطرق كفاءةً وبساطةً لنسخ البيانات من
 Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخدام هذه الدالة الجدولية،
 يمكنك توجيه ClickHouse للاتصال مباشرةً بتخزين Azure وقراءة
@@ -38,11 +36,27 @@ Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخ�
 
 2. من القائمة الموجودة على الجانب الأيسر، حدِّد **مفاتيح الوصول** ضمن قسم **الأمان +
    الشبكات**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="إعدادات مخزن بيانات Azure" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![إعدادات مخزن بيانات Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+
+   </Frame>
+
+   </div>
 
 3. اختر **key1** أو **key2**، ثم انقر فوق الزر **إظهار** بجوار
    حقل **سلسلة الاتصال**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="مفاتيح الوصول إلى مخزن بيانات Azure" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![مفاتيح الوصول إلى مخزن بيانات Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+
+   </Frame>
+
+   </div>
 
 4. انسخ سلسلة الاتصال — ستستخدمها كمعلمة في الدالة الجدولية azureBlobStorage.
 
@@ -159,10 +173,10 @@ SELECT * FROM azureBlobStorage(
   ## موارد إضافية
 </div>
 
-هذه مجرد مقدمة بسيطة لاستخدام الدالة `azureBlobStorage`. للحصول على
-خيارات أكثر تقدمًا وتفاصيل التهيئة، يُرجى الرجوع إلى الوثائق
+هذه مجرد مقدمة أساسية لاستخدام الدالة `azureBlobStorage`. ولمزيد من
+الخيارات المتقدمة وتفاصيل الإعداد، يُرجى الرجوع إلى الوثائق
 الرسمية:
 
-* [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
+* [الدالة الجدولية azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
 * [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index)
 * [الاستدلال التلقائي للمخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)

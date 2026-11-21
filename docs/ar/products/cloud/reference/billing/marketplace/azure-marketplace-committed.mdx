@@ -6,8 +6,6 @@ keywords: ['Microsoft', 'Azure', 'Azure Marketplace', 'الفوترة', 'الا�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ابدأ باستخدام ClickHouse Cloud على [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) من خلال عقد التزام. ويتيح عقد الالتزام هذا، المعروف أيضًا باسم عرض خاص، للعملاء الالتزام بإنفاق مبلغ معيّن على ClickHouse Cloud خلال فترة زمنية محددة.
 
 <div id="prerequisites">
@@ -20,55 +18,103 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## خطوات التسجيل
 </div>
 
-1. يُفترض أنك تلقيت رسالة بريد إلكتروني تحتوي على رابط لمراجعة العرض الخاص وقبوله.
+1. يُفترض أنك تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة العرض الخاص وقبوله.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="رسالة بريد إلكتروني للعرض الخاص في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![رسالة البريد الإلكتروني الخاصة بالعرض الخاص في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-2. انقر على رابط **مراجعة العرض الخاص** في رسالة البريد الإلكتروني. من المفترض أن ينقلك ذلك إلى صفحة Azure Marketplace الخاصة بك التي تعرض تفاصيل العرض الخاص.
+2. انقر على رابط **Review العرض الخاص** في البريد الإلكتروني. يُفترض أن ينقلك هذا إلى صفحة Azure Marketplace الخاصة بك التي تحتوي على تفاصيل العرض الخاص.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="تفاصيل العرض الخاص في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تفاصيل العرض الخاص في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-3. بمجرد قبول العرض، سيتم نقلك إلى شاشة **إدارة العرض الخاص**. قد يستغرق Azure بعض الوقت لتجهيز العرض للشراء.
+3. بمجرد قبول العرض، ستنتقل إلى شاشة **إدارة العرض الخاص**. قد يستغرق Azure بعض الوقت لتجهيز العرض للشراء.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-3.webp" size="md" alt="صفحة إدارة العرض الخاص في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![صفحة إدارة العرض الخاص في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="جارٍ تحميل صفحة إدارة العرض الخاص في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![جارٍ تحميل صفحة إدارة العرض الخاص في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-4. بعد بضع دقائق، حدّث الصفحة. من المفترض أن يصبح العرض جاهزًا لـ **Purchase**.
+4. بعد بضع دقائق، حدّث الصفحة. يُفترض أن يصبح العرض جاهزًا لـ **Purchase**.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="صفحة إدارة العرض الخاص في Azure Marketplace مع تفعيل الشراء" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![صفحة إدارة العرض الخاص في Azure Marketplace مع تفعيل الشراء](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-5. انقر على **Purchase** — ستظهر لوحة flyout. أكمل ما يلي:
+5. انقر على **Purchase** — ستظهر لك لوحة جانبية. أكمل ما يلي:
 
 <br />
 
 * الاشتراك ومجموعة الموارد
 * أدخل اسمًا لاشتراك SaaS
-* اختر خطة الفوترة التي لديك عرض خاص لها. فقط المدة التي أُنشئ العرض الخاص لها (على سبيل المثال، سنة واحدة) سيظهر لها مبلغ. أما خيارات مدة الفوترة الأخرى فستظهر بمبالغ قدرها 0 دولار.
-* اختر ما إذا كنت تريد فوترة متكررة أم لا. إذا لم يتم تحديد الفوترة المتكررة، فسينتهي العقد في نهاية فترة الفوترة وستُوضع الموارد في حالة إيقاف الخدمة.
+* اختر خطة الفوترة التي لديك عرض خاص لها. فقط المدة التي أُنشئ العرض الخاص لها (على سبيل المثال، سنة واحدة) سيظهر لها مبلغ. أما خيارات مدة الفوترة الأخرى فستظهر بمبالغ قدرها $0.
+* اختر ما إذا كنت تريد فوترة متكررة أم لا. إذا لم تُحدَّد الفوترة المتكررة، فسينتهي العقد في نهاية فترة الفوترة وستُعيَّن الموارد على أنها خارجة من الخدمة.
 * انقر على **Review + subscribe**.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-6.webp" size="md" alt="نموذج الاشتراك في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![نموذج الاشتراك في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-6.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -76,7 +122,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-7.webp" size="md" alt="تأكيد الاشتراك في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تأكيد الاشتراك في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-7.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -84,41 +138,81 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="صفحة إرسال الاشتراك في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![صفحة إرسال الاشتراك في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-8. عندما يصبح كل شيء جاهزًا، يمكنك النقر على **Configure account now**. لاحظ أن هذه خطوة بالغة الأهمية تربط اشتراك Azure بمؤسسة في ClickHouse Cloud خاصة بحسابك. من دون هذه الخطوة، لن يكتمل اشتراك Marketplace الخاص بك.
+8. بمجرد أن يصبح كل شيء جاهزًا، يمكنك النقر على **Configure account now**. لاحظ أن هذه خطوة مهمة جدًا تربط اشتراك Azure بمؤسسة في ClickHouse Cloud خاصة بحسابك. وبدون هذه الخطوة، لن يكتمل اشتراكك في Marketplace.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-9.webp" size="md" alt="زر Configure account now في Azure Marketplace" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![زر Configure account now في Azure Marketplace](/images/cloud/manage/billing/marketplace/azure-marketplace-committed-9.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-9. ستتم إعادة توجيهك إلى صفحة التسجيل أو تسجيل الدخول في ClickHouse Cloud. يمكنك إما التسجيل باستخدام حساب جديد أو تسجيل الدخول باستخدام حساب موجود. بعد تسجيل الدخول، سيتم إنشاء مؤسسة جديدة جاهزة للاستخدام وللفوترة عبر Azure Marketplace.
+9. ستتم إعادة توجيهك إلى صفحة التسجيل أو تسجيل الدخول في ClickHouse Cloud. يمكنك إما التسجيل باستخدام حساب جديد أو تسجيل الدخول باستخدام حساب موجود. بمجرد تسجيل الدخول، سيتم إنشاء مؤسسة جديدة جاهزة للاستخدام وللفوترة عبر Azure Marketplace.
 
 10. ستحتاج إلى الإجابة عن بعض الأسئلة — مثل تفاصيل العنوان والشركة — قبل أن تتمكن من المتابعة.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![نموذج معلومات التسجيل في ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-11. بمجرد الضغط على **Complete sign up**، سيتم نقلك إلى مؤسستك داخل ClickHouse Cloud حيث يمكنك عرض شاشة الفوترة للتأكد من أن الفوترة تتم عبر Azure Marketplace، كما يمكنك إنشاء الخدمات.
+11. بمجرد الضغط على **Complete sign up**، سيتم نقلك إلى مؤسستك داخل ClickHouse Cloud، حيث يمكنك عرض شاشة الفوترة للتأكد من أن الفوترة تتم عبر Azure Marketplace، كما يمكنك إنشاء خدمة.
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![نموذج معلومات التسجيل في ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![نموذج معلومات التسجيل في ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack の Text-to-Chart 機能では、表示したい内容をプレーンテキストで説明するだけで可視化を作成できます。メトリクス、フィルタ、グループ化フィールドを手動で選択する代わりに、&quot;過去 24 時間のサービス別エラー率&quot; のようなプロンプトを入力すると、ClickStack が対応するチャートを自動的に生成します。
 
 この機能は、大規模言語モデル (LLM) を使用してテキストプロンプトをクエリに変換し、その後 [Chart Explorer](/ja/clickstack/features/dashboards/overview#navigate-chart-explorer) で可視化を作成します。設定済みのデータソースであれば、どのデータソースでも利用できます。
@@ -61,23 +59,25 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
 </div>
 
 <Steps>
-  <Step>
-    ### Chart Explorer に移動する
-
+  <Step title="Chart Explorer に移動する" id="navigate-chart-explorer">
     HyperDX の左側のメニューから **Chart Explorer** を選択します。
   </Step>
 
-  <Step>
-    ### データソースを選択する
+  <Step title="データソースを選択する" id="select-data-source">
+    可視化したいデータソースを選択します。たとえば **ログ**、**トレース**、**メトリクス** などです。
 
-    可視化したいデータソースを選択します。たとえば **Logs**、**Traces**、**Metrics** などです。
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+    <Frame>
+
+    ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    ### テキスト プロンプトを入力する
-
+  <Step title="テキスト プロンプトを入力する" id="enter-text-prompt">
     Chart Explorer の上部にある **AI Assistant** の入力欄に、作成したいチャートの内容を自然言語で入力します。たとえば次のように入力します。
 
     * `Show error rates by service over the last 24 hours`
@@ -86,7 +86,15 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
 
     ClickStack はプロンプトをクエリに変換し、自動的に可視化を表示します。
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -107,9 +115,17 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Username**: `otel_demo`
 * **Password**: 空のままにします
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="接続を作成" />
+<div className="ch-image-lg">
 
-続いて、各ログソース — **Logs**、**Traces**、**Metrics**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
+<Frame>
+
+![接続を作成](/images/clickstack/text-to-chart/create-connection.webp)
+
+</Frame>
+
+</div>
+
+続いて、各ログソース — **ログ**、**トレース**、**メトリクス**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
 
 接続したら、**Chart Explorer** を開き、利用可能なログ、トレース、メトリクスに対してプロンプトを試してみてください。
 
@@ -141,6 +157,6 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 </div>
 
 * [テキストからチャートへ: ClickStack でよりすばやく可視化する方法](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — この機能を紹介するブログ記事
-* [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使ったチャートの手動作成
-* [検索](/ja/clickstack/features/search) — 全文検索とプロパティ検索の構文
-* [設定](/ja/clickstack/managing/config) — ClickStack のすべての環境変数
+* [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使った手動でのチャート作成
+* [Search](/ja/clickstack/features/search) — 全文検索とプロパティ検索の構文
+* [Configuration](/ja/clickstack/managing/config) — ClickStack のすべての環境変数

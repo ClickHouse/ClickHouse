@@ -161,7 +161,7 @@ FORMAT Parquet
   ## ClickHouse と Parquet のデータ型
 </div>
 
-ClickHouse と Parquet のデータ型はほぼ同じですが、[若干の違いがあります](/ja/reference/formats/Parquet/Parquet#data-types-matching-parquet)。たとえば、ClickHouse は `DateTime` 型を Parquet の `int64` としてエクスポートします。これを再度 ClickHouse にインポートすると、数値として表示されます ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)) :
+ClickHouse と Parquet のデータ型はほぼ同じですが、[若干の違いがあります](/ja/reference/formats/Parquet/Parquet#data-types-matching-parquet)。たとえば、ClickHouse は `DateTime` 型を Parquet の `int64` としてエクスポートします。これを再度 ClickHouse にインポートすると、数値として表示されます ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)):
 
 ```sql
 SELECT * FROM file('time.parquet', Parquet);
@@ -182,7 +182,7 @@ SELECT * FROM file('time.parquet', Parquet);
 ```sql
 SELECT
     n,
-    toDateTime(time)                 <--- 整数から時刻へ
+    toDateTime(time)                 <--- int to time
 FROM file('time.parquet', Parquet);
 ```
 

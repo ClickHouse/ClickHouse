@@ -7,8 +7,6 @@ title: 'تدفق البيانات من SQL Server إلى ClickHouse لتحليل
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في هذه المقالة، نستعرض دليلًا عمليًا يوضّح كيفية تدفّق البيانات من SQL Server إلى ClickHouse. ويُعد ClickHouse خيارًا مثاليًا إذا كنت بحاجة إلى تحليلات فائقة السرعة لإعداد لوحات معلومات داخلية أو موجّهة للعملاء. سنأخذك خطوة بخطوة خلال إعداد قاعدتي البيانات كلتيهما، وكيفية ربطهما، ثم كيفية استخدام [Streamkap](https://streamkap.com) لبث بياناتك. إذا كان SQL Server يدير عملياتك اليومية، لكنك تحتاج إلى سرعة ClickHouse وذكائه في التحليلات، فأنت في المكان المناسب.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -37,11 +35,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * مثيل SQL Server قيد التشغيل
 
-* في هذا الدليل العملي، نستخدم AWS RDS for SQL Server، لكن أي مثيل حديث من SQL Server سيؤدي الغرض.[إعداد AWS SQL Server من الصفر.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
+* في هذا الدليل العملي، نستخدم AWS RDS for SQL Server، لكن أي مثيل حديث من SQL Server سيؤدي الغرض.[إعداد AWS SQL Server من الصفر.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#setting-up-a-new-rds-sql-server-from-scratch)
 
 * مثيل ClickHouse
 
-* ذاتي الاستضافة أو سحابي.[إعداد ClickHouse من الصفر.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
+* ذاتي الاستضافة أو سحابي.[إعداد ClickHouse من الصفر.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#creating-a-new-clickhouse-account)
 
 * Streamkap
 
@@ -57,155 +55,153 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * عنوان خادم ClickHouse والمنفذ واسم المستخدم وكلمة المرور. تحدد قوائم الوصول حسب IP في ClickHouse الخدمات التي يمكنها الاتصال بقاعدة بيانات ClickHouse الخاصة بك.[اتبع الإرشادات هنا.](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse\&sa=D\&source=editors\&ust=1760992472359060\&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
 * الجداول التي تريد بثها—ابدأ بجدول واحد في الوقت الحالي
 
-<div id="setting-up-sql-server-as-a-source">
-  ## إعداد SQL Server كمصدر
-</div>
+<Steps>
+  <Step title="إنشاء مصدر لـ SQL Server في Streamkap" id="step-1-creating-a-sql-server-source-in-streamkap">
+    <a id="setting-up-sql-server-as-a-source" />
 
-لنبدأ!
+    هيا نبدأ!
 
-<div id="step-1-creating-a-sql-server-source-in-streamkap">
-  ### الخطوة 1: إنشاء مصدر SQL Server في Streamkap
-</div>
+    سنبدأ بإعداد اتصال المصدر. بهذه الطريقة يعرف Streamkap من أين يجلب التغييرات.
 
-سنبدأ بإعداد اتصال المصدر. وبهذه الطريقة يعرف Streamkap من أين يجلب التغييرات.
+    إليك الطريقة:
 
-إليك الطريقة:
+    1. افتح Streamkap وانتقل إلى قسم المصادر.
+    2. أنشئ مصدرًا جديدًا.
 
-1. افتح Streamkap وانتقل إلى قسم المصادر.
-2. أنشئ مصدرًا جديدًا.
+    * امنحه اسمًا واضحًا يسهل تمييزه (على سبيل المثال: sqlserver-demo-source).
 
-* امنحه اسمًا واضحًا يسهل تمييزه (على سبيل المثال، sqlserver-demo-source).
+    3. أدخل تفاصيل الاتصال بـ SQL Server:
 
-3. أدخل تفاصيل اتصال SQL Server:
+    * المضيف (على سبيل المثال: your-db-instance.rds.amazonaws.com)
+    * المنفذ (المنفذ الافتراضي لـ SQL Server هو 3306)
+    * اسم المستخدم وكلمة المرور
+    * اسم قاعدة البيانات
 
-* اسم المضيف (على سبيل المثال، your-db-instance.rds.amazonaws.com)
-* المنفذ (المنفذ الافتراضي لـ SQL Server هو 3306)
-* اسم المستخدم وكلمة المرور
-* اسم قاعدة البيانات
+    <div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    <Frame>
 
-<div id="whats-happening-behind-the-scenes">
-  #### ما الذي يحدث في الخلفية
-</div>
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    </Frame>
 
-عند إعداد ذلك، سيتصل Streamkap بخادم SQL Server لديك ويكتشف الجداول. في هذا العرض التوضيحي، سنختار جدولًا تتدفق إليه بعض البيانات بالفعل، مثل الأحداث أو المعاملات.
+    </div>
 
-<div id="creating-a-clickhouse-destination">
-  ## إنشاء وجهة ClickHouse
-</div>
+    #### ما الذي يحدث في الخلفية
 
-الآن لنُعِدّ الوجهة التي سنرسل إليها كل هذه البيانات.
+    <div className="ch-image-lg">
 
-<div id="step-2-add-a-clickhouse-destination-in-streamkap">
-  ### الخطوة 2: إضافة وجهة ClickHouse في Streamkap
-</div>
+    <Frame>
 
-كما هو الحال مع المصدر، سننشئ وجهة باستخدام تفاصيل الاتصال الخاصة بـ ClickHouse.
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
 
-<div id="steps">
-  #### الخطوات:
-</div>
+    </Frame>
 
-1. انتقل إلى قسم الوجهات في Streamkap.
-2. أضف وجهة جديدة — واختر ClickHouse كنوع الوجهة.
-3. أدخِل معلومات ClickHouse الخاصة بك:
+    </div>
 
-* المضيف
-* المنفذ (القيمة الافتراضية هي 9000)
-* اسم المستخدم وكلمة المرور
-* اسم قاعدة البيانات
+    عند إعداد ذلك، سيتصل Streamkap بخادم SQL Server لديك ويكتشف الجداول. في هذا العرض التوضيحي، سنختار جدولًا تتدفق إليه بعض البيانات بالفعل، مثل الأحداث أو المعاملات.
+  </Step>
 
-مثال على لقطة شاشة: إضافة وجهة ClickHouse جديدة في لوحة معلومات Streamkap.
+  <Step title="أضِف وجهة ClickHouse في Streamkap" id="step-2-add-a-clickhouse-destination-in-streamkap">
+    <a id="creating-a-clickhouse-destination" />
 
-<div id="upsert-mode-what-is-that">
-  ### وضع Upsert: ما المقصود به؟
-</div>
+    الآن لنُعِدّ الوجهة التي سنرسل إليها كل هذه البيانات.
 
-هذه خطوة مهمة: نريد استخدام وضع “upsert” في ClickHouse، والذي يستخدم في الخلفية محرك ReplacingMergeTree في ClickHouse. يتيح لنا ذلك دمج السجلات الواردة بكفاءة والتعامل مع التحديثات بعد استيعاب البيانات، باستخدام ما يسميه ClickHouse “دمج الأجزاء”.
+    وكما فعلنا مع المصدر، سننشئ وجهة باستخدام تفاصيل اتصال ClickHouse الخاصة بنا.
 
-* يضمن ذلك ألا يمتلئ جدول الوجهة لديك بالسجلات المكررة عند حدوث تغييرات على جانب SQL Server.
+    #### الخطوات:
 
-<div id="handling-schema-evolution">
-  ### التعامل مع تطور المخطط
-</div>
+    1. انتقل إلى قسم الوجهات في Streamkap.
+    2. أضف وجهة جديدة — واختر ClickHouse كنوع الوجهة.
+    3. أدخل معلومات ClickHouse الخاصة بك:
 
-لا تحتوي ClickHouse وSQL Server دائمًا على الأعمدة نفسها، خاصةً عندما يكون تطبيقك قيد التشغيل ويواصل المطورون إضافة أعمدة بشكل فوري.
+    * المضيف
+    * المنفذ (القيمة default هي 9000)
+    * اسم المستخدم وكلمة المرور
+    * اسم قاعدة البيانات
 
-* الخبر السار: يمكن لـ Streamkap التعامل مع تطور المخطط الأساسي. وهذا يعني أنه إذا أضفت عمودًا جديدًا في SQL Server، فسيظهر في ClickHouse أيضًا.
+    لقطة شاشة توضيحية: إضافة وجهة ClickHouse جديدة في لوحة معلومات Streamkap.
 
-ما عليك سوى تحديد “تطور المخطط” في إعدادات الوجهة. ويمكنك دائمًا تعديل ذلك لاحقًا حسب الحاجة.
+    ### وضع upsert: ما المقصود به؟
 
-<div id="building-the-streaming-pipeline">
-  ## إنشاء مسار المعالجة المتدفق
-</div>
+    هذه خطوة مهمة: نريد استخدام وضع “upsert” في ClickHouse، والذي يستخدم في الخلفية المحرك ReplacingMergeTree في ClickHouse. يتيح لنا ذلك دمج السجلات الواردة بكفاءة والتعامل مع التحديثات بعد استيعاب البيانات، باستخدام ما يسميه ClickHouse “دمج الأجزاء”.
 
-بعد تحديد المصدر والوجهة، حان وقت الجزء الممتع—بدء بث بياناتك!
+    * يضمن ذلك عدم امتلاء جدول الوجهة لديك بالسجلات المكررة عند حدوث تغييرات على جانب SQL Server.
 
-<div id="step-3-set-up-the-pipeline-in-streamkap">
-  ### الخطوة 3: إعداد مسار المعالجة في Streamkap
-</div>
+    ### التعامل مع تطور المخطط
 
-<div id="pipeline-setup">
-  #### إعداد مسار المعالجة
-</div>
+    في بعض الأحيان، لا تكون الأعمدة في ClickHouse وSQL Server متطابقة، خاصةً عندما يكون تطبيقك قيد التشغيل ويواصل المطورون إضافة أعمدة أثناء العمل.
 
-1. انتقل إلى علامة التبويب Pipelines في Streamkap.
+    * الخبر السار: يمكن لـ Streamkap التعامل مع تطور المخطط الأساسي. وهذا يعني أنه إذا أضفت عمودًا جديدًا في SQL Server، فسيظهر على جانب ClickHouse أيضًا.
 
-2. أنشئ مسار معالجة جديدًا.
+    ما عليك سوى تحديد “schema evolution” في إعدادات الوجهة. ويمكنك دائمًا تعديل ذلك لاحقًا حسب الحاجة.
+  </Step>
 
-3. حدِّد مصدر SQL Server الخاص بك (sqlserver-demo-source).
+  <Step title="إعداد مسار المعالجة في Streamkap" id="step-3-set-up-the-pipeline-in-streamkap">
+    <a id="building-the-streaming-pipeline" />
 
-4. حدِّد وجهة ClickHouse الخاصة بك (clickhouse-tutorial-destination).
+    بعد تحديد المصدر والوجهة، حان وقت الجزء الممتع—وهو بث بياناتك!
 
-5. اختر الجدول الذي تريد بث بياناته — ولنفترض أنه `events`.
+    #### إعداد مسار البيانات
 
-6. اضبط الإعدادات لاستخدام التقاط تغييرات البيانات (CDC).
+    1. انتقل إلى علامة التبويب Pipelines في Streamkap.
 
-* في هذا التشغيل، سنبث البيانات الجديدة (يمكنك تخطي التحميل بأثر رجعي في البداية والتركيز على أحداث CDC).
+    2. أنشئ مسار بيانات جديدًا.
 
-لقطة شاشة لإعدادات مسار المعالجة — اختيار المصدر والوجهة والجدول.
+    3. حدِّد مصدر SQL Server الخاص بك (sqlserver-demo-source).
 
-<div id="should-you-backfill">
-  #### هل ينبغي تحميل البيانات التاريخية؟
-</div>
+    4. حدِّد وجهة ClickHouse الخاصة بك (clickhouse-tutorial-destination).
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    5. اختر الجدول الذي تريد بثه—ولنفترض أنه events.
 
-قد تسأل: هل ينبغي أن أحمّل البيانات القديمة؟
+    6. اضبط الإعدادات لاستخدام التقاط تغييرات البيانات (CDC).
 
-في كثير من حالات التحليلات، قد تكتفي بالبدء في بثّ التغييرات من الآن فصاعدًا، ولكن يمكنك دائمًا الرجوع وتحميل البيانات الأقدم أيضًا.
+    * في هذا التشغيل، سنبث البيانات الجديدة (لا تتردد في تخطي تحميل البيانات التاريخية في البداية والتركيز على أحداث CDC).
 
-ما لم تكن لديك حاجة محددة، فاختر الآن “عدم تحميل البيانات التاريخية”.
+    لقطة شاشة لإعدادات مسار البيانات—تحديد المصدر والوجهة والجدول.
 
-<div id="streaming-in-action-what-to-expect">
-  ## البث أثناء التشغيل: ما الذي يمكن توقّعه
-</div>
+    #### هل تحتاج إلى تحميل البيانات التاريخية؟
 
-الآن أصبح مسار المعالجة لديك مُعدًّا ونشطًا!
+    <div className="ch-image-lg">
 
-<div id="step-4-watch-the-data-stream">
-  ### الخطوة 4: راقب تدفّق البيانات
-</div>
+    <Frame>
 
-إليك ما يحدث:
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
 
-* عند وصول بيانات جديدة إلى الجدول المصدر في SQL Server، يلتقط مسار المعالجة في Streamkap هذا التغيير ويرسله إلى ClickHouse.
-* يقوم ClickHouse (بفضل ReplacingMergeTree ودمج الأجزاء) باستيعاب هذه الصفوف ودمج التحديثات.
-* يواكب المخطط التغييرات—أضف أعمدة في SQL Server وستظهر في ClickHouse أيضًا.
+    </Frame>
 
-لوحة معلومات مباشرة أو سجلات تُظهر ازدياد عدد الصفوف في ClickHouse وSQL Server في الوقت الفعلي.
+    </div>
 
-يمكنك أن ترى فعليًا الصفوف في ClickHouse وهي تتزايد مع وصول البيانات إلى SQL Server.
+    قد تتساءل: هل ينبغي تحميل البيانات القديمة؟
 
-```sql
--- Example: Checking rows in ClickHouse 
-SELECT COUNT(*) FROM analytics.events; |
-```
+    في كثير من حالات التحليلات، قد تفضّل البدء ببث التغييرات من الآن فصاعدًا، لكن يمكنك دائمًا العودة وتحميل البيانات الأقدم أيضًا.
 
-توقّع بعض التأخير في سيناريوهات الأحمال العالية، لكن معظم حالات الاستخدام تشهد تدفقًا شبه لحظي.
+    ما عليك سوى اختيار “don’t backfill” في الوقت الحالي ما لم تكن لديك حاجة محددة.
+  </Step>
+
+  <Step title="مراقبة تدفق البيانات" id="step-4-watch-the-data-stream">
+    <a id="streaming-in-action-what-to-expect" />
+
+    الآن أصبح مسار المعالجة لديك مُعدًّا ويعمل!
+
+    إليك ما يحدث:
+
+    * عند وصول بيانات جديدة إلى الجدول المصدر في SQL Server، يلتقط مسار Streamkap هذا التغيير ويرسله إلى ClickHouse.
+    * يستوعب ClickHouse (بفضل ReplacingMergeTree ودمج الأجزاء) هذه الصفوف ويدمج التحديثات.
+    * يواكب المخطط ذلك — أضف أعمدة في SQL Server وستظهر في ClickHouse أيضًا.
+
+    لوحة معلومات مباشرة أو سجلات تُظهر تزايد عدد الصفوف في ClickHouse وSQL Server في الوقت الفعلي.
+
+    يمكنك بالفعل رؤية عدد الصفوف في ClickHouse وهو يرتفع مع وصول البيانات إلى SQL Server.
+
+    ```sql
+    -- Example: Checking rows in ClickHouse 
+    SELECT COUNT(*) FROM analytics.events; |
+    ```
+
+    توقّع بعض التأخر في سيناريوهات الأحمال العالية، لكن معظم حالات الاستخدام تشهد تدفّقًا شبه لحظي.
+  </Step>
+</Steps>
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
   ## ما الذي يفعله Streamkap فعليًا في الخلفية؟

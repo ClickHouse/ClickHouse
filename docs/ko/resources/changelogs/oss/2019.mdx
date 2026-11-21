@@ -517,7 +517,7 @@ keywords: ['ClickHouse 2019', '2019 변경 로그', '릴리스 노트', '버전 
   #### 새로운 기능
 </div>
 
-* 계층형 스토리지: MergeTree 엔진을 사용하는 테이블에서 여러 스토리지 볼륨을 사용할 수 있도록 지원합니다. 최신 데이터는 SSD에 저장하고, 오래된 데이터는 자동으로 HDD로 이동할 수 있습니다. ([예시](https://clickhouse.github.io/clickhouse-presentations/meetup30/new_features/#12)). [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
+* 계층형 스토리지: MergeTree 엔진을 사용하는 테이블에서 여러 스토리지 볼륨을 사용할 수 있도록 지원합니다. 최신 데이터는 SSD에 저장하고, 오래된 데이터는 자동으로 HDD로 이동할 수 있습니다. [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
 * `INSERT SELECT` 쿼리에서 입력되는 데이터를 읽기 위한 테이블 함수 `input`을 추가했습니다. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1)) [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * `hashed` 레이아웃과 기능적으로 동일하지만 메모리를 더 효율적으로 사용하는 `sparse_hashed` 딕셔너리 레이아웃을 추가했습니다. 값 조회 속도가 느려지는 대신 메모리 사용량은 약 절반입니다. [#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
 * 딕셔너리에 대한 접근 권한을 가진 사용자 목록을 정의하는 기능을 구현했습니다. 현재 연결된 데이터베이스에서만 사용할 수 있습니다. [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
@@ -608,7 +608,7 @@ keywords: ['ClickHouse 2019', '2019 변경 로그', '릴리스 노트', '버전 
   #### 빌드/테스트/패키징 개선
 </div>
 
-* 뮤테이션이 적용될 때까지 기다려야 하므로 [간헐적으로 실패하던](https://clickhouse-test-reports.s3.yandex.net/6944/aab95fd5175a513413c7395a73a82044bdafb906/functional_stateless_tests_\(debug\).html) 테스트 `00715_fetch_merged_or_mutated_part_zookeeper`를 셸 스크립트로 다시 작성해 수정했습니다. [#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
+* 뮤테이션이 적용될 때까지 기다려야 하므로 간헐적으로 실패하던 테스트 `00715_fetch_merged_or_mutated_part_zookeeper`를 셸 스크립트로 다시 작성해 수정했습니다. [#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
 * 빈 배열 인수가 있는 함수 `groupUniqArray`에서 발생하던 UBSan 및 MemSan 오류를 수정했습니다. 이는 0 셀 값의 생성자가 호출되지 않은 상태에서 비어 있는 `PaddedPODArray`가 해시 테이블의 0 셀에 배치되면서 발생했습니다. [#6937](https://github.com/ClickHouse/ClickHouse/pull/6937) ([Amos Bird](https://github.com/amosbird))
 
 <div id="clickhouse-release-19-14-3-3-2019-09-10">
@@ -757,7 +757,7 @@ keywords: ['ClickHouse 2019', '2019 변경 로그', '릴리스 노트', '버전 
 * 삽입 데이터 전송 중 발생한 서버 예외가 이제 클라이언트에서도 처리됩니다. [#5891](https://github.com/ClickHouse/ClickHouse/issues/5891) [#6711](https://github.com/ClickHouse/ClickHouse/pull/6711) ([dimarub2000](https://github.com/dimarub2000))
 * 분산 테이블이 원격 서버로 전송할 대상으로 선택한 파일 시스템 내 파일의 총수를 보여주는 메트릭 `DistributedFilesToInsert`를 추가했습니다. 이 수는 모든 세그먼트에 걸쳐 합산됩니다. [#6600](https://github.com/ClickHouse/ClickHouse/pull/6600) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `ExpressionAction/ExpressionAnalyzer`에서 `AnalyzedJoin`으로 조인 준비 로직 대부분을 옮겼습니다. [#6785](https://github.com/ClickHouse/ClickHouse/pull/6785) ([Artem Zuikov](https://github.com/4ertus2))
-* TSan [경고](https://clickhouse-test-reports.s3.yandex.net/6399/c1c1d1daa98e199e620766f1bd06a5921050a00d/functional_stateful_tests_\(thread\).html) &#39;lock-order-inversion&#39; 문제를 수정했습니다. [#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
+* TSan 경고 &#39;lock-order-inversion&#39; 문제를 수정했습니다. [#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
 * Linux capability가 부족할 때의 정보 메시지를 개선했습니다. 치명적 오류는 &quot;fatal&quot; 레벨로 로깅해 `system.text_log`에서 더 쉽게 찾을 수 있도록 했습니다. [#6441](https://github.com/ClickHouse/ClickHouse/pull/6441) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 메모리 사용량을 제한하기 위해 `GROUP BY`, `ORDER BY` 수행 중 임시 데이터를 디스크에 기록하도록 활성화한 경우, 사용 가능한 디스크 여유 공간을 확인하지 않았습니다. 이 수정으로 새로운 설정 `min_free_disk_space`가 추가되었으며, 디스크 여유 공간이 임계값보다 작으면 쿼리를 중단하고 `ErrorCodes::NOT_ENOUGH_SPACE`를 발생시킵니다. [#6678](https://github.com/ClickHouse/ClickHouse/pull/6678) ([Weiqing Xu](https://github.com/weiqxu)) [#6691](https://github.com/ClickHouse/ClickHouse/pull/6691) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * thread 기준의 재귀 rwlock을 제거했습니다. thread는 쿼리 간에 재사용되므로 이는 의미가 없습니다. `SELECT` 쿼리는 한 thread에서 잠금을 획득하고, 다른 thread에서 그 잠금을 유지한 채 첫 번째 thread에서 종료될 수 있습니다. 동시에 첫 번째 thread는 `DROP` 쿼리에 의해 재사용될 수 있습니다. 그 결과 실제와 다른 &quot;독점 잠금을 재귀적으로 획득하려고 시도했습니다&quot; 메시지가 발생할 수 있습니다. [#6771](https://github.com/ClickHouse/ClickHouse/pull/6771) ([alexey-milovidov](https://github.com/alexey-milovidov))

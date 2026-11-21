@@ -8,6 +8,7 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTPartition.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -88,6 +89,30 @@ boost::intrusive_ptr<ASTAlterCommand> parseAlterCommand(const String & ast_text,
 
 }
 
+bool isCommandScopedToPartitions(const ASTAlterCommand & command)
+{
+    auto names_all_partitions = [](const IAST * partition_ast)
+    {
+        const auto * partition = partition_ast->as<ASTPartition>();
+        return partition && partition->all;
+    };
+
+    if (command.partitions)
+    {
+        for (const auto & partition : command.partitions->children)
+        {
+            if (names_all_partitions(partition.get()))
+                return false;
+        }
+        return !command.partitions->children.empty();
+    }
+
+    if (command.partition)
+        return !names_all_partitions(command.partition);
+
+    return false;
+}
+
 boost::intrusive_ptr<const ASTAlterCommand> MutationCommand::ast() const
 {
     return parseAlterCommand(ast_text, max_parser_depth, max_parser_backtracks);
@@ -137,6 +162,7 @@ std::optional<MutationCommand> MutationCommand::parse(
     res.ast_text = command.formatWithSecretsOneLine();
     res.max_parser_depth = max_parser_depth;
     res.max_parser_backtracks = max_parser_backtracks;
+    res.has_partition = isCommandScopedToPartitions(command);
     if (with_pure_metadata_commands)
     {
         res.type = ALTER_WITHOUT_MUTATION;
@@ -297,9 +323,40 @@ boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_met
 }
 
 
+namespace
+{
+
+ASTPtr parseMutationCommandsList(const String & commands_str)
+{
+    ParserAlterCommandList p_alter_commands;
+    return parseQuery(
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+}
+
+}
+
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
+    String commands_str = ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
+
+    /// Check that the serialized commands can be parsed back the same way `readText` will parse
+    /// them. If they cannot (i.e. some AST is formatted in a way the parser does not accept),
+    /// it is much better to fail the query that creates the mutation than to persist an entry
+    /// that would fail to load - and prevent the whole table from loading - on every server
+    /// that reads it.
+    try
+    {
+        parseMutationCommandsList(commands_str);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "Serialized mutation commands cannot be parsed back (this indicates a mismatch between the AST formatter "
+            "and the parser; it's a bug); refusing to write them out: {}", commands_str);
+        throw;
+    }
+
+    writeEscapedString(commands_str, out);
 }
 
 void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_commands)
@@ -307,9 +364,7 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
     String commands_str;
     readEscapedString(commands_str, in);
 
-    ParserAlterCommandList p_alter_commands;
-    auto commands_ast = parseQuery(
-        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto commands_ast = parseMutationCommandsList(commands_str);
 
     for (const auto & child : commands_ast->children)
     {
@@ -327,6 +382,8 @@ std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 }
 
 
+/// Shared with `MergeTreeData::checkMutationIsPossible`, so of the commands that reach the
+/// heavyweight mutation path, the ones answering here are exactly the ones it refuses.
 bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
@@ -345,6 +402,11 @@ bool MutationCommands::hasAnyUpdateCommand() const
 bool MutationCommands::hasOnlyUpdateCommands() const
 {
     return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
+}
+
+bool MutationCommands::hasRewritePartsCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::REWRITE_PARTS; });
 }
 
 bool MutationCommands::containBarrierCommand() const

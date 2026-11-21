@@ -1,12 +1,22 @@
 ---
-description: 'Page describing transactional (ACID) support in ClickHouse'
+description: 'Understand ClickHouse insert guarantees and experimental transactions, and when to use ClickHouse Managed Postgres for transactional workloads.'
 slug: /guides/developer/transactional
 title: 'Transactional (ACID) support'
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+This page describes transaction guarantees in the ClickHouse analytical database, including insert guarantees and experimental support for transactions across multiple statements.
+
+<Tip>
+**Looking for a database for transactional workloads (OLTP)?**
+
+For applications that need frequent reads and writes to individual records, use [ClickHouse Managed Postgres](/products/managed-postgres/overview) as your application's system of record, and add ClickHouse for analytics by replicating committed changes with ClickPipes. [Learn how Postgres and ClickHouse work together](/products/managed-postgres/overview#transactions-and-analytics).
+</Tip>
+
+If you're checking the atomicity, isolation, or durability of inserts into ClickHouse, continue with the cases below.
 
 ## Case 1: INSERT into one partition, of one table, of the MergeTree* family {#case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family}
 
@@ -55,6 +65,10 @@ Same as Case 1 above, with this detail:
 
 In addition to the functionality described at the top of this document, ClickHouse has experimental support for transactions, commits, and rollback functionality.
 
+For application workloads, consider [ClickHouse Managed Postgres](/products/managed-postgres/overview#transactions-and-analytics).
+
+The statements that control transactions are described on the [`BEGIN TRANSACTION`](/reference/statements/transactions) reference page.
+
 ### Requirements {#requirements}
 
 - Deploy ClickHouse Keeper or ZooKeeper to track transactions
@@ -69,7 +83,7 @@ In addition to the functionality described at the top of this document, ClickHou
 
 ### Notes {#notes-1}
 - This is an experimental feature, and changes should be expected.
-- If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
+- If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos, except for a query that cannot be parsed or whose query parameters are missing or invalid: such a query is not executed and leaves the transaction running.
 - Nested transactions are not supported; finish the current transaction and start a new one instead
 
 ### Configuration {#configuration}
@@ -189,6 +203,16 @@ Ok.
 ```
 
 #### Begin a transaction and insert a row {#begin-a-transaction-and-insert-a-row}
+
+Asynchronous inserts are not supported inside a transaction, and [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) is enabled by default, so disable it in the session first:
+
+```sql
+SET async_insert = 0
+```
+
+```response
+Ok.
+```
 
 ```sql
 BEGIN TRANSACTION

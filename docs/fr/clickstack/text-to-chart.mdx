@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'text-to-chart', 'IA', 'visualisation', 'Chart Explorer', 'langage naturel', 'observability']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La fonctionnalité Text-to-Chart de ClickStack vous permet de créer des visualisations en décrivant en texte simple ce que vous souhaitez voir. Au lieu de sélectionner manuellement des métriques, des filtres et des champs de group-by, vous pouvez saisir un prompt comme &quot;taux d&#39;erreur par service sur les dernières 24 heures&quot;, et ClickStack générera automatiquement le chart correspondant.
 
 Cette fonctionnalité utilise un grand modèle de langage (LLM) pour convertir votre prompt en requête, puis crée la visualisation dans le [Chart Explorer](/fr/clickstack/features/dashboards/overview#navigate-chart-explorer). Elle fonctionne avec n&#39;importe quelle source de données configurée.
@@ -61,23 +59,25 @@ Pour les déploiements open source, transmettez la clé sous forme de variable d
 </div>
 
 <Steps>
-  <Step>
-    ### Accéder à Chart Explorer
-
+  <Step title="Accéder à Chart Explorer" id="navigate-chart-explorer">
     Sélectionnez **Chart Explorer** dans le menu de gauche de HyperDX.
   </Step>
 
-  <Step>
-    ### Sélectionner une source de données
-
+  <Step title="Sélectionner une source de données" id="select-data-source">
     Choisissez la source de données que vous souhaitez visualiser — par exemple, **Logs**, **Traces** ou **Metrics**.
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    ### Saisir un prompt
-
+  <Step title="Saisir un prompt" id="enter-text-prompt">
     En haut de Chart Explorer, repérez le champ de saisie **Assistant IA**. Saisissez une description en langage naturel du graphique que vous souhaitez créer. Par exemple :
 
     * `Show error rates by service over the last 24 hours`
@@ -86,7 +86,15 @@ Pour les déploiements open source, transmettez la clé sous forme de variable d
 
     ClickStack convertit le prompt en requête et affiche automatiquement la visualisation.
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -94,7 +102,7 @@ Pour les déploiements open source, transmettez la clé sous forme de variable d
   ## Essayer avec des données de démonstration
 </div>
 
-Pour essayer Text-to-Chart au plus vite, utilisez l&#39;[image Docker Local Mode](/fr/clickstack/deployment/local-mode-only) et le [jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) :
+Pour essayer Text-to-Chart au plus vite, utilisez l&#39;[image Docker mode local](/fr/clickstack/deployment/local-mode-only) et le [jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) :
 
 ```bash
 docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
@@ -107,7 +115,15 @@ Accédez à `localhost:8080`. Pour vous connecter aux données de démonstration
 * **Nom d&#39;utilisateur** : `otel_demo`
 * **Mot de passe** : laissez vide
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Créer une connexion" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Créer une connexion](/images/clickstack/text-to-chart/create-connection.webp)
+
+</Frame>
+
+</div>
 
 Modifiez ensuite chacune des sources — **Logs**, **Traces**, **Metrics** et **Sessions** — pour utiliser la base de données `otel_v2`. Pour plus de détails sur la configuration des sources, consultez le [guide du jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data).
 
@@ -137,10 +153,10 @@ Les prompts peuvent référencer n’importe quelle colonne ou n’importe quel 
 * La précision du graphique dépend de la clarté du prompt et de la structure des données sous-jacentes. Si un graphique généré ne correspond pas aux attentes, essayez de reformuler le prompt ou d&#39;indiquer explicitement les noms de colonnes.
 
 <div id="further-reading">
-  ## Pour aller plus loin
+  ## Pour en savoir plus
 </div>
 
-* [Du texte aux graphiques : une façon plus rapide de visualiser avec ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant cette fonctionnalité
-* [Tableaux de bord et visualisations](/fr/clickstack/features/dashboards/overview) — création manuelle de graphiques avec Chart Explorer
+* [Du texte aux graphiques : une façon plus rapide de visualiser avec ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant la fonctionnalité
+* [Dashboards et visualisations](/fr/clickstack/features/dashboards/overview) — création manuelle de graphiques avec Chart Explorer
 * [Search](/fr/clickstack/features/search) — syntaxe de recherche en texte intégral et par propriété
 * [Configuration](/fr/clickstack/managing/config) — toutes les variables d’environnement de ClickStack

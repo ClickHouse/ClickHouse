@@ -26,7 +26,7 @@ Condition: (path in [\'xxx}zzz\', \'xxx}zz{\'))
 1
 Condition: (path in [\'xxx-zzz\', \'xxx-zz{\'))
 1
-Condition: true
+0
 Condition: (path in [\'xxx\', \'xxy\'))
 0
 Condition: (path in [\'xxx\', \'xxy\'))

@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <vector>
-#include <deque>
 
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
@@ -18,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
+extern const int LOGICAL_ERROR;
 }
 
 class IDataType;
@@ -36,6 +36,7 @@ enum class QueryTreeNodeType : uint8_t
     FUNCTION,
     COLUMN,
     LAMBDA,
+    LAMBDA_ARGS,
     SORT,
     INTERPOLATE,
     WINDOW,
@@ -65,14 +66,21 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
-using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
-using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
-using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
+
+class ITableExpressionNode;
+using TableExpressionNodePtr = std::shared_ptr<ITableExpressionNode>;
+using TableExpressionNodeWeakPtr = std::weak_ptr<ITableExpressionNode>;
+using TableExpressionNodes = std::vector<TableExpressionNodePtr>;
 
 struct ConvertToASTOptions
 {
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
+
+    /// Render a `DateTime` constant as its raw Unix timestamp instead of local date-time text, which two
+    /// instants share across a DST overlap. Valid wherever the consumer re-applies the literal's declared
+    /// type; clear it for a consumer that parses the text itself, such as an external database.
+    bool date_time_constants_as_numbers = true;
 
     bool use_source_expression_for_constants = false;
 
@@ -92,10 +100,10 @@ public:
     virtual ~IQueryTreeNode() = default;
 
     /// Get query tree node type
-    virtual QueryTreeNodeType getNodeType() const = 0;
+    [[nodiscard]] virtual QueryTreeNodeType getNodeType() const = 0;
 
     /// Get query tree node type name
-    const char * getNodeTypeName() const
+    [[nodiscard]] const char * getNodeTypeName() const
     {
         return toString(getNodeType());
     }
@@ -104,7 +112,7 @@ public:
       * If node does not support this method exception is thrown.
       * TODO: Maybe this can be a part of ExpressionQueryTreeNode.
       */
-    virtual DataTypePtr getResultType() const
+    [[nodiscard]] virtual DataTypePtr getResultType() const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
     }
@@ -127,7 +135,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -147,36 +155,36 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     /// Get a deep copy of the query tree
-    QueryTreeNodePtr clone() const;
+    [[nodiscard]] QueryTreeNodePtr clone() const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is key in replacement map, then instead of clone it
       * use value node from replacement map.
       */
-    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
-    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+    using ReplacementMap = std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>;
+    [[nodiscard]] QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.
       */
-    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
+    [[nodiscard]] QueryTreeNodePtr cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
-    bool hasAlias() const
+    [[nodiscard]] bool hasAlias() const
     {
         return !alias.empty();
     }
 
     /// Get node alias
-    const String & getAlias() const
+    [[nodiscard]] const String & getAlias() const
     {
         return alias;
     }
 
-    const String & getOriginalAlias() const
+    [[nodiscard]] const String & getOriginalAlias() const
     {
         return original_alias.empty() ? alias : original_alias;
     }
@@ -197,7 +205,7 @@ public:
     }
 
     /// Returns true if the expression was parenthesized in the original query
-    bool isParenthesized() const
+    [[nodiscard]] bool isParenthesized() const
     {
         return parenthesized;
     }
@@ -209,13 +217,13 @@ public:
     }
 
     /// Returns true if query tree node has original AST, false otherwise
-    bool hasOriginalAST() const
+    [[nodiscard]] bool hasOriginalAST() const
     {
         return original_ast != nullptr;
     }
 
     /// Get query tree node original AST
-    const ASTPtr & getOriginalAST() const
+    [[nodiscard]] const ASTPtr & getOriginalAST() const
     {
         return original_ast;
     }
@@ -231,19 +239,19 @@ public:
     /** If query tree has original AST format it for error message.
       * Otherwise exception is thrown.
       */
-    String formatOriginalASTForErrorMessage() const;
+    [[nodiscard]] String formatOriginalASTForErrorMessage() const;
 
     /// Convert query tree to AST
-    ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
+    [[nodiscard]] ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
 
     /// Convert query tree to AST and then format it for error message.
-    String formatConvertedASTForErrorMessage() const;
+    [[nodiscard]] String formatConvertedASTForErrorMessage() const;
 
     /** Format AST for error message.
       * If original AST exists use `formatOriginalASTForErrorMessage`.
       * Otherwise use `formatConvertedASTForErrorMessage`.
       */
-    String formatASTForErrorMessage() const
+    [[nodiscard]] String formatASTForErrorMessage() const
     {
         if (original_ast)
             return formatOriginalASTForErrorMessage();
@@ -252,7 +260,7 @@ public:
     }
 
     /// Dump query tree to string
-    String dumpTree() const;
+    [[nodiscard]] String dumpTree() const;
 
     /// Dump query tree to buffer
     void dumpTree(WriteBuffer & buffer) const;
@@ -279,25 +287,30 @@ public:
     }
 
     /// Get query tree node children
-    const QueryTreeNodes & getChildren() const
+    [[nodiscard]] const QueryTreeNodes & getChildren() const
     {
         return children;
     }
 
-protected:
-    /** Construct query tree node.
-      * Resize children to children size.
-      * Resize weak pointers to weak pointers size.
-      */
-    explicit IQueryTreeNode(size_t children_size, size_t weak_pointers_size);
+    [[nodiscard]] virtual const ITableExpressionNode * asTableExpression() const { return nullptr; }
 
+    const ITableExpressionNode & assertTableExpression() const /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    {
+        const auto * ptr = asTableExpression();
+        if (!ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a table expression", getNodeTypeName());
+
+        return *ptr;
+    }
+
+protected:
     /// Construct query tree node and resize children to children size
     explicit IQueryTreeNode(size_t children_size);
 
     /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
       * query tree nodes.
       */
-    virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
+    [[nodiscard]] virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
 
     /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
       * query tree nodes.
@@ -307,13 +320,12 @@ protected:
     /** Subclass must clone its internal state and do not clone children or weak pointers to other
       * query tree nodes.
       */
-    virtual QueryTreeNodePtr cloneImpl() const = 0;
+    [[nodiscard]] virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
+    [[nodiscard]] virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
-    QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;
@@ -323,6 +335,14 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
+};
+
+class ITableExpressionNode : public IQueryTreeNode
+{
+public:
+    using IQueryTreeNode::IQueryTreeNode;
+
+    [[nodiscard]] const ITableExpressionNode * asTableExpression() const final { return this; }
 };
 
 }

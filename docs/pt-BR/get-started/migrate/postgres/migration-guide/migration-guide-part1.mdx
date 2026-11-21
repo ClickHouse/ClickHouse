@@ -8,8 +8,6 @@ sidebarTitle: 'Parte 1'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 > Esta é a **Parte 1** de um guia sobre a migração do PostgreSQL para o ClickHouse. Por meio de um exemplo prático, ela mostra como realizar essa migração com eficiência usando uma abordagem de replicação em tempo real (CDC). Muitos dos conceitos abordados também se aplicam a transferências manuais em massa de dados do PostgreSQL para o ClickHouse.
 
 <div id="dataset">
@@ -18,7 +16,15 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Como exemplo de conjunto de dados para mostrar uma migração típica de Postgres para ClickHouse, usamos o conjunto de dados do Stack Overflow documentado [aqui](/pt-BR/get-started/sample-datasets/stackoverflow). Ele contém todos os `post`, `vote`, `user`, `comment` e `badge` registrados no Stack Overflow de 2008 até abr. de 2024. O esquema do PostgreSQL para esses dados é mostrado abaixo:
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Esquema PostgreSQL do Stack Overflow" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Esquema PostgreSQL do Stack Overflow](/images/migrations/postgres-stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 *Os comandos DDL para criar as tabelas no PostgreSQL estão disponíveis [aqui](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
 
@@ -185,8 +191,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> O ClickHouse executará no servidor PostgreSQL cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN. Assim, cargas incrementais podem ser mais eficientes se houver um índice nas colunas usadas para identificar o conjunto de alterações.
+> O ClickHouse fará push down de cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN, para o servidor PostgreSQL. Assim, cargas incrementais podem ser mais eficientes se houver um índice nas colunas usadas para identificar o conjunto de alterações.
 
-> Um método possível para detectar operações de UPDATE ao usar replicação de consultas é usar a [`coluna de sistema XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (IDs de transação) como watermark — uma mudança nessa coluna indica uma alteração e, portanto, pode ser aplicada à tabela de destino. Os usuários que adotarem essa abordagem devem estar cientes de que os valores de `XMIN` podem sofrer wraparound, e as comparações exigem uma varredura completa da tabela, o que torna o rastreamento de alterações mais complexo.
+> Um método possível para detectar operações de UPDATE ao usar replicação por consulta é usar a [coluna de sistema `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (IDs de transação) como watermark — uma mudança nessa coluna indica uma alteração e, portanto, pode ser aplicada à tabela de destino. Os usuários que adotarem essa abordagem devem estar cientes de que os valores de `XMIN` podem voltar ao início e que as comparações exigem uma varredura completa da tabela, tornando o rastreamento de alterações mais complexo.
 
 [Clique aqui para a Parte 2](/pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part2)

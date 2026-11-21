@@ -25,45 +25,38 @@ public:
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        WhichDataType which(arguments[0]);
-
-        if (which.isEnum8())
-            return std::make_shared<DataTypeUInt8>();
-        if (which.isEnum16())
-            return std::make_shared<DataTypeUInt16>();
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
+        return "(Enum8) -> UInt8 OR (Enum16) -> UInt16";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return getSizeOfEnumType(arguments[0].type, input_rows_count);
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
         return getSizeOfEnumType(arguments[0].type, 1);
     }
 
 private:
 
-    ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const
     {
         if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(data_type.get()))
             return DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());
@@ -78,7 +71,7 @@ private:
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
     FunctionDocumentation::Description description = R"(
-Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
+Returns the number of fields in the given [`Enum`](/reference/data-types/enum).
 )";
     FunctionDocumentation::Syntax syntax = "getSizeOfEnumType(x)";
     FunctionDocumentation::Arguments arguments = {

@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import os
+import sys
 from enum import Enum
 from functools import reduce
 from hashlib import md5
 from itertools import chain
+
+sys.path.insert(0, os.path.dirname(__file__))
 
 from exceptions import (
     DataResultDiffer,

@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'déploiement', 'mise en place', 'configuration', 'observabilité']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import JSONSupport from '/snippets/fr/_json_support.mdx';
 
 Semblable à l’[image tout-en-un](/fr/clickstack/deployment/docker-compose), cette image Docker complète regroupe tous les composants de ClickStack :
@@ -34,9 +32,7 @@ Semblable à l’[image tout-en-un](/fr/clickstack/deployment/docker-compose), c
 <br />
 
 <Steps>
-  <Step>
-    ### Déployer avec Docker
-
+  <Step title="Déployer avec Docker" id="deploy-with-docker">
     Le mode local déploie l’UI HyperDX sur le port 8080.
 
     ```shell
@@ -44,20 +40,34 @@ Semblable à l’[image tout-en-un](/fr/clickstack/deployment/docker-compose), c
     ```
   </Step>
 
-  <Step>
-    ### Accéder à l’UI HyperDX
-
+  <Step title="Accéder à l’UI HyperDX" id="navigate-to-hyperdx-ui">
     Accédez à [http://localhost:8080](http://localhost:8080) pour ouvrir l’UI HyperDX.
 
     **Il ne vous sera pas demandé de créer un utilisateur, car l’authentification n’est pas activée dans ce mode de déploiement.**
 
     Connectez-vous à votre propre cluster ClickHouse externe, par exemple ClickHouse Cloud.
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Créer une connexion" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Créer une connexion](/images/use-cases/observability/hyperdx-2.webp)
+
+    </Frame>
+
+    </div>
 
     Créez une source, conservez toutes les valeurs par défaut et renseignez le champ `Table` avec la valeur `otel_logs`. Tous les autres paramètres devraient être détectés automatiquement, ce qui vous permettra de cliquer sur `Save New Source`.
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Créer une source de logs" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Créer une source de logs](/images/use-cases/observability/hyperdx-logs.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 

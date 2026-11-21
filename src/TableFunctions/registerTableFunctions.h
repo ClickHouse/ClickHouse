@@ -30,6 +30,8 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+void registerTableFunctionBigQuery(TableFunctionFactory & factory);
+void registerTableFunctionElasticsearch(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
@@ -39,6 +41,7 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
@@ -53,6 +56,8 @@ void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
+
+void registerTableFunctionObfuscate(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -71,6 +76,8 @@ void registerTableFunctionDictionary(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctionExplain(TableFunctionFactory & factory);
+
+void registerTableFunctionTraceView(TableFunctionFactory & factory);
 
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);

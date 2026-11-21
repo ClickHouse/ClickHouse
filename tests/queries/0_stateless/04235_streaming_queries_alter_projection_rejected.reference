@@ -1,0 +1,6 @@
+=== MODIFY PROJECTION is rejected while a streaming query holds a subscription ===
+SUPPORT_IS_DISABLED
+=== a settings-only ALTER is still accepted ===
+ok
+=== the projection settings are unchanged ===
+index_granularity = 1024)

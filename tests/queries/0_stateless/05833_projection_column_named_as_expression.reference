@@ -1,0 +1,19 @@
+p_normal	1	100	1
+p_normal	1	200	1
+p_normal	4	100	0
+p_keys	0	100	1
+p_keys	1	100	1
+p_keys	1	200	1
+p_argument	100	1
+p_argument	200	1
+1	100
+1	200
+4	100
+0	100	1
+1	100	1
+1	200	1
+100	1
+200	1
+p_added	1	100	1
+p_added	1	200	1
+p_added	4	100	0

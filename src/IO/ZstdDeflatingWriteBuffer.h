@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/ZstdContext.h>
 
 #include <zstd.h>
 
@@ -28,8 +29,6 @@ public:
         initialize(compression_level, window_log);
     }
 
-    ~ZstdDeflatingWriteBuffer() override;
-
     void sync() override
     {
         out->sync();
@@ -40,6 +39,8 @@ private:
 
     void nextImpl() override;
 
+    void finalizeImpl() override;
+
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
@@ -48,11 +49,12 @@ private:
 
     void flush(ZSTD_EndDirective mode);
 
-    ZSTD_CCtx * cctx{};
+    ZstdCCtxPtr cctx;
     ZSTD_inBuffer input{};
     ZSTD_outBuffer output{};
 
     size_t total_out = 0;
+    bool frame_started = false;
     bool compress_empty = true;
 };
 

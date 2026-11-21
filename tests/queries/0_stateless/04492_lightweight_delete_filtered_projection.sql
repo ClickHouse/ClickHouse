@@ -25,12 +25,14 @@ WHERE database = currentDatabase() AND table = 't_lwd_proj' AND name = 'proj_pv'
 
 DELETE FROM t_lwd_proj WHERE message = 'a' SETTINGS lightweight_deletes_sync = 2;
 
--- After a lightweight delete the projection is rebuilt; the projection WHERE must be
--- AND-combined with _row_exists, so only surviving pageview rows remain (c, d = 2 rows).
+-- After a lightweight delete the projection is rebuilt from the surviving rows and its WHERE
+-- still applies, so only surviving pageview rows remain (c, d = 2 rows).
 SELECT 'after', sum(rows) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_lwd_proj' AND name = 'proj_pv' AND active;
 
+-- optimize_read_in_order is disabled: otherwise the base table satisfies `ORDER BY time`
+-- with an in-order read and the forced projection is declined (PROJECTION_NOT_USED).
 SELECT time, message FROM t_lwd_proj WHERE event_type = 'pageview' ORDER BY time
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1;
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_read_in_order = 0;
 
 DROP TABLE t_lwd_proj;

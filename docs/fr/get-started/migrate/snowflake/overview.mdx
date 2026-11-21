@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Ce document propose une introduction à la migration des données de Snowflake vers ClickHouse.
 
 Snowflake est un entrepôt de données dans le cloud principalement conçu pour migrer vers le cloud
@@ -30,7 +28,7 @@ Dans cette section, nous comparons les principales caractéristiques de ClickHou
   ### Similarités
 </div>
 
-Snowflake est une plateforme de data warehousing dans le cloud qui fournit une solution évolutive
+Snowflake est une plateforme d’entreposage de données dans le cloud qui fournit une solution évolutive
 et efficace pour stocker, traiter et analyser de grands volumes de
 données.
 Comme ClickHouse, Snowflake ne repose pas sur des technologies existantes, mais s’appuie
@@ -51,7 +49,15 @@ résilience et des garanties de débit évolutif.
 L’image ci-dessous, issue de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts),
 montre cette architecture :
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Architecture de Snowflake" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Architecture de Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+
+</Frame>
+
+</div>
 
 À l’inverse, en tant que produit open-source et hébergé dans le cloud, ClickHouse peut être déployé
 dans des architectures à disque partagé comme dans des architectures shared-nothing. Ces dernières sont typiques des
@@ -70,7 +76,15 @@ architectures à disque partagé (goulots d’étranglement d’E/S disque et r�
 disponible pour les nœuds actuels d’un cluster n’est pas affecté lorsque des nœuds supplémentaires sont
 ajoutés.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Architecture de ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Architecture de ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+
+</Frame>
+
+</div>
 
 <div id="differences">
   ### Différences
@@ -137,7 +151,7 @@ ClickHouse surpasse Snowflake pour les applications d&#39;analyse en temps réel
 
 * **Latence des requêtes** : les requêtes Snowflake présentent une latence plus élevée, même
   lorsque le clustering est appliqué aux tables pour optimiser les performances. Dans nos
-  tests, Snowflake nécessite plus du double de ressources de calcul pour obtenir des performances
+  tests, Snowflake nécessite plus du double de compute pour obtenir des performances
   équivalentes à celles de ClickHouse sur les requêtes auxquelles un filtre est appliqué lorsque celui-ci fait partie
   de la clé de clustering de Snowflake ou de la clé primaire de ClickHouse. Bien que
   le [cache de requêtes persistant](https://docs.snowflake.com/en/user-guide/querying-persisted-results) de Snowflake
@@ -150,9 +164,9 @@ ClickHouse surpasse Snowflake pour les applications d&#39;analyse en temps réel
   spécifique au nœud et n&#39;est pas [transactionnellement cohérent](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   ce qui le [rend plus adapté ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   à l&#39;analyse en temps réel. Les utilisateurs disposent également d&#39;un contrôle granulaire sur son utilisation,
-  avec la possibilité d&#39;en définir l&#39;usage [requête par requête](/fr/reference/settings/session-settings#use_query_cache),
-  sa [taille précise](/fr/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  de déterminer si une [requête est mise en cache](/fr/reference/settings/session-settings#enable_writes_to_query_cache)
+  avec la possibilité d&#39;en définir l&#39;usage [requête par requête](/fr/reference/settings/session-settings/use-query#use_query_cache),
+  sa [taille précise](/fr/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  de déterminer si une [requête est mise en cache](/fr/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (selon des limites de durée ou un nombre minimal d&#39;exécutions), et s&#39;il est
   uniquement [utilisé passivement](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

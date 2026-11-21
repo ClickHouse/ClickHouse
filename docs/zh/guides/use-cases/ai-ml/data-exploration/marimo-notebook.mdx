@@ -7,9 +7,7 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
-在本指南中，你将学习如何借助 [chDB](/zh/products/chdb/index) (一款由 ClickHouse 驱动的快速进程内 SQL OLAP Engine) ，在 Marimo 笔记本 中探索 ClickHouse Cloud 上的数据集。
+在本指南中，你将学习如何借助 [chDB](/zh/chdb/index) (一款由 ClickHouse 驱动的快速进程内 SQL OLAP Engine) ，在 Marimo 笔记本 中探索 ClickHouse Cloud 上的数据集。
 
 **前置条件：**
 
@@ -44,15 +42,39 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在左侧菜单中，点击 `Data sources`。然后点击 `Predefined sample data`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="添加示例数据集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![添加示例数据集](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 在 UK property price paid data (4GB) 卡片中选择 `Get started`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="选择英国房产成交价数据集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![选择英国房产成交价数据集](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 然后点击 `Import dataset`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="导入英国房产成交价数据集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![导入英国房产成交价数据集](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表导入 2892 万行价格数据。
 
@@ -93,7 +115,15 @@ marimo edit clickhouse_exploration.py
 
 此时应会打开一个新的浏览器窗口，并在 localhost:2718 显示 Marimo 界面：
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo 界面" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 界面](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</Frame>
+
+</div>
 
 Marimo 笔记本 以纯 Python 文件的形式存储，因此便于进行版本控制和与他人共享。
 
@@ -101,7 +131,7 @@ Marimo 笔记本 以纯 Python 文件的形式存储，因此便于进行版本�
   ## 安装依赖项
 </div>
 
-在新单元格中，导入所需的软件包：
+在新单元中，导入所需的软件包：
 
 ```python
 import marimo as mo
@@ -112,10 +142,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 ```
 
-将鼠标悬停在单元格上时，会看到出现两个带有 &quot;+&quot; 符号的圆圈。
-点击它们即可添加新的单元格。
+将鼠标悬停在单元上时，会看到出现两个带有 &quot;+&quot; 符号的圆圈。
+点击它们即可添加新的单元。
 
-添加一个新单元格，并运行一个简单的查询，检查是否已正确完成设置：
+添加一个新单元，并运行一个简单的查询，检查是否已正确完成设置：
 
 ```python
 result = chdb.query("SELECT 'Hello ClickHouse from Marimo!'", "DataFrame")
@@ -124,7 +154,15 @@ result
 
 你会在刚刚运行的单元下方看到如下结果：
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-data">
   ## 探索数据
@@ -206,7 +244,15 @@ fig
 
 伦敦的房价长期以来大幅上涨，这一点或许并不令人意外。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimo 数据可视化" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 数据可视化](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</Frame>
+
+</div>
 
 Marimo 的一大优势在于其响应式执行模型。接下来，我们创建一个交互式组件，动态选择不同的城镇。
 
@@ -214,7 +260,7 @@ Marimo 的一大优势在于其响应式执行模型。接下来，我们创建�
   ### 交互式城镇选择
 </div>
 
-在新的单元格中，创建一个下拉列表，用于选择不同的城镇：
+在新的单元中，创建一个下拉列表，用于选择不同的城镇：
 
 ```python
 town_selector = mo.ui.dropdown(
@@ -225,7 +271,7 @@ town_selector = mo.ui.dropdown(
 town_selector
 ```
 
-在另一个单元中，创建一个会根据城镇选择作出响应的查询。更改下拉菜单时，此单元会自动重新执行：
+在另一个单元中，创建一个会根据城镇选择作出响应的查询。更改下拉列表时，此单元会自动重新执行：
 
 ```python
 query_reactive = f"""
@@ -249,7 +295,7 @@ df_reactive
 
 现在创建一个图表，使其在更改城镇时自动更新。
 你可以将图表移到动态 DataFrame 上方，这样它会显示
-在带有下拉菜单的单元下方。
+在带有下拉列表的单元下方。
 
 ```python
 fig_reactive = px.line(
@@ -265,9 +311,17 @@ fig_reactive.update_layout(hovermode='x unified')
 fig_reactive
 ```
 
-现在，当你从下拉菜单中选择一个城镇后，图表会动态更新：
+现在，当你从下拉列表中选择一个城镇后，图表会动态更新：
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo 动态图表" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 动态图表](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-price-distributions">
   ### 使用交互式箱线图探索价格分布
@@ -313,16 +367,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# 创建交互式箱线图。
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # 显示均值和标准差
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # 显示离群点
+        boxpoints='outliers'  # Show outlier points
     )
 )
 
@@ -343,7 +397,15 @@ fig_box
 代码。
 拖动滑块时，图表会借助 Marimo 的响应式执行自动更新：
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo 动态图表" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 动态图表](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</Frame>
+
+</div>
 
 <div id="summary">
   ## 总结

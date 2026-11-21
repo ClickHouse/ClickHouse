@@ -1,0 +1,25 @@
+point condition on an unloaded key column
+10
+10
+10
+redundant range on the loaded key column added on top
+10
+10
+point conditions on every key column, only the first one loaded
+1
+1
+1
+condition confined to the loaded key column
+100
+100
+the whole key stays in memory without the setting, and the results agree
+10
+10
+suffix key columns skipped in the in-memory index
+1
+reverse-sorted unloaded key column
+10
+10
+10
+10
+10

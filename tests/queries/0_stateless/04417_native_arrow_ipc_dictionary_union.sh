@@ -44,11 +44,11 @@ w.close()
 EOF
 
     echo "--- ${FORMAT}: decode dictionary<dense_union> column ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT k, toTypeName(d), d FROM file('${DATA_FILE}', '${FORMAT}') ORDER BY k"
 
     echo "--- ${FORMAT}: projecting another column skips the dictionary<union> column ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT k FROM file('${DATA_FILE}', '${FORMAT}') ORDER BY k"
 
     rm -f "$DATA_FILE"

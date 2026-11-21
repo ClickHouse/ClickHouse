@@ -10,11 +10,10 @@ doc_type: 'reference'
 
 Introduced in: v24.1.0
 
-
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees at different levels simultaneously.
 
 This function is equivalent to [`quantileDD`](/reference/functions/aggregate-functions/quantileddsketch) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
-
+    
 
 **Syntax**
 
@@ -27,11 +26,9 @@ quantilesDD(relative_accuracy, level1, level2, ...)(expr)
 - `relative_accuracy` — Relative accuracy of the quantiles. Possible values are in the range from 0 to 1. The recommended value is 0.001 or higher. [`Float*`](/reference/data-types/float)
 - `level` — Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`. [`Float*`](/reference/data-types/float)
 
-
 **Arguments**
 
 - `expr` — Expression over the column values resulting in numeric data types, `Date` or `DateTime`. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
-
 
 **Returned value**
 

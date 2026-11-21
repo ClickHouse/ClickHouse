@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observabilidad', 'API', 'REST API', 'dashboard', 'alertas', 'HyperDX']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickStack expone una API REST para gestionar de forma programática dashboard, alertas y fuentes de datos. La API está disponible tanto para las implementaciones de **Managed ClickStack** (ClickHouse Cloud) como para los despliegues de **ClickStack Open Source**, aunque los endpoints y la autenticación difieren entre ambos.
 
 <div id="api-docs">
@@ -16,7 +14,7 @@ ClickStack expone una API REST para gestionar de forma programática dashboard, 
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    Para Managed ClickStack, se accede a la API a través de la **ClickHouse Cloud API**. Los endpoints de ClickStack están disponibles en la [especificación de la API de Cloud](/es/api-reference/organization/get-list-of-available-organizations#tag/ClickStack).
+    Para Managed ClickStack, se accede a la API a través de la **ClickHouse Cloud API**. Los endpoints de ClickStack están disponibles en la [referencia de Cloud API](/es/products/cloud/api-reference/clickstack/click-stack-list-dashboards).
 
     Los siguientes endpoints están disponibles:
 
@@ -28,7 +26,7 @@ ClickStack expone una API REST para gestionar de forma programática dashboard, 
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    Para Open Source ClickStack, la especificación completa de la API se mantiene en el [repositorio de HyperDX](https://github.com/hyperdxio/hyperdx) y puede consultarse de forma interactiva o descargarse como una especificación OpenAPI:
+    Para ClickStack Open Source, la especificación completa de la API se mantiene en el [repositorio de HyperDX](https://github.com/hyperdxio/hyperdx) y puede consultarse de forma interactiva o descargarse como una especificación OpenAPI:
 
     * [Referencia interactiva de la API](https://www.clickhouse.com/docs/clickstack/api-reference)
     * [Descargar la especificación OpenAPI (JSON)](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
@@ -74,7 +72,15 @@ ClickStack expone una API REST para gestionar de forma programática dashboard, 
     3. Ve a **Team Settings → API Keys**
     4. Copia tu **Personal API Access Key**
 
-    <Image img="/images/clickstack/api-key-personal.webp" alt="API key de ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![API key de ClickStack](/images/clickstack/api-key-personal.webp)
+
+    </Frame>
+
+    </div>
 
     <Note>
       Esta es distinta de la **API key de ingesta** que se encuentra en Team Settings y se usa para autenticar los datos de telemetría enviados al collector de OpenTelemetry.

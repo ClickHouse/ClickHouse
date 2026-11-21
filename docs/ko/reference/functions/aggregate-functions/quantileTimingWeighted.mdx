@@ -50,7 +50,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **인수**
 
-* `expr` — 컬럼 값에 대해 평가되는 표현식으로, Float* 타입의 숫자를 반환합니다. 함수에 음수 값이 전달되면 동작은 정의되지 않습니다. 값이 30,000보다 크면(페이지 로딩 시간이 30초를 초과하면) 30,000으로 간주합니다. [`Float*`](/ko/reference/data-types/float)
+* `expr` — 컬럼 값에 대해 평가되는 표현식으로, 숫자 데이터 타입, `Date` 또는 `DateTime`을 반환합니다. 함수에 음수 값이 전달되면 동작은 정의되지 않습니다. 값이 30,000보다 크면(페이지 로딩 시간이 30초를 초과하면) 30,000으로 간주합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
 * `weight` — 시퀀스 요소의 가중치를 담은 컬럼입니다. 가중치는 값이 나타나는 횟수를 나타내는 숫자입니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**

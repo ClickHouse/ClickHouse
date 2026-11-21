@@ -7,8 +7,6 @@ sidebarTitle: '数据仓库'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,15 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse 数据仓库架构" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickHouse 数据仓库架构](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+
+    </Frame>
+
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">
@@ -68,7 +74,7 @@ export const ExclusiveGroup = ({ name, children }) => {
       </Accordion>
 
       <Accordion title="集成">
-        ClickHouse 为 [Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 和 [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse) 等 BI 工具提供原生连接器。没有原生连接器的工具可通过 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql) 连接。[MCP server](/zh/guides/use-cases/ai-ml/MCP) 可将 ClickHouse 连接到 LLM，用于对话式分析；灵活的 [RBAC](/zh/concepts/features/security/access-rights) 控制还可让您安全地提供只读表访问。
+        ClickHouse 为 [Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 和 [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse) 等 BI 工具提供原生连接器。没有原生连接器的工具可通过 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql) 连接。[MCP server](/zh/guides/use-cases/ai-ml/MCP) 可将 ClickHouse 连接到 LLM，用于对话式分析；灵活的 [RBAC](/zh/concepts/features/security/access-rights) 控制还可让您安全地开放只读表访问。
       </Accordion>
     </AccordionGroup>
   </ExclusiveGroup>

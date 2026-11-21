@@ -2,8 +2,6 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
-SET enable_analyzer = 1;
-
 DROP DICTIONARY IF EXISTS dict_float_nan;
 DROP DICTIONARY IF EXISTS dict_date_attr;
 DROP DICTIONARY IF EXISTS dict_decimal_attr;
