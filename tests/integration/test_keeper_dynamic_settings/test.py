@@ -1,4 +1,6 @@
 import csv
+import socket
+import ssl
 import time
 
 import pytest
@@ -14,6 +16,9 @@ node = cluster.add_instance(
         "configs/keeper_config.xml",
         "configs/keeper_dynamic.xml",
         "configs/keeper_listeners.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
     ],
     stay_alive=True,
 )
@@ -303,20 +308,37 @@ MOVED_LISTENERS_CONFIG = """
 <clickhouse>
     <keeper_server>
         <tcp_port replace="replace">9183</tcp_port>
+        <tcp_port_secure>9283</tcp_port_secure>
         <http_control>
             <port>9184</port>
+            <secure_port>9284</secure_port>
         </http_control>
     </keeper_server>
 </clickhouse>
 """
 
 
+def secure_ruok(port):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    address = (cluster.get_instance_ip("node"), port)
+    with socket.create_connection(address, timeout=10) as sock:
+        with context.wrap_socket(sock) as tls_sock:
+            tls_sock.sendall(b"ruok")
+            return tls_sock.recv(4).decode()
+
+
 def test_reload_keeps_keeper_listeners(started_cluster):
     """A config reload that changes the Keeper ports must not leave Keeper
     without listeners: Keeper listeners are not reconfigured at runtime."""
     keeper_utils.wait_until_connected(cluster, node)
-    ready_url = f"http://{cluster.get_instance_ip('node')}:9182/ready"
+    host = cluster.get_instance_ip("node")
+    ready_url = f"http://{host}:9182/ready"
+    secure_ready_url = f"https://{host}:9282/ready"
     assert requests.get(ready_url, timeout=10).status_code == 200
+    assert requests.get(secure_ready_url, timeout=10, verify=False).status_code == 200
+    assert secure_ruok(9281) == "imok"
 
     with node.with_replace_config(
         LISTENERS_CONFIG_PATH,
@@ -328,3 +350,7 @@ def test_reload_keeps_keeper_listeners(started_cluster):
             keeper_utils.send_4lw_cmd(cluster, node, "ruok", timeout_sec=10) == "imok"
         )
         assert requests.get(ready_url, timeout=10).status_code == 200
+        assert secure_ruok(9281) == "imok"
+        assert (
+            requests.get(secure_ready_url, timeout=10, verify=False).status_code == 200
+        )
