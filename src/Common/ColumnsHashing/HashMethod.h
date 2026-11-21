@@ -1113,8 +1113,7 @@ public:
     }
 
     /// The first row after `row`, and before `end`, whose bytes differ from those of `row`; `end` if there is none.
-    /// The comparator must be usable and the rows before `end` valid. Compares column by column over chunks of rows
-    /// that double in size, so each column is read over at most about three times the length of the run.
+    /// The comparator must be usable and the rows before `end` valid.
     [[nodiscard]] NO_INLINE size_t endOfEqualRows(size_t row, size_t end) const
     {
         size_t begin = row + 1;
@@ -1136,7 +1135,6 @@ public:
     }
 
 private:
-    /// The first row in [begin, end) whose value differs from the value of `row`; `end` if there is none.
     static size_t endOfEqualValues(const char * data, size_t size, size_t row, size_t begin, size_t end)
     {
         switch (size)
@@ -1151,7 +1149,6 @@ private:
         }
     }
 
-    /// A constant size compiles the comparison to a few loads and compares, while a run-time one (0) makes it a call.
     template <size_t static_size>
     static ALWAYS_INLINE size_t endOfEqualValues(const char * data, size_t row, size_t begin, size_t end, size_t run_time_size = 0)
     {
@@ -1312,9 +1309,6 @@ private:
             return false;
     }
 
-    /// `row`, which is not prepared, has the raw key bytes of `last_row`. With `prepare_keys`, the rows of a state are read
-    /// in ascending order: after `scan_after` rows of a run have matched `last_row` one by one, one scan finds its next rows
-    /// (at most `max_rows`), which are then prepared with its key instead of compared.
     ALWAYS_INLINE void onEqualRows([[maybe_unused]] size_t row)
     {
         if constexpr (prepare_keys)
@@ -1331,8 +1325,7 @@ private:
         prepared.size = end - prepared.begin;
         if (prepared.size)
             std::fill_n(prepared.keys.begin(), prepared.size, hash128(row, key_columns.size(), key_columns));
-        /// A run that ends within `scan_after` more rows did not repay its scan: the next runs are scanned later, so that
-        /// runs too short for a scan keep the comparison of each row.
+        /// Runs too short to repay a scan delay the next one, so that they keep the comparison of each row.
         if (prepared.size >= prepared.scan_after)
             prepared.scan_after = PreparedKeys::min_rows;
         else
