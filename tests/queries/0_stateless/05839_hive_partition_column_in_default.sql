@@ -10,7 +10,8 @@ INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/q=bad/f.csv', LineAsStrin
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted2.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,,zz');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/null.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":1,"k.null":"file","d1":"x"}');
-INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = LineAsString, structure = 's String') SETTINGS s3_truncate_on_insert = 1 VALUES ('{"c0":1}'), ('{"c0":2,"d":"x"}');
+-- Not async: an async insert flush evaluates `currentDatabase()` in the table function arguments without the session database.
+INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = LineAsString, structure = 's String') SETTINGS async_insert = 0, s3_truncate_on_insert = 1 VALUES ('{"c0":1}'), ('{"c0":2,"d":"x"}');
 
 SET use_hive_partitioning = 1;
 
