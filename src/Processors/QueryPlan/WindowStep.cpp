@@ -345,8 +345,7 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
                 NullsAction::EMPTY,
                 func.argument_types,
                 func.function_parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+                properties);
         }
     }
 
