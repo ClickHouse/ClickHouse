@@ -133,7 +133,8 @@ public:
 
                 ActionsDAG alias_column_actions_dag;
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
+                PlannerActionsVisitor actions_visitor(
+                    planner_context, empty_correlated_columns_set, false, makeIsStorageColumnName(column_node->getColumnSource()));
                 auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -470,7 +471,11 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
         auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
-        PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        PlannerActionsVisitor visitor(
+            planner_context,
+            /*correlated_columns_set_=*/correlated_columns_set,
+            false /*use_column_identifier_as_action_node_name*/,
+            makeIsStorageColumnName(prewhere_table_expression));
         auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
