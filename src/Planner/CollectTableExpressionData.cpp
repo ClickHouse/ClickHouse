@@ -295,7 +295,7 @@ public:
             query_table_expressions_set.insert(query_table_expression.get());
     }
 
-    const QueryTreeNodePtr & getPrewhereTableExpression() const
+    [[nodiscard]] const QueryTreeNodePtr & getPrewhereTableExpression() const
     {
         return table_expression;
     }
