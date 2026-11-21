@@ -51,6 +51,7 @@ If you just started using ClickHouse, consider the following scenario:
 - You can grant permissions for databases and tables even if they don't exist.
 - If a table is deleted, all the privileges that correspond to this table aren't revoked. This means that even if you create a new table with the same name later, all the privileges remain valid. To revoke privileges corresponding to the deleted table, you need to execute, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
 - There are no lifetime settings for privileges.
+- A write that ClickHouse applies later, such as the flush of a [Buffer](/reference/engines/table-engines/special/buffer) table or of an [asynchronous insert](/concepts/features/operations/insert/asyncinserts), is checked again when it's applied, against the privileges current then. If the user who inserted the data has lost a required privilege by that time, the data isn't written.
 
 ### User account {#user-account-management}
 

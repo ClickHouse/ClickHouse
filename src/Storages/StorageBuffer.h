@@ -17,6 +17,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+struct BufferWriteIdentity;
+
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
   * When thresholds are exceeded, flushes the data to another table.
@@ -158,6 +160,10 @@ private:
         time_t first_write_time = 0;
         Block data;
 
+        /// Access identity of the user whose rows this shard currently holds; the shard is flushed under it.
+        /// Non-null whenever the shard holds data (set together with first_write_time).
+        std::shared_ptr<const BufferWriteIdentity> write_identity;
+
         /// Schema version, checked to avoid mixing blocks with different sets of columns, from
         /// before and after an ALTER. There are some remaining mild problems if an ALTER happens
         /// in the middle of a long-running INSERT:
@@ -207,9 +213,26 @@ private:
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
+    /// The context a block buffered under `identity` is flushed in: the identity over the buffer context.
+    ContextMutablePtr makeFlushContext(const BufferWriteIdentity & identity) const;
+
+    /// What writeBlockToDestination leaves to classify a failure of the flush.
+    struct FlushState
+    {
+        /// Set once the identity that buffered the block is restored onto the flush context. The write records in it the
+        /// privileges this identity is denied (a `DEFINER` view checks its definer in a context of its own).
+        ContextPtr context;
+    };
+
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
+    /// `write_identity` carries the originating user so the forwarded INSERT is authorized as them.
     /// `query_context` is the context of the `INSERT` that writes the block directly, or `nullptr` for a flush.
-    void writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context = nullptr);
+    void writeBlockToDestination(
+        const Block & block,
+        StoragePtr table,
+        const std::shared_ptr<const BufferWriteIdentity> & write_identity,
+        const Context * query_context = nullptr,
+        FlushState * state = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);

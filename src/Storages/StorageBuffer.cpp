@@ -1,10 +1,13 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Common/CurrentThread.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
@@ -41,7 +44,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -50,12 +55,16 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <base/scope_guard.h>
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -64,6 +73,11 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <Poco/Net/SocketAddress.h>
+
+#include <span>
+#include <tuple>
 
 
 namespace ProfileEvents
@@ -96,7 +110,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialized_views_ignore_errors;
+    extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 readonly;
 }
 
@@ -110,6 +127,297 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int USER_EXPIRED;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
+    extern const int FAULT_INJECTED;
+    extern const int FUNCTION_NOT_ALLOWED;
+    extern const int QUERY_IS_PROHIBITED;
+    extern const int READONLY;
+    extern const int TOO_DEEP_RECURSION;
+}
+
+namespace FailPoints
+{
+    extern const char storage_buffer_fail_capturing_flush_identity[];
+    extern const char storage_buffer_pause_flush_for_other_identity[];
+    extern const char storage_buffer_fail_appending_block[];
+    extern const char storage_buffer_fail_after_installing_columns[];
+}
+
+/// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
+/// flushed to the destination through a nested INSERT; without this it would run under the storage's
+/// long-lived, user-less buffer context, which is treated as full access (`Context::getAccess`,
+/// `full_access = !user_id`), so a nested Buffer/Alias/Distributed destination would skip the originating
+/// user's access checks. Replaying this identity onto the flush context bounds the write by the user who
+/// issued the INSERT. Mirrors what `AsynchronousInsertQueue` captures for a deferred flush.
+struct BufferWriteIdentity
+{
+    std::optional<UUID> user_id;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> external_roles;
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
+    time_t authentication_valid_until = 0;
+    String current_user;
+    String initial_user;
+    String authenticated_user;
+    String quota_key;
+    /// The originating client addresses: a downstream `Distributed` destination over a cluster secret
+    /// authenticates `initial_user` against `initial_address` on the remote, and IP-keyed quotas are billed
+    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Their hosts are
+    /// batch keys (see hasSameFlushIdentity).
+    std::optional<Poco::Net::SocketAddress> current_address;
+    std::optional<Poco::Net::SocketAddress> initial_address;
+    /// Quota bucket selectors for `KEYED BY forwarded_ip_address` / `KEYED BY normalized_query_hash`; without
+    /// them the flush would bill an empty forwarded address and hash 0 from the buffer context. Both are
+    /// restored best-effort but are not batch keys (see hasSameFlushIdentity), so a batch bills its first row's
+    /// selector.
+    String forwarded_for;
+    UInt64 normalized_query_hash = 0;
+
+    /// An unset or wildcard address means the client host is unknown, e.g. in the flush of an asynchronous insert.
+    static bool isKnownClientHost(const std::optional<Poco::Net::SocketAddress> & address)
+    {
+        return address && !address->host().isWildcard();
+    }
+
+    /// Hosts match for batching when neither imposes a different constraint: the client host only (not the full
+    /// socket endpoint - the ephemeral source port is not an authorization boundary), with an unknown host treated
+    /// as no constraint.
+    static bool sameClientHost(const std::optional<Poco::Net::SocketAddress> & a, const std::optional<Poco::Net::SocketAddress> & b)
+    {
+        if (isKnownClientHost(a) && isKnownClientHost(b))
+            return a->host() == b->host();
+        return true;
+    }
+
+    /// Two rows may share a buffer shard only when the flush would authorize and attribute them identically.
+    /// The comparison covers the user-identity fields that are stable however the rows arrive: the access-control
+    /// fields (user, roles, grants), the authentication deadline (the expiry check), the client user names
+    /// (`currentUser()` and triggered views), the quota key and the client hosts. The hosts matter because a
+    /// `Distributed` over a cluster secret - reached directly or through a dependent materialized view -
+    /// authenticates the forwarded `initial_address`, so mixing hosts in one flushed block would let one host's
+    /// rows be authorized under another's. Only the host is compared, and an unknown host imposes no constraint, so
+    /// the same user's async and sync inserts are not spuriously split (see `03554_connection_crash`); a batch that
+    /// mixes them is flushed with an unknown origin (see identityForJoinedBatch).
+    /// The forwarded address and normalized query hash are restored best-effort but never compared. A shard is
+    /// flushed before it accepts a different identity; with several shards the sink routes different identities to
+    /// different shards instead.
+    [[nodiscard]] bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
+    {
+        if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
+                     current_user, initial_user, authenticated_user, quota_key)
+            != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until,
+                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key))
+            return false;
+
+        if (!sameClientHost(current_address, other.current_address) || !sameClientHost(initial_address, other.initial_address))
+            return false;
+
+        return sameAuthenticationGrants(other);
+    }
+
+    /// Whether a context with this identity has the same access as one with `other`: the same user, effective and
+    /// external roles, and credential grant limit. Only then may a query under one see the diagnostics of a flush
+    /// under the other; two credentials of one user may grant different rights.
+    [[nodiscard]] bool hasSameAccess(const BufferWriteIdentity & other) const
+    {
+        if (std::tie(user_id, current_roles, external_roles) != std::tie(other.user_id, other.current_roles, other.external_roles))
+            return false;
+        return sameAuthenticationGrants(other);
+    }
+
+private:
+    /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
+    /// identity comparison would wrongly split two equal limits coming from different sessions.
+    [[nodiscard]] bool sameAuthenticationGrants(const BufferWriteIdentity & other) const
+    {
+        if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
+            return false;
+        return !authentication_grants || authentication_grants->toStringPrecise() == other.authentication_grants->toStringPrecise();
+    }
+};
+
+namespace
+{
+
+std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr & context)
+{
+    auto identity = std::make_shared<BufferWriteIdentity>();
+    identity->user_id = context->getUserID();
+    if (identity->user_id)
+    {
+        identity->current_roles = context->getCurrentRoles();
+        identity->external_roles = context->getExternalRoles();
+        identity->authentication_grants = context->getAuthenticationGrants();
+        identity->authentication_valid_until = context->getAuthenticationValidUntil();
+    }
+    const auto & client_info = context->getClientInfo();
+    identity->current_user = client_info.current_user;
+    identity->initial_user = client_info.initial_user;
+    identity->authenticated_user = client_info.authenticated_user;
+    identity->quota_key = client_info.quota_key;
+    identity->current_address = client_info.current_address;
+    identity->initial_address = client_info.initial_address;
+    identity->forwarded_for = client_info.forwarded_for;
+    identity->normalized_query_hash = context->getNormalizedQueryHash();
+    return identity;
+}
+
+/// The identity to flush a batch with after rows of `joining` (accepted by `hasSameFlushIdentity`) are added to rows
+/// buffered under `batch`. A remote shard authenticates the whole flushed block by its `initial_address` against the
+/// shard's own policy, which may restrict a user the local policy allows from any host, so the client host is kept
+/// only if every row carries it. Otherwise the batch's origin is unknown, which only a shard allowing any host
+/// accepts: a row whose host is unknown is never authorized under another row's host.
+std::shared_ptr<const BufferWriteIdentity> identityForJoinedBatch(
+    const std::shared_ptr<const BufferWriteIdentity> & batch, const BufferWriteIdentity & joining)
+{
+    if (BufferWriteIdentity::isKnownClientHost(batch->initial_address)
+        == BufferWriteIdentity::isKnownClientHost(joining.initial_address))
+        return batch;
+
+    auto joined = std::make_shared<BufferWriteIdentity>(*batch);
+    joined->initial_address = Poco::Net::SocketAddress();
+    return joined;
+}
+
+void restoreWriteIdentity(const ContextMutablePtr & insert_context, const BufferWriteIdentity & identity)
+{
+    /// No originating user means an internal/server-initiated insert; keep the trusted user-less buffer
+    /// context, exactly as before this identity propagation was introduced.
+    if (!identity.user_id)
+        return;
+
+    /// Fail closed if the authentication method that buffered these rows expired before the flush. The
+    /// deferred flush has no session to re-validate the user, so without this a token could buffer rows
+    /// just before expiry and have a background flush write them afterwards. `AsynchronousInsertQueue`
+    /// checks the same way. 0 means no expiry.
+    if (identity.authentication_valid_until != 0)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        if (now > identity.authentication_valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to buffer the flushed rows has expired");
+    }
+
+    /// Replay the originating identity so the nested INSERT (and any further Buffer/Alias/Distributed hop)
+    /// is authorized as the user who issued the INSERT, not as the full-access buffer context. The external
+    /// roles are not granted locally, so re-apply the current roles without the grant check.
+    insert_context->setUser(*identity.user_id, identity.external_roles, identity.authentication_grants, identity.authentication_valid_until);
+    insert_context->setCurrentRoles(identity.current_roles, /*check_grants=*/ false);
+
+    /// setUser restores only the access-control identity, not the ClientInfo user names that
+    /// currentUser()/initialUser() and any triggered materialized views observe; restore them too.
+    insert_context->setCurrentUserName(identity.current_user);
+    insert_context->setInitialUserName(identity.initial_user);
+    insert_context->setAuthenticatedUserName(identity.authenticated_user);
+    insert_context->setQuotaClientKey(identity.quota_key);
+
+    /// Restore the originating client addresses so a downstream `Distributed` destination over a cluster
+    /// secret authenticates the user against the real client address, and IP-keyed quotas bill the
+    /// originating bucket, instead of the buffer context's `0.0.0.0`.
+    if (identity.current_address)
+        insert_context->setCurrentAddress(*identity.current_address);
+    if (identity.initial_address)
+        insert_context->setInitialAddress(*identity.initial_address);
+
+    /// Restore the remaining quota bucket selectors so a `KEYED BY forwarded_ip_address` or
+    /// `KEYED BY normalized_query_hash` quota bills the originating bucket instead of an empty forwarded
+    /// address and hash 0 from the buffer context.
+    if (!identity.forwarded_for.empty())
+        insert_context->setForwardedFor(identity.forwarded_for);
+    if (identity.normalized_query_hash != 0)
+        insert_context->setNormalizedQueryHash(identity.normalized_query_hash);
+}
+
+/// A write forwarded through more tables than this is refused rather than authorized in part: reading the metadata of an
+/// `Alias` follows its chain to the end without checks, so the hops beyond would reveal the schema of their target.
+constexpr size_t max_forwarded_insert_depth = 16;
+
+/// Checks, without writing, the `INSERT` privileges of the user of `context` that a write into `table` checks as it
+/// writes: on the targets of the materialized views that depend on `table`, and hop by hop on every table the write is
+/// forwarded to (the target of an `Alias`, the destination of a `Buffer`, the target of a materialized view, the table of
+/// a local shard of a `Distributed`, the storage behind a proxy such as a table created from a table function), and so
+/// on from each of them. A materialized view and what is behind it are checked
+/// with the rights of its SQL security, as its write is. A remote shard authorizes its part of the write itself. The
+/// caller checks `INSERT` on `table`.
+void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
+{
+    if (depth >= max_forwarded_insert_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "The write into {} is forwarded through more than {} tables, more than can be authorized before writing",
+            table->getStorageID().getNameForLogs(),
+            max_forwarded_insert_depth);
+
+    /// As `InsertDependenciesBuilder` and `StorageMaterializedView::write` check it.
+    const auto check_view_target = [&](const StorageMaterializedView & view)
+    {
+        const auto target = view.tryGetTargetTable();
+        if (!target)
+            return;
+        const auto view_metadata = view.getInMemoryMetadataPtr(context, false);
+        const ContextPtr view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        if (!view.hasInnerTable() && view_metadata->sql_security_type)
+        {
+            const auto target_metadata = target->getInMemoryMetadataPtr(view_context, false);
+            view_context->checkAccess(AccessType::INSERT, target->getStorageID(), target_metadata->getSampleBlockInsertable().getNames());
+        }
+        checkForwardedInsertAccess(target, view_context, depth + 1);
+    };
+
+    auto & catalog = DatabaseCatalog::instance();
+    /// With `materialized_views_ignore_errors` the write skips a dependent view that fails, a denial included.
+    if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
+    {
+        for (const auto & view_id : catalog.getDependentViews(table->getStorageID()))
+        {
+            const auto view = catalog.tryGetTable(view_id, context);
+            if (const auto * materialized_view = view ? view->as<StorageMaterializedView>() : nullptr)
+                check_view_target(*materialized_view);
+        }
+    }
+
+    StoragePtr next;
+    if (const auto * alias = table->as<StorageAlias>())
+    {
+        next = alias->tryGetTargetTable();
+    }
+    else if (const auto * buffer = table->as<StorageBuffer>())
+    {
+        next = buffer->getDestinationTable();
+    }
+    else if (const auto * materialized_view = table->as<StorageMaterializedView>())
+    {
+        check_view_target(*materialized_view);
+    }
+    else if (const auto * distributed = table->as<StorageDistributed>())
+    {
+        /// A shard with a local replica among those the write selects (as `DistributedSink` selects them) is written here,
+        /// by a nested `INSERT` into its table under this identity, which resolves an empty database name as it does.
+        const auto & settings = context->getSettingsRef();
+        const auto & remote_table = distributed->getRemoteTableName();
+        if (settings[Setting::prefer_localhost_replica] && !remote_table.empty())
+        {
+            const auto cluster = distributed->getCluster();
+            auto shards = std::span(cluster->getShardsInfo());
+            if (const UInt64 insert_shard_id = settings[Setting::insert_shard_id])
+                shards = insert_shard_id <= shards.size() ? shards.subspan(insert_shard_id - 1, 1) : shards.last(0);
+            if (std::ranges::any_of(shards, [](const auto & shard) { return shard.isLocal(); }))
+                next = catalog.tryGetTable(
+                    context->resolveStorageID(StorageID(distributed->getRemoteDatabaseName(), remote_table)), context);
+        }
+    }
+    else if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
+    {
+        next = proxy->getNested();
+    }
+
+    if (next)
+    {
+        context->checkAccess(AccessType::INSERT, next->getStorageID());
+        checkForwardedInsertAccess(next, context, depth + 1);
+    }
+}
+
 }
 
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
@@ -775,7 +1083,13 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t old_bytes = to.bytes();
 
     if (to.empty())
+    {
         to = from.cloneEmpty();
+        fiu_do_on(FailPoints::storage_buffer_fail_after_installing_columns,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after installing the columns of an empty Buffer shard");
+        });
+    }
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
 
@@ -894,6 +1208,9 @@ public:
     {
         // Check table structure.
         metadata_snapshot->check(getHeader(), true);
+        /// Captured once from the initiating query's context and replayed onto the flush context so the
+        /// forwarded write is bounded by this user even on a later background flush.
+        write_identity = captureWriteIdentity(getContext());
     }
 
     String getName() const override { return "BufferSink"; }
@@ -910,6 +1227,15 @@ public:
         if (destination)
         {
             getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
+            /// Refuse rows the flush could not write now, while the user can still be told: a flush that is denied drops
+            /// them with only a log record. The check runs in the context the flush runs in, whose settings come from the
+            /// buffer context and the user's profile, not from this query, e.g. whether a shard with a local replica is
+            /// written here. Once per insert, as it costs about as much as planning an insert into the destination.
+            if (!forwarded_insert_checked)
+            {
+                checkForwardedInsertAccess(destination, storage.makeFlushContext(*write_identity));
+                forwarded_insert_checked = true;
+            }
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
@@ -926,7 +1252,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination, getContext().get());
+                storage.writeBlockToDestination(block, destination, write_identity, getContext().get());
             }
             return;
         }
@@ -937,6 +1263,12 @@ public:
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
 
+        /// Prefer the least busy shard that is empty or already holds rows of the same access identity, so the
+        /// insert does not have to flush a different identity's rows first (see insertIntoBuffer). Only if no
+        /// such shard can be locked, fall back to the least busy one, which will flush before accepting this.
+        StorageBuffer::Buffer * chosen_buffer = nullptr;
+        std::unique_lock<std::mutex> chosen_lock;
+        size_t chosen_shard_rows = 0;
         StorageBuffer::Buffer * least_busy_buffer = nullptr;
         std::unique_lock<std::mutex> least_busy_lock;
         size_t least_busy_shard_rows = 0;
@@ -947,10 +1279,22 @@ public:
 
             if (lock.owns_lock())
             {
-                size_t num_rows = storage.buffers[shard_num].data.rows();
-                if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+                auto & candidate = storage.buffers[shard_num];
+                size_t num_rows = candidate.data.rows();
+                const bool same_identity = !candidate.first_write_time
+                    || candidate.write_identity->hasSameFlushIdentity(*write_identity);
+                if (same_identity)
                 {
-                    least_busy_buffer = &storage.buffers[shard_num];
+                    if (!chosen_buffer || num_rows < chosen_shard_rows)
+                    {
+                        chosen_buffer = &candidate;
+                        chosen_lock = std::move(lock);
+                        chosen_shard_rows = num_rows;
+                    }
+                }
+                else if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+                {
+                    least_busy_buffer = &candidate;
                     least_busy_lock = std::move(lock);
                     least_busy_shard_rows = num_rows;
                 }
@@ -959,20 +1303,29 @@ public:
             shard_num = (shard_num + 1) % storage.num_shards;
         }
 
+        StorageBuffer::Buffer * buffer_to_use = chosen_buffer ? chosen_buffer : least_busy_buffer;
+        std::unique_lock<std::mutex> & lock_to_use = chosen_buffer ? chosen_lock : least_busy_lock;
+        /// Keep only the selected shard locked: the other one stays available to its own writers while this insert
+        /// appends and possibly flushes, which can take a whole destination write.
+        if (chosen_buffer && least_busy_lock.owns_lock())
+            least_busy_lock.unlock();
+
         /// If you still can not lock anything at once, then we'll wait on mutex.
-        if (!least_busy_buffer)
+        if (!buffer_to_use)
         {
-            least_busy_buffer = &storage.buffers[start_shard_num];
-            least_busy_lock = least_busy_buffer->lockForWriting();
+            buffer_to_use = &storage.buffers[start_shard_num];
+            lock_to_use = buffer_to_use->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
-        least_busy_lock.unlock();
+        insertIntoBuffer(block, *buffer_to_use, metadata_snapshot->metadata_version);
+        lock_to_use.unlock();
 
         storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<const BufferWriteIdentity> write_identity;
+    bool forwarded_insert_checked = false;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
@@ -981,8 +1334,16 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
+        /// Flush before mixing rows of a different access identity into a shard, so each flushed block is
+        /// authorized under one identity (mirrors the metadata_version flush below). Not for a destinationless
+        /// Buffer, whose flush would just discard the earlier rows. first_write_time is non-zero exactly when
+        /// the shard holds data, and write_identity is set together with it.
+        const bool identity_changed = static_cast<bool>(storage.destination_id)
+            && buffer.first_write_time && !buffer.write_identity->hasSameFlushIdentity(*write_identity);
+
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
-            buffer.metadata_version != metadata_version)
+            buffer.metadata_version != metadata_version ||
+            identity_changed)
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -994,13 +1355,38 @@ private:
             buffer.metadata_version = metadata_version;
         }
 
-        if (!buffer.first_write_time)
-            buffer.first_write_time = current_time;
+        /// The shard's identity, and the first write time of an empty shard which goes together with it, are published
+        /// only once the block is appended: a block that fails to append must not change the authority of the rows
+        /// accepted before it.
+        const bool shard_was_empty = !buffer.first_write_time;
+        std::shared_ptr<const BufferWriteIdentity> identity_after_append = buffer.write_identity;
+        if (shard_was_empty)
+            identity_after_append = write_identity;
+        else if (storage.destination_id)
+            identity_after_append = identityForJoinedBatch(buffer.write_identity, *write_identity);
 
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
+        fiu_do_on(FailPoints::storage_buffer_fail_appending_block,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while appending a block to a Buffer shard");
+        });
+
+        /// A failed append into an empty shard leaves the columns it installed, without rows. Drop them, so that the shard
+        /// is empty again instead of holding a block without the identity of any rows.
+        bool appended = false;
+        SCOPE_EXIT(
+        {
+            if (!appended && shard_was_empty)
+                buffer.data = Block();
+        });
         appendBlock(storage.log, sorted_block, buffer.data);
+        appended = true;
+
+        if (shard_was_empty)
+            buffer.first_write_time = current_time;
+        buffer.write_identity = std::move(identity_after_append);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
@@ -1289,10 +1675,27 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_rows);
     CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_bytes);
 
+    /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
+    /// discarded, so that no failure from here on (preparing the flush, writing, classifying a failure) loses an
+    /// accepted batch. Nothing above may throw.
+    bool block_settled = false;
+    SCOPE_EXIT(
+    {
+        if (!block_settled)
+        {
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+            buffer.data.swap(block_to_write);
+            if (!buffer.first_write_time)
+                buffer.first_write_time = current_time;
+        }
+    });
+
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
     if (!destination_id)
     {
+        block_settled = true;
         total_writes.rows -= block_rows;
         total_writes.bytes -= block_allocated_bytes_delta;
 
@@ -1307,29 +1710,105 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
+    const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
+
+    /// A flush triggered by an operation with different access (another user, or another credential or roles of the
+    /// same user; an insert, `OPTIMIZE`, `DROP`) must show it nothing of the buffering identity: neither the log
+    /// records of rebuilding its access (its name, roles and grants are logged at trace level) or of the write, nor the
+    /// exception, which is replaced below.
+    const auto triggering_context = CurrentThread::tryGetQueryContext();
+    bool flushed_for_other_identity = false;
+    if (flushed_under_user_identity && triggering_context)
+    {
+        fiu_do_on(FailPoints::storage_buffer_fail_capturing_flush_identity,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while capturing the identity that triggered a flush");
+        });
+        flushed_for_other_identity = !buffer.write_identity->hasSameAccess(*captureWriteIdentity(triggering_context));
+    }
+
+    /// Such a flush runs in a thread group of its own: a child of the triggering query's group without its client
+    /// logs queue (`createForExplainAnalyze` makes a plain child), so its records and those of any thread it starts,
+    /// e.g. the workers of a foreground `Distributed` insert, do not reach that client, while memory and profile
+    /// events are still accounted to the query. Detaching the query's own group instead would race with flushes of
+    /// other shards that run in it in parallel: whichever finished first would restore the queue for the others.
+    std::optional<ThreadGroupSwitcher> flush_thread_group_switcher;
+    std::optional<CurrentThread::HideLogsFromClientScope> hide_logs_from_client;
+    if (flushed_for_other_identity)
+    {
+        if (auto query_thread_group = CurrentThread::getGroup())
+        {
+            auto flush_thread_group = ThreadGroup::createForExplainAnalyze(query_thread_group);
+            flush_thread_group->attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+            flush_thread_group_switcher.emplace(flush_thread_group, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, /*allow_existing_group=*/ true);
+            if (CurrentThread::getGroup() != flush_thread_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot run a flush for another identity in a thread group of its own");
+        }
+        else
+        {
+            /// Without a thread group no other thread can inherit the queue, so hiding the current thread's is enough.
+            hide_logs_from_client.emplace();
+        }
+        FailPointInjection::pauseFailPoint(FailPoints::storage_buffer_pause_flush_for_other_identity);
+    }
+
     Stopwatch watch;
+    FlushState flush_state;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, /*query_context=*/ nullptr, &flush_state);
     }
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// Return the block to its place in the buffer.
+        /// A block that the identity which buffered it may no longer write is dropped with an error logged, and not
+        /// retried: the user or one of their roles was dropped, their credential expired, or the write was denied one of
+        /// their privileges (which their insert checked on the tables that existed then). Retaining the block would wedge
+        /// the shard for every other identity, the background flush, `OPTIMIZE` and `ALTER`. A failure to rebuild the
+        /// flush context that leaves the identity valid (e.g. its default database is detached) and any other failure to
+        /// write, including a denial that is not of these privileges (by a remote shard, of the definer of a view, or of
+        /// an operation that runs only in a query of a user), keeps the block for retry.
+        const auto lost_write_access = [&]
+        {
+            const int code = getCurrentExceptionCode();
+            if (!flush_state.context)
+                return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+            if (code != ErrorCodes::ACCESS_DENIED && code != ErrorCodes::READONLY && code != ErrorCodes::QUERY_IS_PROHIBITED
+                && code != ErrorCodes::FUNCTION_NOT_ALLOWED)
+                return false;
+            const auto & privileges = flush_state.context->getQueryPrivilegesInfo();
+            std::lock_guard privileges_lock(privileges.mutex);
+            return !privileges.missing_privileges.empty();
+        };
 
-        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+        if (flushed_under_user_identity && lost_write_access())
+        {
+            block_settled = true;
+            total_writes.rows -= block_rows;
+            total_writes.bytes -= block_allocated_bytes_delta;
+            tryLogCurrentException(
+                log,
+                fmt::format(
+                    "Discarding {} rows ({} bytes) buffered for destination table {}: the user who inserted them may no longer write them",
+                    block_rows, block_bytes, destination_id.getNameForLogs()));
+            return true;
+        }
 
-        buffer.data.swap(block_to_write);
+        /// Downstream/transient failure, with the local identity still able to deliver: the block goes back to its
+        /// place in the buffer (see above) and is retried later. Do not surface the buffering identity's exception
+        /// (its name, required grants, table names) to an operation with different access that triggered the flush;
+        /// the background flush records the cause server-side.
+        if (flushed_for_other_identity)
+            throw Exception(
+                getCurrentExceptionCode(),
+                "Could not flush a buffered batch to destination table {}; it is retained for retry.",
+                destination_id.getNameForLogs());
 
-        if (!buffer.first_write_time)
-            buffer.first_write_time = current_time;
-
-        /// After a while, the next write attempt will happen.
         throw;
     }
 
+    block_settled = true;
     total_writes.rows -= block_rows;
     total_writes.bytes -= block_allocated_bytes_delta;
 
@@ -1339,19 +1818,60 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context)
+ContextMutablePtr StorageBuffer::makeFlushContext(const BufferWriteIdentity & identity) const
 {
-    if (!destination_id || block.empty())
+    auto flush_context = Context::createCopy(getContext());
+    flush_context->makeQueryContext();
+    /// A flush is a deferred background write, not an interactive query, even though it carries the
+    /// originating user below: this keeps functions that may run only in user-issued queries (AI functions)
+    /// rejected in it, as in merges and mutations.
+    flush_context->setBackgroundOperation();
+    /// Bound the forwarded INSERT by the user who initiated it, so a nested Buffer/Alias/Distributed
+    /// destination is re-authorized as that user instead of the full-access buffer context.
+    restoreWriteIdentity(flush_context, identity);
+    return flush_context;
+}
+
+
+void StorageBuffer::writeBlockToDestination(
+    const Block & block,
+    StoragePtr table,
+    const std::shared_ptr<const BufferWriteIdentity> & write_identity,
+    const Context * query_context,
+    FlushState * state)
+{
+    /// A block may have columns but no rows, and then possibly no identity either: there is nothing to write.
+    if (!destination_id || block.rows() == 0)
         return;
+
+    if (!write_identity)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A Buffer block of {} rows has no identity to be flushed under", block.rows());
 
     if (!table)
     {
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// Done before the destination schema is read so an `Alias` is resolved under the restored identity rather than the
+    /// buffer context.
+    auto insert_context = makeFlushContext(*write_identity);
+    if (state)
+        state->context = insert_context;
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
+
+    /// Authorize the whole write under the restored identity before writing any of it, and before the destination schema
+    /// is read, intersected, or used to emit a "columns discarded" warning, which would otherwise tell an unauthorized
+    /// user a real column (a warning, then ACCESS_DENIED) from an absent one and let it probe the schema of a table it
+    /// cannot see. The insert checked the same, but only for the tables that existed then, and access may have been
+    /// revoked since. Reading an `Alias`'s metadata follows it through every hop to the final target, which is
+    /// authorized hop by hop here too.
+    insert_context->checkAccess(AccessType::INSERT, destination_id);
+    checkForwardedInsertAccess(table, insert_context);
+
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(insert_context, false);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -1383,11 +1903,6 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
-
-    auto insert_context = Context::createCopy(getContext());
-    insert_context->makeQueryContext();
-    if (query_context)
-        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1795,6 +2310,10 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
+
+Buffered data is flushed on behalf of the user who inserted it. An `INSERT` into a Buffer table therefore requires the `INSERT` privilege on the destination table and on every table the data is forwarded to, such as the destination of a nested Buffer table, the target of an `Alias` table, or the table of a local shard of a `Distributed` table. The definers of the materialized views that write the data further need the privilege on their target tables, as for a direct `INSERT`. Otherwise the `INSERT` fails.
+
+Access is checked again when the data is flushed, against the access-control state current then, not the state when the data was inserted. If the user who inserted the data no longer has a required privilege by then (a grant was revoked, the user or one of their roles was dropped, or the credential used for the insert expired), the data is not written. It is dropped without a retry, and an error message is entered in the server log; the query that triggered the flush, if any, does not fail. A missing privilege of a materialized view's definer, or a refusal by a remote shard, keeps the data in the buffer, and the flush is retried.
 
 If the server is restarted abnormally, the data in the buffer is lost.
 
