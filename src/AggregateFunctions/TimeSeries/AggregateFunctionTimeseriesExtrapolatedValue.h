@@ -74,26 +74,29 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             count += added.count;
         }
 
-        void unmerge(const Summary & leaving, const Summary * new_first)
+        /// Returns false if `leaving` added to `resets` (inside it, or at its boundary with `new_first`): Float64 subtraction
+        /// does not undo an addition (1e16 + 5 - 1e16 gives 4, Inf - Inf gives NaN), so the window must be recomputed.
+        [[nodiscard]] bool unmerge(const Summary & leaving, const Summary * new_first)
         {
-            resets -= leaving.resets;
+            if constexpr (check_resets)
+            {
+                if (leaving.resets != 0 || (new_first && leaving.last_value > new_first->first_value))
+                    return false;
+            }
             count -= leaving.count;
             if (new_first)
             {
-                if constexpr (check_resets)
-                {
-                    if (leaving.last_value > new_first->first_value)
-                        resets -= static_cast<Float64>(leaving.last_value);     /// drop the cross-boundary reset
-                }
                 first_timestamp = new_first->first_timestamp;
                 first_value = new_first->first_value;
             }
+            return true;
         }
     };
 
     /// Sliding aggregator for rate/increase/delta: preaggregates each bucket into a `Summary` and keeps the window's
     /// summary in a `SlidingSum`. `Summary` is invertible, so the window is maintained with a single running
-    /// sum in O(1) per bucket; `getResult` reads its first/last sample, count and resets.
+    /// sum in O(1) per bucket, except that a bucket which added to `resets` cannot be subtracted, so the window is
+    /// recomputed when it leaves; `getResult` reads its first/last sample, count and resets.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;

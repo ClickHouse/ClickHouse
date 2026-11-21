@@ -1,5 +1,6 @@
 #pragma once
 
+#include <type_traits>
 #include <utility>
 
 #include <base/Decimal.h>
@@ -20,8 +21,10 @@ namespace DB
 /// and `SummaryType::merge(const SummaryType &)` combines two of them (associative).
 ///
 /// The removal strategy is chosen automatically:
-///  - if `SummaryType` is *invertible* - it has `void unmerge(const SummaryType & leaving, const SummaryType * new_first)`
+///  - if `SummaryType` is *invertible* - it has `unmerge(const SummaryType & leaving, const SummaryType * new_first)`
 ///    - a single running sum is kept, `add` merges into it and `removeBefore` unmerges the values leaving the window.
+///      An `unmerge` may return `bool`: false means it could not subtract `leaving` exactly, and the sum is then
+///      recomputed from the values still in the window.
 ///  - otherwise the value cannot be subtracted, so:
 ///     - if `stack_size > 0`: a two-stack monoid queue (the "Two-Stacks" sliding-window algorithm). Values entering at
 ///       the right edge are pushed onto the back stack, values leaving at the left edge are popped from the front
@@ -81,12 +84,16 @@ public:
     {
         if constexpr (is_invertible)
         {
+            bool exact = true;
             while (!window.empty() && window.front().first <= cut_off)
             {
                 const SummaryType leaving = std::move(window.front().second);
                 window.pop_front();
-                current_sum.unmerge(leaving, window.empty() ? nullptr : &window.front().second);
+                if (exact)
+                    exact = unmergeFromCurrentSum(leaving, window.empty() ? nullptr : &window.front().second);
             }
+            if (!exact)
+                recomputeCurrentSum();
         }
         else if (use_two_stacks)
         {
@@ -146,9 +153,7 @@ public:
             /// Recompute path: recalculate the window's sum only when it changed (`current_sum_valid` is false).
             if (!current_sum_valid)
             {
-                current_sum = SummaryType{};
-                for (const auto & timestamp_and_value : window)
-                    current_sum.merge(timestamp_and_value.second);
+                recomputeCurrentSum();
                 current_sum_valid = true;
             }
             return current_sum;
@@ -156,6 +161,25 @@ public:
     }
 
 private:
+    /// Returns false if `SummaryType::unmerge` could not subtract `leaving` exactly (a `void` `unmerge` always can).
+    bool unmergeFromCurrentSum(const SummaryType & leaving, const SummaryType * new_first)
+    {
+        if constexpr (std::is_same_v<decltype(current_sum.unmerge(leaving, new_first)), bool>)
+            return current_sum.unmerge(leaving, new_first);
+        else
+        {
+            current_sum.unmerge(leaving, new_first);
+            return true;
+        }
+    }
+
+    void recomputeCurrentSum() const
+    {
+        current_sum = SummaryType{};
+        for (const auto & timestamp_and_value : window)
+            current_sum.merge(timestamp_and_value.second);
+    }
+
     struct StackEntry
     {
         GridScaleTimestampType last_timestamp;
