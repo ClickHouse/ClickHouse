@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
 
+#include <limits>
+#include <mutex>
+
 namespace DB
 {
 
@@ -44,6 +47,12 @@ public:
     /// False means none of the rows in the mark match the predicate. We can skip such marks.
     /// True means at least one row in the mark matches the predicate. We need to read such marks.
     using MatchingMarks = std::vector<bool>;
+
+    /// The exact number of rows of each mark that match the predicate, or `UNKNOWN_MATCH_COUNT` (not counted, or too many).
+    using MatchCounts = std::vector<UInt16>;
+    static constexpr UInt16 UNKNOWN_MATCH_COUNT = std::numeric_limits<UInt16>::max();
+    /// Pairs of (mark, number of rows of the mark that match the predicate).
+    using MarkMatchCounts = std::vector<std::pair<size_t, size_t>>;
 
 private:
     /// A hash of the table id, part name and condition id.
@@ -86,6 +95,22 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+    struct CountsEntry
+    {
+        MatchCounts match_counts;
+        SharedMutex mutex;
+
+        explicit CountsEntry(size_t mark_count) : match_counts(mark_count, UNKNOWN_MATCH_COUNT) {}
+    };
+
+    struct CountsEntryWeight
+    {
+        /// The weight of the match counts of `marks_count` marks, or the maximum `size_t` if it overflows.
+        static size_t forMarks(size_t marks_count);
+        size_t operator()(const CountsEntry & entry) const;
+    };
+
+    using CountsCache = CacheBase<Key, CountsEntry, UInt128TrivialHash, CountsEntryWeight>;
 
 public:
     using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
@@ -139,6 +164,14 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// Record the exact number of rows matching the predicate per mark. The caller must have evaluated exactly this predicate
+    /// on every row of these marks: no other filter before it, and no rounded (time) or salted (TopK) condition.
+    void writeMatchCounts(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+        const MarkMatchCounts & mark_match_counts, size_t marks_count, bool has_final_mark);
+
+    std::optional<MatchCounts> readMatchCounts(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
@@ -149,6 +182,13 @@ public:
 
 private:
     Cache cache;
+    /// Uses only the space `cache` leaves free: a new `MatchingMarks` entry evicts match counts, never the reverse.
+    CountsCache counts_cache;
+
+    std::mutex counts_size_mutex;
+
+    size_t fitMatchCountsIntoFreeSpace() TSA_REQUIRES(counts_size_mutex);
+
     LoggerPtr logger = getLogger("QueryConditionCache");
 
     friend class StorageSystemQueryConditionCache;

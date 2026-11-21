@@ -76,6 +76,8 @@ struct MergeTreeReaderSettings
     bool use_page_cache_lookahead_for_text_index = false;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// If the read should also record the exact number of rows matching its PREWHERE per mark in the query condition cache.
+    bool query_condition_cache_write_match_counts = false;
     /// If the query condition cache should serve conditions involving the current time by deriving
     /// deterministic conditions from them (rounding time constants onto a grid).
     bool use_query_condition_cache_for_time_conditions = false;

@@ -152,6 +152,7 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE_ONCE(file_cache_slru_pause_promotion_before_downgrade) \
     PAUSEABLE(file_segment_pause_before_write) \
+    PAUSEABLE_ONCE(query_condition_cache_pause_before_caching_match_counts) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
     PAUSEABLE(named_collections_replicated_update_pause) \
