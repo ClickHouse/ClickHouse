@@ -1,0 +1,17 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they cannot store `JSON` or `Variant` columns. -->
+    <create_query>CREATE TABLE t_sparse_json (json JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_sparse_variant (v Variant(UInt64, String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- 400 JSON paths, each present in one row of 400. -->
+    <fill_query>INSERT INTO t_sparse_json SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(300000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_sparse_json FINAL</fill_query>
+    <fill_query>INSERT INTO t_sparse_variant SELECT if(number % 64 = 0, number::Variant(UInt64, String), NULL) FROM numbers(150000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_sparse_variant FINAL</fill_query>
+
+    <query>SELECT json FROM t_sparse_json FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT v FROM t_sparse_variant FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_sparse_json</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_sparse_variant</drop_query>
+</test>
