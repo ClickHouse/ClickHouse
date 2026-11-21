@@ -172,8 +172,19 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
                         || tokens_and_offset[tokens_so_far - 3].first == SCHEMA_SEPARATOR)
                     && tokens_and_offset[tokens_so_far - 2].first == COLON
                     && (tokens_and_offset[tokens_so_far - 1].first == AUTHORITY_TERMINATOR
-                        || tokens_and_offset[tokens_so_far - 1].first == PIPE))
+                        || tokens_and_offset[tokens_so_far - 1].first == PIPE
+                        || tokens_and_offset[tokens_so_far - 1].first == SCHEMA_SEPARATOR))
                     tokens_and_offset.back() = {AT, i};
+                else if (
+                    tokens_so_far >= 3
+                    && ((tokens_and_offset[tokens_so_far - 3].first == COLON && tokens_and_offset[tokens_so_far - 2].first == AT
+                         && tokens_and_offset[tokens_so_far - 1].first == COLON)
+                        || (tokens_and_offset[tokens_so_far - 3].first == COLON && tokens_and_offset[tokens_so_far - 2].first == PIPE
+                            && tokens_and_offset[tokens_so_far - 1].first == PIPE)))
+                {
+                    tokens_and_offset.pop_back();
+                    tokens_and_offset.back() = {AT, i};
+                }
                 else if (
                     tokens_so_far == 2
                     && (tokens_and_offset[0].first == AUTHORITY_TERMINATOR || tokens_and_offset[0].first == SCHEMA_SEPARATOR)
