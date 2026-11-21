@@ -2631,6 +2631,46 @@ bool floatValuesMissKeyValues(
     return !castValuesAreTheOnlyMatches<Float64>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
 }
 
+/// The type the comparison with a value of `input_type` converts a constant of `constant_type` to. A `DateTime` and a
+/// `Date32` meet in a zone-less `DateTime64(0)`, which reads the date in the session time zone, not in the `DateTime`'s.
+static DataTypePtr getComparisonTypeOfConstant(const DataTypePtr & input_type, const DataTypePtr & constant_type)
+{
+    const auto input = removeLowCardinalityAndNullable(input_type);
+    const auto constant = removeLowCardinalityAndNullable(constant_type);
+    const auto * input_tuple = typeid_cast<const DataTypeTuple *>(input.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant.get());
+
+    DataTypePtr result;
+    if (input_tuple && constant_tuple && input_tuple->getElements().size() == constant_tuple->getElements().size())
+    {
+        DataTypes elements;
+        for (size_t i = 0; i < constant_tuple->getElements().size(); ++i)
+            elements.push_back(getComparisonTypeOfConstant(input_tuple->getElements()[i], constant_tuple->getElements()[i]));
+        result = constant_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, constant_tuple->getElementNames())
+                                                    : std::make_shared<DataTypeTuple>(elements);
+    }
+    else if (isDateOrDate32OrDateTimeOrDateTime64(input) && isDateOrDate32OrDateTimeOrDateTime64(constant))
+    {
+        result = tryGetLeastSupertype(DataTypes{input, constant});
+        if (!result || result->equals(*input) || result->equals(*constant))
+            return constant_type;
+    }
+    else
+        return constant_type;
+
+    return isNullableOrLowCardinalityNullable(constant_type) ? makeNullable(result) : result;
+}
+
+static void convertDateConstantToComparisonSupertype(const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
+{
+    const auto type = getComparisonTypeOfConstant(transform_input_type, constant.type);
+    if (type->equals(*constant.type))
+        return;
+
+    constant.column = castColumn(constant, type);
+    constant.type = type;
+}
+
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
 /// comparison `x < c` matches the same rows as `x <= c - 1`, and `x > c` the same as `x >= c + 1`. This
 /// replaces the constant `c` of such a comparison with that inclusive bound, where `x` has the type
@@ -2725,6 +2765,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
+            convertDateConstantToComparisonSupertype(transform_input_type, normalized_constant);
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
         }
 
@@ -3481,6 +3522,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         auto normalized_constant = constant;
         if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
             continue;
+        convertDateConstantToComparisonSupertype(candidate.dag.input_type, normalized_constant);
 
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
         /// Inspect that value before applying the key expression.
