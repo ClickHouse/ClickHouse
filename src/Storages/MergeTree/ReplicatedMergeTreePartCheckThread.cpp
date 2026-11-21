@@ -417,14 +417,16 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
             const auto direct_io_before = thread_events[ProfileEvents::CreatedReadBufferDirectIO];
             const auto direct_io_failed_before = thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed];
 
-            checkDataPart(
+            const auto checked_checksums = checkDataPart(
                 part,
                 /* require_checksums */true,
                 is_broken_projection,
                 [this] { return need_stop.load(); },
                 throw_on_broken_projection);
 
-            const bool checked_with_direct_io = thread_events[ProfileEvents::CreatedReadBufferDirectIO] > direct_io_before
+            /// Empty checksums: the check stopped at a retryable error.
+            const bool checked_with_direct_io = !checked_checksums.empty()
+                && thread_events[ProfileEvents::CreatedReadBufferDirectIO] > direct_io_before
                 && thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed] == direct_io_failed_before;
 
             bool cancelled = need_stop;

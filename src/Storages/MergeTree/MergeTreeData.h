@@ -238,7 +238,7 @@ class MergeTreeData : public WithMutableContext, public IStorage, public IBackgr
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    /// after_read_error - a query failed to read the part.
+    /// after_read_error - reading the part failed.
     using BrokenPartCallback = std::function<void (const String & part_name, bool after_read_error)>;
     using DataPart = IMergeTreeDataPart;
 

@@ -57,7 +57,7 @@ public:
 
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
-    /// after_read_error - a query failed to read the part.
+    /// after_read_error - reading the part failed.
     void enqueuePart(const String & name, time_t delay_to_check_seconds = 0, bool after_read_error = false);
 
     /// Get the number of parts in the queue for check.
