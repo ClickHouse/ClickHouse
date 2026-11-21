@@ -1,0 +1,17 @@
+exact LIKE	1
+exact LIKE ESCAPE	1
+exact NOT LIKE	1
+LIKE %	1
+LIKE % lower bound	1
+ILIKE %	1
+NOT ILIKE %	1
+prefix LIKE	1
+prefix LIKE lower bound	1
+suffix LIKE	1
+suffix LIKE lower bound	1
+startsWith empty	1
+startsWith empty lower bound	1
+FixedString LIKE %	1
+FixedString startsWith empty	1
+Enum LIKE %	1
+startsWith Array	1
