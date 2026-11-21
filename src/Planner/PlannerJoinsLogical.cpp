@@ -82,7 +82,7 @@ namespace Setting
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
 
-static const ActionsDAG::Node * appendExpression(
+const ActionsDAG::Node * appendJoinExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
@@ -159,7 +159,7 @@ struct JoinOperatorBuildContext
     JoinActionRef addExpression(const QueryTreeNodePtr & node)
     {
         auto dag = expression_actions.getActionsDAG();
-        const auto * dag_node = appendExpression(*dag, node, planner_context, left_header, right_header);
+        const auto * dag_node = appendJoinExpression(*dag, node, planner_context, left_header, right_header);
         return JoinActionRef(dag_node, expression_actions);
     }
 

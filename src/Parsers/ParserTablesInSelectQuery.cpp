@@ -311,9 +311,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (is_lateral)
         {
             table_join->lateral = true;
-
-            if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
         }
         else
         {
@@ -582,7 +579,7 @@ Additional JOIN types available in ClickHouse are:
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Partially (for the opposite side of `LEFT` and `RIGHT`) or completely (for `INNER`) disables the Cartesian product for standard `JOIN` types. `ANY FULL JOIN` is not supported. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`               | Joining sequences with a non-exact match. See [ASOF JOIN usage](#asof-join-usage).                                                           |
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables. See [PASTE JOIN usage](#paste-join-usage).                                                                                          |
-| `INNER JOIN LATERAL`, `LEFT JOIN LATERAL`   | Joins a subquery that references columns of the tables on its left side. Experimental, requires [`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join). See [LATERAL JOIN](#lateral-join). |
+| `INNER JOIN LATERAL`, `LEFT JOIN LATERAL`, `CROSS JOIN LATERAL`, `, LATERAL` | Joins a subquery that references columns of the tables on its left side. Experimental, requires [`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join). See [LATERAL JOIN](#lateral-join). |
 
 Diagrams of each JOIN type and strictness are shown in [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables#join-types-and-strictness).
 
@@ -1032,10 +1029,15 @@ of the left-side column values it references, and its result were joined to ever
 ```sql
 SELECT ...
 FROM <left_table>
-[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON <condition>
 ```
 
-The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
+`CROSS JOIN LATERAL (...) AS <alias>` and `<left_table>, LATERAL (...) AS <alias>` mean the same as
+`INNER JOIN LATERAL (...) AS <alias> ON true`.
+
+`ON` is required for `INNER` and `LEFT` (use `ON true` when the subquery's `WHERE` already relates the two sides)
+and is evaluated for every pair of a left row and a lateral row, like for any other join; for `LEFT JOIN LATERAL`
+a left row without such a pair gets default values (`NULL` with `join_use_nulls`).
 
 It is available since version 26.10. It is experimental and disabled by default; enable it with the
 [`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join) setting.
@@ -1058,17 +1060,17 @@ shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subque
 
 Only the following subset is supported so far; anything else is rejected with an error:
 
-- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
+- `INNER`, `LEFT`, `CROSS` and comma forms only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported.
 - The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
-- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
-  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
+- `USING` is not supported.
 - The `GLOBAL` and `LOCAL` join modifiers are not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
 - Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
   must not contain functions that are non-deterministic within a query, such as
   `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
-  Functions that are constant within a query, such as `now`, are allowed.
+  Functions that are constant within a query, such as `now`, are allowed, and so is `arrayJoin` (`unnest`),
+  because it returns the same rows for the same argument.
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported. Use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.

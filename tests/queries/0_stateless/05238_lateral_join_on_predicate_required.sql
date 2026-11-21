@@ -1,5 +1,5 @@
 -- The `ON` predicate of `JOIN LATERAL` cannot be omitted: the parser requires `ON` or `USING`
--- for every non-CROSS join, and the documented grammar advertises exactly `ON true`.
+-- for every non-CROSS join.
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS companies;
