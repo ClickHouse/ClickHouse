@@ -1,0 +1,35 @@
+-- { echoOn }
+
+SET max_block_size = 65409;
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 0;
+135
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 1;
+135
+SELECT count() FROM t_runs WHERE (a, b, c, d, e, f, g) IN (SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+50090
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs INTERSECT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+67
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs EXCEPT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+68
+SET max_block_size = 7;
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 0;
+135
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 1;
+135
+SELECT count() FROM t_runs WHERE (a, b, c, d, e, f, g) IN (SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+50090
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs INTERSECT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+67
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs EXCEPT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+68
+SET max_block_size = 1000;
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 0;
+135
+SELECT count() FROM (SELECT DISTINCT a, b, c, d, e, f, g FROM t_runs) SETTINGS optimize_distinct_in_order = 1;
+135
+SELECT count() FROM t_runs WHERE (a, b, c, d, e, f, g) IN (SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+50090
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs INTERSECT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+67
+SELECT count() FROM (SELECT a, b, c, d, e, f, g FROM t_runs EXCEPT DISTINCT SELECT a, b, c, d, e, f, g FROM t_runs WHERE bitShiftRight(c, 32) % 2 = 0);
+68

@@ -1112,7 +1112,56 @@ public:
         return true;
     }
 
+    /// The first row after `row`, and before `end`, whose bytes differ from those of `row`; `end` if there is none.
+    /// The comparator must be usable and the rows before `end` valid.
+    [[nodiscard]] NO_INLINE size_t endOfEqualRows(size_t row, size_t end) const
+    {
+        size_t begin = row + 1;
+        for (size_t chunk = 16; begin < end; chunk *= 2)
+        {
+            const size_t chunk_end = end - begin > chunk ? begin + chunk : end;
+            size_t equal_end = chunk_end;
+            for (const auto & [data, size] : slices)
+            {
+                equal_end = endOfEqualValues(data, size, row, begin, equal_end);
+                if (equal_end == begin)
+                    return begin;
+            }
+            if (equal_end != chunk_end)
+                return equal_end;
+            begin = chunk_end;
+        }
+        return begin;
+    }
+
 private:
+    static size_t endOfEqualValues(const char * data, size_t size, size_t row, size_t begin, size_t end)
+    {
+        switch (size)
+        {
+            case 1: return endOfEqualValues<1>(data, row, begin, end);
+            case 2: return endOfEqualValues<2>(data, row, begin, end);
+            case 4: return endOfEqualValues<4>(data, row, begin, end);
+            case 8: return endOfEqualValues<8>(data, row, begin, end);
+            case 16: return endOfEqualValues<16>(data, row, begin, end);
+            case 32: return endOfEqualValues<32>(data, row, begin, end);
+            default: return endOfEqualValues<0>(data, row, begin, end, size);
+        }
+    }
+
+    template <size_t static_size>
+    static ALWAYS_INLINE size_t endOfEqualValues(const char * data, size_t row, size_t begin, size_t end, size_t run_time_size = 0)
+    {
+        const size_t size = static_size ? static_size : run_time_size;
+        const char * value = data + row * size;
+        for (size_t i = begin; i < end; ++i)
+        {
+            if (memcmp(data + i * size, value, size) != 0)
+                return i;
+        }
+        return end;
+    }
+
     bool collect(const IColumn & column)
     {
         if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
@@ -1172,6 +1221,8 @@ struct HashMethodHashed
         size_t size = 0;
         size_t next_rows = min_rows;
         size_t rows_end = 0;
+        /// The number of rows of a run that match `last_row` one by one before its next rows are searched for.
+        size_t scan_after = min_rows;
         bool enabled = false;
     };
     struct NoPreparedKeys {};
@@ -1187,6 +1238,9 @@ struct HashMethodHashed
         {
             prepared.rows_end = std::min(rows.end, key_columns.empty() ? 0 : key_columns[0]->size());
             prepared.enabled = !rows.skips_rows && prepared.rows_end >= rows.begin + PreparedKeys::min_rows;
+            /// A state that skips rows never scans: a scan would read rows that are never asked about.
+            if (rows.skips_rows)
+                prepared.scan_after = std::numeric_limits<size_t>::max();
         }
     }
 
@@ -1213,8 +1267,14 @@ struct HashMethodHashed
         if constexpr (use_cache)
         {
             /// An emplace can reuse the cache only when the key is known to be in the table.
-            if (!isPrepared(row) && last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
-                return Base::getCachedEmplaceResult();
+            if (!isPrepared(row))
+            {
+                if (last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
+                {
+                    onEqualRows(row);
+                    return Base::getCachedEmplaceResult();
+                }
+            }
             if (key_slices.isUsable())
                 last_row = row;
         }
@@ -1226,8 +1286,14 @@ struct HashMethodHashed
     {
         if constexpr (use_cache)
         {
-            if (!isPrepared(row) && last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
-                return Base::getCachedFindResult();
+            if (!isPrepared(row))
+            {
+                if (last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
+                {
+                    onEqualRows(row);
+                    return Base::getCachedFindResult();
+                }
+            }
             if (key_slices.isUsable())
                 last_row = row;
         }
@@ -1241,6 +1307,29 @@ private:
             return row - prepared.begin < prepared.size;
         else
             return false;
+    }
+
+    ALWAYS_INLINE void onEqualRows([[maybe_unused]] size_t row)
+    {
+        if constexpr (prepare_keys)
+        {
+            if (row - last_row >= prepared.scan_after) [[unlikely]]
+                prepareRun(row);
+        }
+    }
+
+    NO_INLINE void prepareRun(size_t row) requires (prepare_keys)
+    {
+        const size_t end = key_slices.endOfEqualRows(row, std::min(prepared.rows_end, row + 1 + PreparedKeys::max_rows));
+        prepared.begin = row + 1;
+        prepared.size = end - prepared.begin;
+        if (prepared.size)
+            std::fill_n(prepared.keys.begin(), prepared.size, hash128(row, key_columns.size(), key_columns));
+        /// Runs too short to repay a scan delay the next one, so that they keep the comparison of each row.
+        if (prepared.size >= prepared.scan_after)
+            prepared.scan_after = PreparedKeys::min_rows;
+        else
+            prepared.scan_after = std::min(2 * prepared.scan_after, PreparedKeys::max_rows);
     }
 
     NO_INLINE void prepareKeys(size_t row) requires (prepare_keys)
