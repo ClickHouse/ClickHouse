@@ -32,6 +32,15 @@ class BackupMetadataFinder : private boost::noncopyable
 public:
     virtual ~BackupMetadataFinder() = default;
 
+    enum class SelectionPolicy
+    {
+        Restore,
+        RequireUnique,
+    };
+    static std::vector<std::filesystem::path> selectRootPaths(
+        const IBackup & backup, UInt64 shard, UInt64 replica, SelectionPolicy policy,
+        UInt64 default_shard = 1, UInt64 default_replica = 1);
+
     /// Formats a table name with its type prefix for use in log messages and error messages.
     /// @param database_name The name of the database containing the table.
     ///                      If equals to DatabaseCatalog::TEMPORARY_DATABASE, the table is treated as temporary.

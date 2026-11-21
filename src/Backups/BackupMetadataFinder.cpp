@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BACKUP_ENTRY_NOT_FOUND;
+extern const int BAD_ARGUMENTS;
 extern const int CANNOT_RESTORE_TABLE;
 extern const int CANNOT_RESTORE_DATABASE;
 }
@@ -141,6 +142,57 @@ void BackupMetadataFinder::applyCustomStoragePolicy(ASTPtr)
     /// Default implementation does nothing. RestorerFromBackup overrides this.
 }
 
+std::vector<fs::path> BackupMetadataFinder::selectRootPaths(
+    const IBackup & backup, UInt64 shard, UInt64 replica, SelectionPolicy policy, UInt64 default_shard, UInt64 default_replica)
+{
+    /// Start with "/" as the root path and then we will add shard- and replica-related part to it.
+    fs::path root = "/";
+    std::vector<fs::path> roots{root};
+    auto select = [&](const char * directory, const char * setting, const char * axis, UInt64 requested, UInt64 fallback)
+    {
+        auto entries = backup.listFiles(root / directory, /*recursive*/ false);
+        if (entries.empty())
+        {
+            if (requested > 1)
+                throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No {} #{} in backup", axis, requested);
+            return;
+        }
+        String chosen;
+        if (requested)
+            chosen = std::to_string(requested);
+        else if (entries.size() == 1)
+            chosen = entries.front();
+        else if (policy == SelectionPolicy::RequireUnique)
+        {
+            std::sort(entries.begin(), entries.end());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple {}s in backup ({}); specify {}", axis, boost::algorithm::join(entries, ", "), setting);
+        }
+        else
+        {
+            chosen = std::to_string(fallback);
+            if (String(axis) == "replica" && std::find(entries.begin(), entries.end(), chosen) == entries.end())
+                chosen = entries.front();
+        }
+        if (std::find(entries.begin(), entries.end(), chosen) == entries.end())
+            throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No {} #{} in backup", axis, chosen);
+        root /= directory;
+        root /= chosen;
+        roots.push_back(root);
+    };
+    /// Add shard-related part to the root path.
+    select("shards", "shard_num_in_backup", "shard", shard, default_shard);
+
+    /// Add replica-related part to the root path.
+    select("replicas", "replica_num_in_backup", "replica", replica, default_replica);
+
+    /// Revert the list of root paths, because we need it in the following order:
+    /// "/shards/<shard_num>/replicas/<replica_num>/" (first we search tables here)
+    /// "/shards/<shard_num>/" (then here)
+    /// "/" (and finally here)
+    std::reverse(roots.begin(), roots.end());
+    return roots;
+}
+
 void BackupMetadataFinder::findRootPathsInBackup()
 {
     size_t shard_num = 1;
@@ -151,65 +203,8 @@ void BackupMetadataFinder::findRootPathsInBackup()
             = BackupSettings::Util::findShardNumAndReplicaNum(restore_settings.cluster_host_ids, restore_settings.host_id);
     }
 
-    root_paths_in_backup.clear();
-
-    /// Start with "" as the root path and then we will add shard- and replica-related part to it.
-    fs::path root_path = "/";
-    root_paths_in_backup.push_back(root_path);
-
-    /// Add shard-related part to the root path.
-    Strings shards_in_backup = backup->listFiles(root_path / "shards", /*recursive*/ false);
-    if (shards_in_backup.empty())
-    {
-        if (restore_settings.shard_num_in_backup > 1)
-            throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No shard #{} in backup", restore_settings.shard_num_in_backup);
-    }
-    else
-    {
-        String shard_name;
-        if (restore_settings.shard_num_in_backup)
-            shard_name = std::to_string(restore_settings.shard_num_in_backup);
-        else if (shards_in_backup.size() == 1)
-            shard_name = shards_in_backup.front();
-        else
-            shard_name = std::to_string(shard_num);
-        if (std::find(shards_in_backup.begin(), shards_in_backup.end(), shard_name) == shards_in_backup.end())
-            throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No shard #{} in backup", shard_name);
-        root_path = root_path / "shards" / shard_name;
-        root_paths_in_backup.push_back(root_path);
-    }
-
-    /// Add replica-related part to the root path.
-    Strings replicas_in_backup = backup->listFiles(root_path / "replicas", /*recursive*/ false);
-    if (replicas_in_backup.empty())
-    {
-        if (restore_settings.replica_num_in_backup > 1)
-            throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", restore_settings.replica_num_in_backup);
-    }
-    else
-    {
-        String replica_name;
-        if (restore_settings.replica_num_in_backup)
-        {
-            replica_name = std::to_string(restore_settings.replica_num_in_backup);
-            if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), replica_name) == replicas_in_backup.end())
-                throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", replica_name);
-        }
-        else
-        {
-            replica_name = std::to_string(replica_num);
-            if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), replica_name) == replicas_in_backup.end())
-                replica_name = replicas_in_backup.front();
-        }
-        root_path = root_path / "replicas" / replica_name;
-        root_paths_in_backup.push_back(root_path);
-    }
-
-    /// Revert the list of root paths, because we need it in the following order:
-    /// "/shards/<shard_num>/replicas/<replica_num>/" (first we search tables here)
-    /// "/shards/<shard_num>/" (then here)
-    /// "/" (and finally here)
-    std::reverse(root_paths_in_backup.begin(), root_paths_in_backup.end());
+    root_paths_in_backup = selectRootPaths(*backup, restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup,
+        SelectionPolicy::Restore, shard_num, replica_num);
 
     LOG_TRACE(
         log,

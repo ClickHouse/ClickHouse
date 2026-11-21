@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <filesystem>
+
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -24,6 +26,9 @@ public:
     {
         std::string database_name;
         SecretString backup_info;
+        bool has_selectors = false;
+        UInt64 shard_num_in_backup = 0;
+        UInt64 replica_num_in_backup = 0;
     };
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
@@ -80,6 +85,7 @@ private:
     const Configuration config;
 
     std::shared_ptr<IBackup> backup;
+    std::vector<std::filesystem::path> roots;
 
     mutable std::mutex table_name_to_create_query_mutex;
     std::unordered_map<String, ASTPtr> table_name_to_create_query TSA_GUARDED_BY(table_name_to_create_query_mutex);
