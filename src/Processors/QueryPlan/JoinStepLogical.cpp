@@ -2736,6 +2736,8 @@ void JoinStepLogical::buildPhysicalJoin(
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
 
+        join_step->join_algorithm_params->inputs_sorted_by_join_key = join_step->inputs_sorted_by_key;
+
         if (hash_table_key_hash)
         {
             StatsCollectingParams params{
@@ -3123,6 +3125,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
             optimizer_flags |= 8;
         if (has_runtime_filters)
             optimizer_flags |= 16;
+        if (inputs_sorted_by_key)
+            optimizer_flags |= 32;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3202,6 +3206,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         if (optimizer_flags & 8)
             step->join_settings.enable_packed_string_keys_in_hash_join = false;
         step->has_runtime_filters = bool(optimizer_flags & 16);
+        step->inputs_sorted_by_key = bool(optimizer_flags & 32);
     }
     return step;
 }
@@ -3260,6 +3265,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
     result_step->planned_algorithm = planned_algorithm;
+    result_step->inputs_sorted_by_key = inputs_sorted_by_key;
 
     return result_step;
 }

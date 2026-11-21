@@ -9,6 +9,8 @@ empty	1
 boundary	1
 parallel_hash	1
 grace_hash_spilled	1
+batches	1
+batches	1
 boundary	1
 empty	1
 full	1

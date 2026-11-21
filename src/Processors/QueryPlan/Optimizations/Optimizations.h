@@ -441,6 +441,9 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
+/// Marks a logical join whose inputs are both stored sorted by one of its equality keys.
+void markJoinInputsSortedByKey(QueryPlan::Node & node);
+
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
 /// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly

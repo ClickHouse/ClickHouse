@@ -402,6 +402,7 @@ void optimizeTreeSecondPass(
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
+            markJoinInputsSortedByKey(frame_node);
         },
         [&](auto & frame_node)
         {

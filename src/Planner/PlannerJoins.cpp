@@ -1179,7 +1179,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const auto hash_join_match_hint = getHashJoinMatchHint(stats_collecting_params.match);
     const std::optional<UInt64> row_store_output
         = hash_join_match_hint ? std::optional<UInt64>(hash_join_match_hint->matches) : params.result_rows_estimation;
-    const bool enable_row_store = params.enable_hash_join_row_store
+    /// With both inputs sorted by a join key, the probe reads the build side in order, where columns are as cache friendly as
+    /// rows: the row store would only add the cost of building it.
+    const bool enable_row_store = params.enable_hash_join_row_store && !params.inputs_sorted_by_join_key
         && (row_store_ratio == 0.0
             || (params.rhs_size_estimation && row_store_output
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
