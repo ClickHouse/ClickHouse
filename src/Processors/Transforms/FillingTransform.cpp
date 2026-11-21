@@ -1001,6 +1001,7 @@ void FillingTransform::insertFromFillingRow(
         other_column->insertDefault();
 
     filling_row_inserted = true;
+    filling_row.setFromKey({});
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -1237,6 +1238,7 @@ void FillingTransform::transformRange(
     Block interpolate_block;
     if (new_sorting_prefix)
     {
+        filling_row.setFromKey({});
         logDebug("--- new range ---", range_end);
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
@@ -1247,6 +1249,7 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
+                filling_row.setFromKey(i);
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
@@ -1288,10 +1291,27 @@ void FillingTransform::transformRange(
 
         logDebug("next_row updated", next_row);
 
+        /// At the first original row of its group, the filling row's keys without `FROM` take that row's values.
+        /// Copied keys equal the original row, so they do not take part in the TO or STALENESS check.
+        std::optional<bool> constraints_satisfied_before_copy;
+        if (const auto from_key = filling_row.getFromKey())
+        {
+            bool same_group = true;
+            for (size_t i = 0; i <= *from_key && same_group; ++i)
+                same_group = equals(filling_row[i], next_row[i]);
+
+            if (same_group)
+            {
+                constraints_satisfied_before_copy = filling_row.isConstraintsSatisfied();
+                filling_row.setKeysAfter(*from_key, next_row);
+            }
+        }
+
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
+        if (should_insert_first && filling_row < next_row
+            && (constraints_satisfied_before_copy.has_value() ? *constraints_satisfied_before_copy : filling_row.isConstraintsSatisfied()))
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);

@@ -2,6 +2,8 @@
 
 #include <Core/SortDescription.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -49,6 +51,11 @@ public:
 
     void initUsingFrom(size_t from_pos = 0);
     void initUsingTo(size_t from_pos = 0);
+    /// Sets the keys after `pos` to their FROM, and a key without FROM to `original_row` up to the first FROM that
+    /// differs from `original_row`: after it such a key has no value, and that FROM key is `getFromKey`.
+    void setKeysAfter(size_t pos, const FillingRow & original_row);
+    [[nodiscard]] std::optional<size_t> getFromKey() const { return from_key; }
+    void setFromKey(std::optional<size_t> key) { from_key = key; }
     void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
 
     /// Throws when filling from the current row towards a constraint past the range of a column type would
@@ -78,6 +85,8 @@ private:
     /// by `checkFillingTowardsConstraintFitsColumnType`, so that the check runs once per walk, not once per step.
     Row checked_walk_cursor;
     Row checked_walk_constraint;
+    /// Set while the keys after this FROM key without FROM have no value until the first original row of the group.
+    std::optional<size_t> from_key;
     SortDescription sort_description;
 };
 
