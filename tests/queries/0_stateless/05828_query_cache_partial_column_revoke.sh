@@ -42,7 +42,7 @@ FROM
 (
     SELECT ProfileEvents['QueryCacheHits'] AS hits
     FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND AND type = 'QueryFinish'
       AND user = '${reader}'
       AND query LIKE 'SELECT sum(secret_col) FROM ${CLICKHOUSE_DATABASE}.t_05828%'
     ORDER BY event_time_microseconds
