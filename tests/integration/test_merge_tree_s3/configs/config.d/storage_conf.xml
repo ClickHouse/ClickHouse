@@ -56,6 +56,7 @@
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <s3_with_cache>
                 <type>cache</type>
