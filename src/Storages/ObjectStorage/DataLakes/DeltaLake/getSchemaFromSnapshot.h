@@ -27,6 +27,8 @@ struct TableSchemaResult
     /// Dotted paths of the `timestamp_ntz` leaves, spelled as the Parquet writer spells a column path:
     /// a struct field's own name, `element` for an array child, `key`/`value` for a map's.
     std::unordered_set<String> timestamp_ntz_paths;
+    /// Dotted paths of the Delta `binary` fields (shown as `String` in `schema`), spelled like `timestamp_ntz_paths`.
+    DB::NameSet binary_columns;
 };
 
 /// Get table schema and physical column map (logical name to physical name mapping).
@@ -54,7 +56,7 @@ WriteSchemaResult getWriteSchema(ffi::SharedWriteContext * write_context, ffi::S
 /// therefore partition columns are passed separately.
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
+TableSchemaResult convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
 
 /// Raw Delta `StructType.fields` JSON for the snapshot's logical schema, preserving the exact Delta types
 /// (`binary`, `timestamp_ntz`, `decimal(p,s)`, nested array/map/struct) that `convertToClickHouseSchema`
