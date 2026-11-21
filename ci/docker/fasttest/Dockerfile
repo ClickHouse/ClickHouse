@@ -67,11 +67,9 @@ RUN apt-get update \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         cmake \
-        libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         lldb-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION}-dev \
         libmpfr6 \
         lsof \
         ninja-build \
@@ -143,10 +141,6 @@ RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
-# FIXME: workaround for "The imported target "merge-fdata" references the file" error
-# https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
-RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
-
 ARG TARGETARCH
 ARG SCCACHE_VERSION=v0.17.0
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
