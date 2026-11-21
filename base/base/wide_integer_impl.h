@@ -603,6 +603,28 @@ struct integer<Bits, Signed>::_impl
     /// conversion rounds it once too.
     static constexpr bool x87_converts_two_items = item_count >= 2 && std::numeric_limits<long double>::digits == 64;
 
+    /// With x87, every item below the highest nonzero item and the one under it is less than half a unit in the last place of
+    /// the general conversion's result, so an unsigned value converts as those two items rounded once, times 2^64 per lower item.
+    static constexpr double item_weights[] = {0x1p0, 0x1p64, 0x1p128, 0x1p192, 0x1p256, 0x1p320, 0x1p384, 0x1p448};
+
+    static constexpr bool x87_converts_highest_two_items = x87_converts_two_items && item_count > 2
+        && item_count <= sizeof(item_weights) / sizeof(item_weights[0]) + 1 && std::is_same_v<Signed, unsigned>;
+
+    constexpr static long double highest_two_items_to_long_double(const integer<Bits, Signed> & n) noexcept
+    {
+        /// The number of items below the highest two, counted without a branch.
+        unsigned position = 0;
+        base_type higher = 0;
+        for (unsigned i = item_count - 1; i >= 2; --i)
+        {
+            higher |= n.items[little(i)];
+            position += higher != 0;
+        }
+
+        return (static_cast<long double>(n.items[little(position + 1)]) * 0x1p64L + static_cast<long double>(n.items[little(position)]))
+            * static_cast<long double>(item_weights[position]);
+    }
+
     constexpr static bool use_lowest_item(const integer<Bits, Signed> & n) noexcept
     {
         if constexpr (x87_converts_two_items)
@@ -1777,6 +1799,9 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     if constexpr (_impl::x87_converts_two_items)
         if (_impl::template fits_in_lowest_items<2>(*this))
             return _impl::two_items_to_long_double(*this);
+
+    if constexpr (_impl::x87_converts_highest_two_items)
+        return _impl::highest_two_items_to_long_double(*this);
 
     if (_impl::operator_eq(*this, 0))
         return 0;
