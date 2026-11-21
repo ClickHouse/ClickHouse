@@ -53,7 +53,13 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    /// If a whole column of variable size is read, the first block is estimated at no less than `part_bytes_per_row` bytes per row.
+    MergeTreeBlockSizePredictor(
+        const MergeTreeDataPartInfoForReaderPtr & data_part_,
+        const Names & columns,
+        const Block & sample_block,
+        bool allow_subcolumns_sizes_calculation,
+        double part_bytes_per_row = 0);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -137,6 +143,7 @@ protected:
     std::vector<std::pair<String, size_t>> fixed_columns_from_part;
 
     bool is_initialized_in_update = false;
+    bool is_block_started = false;
     bool allow_subcolumns_sizes_calculation = false;
 
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);

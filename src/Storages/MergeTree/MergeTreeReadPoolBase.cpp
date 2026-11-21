@@ -542,11 +542,19 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
                 sample_block_from_part.insert(ColumnWithTypeAndName(column_in_part->type->createColumn(), column_in_part->type, column_in_part->name));
         }
 
+        /// A compact part has no sizes of individual columns, so the size of the whole part estimates the first block.
+        double part_bytes_per_row = 0;
+        if (data_part_info->isCompactPart() && read_task_info.task_columns.pre_columns.empty()
+            && data_part_info->getRowCount() > block_size_params.max_block_size_rows)
+            part_bytes_per_row = static_cast<double>(getUncompressedSizeOfColumns(*data_part, result_column_names, settings))
+                / static_cast<double>(data_part_info->getRowCount());
+
         read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
             data_part_info,
             Names(all_column_names.begin(), all_column_names.end()),
             sample_block_from_part,
-            settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+            settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading],
+            part_bytes_per_row);
     }
 
     read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
