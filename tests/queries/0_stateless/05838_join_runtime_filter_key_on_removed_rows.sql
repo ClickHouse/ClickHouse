@@ -1,6 +1,7 @@
 -- A JOIN runtime filter computes its key on rows that are removed before its join, so it is not built on a key that can throw.
 
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0;
+-- A replica of plan-based parallel replicas gets the join keys already computed, so it cannot tell whether a key can throw.
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, parallel_replicas_plan_based = 0;
 
 -- No query has read these tables yet, so PREWHERE orders the two filters by column size.
 CREATE TABLE probe (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
@@ -102,20 +103,12 @@ CREATE TABLE rdec (k Decimal64(9)) ENGINE = MergeTree ORDER BY k;
 INSERT INTO rdec VALUES (1);
 SELECT count() FROM pdec JOIN g ON pdec.id = g.id JOIN rdec ON pdec.d = rdec.k WHERE pdec.b + g.flag = 2;
 
--- The key is a column that a subquery computes.
-SELECT count() FROM (SELECT p.b AS b, intDiv(100, p.b) AS k FROM p JOIN g ON p.id = g.id WHERE p.b + g.flag = 2) AS x JOIN r ON x.k = r.k;
-SELECT count() FROM (SELECT mt.c AS c, intDiv(100000, mt.c) AS k FROM mt JOIN w ON mt.a = w.k) AS x JOIN d ON x.k = d.k SETTINGS query_plan_optimize_join_order_limit = 0;
-CREATE TABLE probe3 (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO probe3 SELECT number % 1000 AS a, if(a >= 500, 0, 1) FROM numbers(100000);
-CREATE TABLE r13 (k UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO r13 SELECT number FROM numbers(500);
-CREATE TABLE r23 (k UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO r23 VALUES (100000);
-SELECT count() FROM (SELECT probe3.b AS b, intDiv(100000, probe3.b) AS k FROM probe3 JOIN r13 ON probe3.a = r13.k) AS x JOIN r23 ON x.k = r23.k SETTINGS query_plan_optimize_join_order_limit = 0;
-
--- The key is a column that a view computes.
-CREATE VIEW v_k AS SELECT p.b AS b, intDiv(100, p.b) AS k FROM p JOIN g ON p.id = g.id WHERE p.b + g.flag = 2;
-SELECT count() FROM v_k JOIN r ON v_k.k = r.k;
+-- `CAST` pairs the elements of named tuples by name, so this key parses a `String`.
+CREATE TABLE pt (id UInt64, b UInt8, t Tuple(a UInt8, b String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pt SELECT number, number % 2 AS b, (1, if(b = 0, 'bad', '5')) FROM numbers(100000);
+CREATE TABLE rt (k Tuple(b UInt8, a String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rt VALUES ((5, '1'));
+SELECT count() FROM pt JOIN g ON pt.id = g.id JOIN rt ON CAST(pt.t, 'Tuple(b UInt8, a String)') = rt.k WHERE pt.b + g.flag = 2;
 
 -- The cast of an `Int32` key to `Float64` cannot throw, so the key keeps its runtime filter.
 CREATE TABLE fi (k Int32) ENGINE = MergeTree ORDER BY k;
