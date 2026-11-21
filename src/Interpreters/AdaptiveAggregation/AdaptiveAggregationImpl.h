@@ -17,6 +17,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveTopKNullKey.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
@@ -243,6 +244,12 @@ struct AdaptiveAggregationSession
     /// of the ranks of the producer's own table (see `Aggregator::finishAdaptiveProducer`). Published under the same
     /// mutex.
     UInt64 top_k_floor = 0;
+
+    /// The NULL key of a top-K over a method that keeps it in a slot of its own (see `AdaptiveTopKNullKey`).
+    /// The producers that hold the NULL key add their ranks under the same mutex (see
+    /// `Aggregator::finishAdaptiveProducer`), and `Aggregator::prepareAdaptiveTopK` offers it to
+    /// `top_k_threshold`.
+    AdaptiveTopKNullKey top_k_null_key;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the

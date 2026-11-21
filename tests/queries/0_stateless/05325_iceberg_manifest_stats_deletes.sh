@@ -5,7 +5,8 @@
 # Issue 120440: the manifest row estimate subtracts the deleted rows it can count, matching the delete files to the
 # remaining data files as the read does. The estimate stays imprecise.
 # - T1: a position delete file scoped to one data file is subtracted.
-# - T2: a position delete file covering several data files is not.
+# - T2: a position delete file covering several data files is not (Spark fixture, data_lake_corpus/iceberg/ice143_v2_position_deletes).
+# - T2b: a DELETE touching two data files writes a delete file scoped to each, so both are subtracted.
 # - T3: per partition: no filter, a filter that prunes the partition with the deletes, one that keeps only it.
 # - T4: equality deletes are not subtracted, nor a removed delete entry (Spark fixture, see data_minio/deletes_db/README.md).
 # - T5: a key whose range fits the rows but not the rows left after the deletes gets no counted NDV.
@@ -31,6 +32,7 @@ LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
 mkdir -p "${LAKE}"
 cp -r "${CUR_DIR}/data_minio/deletes_db/eq_deletes_table" "${LAKE}/eq_deletes_table"
+cp -r "${CUR_DIR}/data_lake_corpus/iceberg/ice143_v2_position_deletes" "${LAKE}/ice143_v2_position_deletes"
 
 # Prints the `Join:` line of the logical plan, then the rows the read returns. Usage: labels <table> [<filter>].
 labels()
@@ -44,7 +46,7 @@ labels()
 }
 
 # u: 2 data files (k 0-99, 100-199), the DELETE touches only the first, so its delete file is scoped to it.
-# g: the same layout, the DELETE touches both files, so its delete file covers both.
+# g: the same layout, the DELETE touches both files, so it writes a delete file for each.
 # p: 1 data file per partition (us: odd k, eu: even k), the DELETE touches only the us file.
 # del: 2 data files of 1000 rows, v has 5 values, the DELETE touches only the first, so its delete file is scoped to it.
 # emptied: 1 data file of 50 rows, all deleted by a delete file scoped to it.
@@ -74,7 +76,9 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 
 echo '--- T1: delete file scoped to one data file'
 labels u
-echo '--- T2: delete file covering two data files'
+echo '--- T2: 68 rows, 28 deleted by file-scoped position deletes, 3 by a delete file covering two data files'
+labels "(SELECT id AS k FROM icebergLocal('${LAKE}/ice143_v2_position_deletes/'))"
+echo '--- T2b: a DELETE touching two data files writes one delete file per data file, so both are subtracted'
 labels g
 echo '--- T3: no filter'
 labels p
