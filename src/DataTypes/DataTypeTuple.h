@@ -40,10 +40,10 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
-    bool isDefaultInsertTrivial() const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -59,8 +59,7 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
-    using IDataType::getSerializationInfo;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
@@ -78,7 +77,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
+    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
 };
 
 }

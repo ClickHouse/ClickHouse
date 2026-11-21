@@ -72,7 +72,6 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     return {};
 }
 
-void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

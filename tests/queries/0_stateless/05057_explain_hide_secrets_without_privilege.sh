@@ -55,14 +55,29 @@ EOF
 # The analyzer, the session setting alone must not disclose secrets
 new_settings="SETTINGS enable_analyzer = 1, format_display_secrets_in_show_and_select = 1"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $new_settings"
-${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $new_settings, explain_query_plan_default = 'legacy'"
-${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.nested_const_view $new_settings, explain_query_plan_default = 'legacy'"
-${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.where_const_view $new_settings, explain_query_plan_default = 'legacy'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $new_settings"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.nested_const_view $new_settings"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.where_const_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN json = 1, actions = 1 SELECT * FROM $db.encrypted_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN header = 1 SELECT * FROM $db.encrypted_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN QUERY TREE SELECT * FROM $db.encrypted_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SYNTAX SELECT * FROM $db.encrypted_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN PIPELINE header = 1 SELECT * FROM $db.sorted_view $new_settings"
+
+function expect_refused()
+{
+      ${CLICKHOUSE_CLIENT} --user "$user" --query "$1" 2>&1 | grep -o 'ACCESS_DENIED'
+}
+
+
+# old analyzer never masks, so EXPLAIN of a secret-bearing plan is refused
+old_settings="SETTINGS enable_analyzer = 0"
+expect_refused "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $old_settings"
+expect_refused "EXPLAIN actions = 1 SELECT * FROM $db.nested_const_view $old_settings"
+expect_refused "EXPLAIN actions = 1 SELECT * FROM $db.where_const_view $old_settings"
+expect_refused "EXPLAIN header = 1 SELECT * FROM $db.encrypted_view $old_settings"
+expect_refused "EXPLAIN PIPELINE header = 1 SELECT * FROM $db.sorted_view $old_settings"
+expect_refused "EXPLAIN PIPELINE SELECT * FROM $db.sorted_view $old_settings"
 
 echo "-- the view itself stays usable for the restricted user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.encrypted_view"

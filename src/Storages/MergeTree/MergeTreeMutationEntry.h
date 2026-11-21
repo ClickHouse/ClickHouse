@@ -38,11 +38,6 @@ struct MergeTreeMutationEntry
     /// then mutation may be already done but not processed by this thread.
     bool is_done = false;
 
-    /// Time when the mutation was observed as done. Tracked in memory only (not persisted
-    /// in the mutation file): zero if the mutation is not done yet or if it was completed
-    /// before the table was loaded (e.g. before a server restart).
-    time_t finish_time = 0;
-
     UInt64 block_number = 0;
 
     String latest_failed_part;
@@ -52,9 +47,9 @@ struct MergeTreeMutationEntry
     String latest_fail_error_code_name;
 
     /// ID of transaction which has created mutation.
-    TransactionID tid = Tx::NonTransactionalTID;
+    TransactionID tid = Tx::PrehistoricTID;
     /// CSN of transaction which has created mutation
-    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or NonTransactionalCSN if there is no transaction.
+    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
     /// Create a new entry and write it to a temporary file.

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/DequeWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -12,7 +11,6 @@
 #include <IO/WriteSettings.h>
 #include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
-#include <IO/S3/Requests.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
@@ -43,7 +41,7 @@ public:
         size_t buf_size_,
         const S3::S3RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
-        std::optional<ObjectAttributes> object_metadata_ = std::nullopt,
+        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -63,7 +61,6 @@ private:
     String getShortLogDetails() const;
 
     struct PartData;
-    std::optional<S3::RequestChecksum::Algorithm> getUploadChecksumAlgorithm() const;
     void hidePartialData();
     void reallocateFirstBuffer();
     void detachBuffer();
@@ -74,15 +71,12 @@ private:
     void writePart(PartData && data);
     void writeMultipartUpload();
     void createMultipartUpload();
-    bool completeMultipartUpload();
+    void completeMultipartUpload();
     void abortMultipartUpload();
     void tryToAbortMultipartUpload() noexcept;
 
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
-
-    /// `object_metadata` with `idempotency_id` merged in.
-    ObjectAttributes metadataWithIdempotencyId() const;
 
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
@@ -92,9 +86,7 @@ private:
     const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
-    const std::optional<ObjectAttributes> object_metadata;
-    /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
-    const String idempotency_id;
+    const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
@@ -103,8 +95,8 @@ private:
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    DequeWithMemoryTracking<String> multipart_tags;
-    DequeWithMemoryTracking<String> multipart_checksums; // if enabled
+    std::deque<String> multipart_tags;
+    std::deque<String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once
@@ -114,7 +106,7 @@ private:
     /// There are two ways after:
     /// First is to call prefinalize/finalize, which leads to single part upload
     /// Second is to write more data, which leads to multi part upload
-    DequeWithMemoryTracking<PartData> detached_part_data;
+    std::deque<PartData> detached_part_data;
     char fake_buffer_when_prefinalized[1] = {};
 
     /// offset() and count() are unstable inside nextImpl

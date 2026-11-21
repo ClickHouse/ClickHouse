@@ -4,9 +4,7 @@
 
 namespace DB
 {
-
 class ISchedulerQueue;
-class IAllocationQueue;
 using ResourceCost = Int64;
 
 /*
@@ -14,21 +12,14 @@ using ResourceCost = Int64;
  */
 struct ResourceLink
 {
-    /// Queue to enqueue resource requests to. Only one of the two fields is set.
-    ISchedulerQueue * queue = nullptr; // queue for time-shared resources (CPU, network, etc)
-    IAllocationQueue * allocation_queue = nullptr; // queue for space-shared resources (memory, disk, etc)
+    ISchedulerQueue * queue = nullptr;
 
     bool operator==(const ResourceLink &) const = default;
-
-    explicit operator bool() const
-    {
-        return queue != nullptr || allocation_queue != nullptr;
-    }
+    explicit operator bool() const { return queue != nullptr; }
 
     void reset()
     {
         queue = nullptr;
-        allocation_queue = nullptr;
     }
 };
 

@@ -210,44 +210,4 @@ void IColumn::updatePermutationImpl(
     equal_ranges = std::move(new_ranges);
 }
 
-
-/// Shared skeleton for IColumn::batchSerializeAsComparable overrides.
-template <typename SerializeOne>
-void batchSerializeAsComparableImpl(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumnPermutation * permutation,
-    const UInt8 * null_map,
-    SerializeOne && serialize_one)
-{
-    if (out.size() < num_rows)
-        out.resize(num_rows);
-
-    if (!permutation && !null_map)
-    {
-        for (size_t r = 0; r < num_rows; ++r)
-            serialize_one(r, out[r]);
-    }
-    else if (!permutation)
-    {
-        for (size_t r = 0; r < num_rows; ++r)
-            if (!null_map[r])
-                serialize_one(r, out[r]);
-    }
-    else if (!null_map)
-    {
-        for (size_t r = 0; r < num_rows; ++r)
-            serialize_one((*permutation)[r], out[r]);
-    }
-    else
-    {
-        for (size_t r = 0; r < num_rows; ++r)
-        {
-            const size_t src = (*permutation)[r];
-            if (!null_map[src])
-                serialize_one(src, out[r]);
-        }
-    }
-}
-
 }

@@ -4,23 +4,15 @@
 
 import logging
 import os
-from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from helpers.cluster import run_and_check
+from helpers.cluster import is_port_free, run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #
 #   [1]: https://github.com/pytest-dev/pytest/issues/5502
 logging.raiseExceptions = False
-
-_ENV_FILE = Path(__file__).resolve().parent / ".env"
-if _ENV_FILE.is_file():
-    from dotenv import load_dotenv
-
-    load_dotenv(dotenv_path=_ENV_FILE, override=False)
-
 PORTS_PER_WORKER = 50
 
 
@@ -55,7 +47,6 @@ def pdb_history(request):
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:
-    # - hdfs -- 50020/50070/...
     # - minio
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.

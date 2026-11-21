@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
-#include <Common/Allocator_fwd.h>
-#include <Common/Documentation.h>
+#include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
@@ -64,13 +64,6 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
 
-/// `output_format_arrow_unsupported_types` supersedes the older boolean
-/// `output_format_arrow_unsupported_types_as_binary` (`0` means `throw`, `1` means `binary`). The boolean is
-/// only consulted while the new setting is left at its default, so an explicit `throw`/`text`/`binary` wins
-/// no matter which of the two was set last. Shared with the Arrow Flight server, which builds its Arrow
-/// conversion settings without going through `getFormatSettings`.
-FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Settings & settings);
-
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
@@ -92,7 +85,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    std::vector<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -151,14 +144,6 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
-    /// Some formats may produce raw (non-UTF-8) bytes depending on settings or on the header, for
-    /// example `CustomSeparated` with `format_custom_escaping_rule = 'Raw'`, or `SQLInsert` with a
-    /// column name that is not valid UTF-8 (column names are written verbatim). The checker should
-    /// return true when the current settings and header make the output format write bytes verbatim
-    /// (see `may_produce_raw_bytes`). The header carries the column names, which some formats emit
-    /// verbatim independently of the row data.
-    using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings, const Block & header)>;
-
     /// Obtain HTTP content-type for the output format.
     using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
@@ -196,20 +181,12 @@ private:
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
-        /// If true, the output can contain arbitrary bytes that are not guaranteed to be valid UTF-8 text
-        /// (raw passthrough formats such as `RawBLOB`, `TSVRaw`, `LineAsString`). Such output cannot be
-        /// embedded into a text framing format (see `IFramingFormat::requiresTextPayload`), even though the
-        /// format advertises a textual content type. Binary formats are detected by their content type instead.
-        bool may_produce_raw_bytes{false};
-        /// The same, but settings-dependent (for example `CustomSeparated` with a `Raw` escaping rule).
-        MayProduceRawBytesChecker may_produce_raw_bytes_checker;
         ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
         PrewhereSupportChecker prewhere_support_checker;
-        Documentation documentation;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -342,9 +319,6 @@ public:
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
-    /// Attach embedded documentation to a format by its name.
-    void setDocumentation(const String & name, Documentation documentation);
-
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
     String getFormatFromFileName(String file_name);
@@ -359,8 +333,6 @@ public:
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
     void markOutputFormatNotTTYFriendly(const String & name);
-    void markOutputFormatMayProduceRawBytes(const String & name);
-    void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);
@@ -377,7 +349,6 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
-    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 

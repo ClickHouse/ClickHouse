@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IndexesAreNeighbors final : public IFunction
+class FunctionH3IndexesAreNeighbors : public IFunction
 {
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
@@ -35,10 +35,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -104,11 +100,7 @@ public:
             UInt8 res = 0;
 
             if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
-            {
-                int are_neighbors = 0;
-                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
-                    res = static_cast<UInt8>(are_neighbors);
-            }
+                res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
 
             dst_data[row] = res;
         }

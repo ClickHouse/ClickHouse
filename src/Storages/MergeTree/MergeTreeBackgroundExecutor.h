@@ -15,6 +15,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
@@ -81,8 +82,8 @@ struct TaskRuntimeData
             task.reset();
     }
 
-    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
-    /// even after resetTask() has nullified the task pointer.
+    /// Cached at construction — valid even after resetTask() nulls the task pointer.
+    /// Used by removeTasksCorrespondingToStorage to identify items during destruction.
     StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
@@ -124,12 +125,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->storage_id == id)
+            if (item->task->getStorageID() == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->storage_id == id; });
+            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -169,11 +170,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->storage_id == id)
+            if (item->task->getStorageID() == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }
@@ -253,7 +254,7 @@ private:
     }
 
     std::variant<Policies...> impl;
-    size_t capacity{};
+    size_t capacity;
 };
 
 // Avoid typedef and alias to facilitate forward declaration
@@ -332,16 +333,6 @@ public:
 
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
-
-    /// Flip the executor into shutdown mode without joining the worker threads:
-    /// new tasks are rejected by `trySchedule` and pending tasks are not started
-    /// (worker threads exit at the next step boundary). Used on server shutdown to
-    /// stop scheduling before the in-flight tasks are cancelled, so that no freshly
-    /// scheduled task can slip in after the cancellation and block `wait`.
-    void requestShutdown();
-
-    /// Implies `requestShutdown`, then joins the worker threads. Running tasks are
-    /// not interrupted: each finishes its current step.
     void wait();
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.

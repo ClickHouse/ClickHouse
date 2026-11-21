@@ -35,7 +35,7 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -67,11 +67,6 @@ HTTPSessionPtr makeHTTPSession(
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
-
-/// Whether an HTTP error response is worth retrying. Deterministic client errors (bad request,
-/// unauthorized, forbidden, not found, method not allowed, not implemented) are not retriable;
-/// everything else (transient/server-side errors, rate limiting, …) is.
-bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept;
 
 /** Used to receive response (response headers and possibly body)
   *  after sending data (request headers and possibly body).

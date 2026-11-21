@@ -3,7 +3,7 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -105,22 +105,6 @@ namespace
 /// Also look at: man elf
 /// http://www.linker-aliens.org/blogs/ali/entry/inside_elf_symbol_tables/
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
-
-
-/// The value of a symbol is an address only when the symbol is defined relative to a section and is not
-/// thread local. A reserved section index means the value is a constant instead: for example, the
-/// control-flow-integrity type-id globals `__typeid__*` are absolute symbols whose value is a bit mask.
-/// A thread local symbol is defined relative to a section, but its value is an offset into the thread
-/// local block of the object rather than into the object itself.
-bool symbolValueIsAddress(uint8_t info, uint16_t section_index)
-{
-    static constexpr uint8_t stt_tls = 6;
-    static constexpr uint16_t shn_undef = 0;
-    static constexpr uint16_t shn_abs = 0xfff1;
-    static constexpr uint16_t shn_common = 0xfff2;
-    return (info & 0xf) != stt_tls
-        && section_index != shn_undef && section_index != shn_abs && section_index != shn_common;
-}
 
 
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
@@ -251,10 +235,7 @@ void collectSymbolsFromProgramHeaders(
                     if (!sym_name)
                         continue;
 
-                    if (!symbolValueIsAddress(elf_sym[sym_index].info, elf_sym[sym_index].shndx))
-                        continue;
-
-                    SymbolIndex::Symbol symbol{};
+                    SymbolIndex::Symbol symbol;
                     symbol.offset_begin = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
@@ -313,7 +294,6 @@ void collectSymbolsFromELFSymbolTable(
     {
         if (!symbol_table_entry->name
             || !symbol_table_entry->value
-            || !symbolValueIsAddress(symbol_table_entry->info, symbol_table_entry->shndx)
             || strings + symbol_table_entry->name >= elf.end())
             continue;
 
@@ -323,7 +303,7 @@ void collectSymbolsFromELFSymbolTable(
         if (!symbol_name)
             continue;
 
-        SymbolIndex::Symbol symbol{};
+        SymbolIndex::Symbol symbol;
         symbol.offset_begin = reinterpret_cast<const void *>(
             symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(
@@ -595,10 +575,8 @@ void collectSymbolsFromMachOImage(
         /// Skip debug symbols (STABS entries)
         if (sym.n_type & N_STAB)
             continue;
-        /// The value of a symbol is an address only when the symbol is defined in a section. For the other
-        /// types it is a constant: an absolute symbol (N_ABS) holds a value such as a bit mask and an
-        /// indirect symbol (N_INDR) holds a string table index.
-        if ((sym.n_type & N_TYPE) != N_SECT)
+        /// Skip undefined symbols
+        if ((sym.n_type & N_TYPE) == N_UNDF)
             continue;
         /// Skip symbols with no address
         if (sym.n_value == 0)
@@ -814,7 +792,7 @@ const SymbolIndex & SymbolIndex::instance()
     ///
     ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
     ///
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

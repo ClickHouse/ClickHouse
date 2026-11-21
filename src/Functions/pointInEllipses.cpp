@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -36,7 +35,7 @@ namespace
  * so the last success ellipse index is remembered to check this ellipse first for next point.
  *
  */
-class FunctionPointInEllipses final : public IFunction
+class FunctionPointInEllipses : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
@@ -99,7 +98,7 @@ private:
     {
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
-        VectorWithMemoryTracking<Ellipse> ellipses(ellipses_count);
+        std::vector<Ellipse> ellipses(ellipses_count);
 
         for (const auto ellipse_idx : collections::range(0, ellipses_count))
         {

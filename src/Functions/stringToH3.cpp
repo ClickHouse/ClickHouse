@@ -27,7 +27,7 @@ namespace
 
 using namespace GatherUtils;
 
-class FunctionStringToH3 final : public IFunction
+class FunctionStringToH3 : public IFunction
 {
 public:
     static constexpr auto name = "stringToH3";
@@ -38,10 +38,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, so a function that throws on the default value must not be executed on the
-    /// whole dictionary - it would fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -93,11 +89,9 @@ private:
 
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
             auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
-            H3Index h3_index = 0;
-            H3Error err = stringToH3(h3index_str.data(), &h3_index);
-            res_data[row_num] = h3_index;
+            res_data[row_num] = stringToH3(h3index_str.data());
 
-            if (err || res_data[row_num] == 0)
+            if (res_data[row_num] == 0)
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {} in function {}", h3index_str, name);
             }
@@ -113,7 +107,7 @@ private:
 REGISTER_FUNCTION(StringToH3)
 {
     FunctionDocumentation::Description description = R"(
-Converts the string representation of an H3 index to the `H3Index` ([UInt64](/reference/data-types/int-uint)) representation.
+Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
     )";
     FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
     FunctionDocumentation::Arguments arguments = {

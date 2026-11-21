@@ -3,7 +3,6 @@
 #include <Columns/ColumnObject.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 
 #include <list>
@@ -101,7 +100,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -132,7 +132,7 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         SerializationVersion serialization_version;
-        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
         SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
         size_t shared_data_buckets = 1;

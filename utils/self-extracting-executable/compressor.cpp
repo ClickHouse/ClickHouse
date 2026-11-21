@@ -29,7 +29,7 @@
 #include <types.h>
 
 /// blocking write
-static ssize_t write_data(int fd, const void *buf, size_t count)
+ssize_t write_data(int fd, const void *buf, size_t count)
 {
     for (size_t n = 0; n < count;)
     {
@@ -46,7 +46,7 @@ static ssize_t write_data(int fd, const void *buf, size_t count)
 }
 
 /// blocking read
-static ssize_t read_data(int fd, void *buf, size_t count)
+ssize_t read_data(int fd, void *buf, size_t count)
 {
     for (size_t n = 0; n < count;)
     {
@@ -65,7 +65,7 @@ static ssize_t read_data(int fd, void *buf, size_t count)
 }
 
 /// Main compression part
-static int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
+int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_CCtx * cctx)
 {
     size_t compressed_size = ZSTD_compress2(cctx, output + out_offset, output_size, input + in_offset, input_size);
@@ -80,7 +80,7 @@ static int doCompress(char * input, char * output, off_t & in_offset, off_t & ou
 }
 
 /// compress data from opened file into output file
-static int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
+int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
 {
     off_t in_offset = 0;
     compressed_size = 0;
@@ -101,7 +101,7 @@ static int compress(int in_fd, int out_fd, int level, off_t & pointer, const str
         return 1;
     }
 
-    size_t check_result = 0;
+    size_t check_result;
 
     /// Set level and enable checksums
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
@@ -177,7 +177,7 @@ static int compress(int in_fd, int out_fd, int level, off_t & pointer, const str
             return 1;
         }
         pointer += current_block_size;
-        printf("...block compression rate: %.2f%%\n", static_cast<double>(current_block_size) / static_cast<double>(size) * 100); // NOLINT(modernize-use-std-print)
+        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / static_cast<float>(size) * 100); // NOLINT(modernize-use-std-print)
         total_size += size;
         compressed_size += current_block_size;
         current_block_size = 0;
@@ -201,7 +201,7 @@ static int compress(int in_fd, int out_fd, int level, off_t & pointer, const str
 }
 
 /// Save Metadata at the end of file
-static int saveMetaData(const char* filenames[], int count, int output_fd, const MetaData& metadata,
+int saveMetaData(const char* filenames[], int count, int output_fd, const MetaData& metadata,
                  FileData* files_data, size_t pointer, size_t sum_file_size)
 {
     /// Allocate memory for metadata
@@ -242,7 +242,7 @@ static int saveMetaData(const char* filenames[], int count, int output_fd, const
 }
 
 /// Fills metadata and calls compression function for each file
-static int compressFiles(const char* out_name, const char* exec, char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
+int compressFiles(const char* out_name, const char* exec, char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
 {
     MetaData metadata;
     size_t sum_file_size = 0;
@@ -295,7 +295,7 @@ static int compressFiles(const char* out_name, const char* exec, char* filenames
             files_data[i].exec = true;
 
         /// read data about input file
-        struct stat info_in{};
+        struct stat info_in;
         if (0 != fstat(input_fd, &info_in))
         {
             perror("fstat");
@@ -358,7 +358,7 @@ static int compressFiles(const char* out_name, const char* exec, char* filenames
     return 0;
 }
 
-static int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
+int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
 {
     const ssize_t buf_size = 1ul<<19;
     auto buf_memory = std::make_unique<char[]>(buf_size);
@@ -385,7 +385,7 @@ static int copy_decompressor(int input_fd, ssize_t decompressor_size, int output
     return 0;
 }
 
-static int copy_decompressor_self(const char *self, int output_fd)
+int copy_decompressor_self(const char *self, int output_fd)
 {
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -438,9 +438,9 @@ static int copy_decompressor_self(const char *self, int output_fd)
     return ret;
 }
 
-static int copy_decompressor_file(const char *path, int output_fd)
+int copy_decompressor_file(const char *path, int output_fd)
 {
-    struct stat info_in{};
+    struct stat info_in;
     if (stat(path, &info_in) != 0)
     {
         std::cerr << "Error: decompressor file [" << path << "]." << std::endl;
@@ -481,7 +481,7 @@ inline void usage(FILE * out, const char * name)
         name, ZSTD_maxCLevel());
 }
 
-static const char * get_param(int argc, char * const argv[], const char * name)
+const char * get_param(int argc, char * const argv[], const char * name)
 {
     if (nullptr == name || name[0] == 0)
         return nullptr;
@@ -511,10 +511,6 @@ static const char * get_param(int argc, char * const argv[], const char * name)
 
 int main(int argc, char* argv[])
 {
-    /// musl defines `stdout` and `stderr` as recursive macros `(stdout)` / `(stderr)`,
-    /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (argc == 1)
     {
         usage(stdout, argv[0]);
@@ -561,9 +557,8 @@ int main(int argc, char* argv[])
         usage(stderr, argv[0]);
         return 1;
     }
-#pragma clang diagnostic pop
 
-    struct stat info_out{};
+    struct stat info_out;
     if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
     {
         std::cerr << "Error: output file [" << argv[start_of_files] << "] already exists" << std::endl;

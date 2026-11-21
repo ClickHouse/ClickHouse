@@ -6,8 +6,6 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-#include <Poco/String.h>
-
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 
@@ -34,7 +32,7 @@ String FileContentTypeToString(FileContentType type)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
 }
 
-static std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
+std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
 {
     return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
         <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
@@ -64,7 +62,7 @@ std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const 
         <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->sequence_number);
 }
 
-static String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
 {
     if (partition_specification.empty())
         return "[empty]";
@@ -84,7 +82,7 @@ static String dumpPartitionSpecification(const PartitionSpecification & partitio
     }
 }
 
-static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 {
     if (partition_key_value.empty())
         return "[empty]";
@@ -103,11 +101,6 @@ static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
     }
 }
 
-
-bool ParsedManifestFileEntry::isDeletionVector() const
-{
-    return content_type == FileContentType::POSITION_DELETE && Poco::toLower(file_format) == "puffin";
-}
 
 String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
 {

@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET session_timezone = 'Etc/UTC';
 
 DROP TABLE IF EXISTS tt;

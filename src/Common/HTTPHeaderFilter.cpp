@@ -53,13 +53,6 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
     }
 }
 
-void HTTPHeaderFilter::checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const
-{
-    /// Mutable, because the check strips control characters from the name in place. That cannot
-    /// disturb this container's invariant, which is about case, so nothing needs re-applying.
-    checkAndNormalizeHeaders(entries.entries);
-}
-
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard guard(mutex);

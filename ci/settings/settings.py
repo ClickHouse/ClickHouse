@@ -1,35 +1,31 @@
-PROJECT_NAME = "ClickHouse"
-PROJECT_SLUG = "clickhouse"
-MAIN_BRANCH = "master"
-PRAKTIKA_BASE_VENV = "praktika-runtime-0.1.8"
-
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 
+
 class RunnerLabels:
-    AMD_TINY = ["self-hosted", "amd-tiny"]
-    ARM_TINY = ["self-hosted", "arm-tiny"]
+    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
+    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
 
 MAIN_BRANCH = "master"
-S3_ARTIFACT_BUCKET = S3_BUCKET_NAME
-S3_REPORT_BUCKET = S3_REPORT_BUCKET_NAME
-CI_CONFIG_RUNS_ON = RunnerLabels.ARM_TINY
+S3_ARTIFACT_PATH = S3_BUCKET_NAME
+CI_CONFIG_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
 
 ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
-DOCKER_MERGE_RUNS_ON = RunnerLabels.AMD_TINY
-DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.ARM_TINY
-DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.AMD_TINY
+DOCKER_MERGE_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
+DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
+DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
 
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
-ENABLE_SUBMODULE_CACHE = True
-S3_REPORT_BUCKET = S3_REPORT_BUCKET_NAME
+HTML_S3_PATH = S3_REPORT_BUCKET_NAME
 S3_BUCKET_TO_HTTP_ENDPOINT = {
     S3_BUCKET_NAME: S3_BUCKET_HTTP_ENDPOINT,
     S3_REPORT_BUCKET_NAME: S3_REPORT_BUCKET_HTTP_ENDPOINT,
 }
+ENABLE_ARTIFACTS_REPORT = True
+
 COMPRESS_THRESHOLD_MB = 32
 TEXT_CONTENT_EXTENSIONS = [
     ".txt",
@@ -42,19 +38,18 @@ TEXT_CONTENT_EXTENSIONS = [
     ".jsonl",
 ]
 
-# Single JSON secret used by praktika docker login: {"username":..., "password":...}
-SECRET_DOCKER_REGISTRY = "clickhouse-dockerhub-registry"
+DOCKERHUB_USERNAME = "robotclickhouse"
+DOCKERHUB_SECRET = "dockerhub_robot_password"
 
 CI_DB_DB_NAME = "default"
 CI_DB_TABLE_NAME = "checks"
-# Single JSON connection secret used by praktika CIDB:
-# {"url": ..., "user": ..., "password": ...}
-SECRET_CI_DB_CONNECTION = "clickhouse-test-stat-connection"
+SECRET_CI_DB_URL = "clickhouse-test-stat-url"
+SECRET_CI_DB_USER = "clickhouse-test-stat-login"
+SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
-# Use the project's native token minter (deployed via github_token_minters);
-# its "{slug}-gh-token" name matches the orchestrator role's InvokeFunction grant.
-GH_AUTH_LAMBDA_NAME = f"{PROJECT_SLUG}-gh-token"
-GH_AUTH_LAMBDA_REGION: str = "us-east-1"
+USE_CUSTOM_GH_AUTH = True
+SECRET_GH_APP_ID: str = "woolenwolf_gh_app.clickhouse-app-id"
+SECRET_GH_APP_PEM_KEY: str = "woolenwolf_gh_app.clickhouse-app-key"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
@@ -69,10 +64,8 @@ CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
 
 EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
-CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infrastructure/projects.py"
-
+CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
 AWS_REGION = "us-east-1"
-AWS_PROFILE = "default"
 
 # Substrings used to classify and categorize test failures based on error output.
 # Use the following query to find test failures NOT covered by current patterns:
@@ -99,7 +92,6 @@ TEST_FAILURE_PATTERNS = [
     "Test runs too long",
     "having exception in stdout",
     "server died",
-    "liveness check failed",
     "Test internal error:",
     # Common Integration tests failures
     "AssertionError",

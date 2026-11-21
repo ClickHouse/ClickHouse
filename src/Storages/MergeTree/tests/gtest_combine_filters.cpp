@@ -18,7 +18,7 @@ using namespace DB;
  * second_filter: [1 0 1 0 1 0]
  * output_filter: [1 0 0 0 1 0 0 0 1 0 0]
  */
-static bool testCombineFilters(size_t size)
+bool testCombineFilters(size_t size)
 {
     auto generate_filter_with_alternating_one_and_zero = [](size_t len)->ColumnPtr
     {
@@ -73,7 +73,7 @@ static bool testCombineFilters(size_t size)
  * The second column contains the consecutively incremented UInt8 integers between 0x00 and 0xFF, and when the overflow
  * occurs, the value would reset to 0x00 and increment again.
  */
-static bool testCombineColumns(size_t size)
+bool testCombineColumns(size_t size)
 {
     auto generate_first_column = [] (size_t len, size_t & non_zero_count)->ColumnPtr
     {
@@ -141,7 +141,7 @@ static bool testCombineColumns(size_t size)
 /* To ensure the vectorized DB::andFilters works as its scalar implementation, this test validates the AND (&&)
  * of any combinations of the UInt8 values.
  */
-static bool testAndFilters(size_t size)
+bool testAndFilters(size_t size)
 {
     auto generate_fast_increment_column = [](size_t len)->ColumnPtr
     {

@@ -6,7 +6,6 @@ namespace DB
 /// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
 template <typename> struct BitCountImpl;
-template <typename> struct IntExp2Impl;
 template <typename> struct NegateImpl;
 template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;
@@ -20,14 +19,11 @@ template <typename, typename> struct DivideIntegralOrNullImpl;
 template <typename, typename> struct LeastBaseImpl;
 template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
-template <typename, typename> struct ModuloLegacyImpl;
 template <typename, typename> struct ModuloOrNullImpl;
 template <typename, typename> struct PositiveModuloImpl;
 template <typename, typename> struct PositiveModuloOrNullImpl;
 template <typename, typename> struct EqualsOp;
 template <typename, typename> struct NotEqualsOp;
-template <typename, typename> struct LessOp;
-template <typename, typename> struct GreaterOp;
 template <typename, typename> struct LessOrEqualsOp;
 template <typename, typename> struct GreaterOrEqualsOp;
 template <typename, typename> struct BitHammingDistanceImpl;
@@ -53,8 +49,6 @@ struct IsOperation
 {
     static constexpr bool equals = IsSameOperation<Op, EqualsOp>::value;
     static constexpr bool not_equals = IsSameOperation<Op, NotEqualsOp>::value;
-    static constexpr bool less = IsSameOperation<Op, LessOp>::value;
-    static constexpr bool greater = IsSameOperation<Op, GreaterOp>::value;
     static constexpr bool less_or_equals = IsSameOperation<Op, LessOrEqualsOp>::value;
     static constexpr bool greater_or_equals = IsSameOperation<Op, GreaterOrEqualsOp>::value;
 
@@ -67,7 +61,6 @@ struct IsOperation
     static constexpr bool int_div_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool int_div_or_null = IsSameOperation<Op, DivideIntegralOrNullImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;
-    static constexpr bool modulo_legacy = IsSameOperation<Op, ModuloLegacyImpl>::value;
     static constexpr bool modulo_or_null = IsSameOperation<Op, ModuloOrNullImpl>::value;
     static constexpr bool positive_modulo = IsSameOperation<Op, PositiveModuloImpl>::value;
     static constexpr bool positive_modulo_or_null = IsSameOperation<Op, PositiveModuloOrNullImpl>::value;

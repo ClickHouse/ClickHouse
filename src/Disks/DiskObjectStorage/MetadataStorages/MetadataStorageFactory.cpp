@@ -1,3 +1,4 @@
+#include <Common/assert_cast.h>
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -6,7 +7,6 @@
 #endif
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/loadLocalDiskConfig.h>
@@ -31,18 +31,6 @@ void checkSingleLocation(const ClusterConfigurationPtr & cluster)
 {
     if (cluster->getConfiguration().size() > 1)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Disk supports only single location clusters");
-}
-
-const WebObjectStorage & getWebObjectStorage(const ObjectStoragePtr & object_storage, std::string_view metadata_type)
-{
-    const auto * web_object_storage = dynamic_cast<const WebObjectStorage *>(object_storage.get());
-    if (!web_object_storage)
-        throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Metadata type `{}` requires a web object storage, but the disk is configured with {} object storage",
-            metadata_type,
-            object_storage->getName());
-    return *web_object_storage;
 }
 
 std::string getObjectKeyCompatiblePrefix(
@@ -128,7 +116,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
     return it->second(name, config, config_prefix, cluster, object_storages, run_local_paths_check);
 }
 
-static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
+void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("local", [](
         const std::string & name,
@@ -153,14 +141,12 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
         auto key_generator = local_object_storage->createKeyGenerator();
 
-        bool persistent_removal_log = config.getBool(config_prefix + ".persistent_removal_log", false);
-        size_t metadata_removal_log_compaction_threshold = config.getUInt64(config_prefix + ".metadata_removal_log_compaction_threshold", 1000);
-        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator), persistent_removal_log, metadata_removal_log_compaction_threshold);
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator));
     });
 }
 
 #if CLICKHOUSE_CLOUD
-static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
+void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("keeper", [](
         const std::string & name,
@@ -187,7 +173,7 @@ static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 }
 #endif
 
-static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
+void registerPlainMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain", [](
         const std::string & /* name */,
@@ -207,7 +193,7 @@ static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
     });
 }
 
-static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
+void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain_rewritable", [](
         const std::string & /* name */,
@@ -226,7 +212,7 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
     });
 }
 
-static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
+void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
         const std::string & /* name */,
@@ -240,29 +226,9 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(getWebObjectStorage(local_object_storage, "web"));
+        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
-
-static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & factory)
-{
-    factory.registerMetadataStorageType("web_index", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & /* config */,
-        const std::string & /* config_prefix */,
-        const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages,
-        bool /* run_local_paths_check */) -> MetadataStoragePtr
-    {
-        checkSingleLocation(cluster);
-
-        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
-
-        return std::make_shared<MetadataStorageFromIndexPages>(getWebObjectStorage(local_object_storage, "web_index"));
-    });
-}
-
-void registerMetadataStorages();
 
 void registerMetadataStorages()
 {
@@ -271,7 +237,6 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
-    registerMetadataStorageFromIndexPages(factory);
 #if CLICKHOUSE_CLOUD
     registerMetadataStorageFromKeeper(factory);
 #endif

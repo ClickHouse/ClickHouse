@@ -90,12 +90,6 @@ def test_system_logs_engine_expr(start_cluster):
     assert expected in node2.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
-    comment = node2.query(
-        "SELECT comment FROM system.tables WHERE database='system' and name='query_log'"
-    )
-    assert ".examples" in comment
-    assert "Configured query log comment." in comment
-    assert comment.count("It is safe to truncate or drop this table at any time.") == 1
 
 
 def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
@@ -131,7 +125,7 @@ def test_max_size_0(start_cluster):
         [
             "bash",
             "-c",
-            """echo "
+            f"""echo "
         <clickhouse>
             <query_log>
                 <max_size_rows replace=\\"replace\\">0</max_size_rows>
@@ -146,7 +140,7 @@ def test_max_size_0(start_cluster):
         node1.restart_clickhouse()
 
     node1.exec_in_container(
-        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node1.restart_clickhouse()
 
@@ -155,7 +149,7 @@ def test_reserved_size_greater_max_size(start_cluster):
         [
             "bash",
             "-c",
-            """echo "
+            f"""echo "
         <clickhouse>
             <query_log>
                 <max_size_rows replace=\\"replace\\">10</max_size_rows>
@@ -170,6 +164,6 @@ def test_reserved_size_greater_max_size(start_cluster):
         node1.restart_clickhouse()
 
     node1.exec_in_container(
-        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node1.restart_clickhouse()

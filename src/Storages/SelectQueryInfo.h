@@ -135,16 +135,10 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    TableExpressionNodePtr table_expression;
+    QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
-
-    /// Value of the `analyzer_compatibility_apply_final_to_all_joined_tables` setting.
-    /// When true, `isFinal` falls back to the query-level FINAL (the left-most table's modifier)
-    /// for table expressions without their own modifiers, restoring the pre-26.6 behavior
-    /// where FINAL on one table of a JOIN leaked onto the other joined tables.
-    bool apply_query_level_final_if_no_modifiers = false;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
@@ -207,21 +201,20 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool parallel_replicas_disabled = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
     // If not 0, that means it's a trivial limit query.
     UInt64 trivial_limit = 0;
-    /// A trivial limit query whose rows `arrayJoin` expands: the source must not stop at the limit, but should read small.
-    bool small_limit_above_array_join = false;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    bool isFinal() const;
+    /// During read from MergeTree parts will be removed from snapshot after they are not needed
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
-    /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    bool isFinal() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

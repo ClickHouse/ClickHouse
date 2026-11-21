@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateTimeOrDateTime64 final : public IFunctionDateOrDateTime<Transform>
+class FunctionDateOrDateTimeToDateTimeOrDateTime64 : public IFunctionDateOrDateTime<Transform>
 {
 private:
     const bool enable_extended_results_for_datetime_functions = false;

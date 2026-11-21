@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -22,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 
 /// arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']) = [('a', 'd'), ('b', 'e'), ('c', 'f')]
 /// arrayZipUnaligned(['a', 'b', 'c'], ['d', 'e']) = [('a', 'd'), ('b', 'e'), ('c', null)]
-class FunctionArrayZip final : public IFunction
+class FunctionArrayZip : public IFunction
 {
 public:
     FunctionArrayZip(const char * name_, bool allow_unaligned_)
@@ -125,7 +124,7 @@ private:
 
     ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count, bool has_unaligned) const
     {
-        VectorWithMemoryTracking<const ColumnArray *> array_columns(holders.size());
+        std::vector<const ColumnArray *> array_columns(holders.size());
         for (size_t i = 0; i < holders.size(); ++i)
             array_columns[i] = checkAndGetColumn<ColumnArray>(holders[i].get());
 
@@ -183,7 +182,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Syntax syntax = "arrayZip(arr1, arr2, ... , arrN)";
     FunctionDocumentation::Arguments argument = {{"arr1, arr2, ... , arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed", {"Array(T)"}};
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a',5),('b',2),('c',1)]"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a', 5), ('b', 2), ('c', 1)]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, example, introduced_in, category};
@@ -194,7 +193,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Syntax syntax_unaligned = "arrayZipUnaligned(arr1, arr2, ..., arrN)";
     FunctionDocumentation::Arguments argument_unaligned = {{"arr1, arr2, ..., arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
     FunctionDocumentation::ReturnedValue returned_value_unaligned = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.", {"Array(T)", "Tuple(T1, T2, ...)"}};
-    FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a',1),(NULL,2),(NULL,3)]"}};
+    FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a', 1),(NULL, 2),(NULL, 3)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_unaligned = {20, 1};
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};

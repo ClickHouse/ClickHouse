@@ -125,7 +125,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(
     if (original_dag_node->type == ActionsDAG::ActionType::COLUMN)
     {
         const auto & new_node = new_dag->addColumn(
-            original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name);
+            ColumnWithTypeAndName(original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name));
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
@@ -163,6 +163,41 @@ const ActionsDAG::Node & addFunction(
 {
     const auto & new_node = new_dag->addFunction(function, children, "");
     return new_node;
+}
+
+/// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
+/// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
+/// but it might be required for further steps with its original uncast type.
+const ActionsDAG::Node & addCast(
+        const ActionsDAGPtr & dag,
+        const ActionsDAG::Node & node_to_cast,
+        const DataTypePtr & to_type)
+{
+    if (node_to_cast.result_type->equals(*to_type))
+        return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
+
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
+    return new_node;
+}
+
+/// Normalizes the filter node by adding AND with a constant true.
+/// This:
+/// 1. produces a result with the proper Nullable or non-Nullable UInt8 type and
+/// 2. makes sure that the result contains only 0 or 1 values even if the source column contains non-boolean values.
+const ActionsDAG::Node & addAndTrue(
+    const ActionsDAGPtr & dag,
+    const ActionsDAG::Node & filter_node_to_normalize)
+{
+    Field const_true_value(true);
+
+    ColumnWithTypeAndName const_true_column;
+    const_true_column.column = DataTypeUInt8().createColumnConst(0, const_true_value);
+    const_true_column.type = std::make_shared<DataTypeUInt8>();
+
+    const auto * const_true_node = &dag->addColumn(std::move(const_true_column));
+    ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return addFunction(dag, func_builder_and, children);
 }
 
 }
@@ -260,7 +295,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-        const ActionsDAG::Node * result_node = nullptr;
+        const ActionsDAG::Node * result_node;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
@@ -304,13 +339,21 @@ bool tryBuildPrewhereSteps(
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
-            /// The PREWHERE column is an AND of all conditions, which after the earlier steps have
-            /// filtered is equivalent to the last condition alone, so only its type has to match.
+            /// Special case for final PREWHERE column: it is an AND combination of all conditions,
+            /// but we have only the condition for the last step here. We know that the combined filter is equivalent to
+            /// to the last condition after filters from previous steps are applied. We just need to CAST the last condition
+            /// to the type of combined filter. We do this in 2 steps:
+            /// 1. AND the last condition with constant True. This is needed to make sure that in the last step filter has UInt8 type
+            ///    but contains values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
+            /// 2. CAST the result to the exact type of the PREWHERE column from the original DAG
             auto & last_step_dag = steps.back().actions;
             auto & last_step_result_node = steps.back().result_node;
-            const auto & condition_node = last_step_dag->addBooleanCondition(*last_step_result_node, output->result_type, nullptr);
+            /// Build AND(last_step_result_node, true)
+            const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node);
+            /// Build CAST(and_node, type of PREWHERE column)
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type);
             /// Add alias for the result with the name of the PREWHERE column
-            const auto & prewhere_result_node = last_step_dag->addAlias(condition_node, output->result_name);
+            const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
             last_step_dag->getOutputs().push_back(&prewhere_result_node);
             steps.back().result_node = &prewhere_result_node;
         }

@@ -3,7 +3,6 @@
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
-#include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -14,7 +13,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <absl/container/inlined_vector.h>
-
 
 namespace DB
 {
@@ -84,7 +82,7 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
-            size_t i = 0;
+            size_t i;
             try
             {
                 for (i = 0; i < new_size; ++i)
@@ -104,29 +102,23 @@ private:
                 throw;
             }
 
-            /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
-            /// allocation does not advance, so new_state aliases old_state. There is no
-            /// data to migrate, and merge() with aliasing source/destination is undefined.
-            if (nested_size_of_data != 0)
+            try
             {
-                try
+                for (i = 0; i < old_size; ++i)
                 {
-                    for (i = 0; i < old_size; ++i)
-                    {
-                        nested_func->merge(&new_state[i * nested_size_of_data],
-                                &old_state[i * nested_size_of_data],
-                                &arena);
-                    }
+                    nested_func->merge(&new_state[i * nested_size_of_data],
+                            &old_state[i * nested_size_of_data],
+                            &arena);
                 }
-                catch (...)
+            }
+            catch (...)
+            {
+                for (i = 0; i < new_size; ++i)
                 {
-                    for (i = 0; i < new_size; ++i)
-                    {
-                        nested_func->destroy(&new_state[i * nested_size_of_data]);
-                    }
+                    nested_func->destroy(&new_state[i * nested_size_of_data]);
+                }
 
-                    throw;
-                }
+                throw;
             }
 
             state.array_of_aggregate_datas = new_state;
@@ -152,9 +144,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        /// Pad the size to a multiple of alignment so that consecutive elements in the array
-        /// are properly aligned (same principle as C++ sizeof for array element types).
-        nested_size_of_data = ::Memory::alignUp(nested_func->sizeOfData(), nested_func->alignOfData());
+        nested_size_of_data = nested_func->sizeOfData();
 
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
@@ -167,40 +157,6 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "ForEach";
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const AggregateFunctionForEachData & rhs_state = data(rhs_place);
-        AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
-
-        const size_t rhs_nested_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_nested->alignOfData());
-
-        const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
-        char * nested_state = state.array_of_aggregate_datas;
-
-        for (size_t i = 0; i < state.dynamic_array_size && i < rhs_state.dynamic_array_size; ++i)
-        {
-            nested_func->mergeStateFromDifferentVariant(nested_state, *rhs_nested, rhs_nested_state, arena);
-
-            rhs_nested_state += rhs_nested_size_of_data;
-            nested_state += nested_size_of_data;
-        }
     }
 
     static DataTypePtr createResultType(AggregateFunctionPtr nested_)
@@ -288,17 +244,10 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
-
-        /// Zero-sized nested state (aggregate over Nothing): every element aliases the same
-        /// zero-byte arena slot (alignedAlloc(0) does not advance), so nested_state ==
-        /// rhs_nested_state. There is nothing to merge, and merge() with aliasing
-        /// source/destination is undefined.
-        if (nested_size_of_data == 0)
-            return;
 
         const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
         char * nested_state = state.array_of_aggregate_datas;
@@ -342,15 +291,17 @@ public:
         }
     }
 
-    /// `transferred` counts the elements whose transfer returned, so a caller that catches can undo those.
     template <bool merge>
-    void transferElements(AggregateDataPtr __restrict place, ColumnArray & arr_to, size_t & transferred, Arena * arena) const
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         AggregateFunctionForEachData & state = data(place);
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
-        char * nested_state = state.array_of_aggregate_datas + transferred * nested_size_of_data;
-        for (; transferred < state.dynamic_array_size; ++transferred)
+        char * nested_state = state.array_of_aggregate_datas;
+        for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
             if constexpr (merge)
                 nested_func->insertMergeResultInto(nested_state, elems_to, arena);
@@ -359,41 +310,7 @@ public:
             nested_state += nested_size_of_data;
         }
 
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         offsets_to.push_back(offsets_to.back() + state.dynamic_array_size);
-    }
-
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
-    {
-        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
-        size_t transferred = 0;
-
-        if constexpr (!merge)
-        {
-            /// A nested function that is not a state aliases nothing and need not be atomic.
-            if (nested_func->isState())
-            {
-                const size_t offsets_before = arr_to.getOffsets().size();
-
-                try
-                {
-                    transferElements<false>(place, arr_to, transferred, arena);
-                }
-                catch (...)
-                {
-                    arr_to.getOffsets().resize_assume_reserved(offsets_before);
-                    const char * nested_state = data(place).array_of_aggregate_datas;
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
-                    throw;
-                }
-
-                return;
-            }
-        }
-
-        transferElements<merge>(place, arr_to, transferred, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -404,19 +321,6 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
-    }
-
-    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
-    {
-        const AggregateFunctionForEachData & state = data(place);
-
-        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        offsets_to.resize_assume_reserved(offsets_to.size() - 1);
-        const char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = state.dynamic_array_size; i-- > 0;)
-            nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
     }
 
     bool allocatesMemoryInArena() const override

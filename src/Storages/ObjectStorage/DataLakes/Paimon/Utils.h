@@ -2,6 +2,7 @@
 
 #include <bitset>
 #include <type_traits>
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <base/types.h>
 #include <Poco/JSON/Array.h>

@@ -9,12 +9,11 @@
 namespace DB
 {
 
-class SquashingTransform final : public ExceptionKeepingTransform
+class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingTransform(
-        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
-        size_t max_block_size_rows = 0, size_t max_block_size_bytes = 0, bool squash_with_strict_limits = false);
+        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SquashingTransform"; }
 
@@ -23,7 +22,6 @@ public:
 protected:
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;
-    bool canGenerate() override;
     void onFinish() override;
 
 private:
@@ -32,7 +30,7 @@ private:
     Chunk finish_chunk;
 };
 
-class SimpleSquashingChunksTransform final : public IInflatingTransform
+class SimpleSquashingChunksTransform : public IInflatingTransform
 {
 public:
     explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
