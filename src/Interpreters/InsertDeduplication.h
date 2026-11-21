@@ -188,7 +188,7 @@ private:
     LoggerPtr logger = getLogger("DedupInfo");
     size_t instance_id = 0;
     bool is_async_insert = false;
-
+    std::optional<UInt128> insert_column_names_hash;
 
     InsertDependenciesBuilderConstPtr insert_dependencies;
 
