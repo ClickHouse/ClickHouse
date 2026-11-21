@@ -90,8 +90,8 @@ both padding forms equal the needle
 [1,3]
 [1,3]
 [1,3]
-[]
-[]
+[1,3]
+[1,3]
 ---- the needle is looked up at the column width and prunes
 [2]
 [1]
@@ -104,8 +104,8 @@ both padding forms equal the needle
 [1]
 [1]
 [1]
-[]
-[]
+[1]
+[1]
 ---- the needle is looked up at the column width and prunes
 [2]
 ---- a String needle with a literal trailing zero byte declines the index
