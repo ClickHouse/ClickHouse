@@ -398,6 +398,7 @@
     M(ReplicatedPartMutations, "Number of times data parts of ReplicatedMergeTree tables were successfully mutated.", ValueType::Number) \
     M(ReplicatedPartChecks, "Number of times we had to perform advanced search for a data part on replicas or to clarify the need of an existing data part.", ValueType::Number) \
     M(ReplicatedPartChecksFailed, "Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.", ValueType::Number) \
+    M(PartCheckPassedAfterPageCacheReadError, "Number of times a data part of a ReplicatedMergeTree table that failed to be read passed its check with direct I/O, bypassing the OS page cache. The read error was probably caused by wrong data in the page cache, not by the data on disk.", ValueType::Number) \
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
     \
