@@ -188,7 +188,11 @@ public:
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
     [[nodiscard]] bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
-    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
+    void updateLimitByHint(
+        Names limit_by_columns_,
+        UInt64 limit_by_group_length_,
+        UInt64 limit_by_max_groups_,
+        bool limit_by_always_read_till_end_);
 
     [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;
@@ -263,6 +267,7 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
+    UInt64 limit_by_max_groups = 0;
     bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;

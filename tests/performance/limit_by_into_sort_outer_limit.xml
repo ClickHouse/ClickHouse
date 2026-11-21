@@ -1,0 +1,17 @@
+<test>
+    <create_query>
+        CREATE TABLE limit_by_outer_limit (c1 UUID, c2 String, c3 UUID, c4 DateTime64(6, 'UTC'))
+        ENGINE = MergeTree PARTITION BY toYYYYMM(c4) ORDER BY (c1, c2, c3, c4)
+        SETTINGS index_granularity = 1024, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+
+    <!-- 4 inserts x 4 monthly partitions = 16 overlapping parts -->
+    <fill_query>INSERT INTO limit_by_outer_limit SELECT toUUID('00000000-0000-0000-0000-000000000001'), concat(substring('89abcdef', (intHash64(number * 3 + 11) % 600000) % 8 + 1, 1), substring(lower(hex(SHA256(toString(intHash64(number * 3 + 11) % 600000)))), 2)), toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(intHash32(number) % 100000), 12, '0'))), toDateTime64('2026-08-06 00:00:00', 6, 'UTC') + toIntervalSecond(intHash64(number + 7) % (93 * 86400)) FROM numbers(0, 9000000) SETTINGS max_insert_threads = 1, max_insert_block_size = 9000000, min_insert_block_size_rows = 9000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO limit_by_outer_limit SELECT toUUID('00000000-0000-0000-0000-000000000001'), concat(substring('89abcdef', (intHash64(number * 3 + 11) % 600000) % 8 + 1, 1), substring(lower(hex(SHA256(toString(intHash64(number * 3 + 11) % 600000)))), 2)), toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(intHash32(number) % 100000), 12, '0'))), toDateTime64('2026-08-06 00:00:00', 6, 'UTC') + toIntervalSecond(intHash64(number + 7) % (93 * 86400)) FROM numbers(9000000, 9000000) SETTINGS max_insert_threads = 1, max_insert_block_size = 9000000, min_insert_block_size_rows = 9000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO limit_by_outer_limit SELECT toUUID('00000000-0000-0000-0000-000000000001'), concat(substring('89abcdef', (intHash64(number * 3 + 11) % 600000) % 8 + 1, 1), substring(lower(hex(SHA256(toString(intHash64(number * 3 + 11) % 600000)))), 2)), toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(intHash32(number) % 100000), 12, '0'))), toDateTime64('2026-08-06 00:00:00', 6, 'UTC') + toIntervalSecond(intHash64(number + 7) % (93 * 86400)) FROM numbers(18000000, 9000000) SETTINGS max_insert_threads = 1, max_insert_block_size = 9000000, min_insert_block_size_rows = 9000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO limit_by_outer_limit SELECT toUUID('00000000-0000-0000-0000-000000000001'), concat(substring('89abcdef', (intHash64(number * 3 + 11) % 600000) % 8 + 1, 1), substring(lower(hex(SHA256(toString(intHash64(number * 3 + 11) % 600000)))), 2)), toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(intHash32(number) % 100000), 12, '0'))), toDateTime64('2026-08-06 00:00:00', 6, 'UTC') + toIntervalSecond(intHash64(number + 7) % (93 * 86400)) FROM numbers(27000000, 9000000) SETTINGS max_insert_threads = 1, max_insert_block_size = 9000000, min_insert_block_size_rows = 9000000, min_insert_block_size_bytes = 0</fill_query>
+
+    <query>SELECT c2 FROM limit_by_outer_limit WHERE c1 = '00000000-0000-0000-0000-000000000001' AND c2 > '8' AND c4 >= toDateTime64('2026-11-03 16:46:51.000', 3) - toIntervalDay(90) ORDER BY c2 LIMIT 1 BY c2 LIMIT 200 SETTINGS max_threads = 8 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS limit_by_outer_limit</drop_query>
+</test>
