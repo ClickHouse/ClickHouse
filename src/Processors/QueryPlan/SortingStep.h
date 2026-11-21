@@ -128,6 +128,11 @@ public:
 
     [[nodiscard]] bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
+    /// The sorting before a `WindowStep`. `partition_by_description` does not tell it: the planners leave it empty
+    /// for a window without `PARTITION BY` and for keys that cannot be hash-scattered.
+    [[nodiscard]] bool isWindowSorting() const { return is_window_sorting; }
+    void setWindowSorting() { is_window_sorting = true; }
+
     [[nodiscard]] bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
 
@@ -247,6 +252,10 @@ private:
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
+
+    /// See `isWindowSorting`. It only tells the optimizer what the sort is for, but it is serialized: a worker
+    /// optimizes its deserialized fragment again and must restrict reading in order the same way.
+    bool is_window_sorting = false;
 
     /// A distributed plan can split a top-N sort in two stages: each node keeps its local
     /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
