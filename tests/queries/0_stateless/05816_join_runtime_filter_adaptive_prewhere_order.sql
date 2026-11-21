@@ -144,12 +144,13 @@ SETTINGS join_runtime_filter_adaptive_prewhere_order = 1, log_comment = 'mt_read
 SELECT count(), sum(a), sum(b) FROM probe_readded AS p JOIN build_weak AS w ON p.a = w.k JOIN build_strong AS s ON p.b = s.k
 SETTINGS enable_join_runtime_filters = 0;
 
--- A pending type change: the reader converts `b` from String, which fails on the rows the filter on `a` removes.
+-- A pending type change: the reader converts `b` from String, which fails on the rows the filter on `a` removes. 16 bytes per
+-- removed row keep the stored `b` larger than `a` in every part layout, so the planned order filters `a` first.
 CREATE TABLE probe_modified (a UInt32 CODEC(NONE), b String CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 SYSTEM STOP MERGES probe_modified;
-INSERT INTO probe_modified SELECT a, if(a < 500, toString(b), 'x') FROM probe WHERE _part = 'all_1_1_0';
-INSERT INTO probe_modified SELECT a, if(a < 500, toString(b), 'x') FROM probe WHERE _part = 'all_2_2_0';
+INSERT INTO probe_modified SELECT a, if(a < 500, toString(b), repeat('x', 16)) FROM probe WHERE _part = 'all_1_1_0';
+INSERT INTO probe_modified SELECT a, if(a < 500, toString(b), repeat('x', 16)) FROM probe WHERE _part = 'all_2_2_0';
 ALTER TABLE probe_modified MODIFY COLUMN b UInt64 SETTINGS alter_sync = 0;
 SELECT count(), sum(a), sum(b) FROM probe_modified AS p JOIN build_weak AS w ON p.a = w.k JOIN build_strong AS s ON p.b = s.k
 SETTINGS join_runtime_filter_adaptive_prewhere_order = 1, log_comment = 'mt_modified_on';
