@@ -13634,9 +13634,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         const auto * predicate = filter_dag->getOutputs().at(0);
 
-        // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+        if (auto virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+                predicate, &virtual_columns_block, query_context, /*allow_partial_result=*/true))
+        {
+            /// A plan optimized again after its subquery plans were moved out to build the sets (as a `Merge`
+            /// child plan is when its pipeline is built) cannot build a set here. Decline the projection.
+            if (!VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, query_context))
+                return {};
+
+            VirtualColumnUtils::filterBlockWithExpression(
+                VirtualColumnUtils::buildFilterExpression(std::move(*virtual_columns_filter), query_context),
+                virtual_columns_block);
+        }
 
         rows = virtual_columns_block.rows();
 
