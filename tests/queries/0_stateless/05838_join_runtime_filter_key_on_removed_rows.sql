@@ -128,6 +128,26 @@ CREATE TABLE ri16 (k Int16) ENGINE = MergeTree ORDER BY k;
 INSERT INTO ri16 VALUES (1);
 SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pe JOIN ri16 ON pe.e = ri16.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
 
+-- `CAST` converts the values of a `Map` as such, so a named tuple in it is paired by name and this key parses a `String`.
+CREATE TABLE pm (id UInt64, b UInt8, m Map(String, Tuple(a UInt8, b String))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pm SELECT number, number % 2 AS b, map('x', (1, if(b = 0, 'bad', '5'))) FROM numbers(100000);
+CREATE TABLE rm (k Map(String, Tuple(b UInt8, a String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rm VALUES (map('x', (5, '1')));
+SELECT count() FROM pm JOIN g ON pm.id = g.id JOIN rm ON CAST(pm.m, 'Map(String, Tuple(b UInt8, a String))') = rm.k WHERE pm.b + g.flag = 2;
+CREATE TABLE rm16 (k Map(String, Tuple(a UInt16, b String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rm16 VALUES (map('x', (1, '5')));
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pm JOIN rm16 ON CAST(pm.m, 'Map(String, Tuple(a UInt16, b String))') = rm16.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- `CAST` converts the elements of a `QBit` as numbers, so a `nan` element cannot become an `Int8`.
+CREATE TABLE pq (id UInt64, b UInt8, q QBit(Float32, 1)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pq SELECT number, number % 2 AS b, [if(b = 0, nan, 1)] FROM numbers(100000);
+CREATE TABLE rq (k QBit(Int8, 1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rq VALUES ([1]);
+SELECT count() FROM pq JOIN g ON pq.id = g.id JOIN rq ON CAST(pq.q, 'QBit(Int8, 1)') = rq.k WHERE pq.b + g.flag = 2;
+CREATE TABLE rq64 (k QBit(Float64, 1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rq64 VALUES ([1]);
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pq JOIN rq64 ON CAST(pq.q, 'QBit(Float64, 1)') = rq64.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
 -- The cast of an `Int32` key to `Float64` cannot throw, so the key keeps its runtime filter.
 CREATE TABLE fi (k Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO fi SELECT number FROM numbers(10);
