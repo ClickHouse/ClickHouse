@@ -2,11 +2,11 @@
 [2]	Array(UInt8)
 [1,3]	Array(UInt8)
 extractAll	(String, const String) -> Array(String)
-timeSeriesCopyTag	(UInt64, UInt64, const String) -> UInt64
-timeSeriesCopyTags	(UInt64, UInt64, const Array(String | IsNothing)) -> UInt64
-timeSeriesExtractTag	(UInt64, const String) -> Nullable(String)
-timeSeriesJoinTags	(UInt64, const String, const String, const Array(String | IsNothing)) -> UInt64
-timeSeriesRemoveAllTagsExcept	(UInt64, const Array(String | IsNothing)) -> UInt64
-timeSeriesRemoveTag	(UInt64, const String) -> UInt64
-timeSeriesRemoveTags	(UInt64, const Array(String | IsNothing)) -> UInt64
-timeSeriesReplaceTag	(UInt64, const String, const String, const String, const String) -> UInt64
+timeSeriesCopyTag	(Array(Tuple(String, String)), Array(Tuple(String, String)), const String) -> Array(Tuple(String, String))
+timeSeriesCopyTags	(Array(Tuple(String, String)), Array(Tuple(String, String)), const Array(String | IsNothing)) -> Array(Tuple(String, String))
+timeSeriesExtractTag	(Array(Tuple(String, String)), const String) -> Nullable(String)
+timeSeriesJoinTags	(Array(Tuple(String, String)), const String, const String, const Array(String | IsNothing)) -> Array(Tuple(String, String))
+timeSeriesRemoveAllTagsExcept	(Array(Tuple(String, String)), const Array(String | IsNothing)) -> Array(Tuple(String, String))
+timeSeriesRemoveTag	(Array(Tuple(String, String)), const String) -> Array(Tuple(String, String))
+timeSeriesRemoveTags	(Array(Tuple(String, String)), const Array(String | IsNothing)) -> Array(Tuple(String, String))
+timeSeriesReplaceTag	(Array(Tuple(String, String)), const String, const String, const String, const String) -> Array(Tuple(String, String))

@@ -304,12 +304,13 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        /// The result columns can be constant, e.g. the tags of `sum(x)`.
+        writeQueryResponseBlock(response, result_type, materializeBlock(block), /*first=*/ true);
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+                writeQueryResponseBlock(response, result_type, materializeBlock(block), /*first=*/ false);
         }
     }
 
@@ -602,9 +603,9 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     auto series_ids_query = makeSeriesIDsQuery(match_params, start_param, end_param);
 
-    /// SELECT DISTINCT timeSeriesIdToTags(series_id) AS tags FROM (<series_ids_query>) [LIMIT <limit> + 1]
-    /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
-    auto tags_expression = makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id"));
+    /// SELECT DISTINCT series_tags AS tags FROM (<series_ids_query>) [LIMIT <limit> + 1]
+    /// `series_tags` is the tag set of a series (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
+    ASTPtr tags_expression = make_intrusive<ASTIdentifier>("series_tags");
     tags_expression->setAlias(TimeSeriesColumnNames::Tags);
 
     std::optional<UInt64> sql_limit;
@@ -851,9 +852,9 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// SELECT arraySort(groupUniqArrayArray(tupleElement(timeSeriesIdToTags(series_id), 1))) AS labels FROM (<series_ids_query>)
-    /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`), so the label names
-    /// are the first elements of the returned pairs; groupUniqArrayArray dedups them across all the matched series,
+    /// SELECT arraySort(groupUniqArrayArray(tupleElement(series_tags, 1))) AS labels FROM (<series_ids_query>)
+    /// `series_tags` is the tag set of a series (including `__name__`), so the label names are the first elements
+    /// of its pairs; groupUniqArrayArray dedups them across all the matched series,
     /// and arraySort returns them in sorted order like Prometheus does.
     auto labels_expression = makeASTFunction(
         "arraySort",
@@ -861,7 +862,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
             "groupUniqArrayArray",
             makeASTFunction(
                 "tupleElement",
-                makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id")),
+                make_intrusive<ASTIdentifier>("series_tags"),
                 make_intrusive<ASTLiteral>(1u))));
 
     getLabelsOrLabelValues(response, std::move(labels_expression), match_params, start_param, end_param, limit, query_finish_callback);
@@ -882,9 +883,9 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid label name {}", quoteString(label_name_param));
 
-    /// SELECT arraySort(groupUniqArrayArray(arrayMap(tag -> tag.2, arrayFilter(tag -> tag.1 = <label_name> AND tag.2 != '', timeSeriesIdToTags(series_id))))) AS labels
+    /// SELECT arraySort(groupUniqArrayArray(arrayMap(tag -> tag.2, arrayFilter(tag -> tag.1 = <label_name> AND tag.2 != '', series_tags)))) AS labels
     /// FROM (<series_ids_query>)
-    /// timeSeriesIdToTags returns the (name, value) pairs of the tags registered by the inner query (including `__name__`),
+    /// `series_tags` holds the (name, value) pairs of the tags of a series (including `__name__`),
     /// so the values of the requested label are the second elements of the pairs whose first element is the label name.
     /// An empty value means an absent label in Prometheus, so it's never returned.
     auto tag_element = [](UInt32 index)
@@ -900,7 +901,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
                 "and",
                 makeASTFunction("equals", tag_element(1), make_intrusive<ASTLiteral>(label_name)),
                 makeASTFunction("notEquals", tag_element(2), make_intrusive<ASTLiteral>(String{})))),
-        makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id")));
+        make_intrusive<ASTIdentifier>("series_tags"));
 
     auto values_expression = makeASTFunction(
         "arraySort",

@@ -53,7 +53,6 @@ struct TimeSeriesColumnNames
 
     /// Internal columns used by steps of prometheus query evaluation.
     /// The function prometheusQuery() doesn't output them.
-    static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
     static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
@@ -63,6 +62,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
+    static constexpr const char * SeriesKey = "series_key";
 
     /// Old names kept for compatibility:
 

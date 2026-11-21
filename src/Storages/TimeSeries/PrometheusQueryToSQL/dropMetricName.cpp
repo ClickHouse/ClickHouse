@@ -37,7 +37,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
         case StoreMethod::VECTOR_GRID:
         {
-            /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
+            /// When we remove the metric name `__name__` it's possible that we get the same set of tags
             /// on time series which were different before we removed the metric name.
             /// Prometheus evaluates each step independently, so this is allowed only if such series don't have values
             /// at the same step (for example, if a metric was renamed at some point), and then their values are merged into one series.
@@ -56,7 +56,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
 
             /// Step 1:
-            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
+            /// SELECT timeSeriesRemoveTag(tags, '__name__') AS new_group,
             ///        anyForEach(values) AS values
             /// FROM <vector_grid>
             /// GROUP BY new_group
@@ -66,7 +66,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(makeASTFunction(
-                    "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName)));
+                    "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Tags), make_intrusive<ASTLiteral>(kMetricName)));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
                 builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
@@ -85,14 +85,14 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, values
+            /// SELECT new_group AS tags, values
             /// FROM step1
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-                builder.select_list.back()->setAlias(ColumnNames::Group);
+                builder.select_list.back()->setAlias(ColumnNames::Tags);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 

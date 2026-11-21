@@ -5,7 +5,7 @@ timeSeriesStoreTags:
 1	1	1	1	1	1	1	1	1	1	[('__name__','http_requests'),('env','dev'),('region','eu')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[]	1	1	1	1	1	1	1	1	1	1
 
 timeSeriesExtractTag:
-1	http_requests_count	dev	\N	1	1
+[('region','eu'),('env','dev'),('__name__','http_requests_count')]	http_requests_count	dev	\N	1	1
 
 timeSeriesExtractTag mixed rows:
 2	2	2
@@ -52,7 +52,7 @@ timeSeriesThrowDuplicateSeriesIf negative zero:
 
 timeSeriesThrowDuplicateSeriesIf vectorized nonzero:
 
-timeSeriesRemoveTag vectorized dense groups:
+timeSeriesRemoveTag vectorized:
 [('instance','0')]
 [('instance','1')]
 [('instance','2')]
@@ -60,14 +60,18 @@ timeSeriesRemoveTag vectorized dense groups:
 [('instance','4')]
 [('instance','5')]
 
-timeSeriesRemoveTag vectorized sparse groups:
+timeSeriesRemoveTag vectorized from an array of tag sets:
 [('instance','0')]
 [('instance','8')]
 [('instance','16')]
 [('instance','24')]
 
-timeSeriesRemoveAllTagsExcept vectorized repeated dense groups:
+timeSeriesRemoveAllTagsExcept vectorized repeated tag sets:
 6	1	[[('shared','value')]]
 
-timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:
+timeSeriesRemoveAllTagsExcept vectorized repeated tag sets (2):
 5	1	[[('shared','value')]]
+
+A trailing zero byte of a String tag value is kept by the next operation, the padding of FixedString is not:
+[('x','\0')]	00	1
+[('x','a')]

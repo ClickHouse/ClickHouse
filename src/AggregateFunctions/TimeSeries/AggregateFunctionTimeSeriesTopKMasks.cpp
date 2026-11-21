@@ -199,7 +199,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     FunctionDocumentation::Arguments arguments_limitk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
-        {"sampling_key", "A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
+        {"sampling_key", "A per-series hash defining the selection order, e.g. `cityHash64(tags)`.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Examples examples_limitk = {

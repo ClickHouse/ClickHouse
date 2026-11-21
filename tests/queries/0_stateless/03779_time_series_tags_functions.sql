@@ -71,36 +71,36 @@ FROM
 SELECT '';
 SELECT 'timeSeriesExtractTag:';
 
-SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group,
-       timeSeriesExtractTag(group, '__name__'),
-       timeSeriesExtractTag(group, 'env'),
-       timeSeriesExtractTag(group, 'instance'),
-       isNotNull(timeSeriesExtractTag(group, '__name__')),
-       isNull(timeSeriesExtractTag(group, 'instance'));
+SELECT [('region', 'eu'), ('env', 'dev'), ('__name__', 'http_requests_count')] AS tags,
+       timeSeriesExtractTag(tags, '__name__'),
+       timeSeriesExtractTag(tags, 'env'),
+       timeSeriesExtractTag(tags, 'instance'),
+       isNotNull(timeSeriesExtractTag(tags, '__name__')),
+       isNull(timeSeriesExtractTag(tags, 'instance'));
 
 SELECT '';
 SELECT 'timeSeriesExtractTag mixed rows:';
 
 WITH
     (
-        SELECT groupArray(group)
+        SELECT groupArray(tags)
         FROM
         (
             SELECT number,
                    if(number % 2 = 0,
-                      timeSeriesTagsToGroup([('env', 'dev')]),
-                      timeSeriesTagsToGroup([])) AS group
+                      [('env', 'dev')],
+                      []) AS tags
             FROM numbers(4)
             ORDER BY number
         )
-    ) AS groups
+    ) AS tag_sets
 SELECT countIf(isNull(value)),
        countIf(isNull(value) AND number % 2 = 1),
        countIf(isNotNull(value) AND number % 2 = 0)
 FROM
 (
     SELECT number,
-           timeSeriesExtractTag(groups[number + 1], 'env') AS value
+           timeSeriesExtractTag(tag_sets[number + 1], 'env') AS value
     FROM numbers(4)
 );
 
@@ -132,154 +132,154 @@ SELECT [keys[1] = keys[4],
 SELECT '';
 SELECT 'timeSeriesCopyTag:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       same_group2 == group2,
-       again_group2 == group2,
-       timeSeriesGroupToTags(group3)
+SELECT tags1,
+       tags2,
+       same_tags2 == tags2,
+       again_tags2 == tags2,
+       tags3
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS dest_group,
-           timeSeriesTagsToGroup([('code', '404'), ('message', 'Page not found')], '__name__', 'http_codes') AS src_group,
-           timeSeriesCopyTag(dest_group, src_group, '__name__') AS group1,
-           timeSeriesCopyTag(group1, src_group, 'code') AS group2,
-           timeSeriesCopyTag(group2, src_group, 'code') AS same_group2,
-           timeSeriesCopyTag(group2, src_group, 'unknown') AS again_group2,
-           timeSeriesCopyTag(group2, src_group, 'env') AS group3
+    SELECT [('region', 'eu'), ('env', 'dev'), ('__name__', 'http_requests_count')] AS dest_tags,
+           [('code', '404'), ('message', 'Page not found'), ('__name__', 'http_codes')] AS src_tags,
+           timeSeriesCopyTag(dest_tags, src_tags, '__name__') AS tags1,
+           timeSeriesCopyTag(tags1, src_tags, 'code') AS tags2,
+           timeSeriesCopyTag(tags2, src_tags, 'code') AS same_tags2,
+           timeSeriesCopyTag(tags2, src_tags, 'unknown') AS again_tags2,
+           timeSeriesCopyTag(tags2, src_tags, 'env') AS tags3
 );
 
 SELECT '';
 SELECT 'timeSeriesCopyTags:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       same_group2 == group2,
-       again_group2 == group2,
-       timeSeriesGroupToTags(group3),
-       same_group3 == group3,
-       again_group3 == group3,
-       same_dest_group == dest_group,
+SELECT tags1,
+       tags2,
+       same_tags2 == tags2,
+       again_tags2 == tags2,
+       tags3,
+       same_tags3 == tags3,
+       again_tags3 == tags3,
+       same_dest_tags == dest_tags,
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS dest_group,
-           timeSeriesTagsToGroup([('code', '404'), ('message', 'Page not found')], '__name__', 'http_codes') AS src_group,
-           timeSeriesCopyTags(dest_group, src_group, ['__name__']) AS group1,
-           timeSeriesCopyTags(group1, src_group, ['code']) AS group2,
-           timeSeriesCopyTags(group2, src_group, ['code']) AS same_group2,
-           timeSeriesCopyTags(group2, src_group, ['unknown']) AS again_group2,
-           timeSeriesCopyTags(group2, src_group, ['env']) AS group3,
-           timeSeriesCopyTags(dest_group, src_group, ['__name__', 'code', 'unknown', 'env']) AS same_group3,
-           timeSeriesCopyTags(dest_group, src_group, ['code', 'code', 'env', '__name__', 'code']) AS again_group3,
-           timeSeriesCopyTags(dest_group, src_group, []) AS same_dest_group
+    SELECT [('__name__', 'http_requests_count'), ('env', 'dev'), ('region', 'eu')] AS dest_tags,
+           [('__name__', 'http_codes'), ('code', '404'), ('message', 'Page not found')] AS src_tags,
+           timeSeriesCopyTags(dest_tags, src_tags, ['__name__']) AS tags1,
+           timeSeriesCopyTags(tags1, src_tags, ['code']) AS tags2,
+           timeSeriesCopyTags(tags2, src_tags, ['code']) AS same_tags2,
+           timeSeriesCopyTags(tags2, src_tags, ['unknown']) AS again_tags2,
+           timeSeriesCopyTags(tags2, src_tags, ['env']) AS tags3,
+           timeSeriesCopyTags(dest_tags, src_tags, ['__name__', 'code', 'unknown', 'env']) AS same_tags3,
+           timeSeriesCopyTags(dest_tags, src_tags, ['code', 'code', 'env', '__name__', 'code']) AS again_tags3,
+           timeSeriesCopyTags(dest_tags, src_tags, []) AS same_dest_tags
 );
 
 SELECT '';
 SELECT 'timeSeriesRemoveTag:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       same_group2 == group2,
-       timeSeriesGroupToTags(empty_group),
-       empty_group == 0
+SELECT tags1,
+       tags2,
+       same_tags2 == tags2,
+       empty_tags,
+       empty(empty_tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS src_group,
-           timeSeriesRemoveTag(src_group, '__name__') AS group1,
-           timeSeriesRemoveTag(group1, 'env') AS group2,
-           timeSeriesRemoveTag(group2, 'env') AS same_group2,
-           timeSeriesRemoveTag(group2, 'region') AS empty_group
+    SELECT [('region', 'eu'), ('env', 'dev'), ('__name__', 'http_requests_count')] AS src_tags,
+           timeSeriesRemoveTag(src_tags, '__name__') AS tags1,
+           timeSeriesRemoveTag(tags1, 'env') AS tags2,
+           timeSeriesRemoveTag(tags2, 'env') AS same_tags2,
+           timeSeriesRemoveTag(tags2, 'region') AS empty_tags
 );
 
 SELECT '';
 SELECT 'timeSeriesRemoveTags:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       same_group2 == group2,
-       again_group2 == group2,
-       timeSeriesGroupToTags(empty_group),
-       empty_group == 0,
-       same_src_group == src_group
+SELECT tags1,
+       tags2,
+       same_tags2 == tags2,
+       again_tags2 == tags2,
+       empty_tags,
+       empty(empty_tags),
+       same_src_tags == src_tags
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS src_group,
-           timeSeriesRemoveTags(src_group, ['__name__']) AS group1,
-           timeSeriesRemoveTags(group1, ['env']) AS group2,
-           timeSeriesRemoveTags(group2, ['env']) AS same_group2,
-           timeSeriesRemoveTags(src_group, ['__name__', 'env']) AS again_group2,
-           timeSeriesRemoveTags(group2, ['region']) AS empty_group,
-           timeSeriesRemoveTags(src_group, []) AS same_src_group
+    SELECT [('__name__', 'http_requests_count'), ('env', 'dev'), ('region', 'eu')] AS src_tags,
+           timeSeriesRemoveTags(src_tags, ['__name__']) AS tags1,
+           timeSeriesRemoveTags(tags1, ['env']) AS tags2,
+           timeSeriesRemoveTags(tags2, ['env']) AS same_tags2,
+           timeSeriesRemoveTags(src_tags, ['__name__', 'env']) AS again_tags2,
+           timeSeriesRemoveTags(tags2, ['region']) AS empty_tags,
+           timeSeriesRemoveTags(src_tags, []) AS same_src_tags
 );
 
 SELECT '';
 SELECT 'timeSeriesRemoveAllTagsExcept:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       same_group2 == group2,
-       again_group2 == group2,
-       timeSeriesGroupToTags(empty_group),
-       empty_group == 0,
-       again_empty_group == 0
+SELECT tags1,
+       tags2,
+       same_tags2 == tags2,
+       again_tags2 == tags2,
+       empty_tags,
+       empty(empty_tags),
+       empty(again_empty_tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS src_group,
-           timeSeriesRemoveAllTagsExcept(src_group, ['region', 'env']) AS group1,
-           timeSeriesRemoveAllTagsExcept(group1, ['region']) AS group2,
-           timeSeriesRemoveAllTagsExcept(group2, ['region']) AS same_group2,
-           timeSeriesRemoveAllTagsExcept(src_group, ['region']) AS again_group2,
-           timeSeriesRemoveAllTagsExcept(group2, ['unknown']) AS empty_group,
-           timeSeriesRemoveAllTagsExcept(group2, []) AS again_empty_group
+    SELECT [('region', 'eu'), ('env', 'dev'), ('__name__', 'http_requests_count')] AS src_tags,
+           timeSeriesRemoveAllTagsExcept(src_tags, ['region', 'env']) AS tags1,
+           timeSeriesRemoveAllTagsExcept(tags1, ['region']) AS tags2,
+           timeSeriesRemoveAllTagsExcept(tags2, ['region']) AS same_tags2,
+           timeSeriesRemoveAllTagsExcept(src_tags, ['region']) AS again_tags2,
+           timeSeriesRemoveAllTagsExcept(tags2, ['unknown']) AS empty_tags,
+           timeSeriesRemoveAllTagsExcept(tags2, []) AS again_empty_tags
 );
 
 SELECT '';
 SELECT 'timeSeriesJoinTags:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       timeSeriesGroupToTags(group3),
-       timeSeriesGroupToTags(group4),
-       timeSeriesGroupToTags(group5),
-       timeSeriesGroupToTags(group6),
-       timeSeriesGroupToTags(group7),
-       timeSeriesGroupToTags(group8)
+SELECT tags1,
+       tags2,
+       tags3,
+       tags4,
+       tags5,
+       tags6,
+       tags7,
+       tags8
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1', 'a'), ('src2', 'b'), ('src3', 'c')]) AS src_group,
-           timeSeriesJoinTags(src_group, 'foo', ',', ['src1', 'src2', 'src3']) AS group1,
-           timeSeriesJoinTags(src_group, 'foo', '', ['src1', 'src2', 'src3']) AS group2,
-           timeSeriesJoinTags(src_group, 'foo', ' sep ', ['src1', 'src2', 'src3']) AS group3,
-           timeSeriesJoinTags(src_group, 'foo', ',', []) AS group4,
-           timeSeriesJoinTags(src_group, 'foo', ',', ['src1']) AS group5,
-           timeSeriesJoinTags(src_group, 'foo', ',', ['src1', 'src2', 'src1', 'src4']) AS group6,
-           timeSeriesJoinTags(src_group, 'job', ',', ['src1', 'src2', 'src3']) AS group7,
-           timeSeriesJoinTags(src_group, 'job', '', []) AS group8
+    SELECT [('__name__', 'up'), ('job', 'api-server'), ('src1', 'a'), ('src2', 'b'), ('src3', 'c')] AS src_tags,
+           timeSeriesJoinTags(src_tags, 'foo', ',', ['src1', 'src2', 'src3']) AS tags1,
+           timeSeriesJoinTags(src_tags, 'foo', '', ['src1', 'src2', 'src3']) AS tags2,
+           timeSeriesJoinTags(src_tags, 'foo', ' sep ', ['src1', 'src2', 'src3']) AS tags3,
+           timeSeriesJoinTags(src_tags, 'foo', ',', []) AS tags4,
+           timeSeriesJoinTags(src_tags, 'foo', ',', ['src1']) AS tags5,
+           timeSeriesJoinTags(src_tags, 'foo', ',', ['src1', 'src2', 'src1', 'src4']) AS tags6,
+           timeSeriesJoinTags(src_tags, 'job', ',', ['src1', 'src2', 'src3']) AS tags7,
+           timeSeriesJoinTags(src_tags, 'job', '', []) AS tags8
 );
 
 SELECT '';
 SELECT 'timeSeriesReplaceTag:';
 
-SELECT timeSeriesGroupToTags(group1),
-       timeSeriesGroupToTags(group2),
-       timeSeriesGroupToTags(group3),
-       timeSeriesGroupToTags(group4),
-       timeSeriesGroupToTags(group5),
-       timeSeriesGroupToTags(group6),
-       same_src_group == src_group,
-       again_src_group == src_group,
-       once_again_src_group == src_group
+SELECT tags1,
+       tags2,
+       tags3,
+       tags4,
+       tags5,
+       tags6,
+       same_src_tags == src_tags,
+       again_src_tags == src_tags,
+       once_again_src_tags == src_tags
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('service', 'a:c')]) AS src_group,
-           timeSeriesReplaceTag(src_group, 'foo', '$1', 'service', '(.*):.*') AS group1,
-           timeSeriesReplaceTag(src_group, 'foo', '$0', 'service', '(.*):.*') AS group2,
-           timeSeriesReplaceTag(src_group, 'foo', '$name', 'service', '(?P<name>.*):(?P<version>.*)') AS group3,
-           timeSeriesReplaceTag(src_group, 'foo', 'begin ${name} sep ${version} end', 'service', '(?P<name>.*):(?P<version>.*)') AS group4,
-           timeSeriesReplaceTag(src_group, 'service', '${2}:${1}', 'service', '(.*):(.*)') AS group5,
-           timeSeriesReplaceTag(src_group, 'service', '', 'service', '(.*):(.*)') AS group6,
-           timeSeriesReplaceTag(src_group, 'foo', '$0', 'service', 'unknown.*') AS same_src_group,
-           timeSeriesReplaceTag(src_group, 'service', '$0', 'service', 'unknown.*') AS again_src_group,
-           timeSeriesReplaceTag(src_group, 'foo', '$0', 'service', ':') AS once_again_src_group
+    SELECT [('__name__', 'up'), ('job', 'api-server'), ('service', 'a:c')] AS src_tags,
+           timeSeriesReplaceTag(src_tags, 'foo', '$1', 'service', '(.*):.*') AS tags1,
+           timeSeriesReplaceTag(src_tags, 'foo', '$0', 'service', '(.*):.*') AS tags2,
+           timeSeriesReplaceTag(src_tags, 'foo', '$name', 'service', '(?P<name>.*):(?P<version>.*)') AS tags3,
+           timeSeriesReplaceTag(src_tags, 'foo', 'begin ${name} sep ${version} end', 'service', '(?P<name>.*):(?P<version>.*)') AS tags4,
+           timeSeriesReplaceTag(src_tags, 'service', '${2}:${1}', 'service', '(.*):(.*)') AS tags5,
+           timeSeriesReplaceTag(src_tags, 'service', '', 'service', '(.*):(.*)') AS tags6,
+           timeSeriesReplaceTag(src_tags, 'foo', '$0', 'service', 'unknown.*') AS same_src_tags,
+           timeSeriesReplaceTag(src_tags, 'service', '$0', 'service', 'unknown.*') AS again_src_tags,
+           timeSeriesReplaceTag(src_tags, 'foo', '$0', 'service', ':') AS once_again_src_tags
 );
 
 SELECT '';
@@ -289,148 +289,156 @@ SELECT 'timeSeriesReplaceTag (2):';
 -- A leading-zero name ($01, ${01}) is treated as a named-group reference, not a numeric one
 -- An all-digit name with more than 9 digits exceeds the numeric cap and is treated as a named reference.
 -- $$ becomes a literal '$'. A trailing '$' or a '$' followed by no name characters is also literal.
-SELECT timeSeriesGroupToTags(group_eleventh),
-       timeSeriesGroupToTags(group_eleventh_braced),
-       group_leading_zero_unbraced == seq_group,
-       group_leading_zero_braced == seq_group,
-       group_at_cap == seq_group,
-       timeSeriesGroupToTags(group_above_cap),
-       timeSeriesGroupToTags(group_literal_dollar),
-       timeSeriesGroupToTags(group_trailing_dollar),
-       timeSeriesGroupToTags(group_dollar_then_punct)
+SELECT tags_eleventh,
+       tags_eleventh_braced,
+       tags_leading_zero_unbraced == seq_tags,
+       tags_leading_zero_braced == seq_tags,
+       tags_at_cap == seq_tags,
+       tags_above_cap,
+       tags_literal_dollar,
+       tags_trailing_dollar,
+       tags_dollar_then_punct
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('seq', '0123456789a')]) AS seq_group,
-           timeSeriesReplaceTag(seq_group, 'eleventh', '$11', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS group_eleventh,
-           timeSeriesReplaceTag(seq_group, 'eleventh_braced', '${11}', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS group_eleventh_braced,
-           timeSeriesReplaceTag(seq_group, 'leading_zero', '$01', 'seq', '(.*)') AS group_leading_zero_unbraced,
-           timeSeriesReplaceTag(seq_group, 'leading_zero', '${01}', 'seq', '(.*)') AS group_leading_zero_braced,
-           timeSeriesReplaceTag(seq_group, 'big', '$999999999', 'seq', '(?P<999999999>.+)') AS group_at_cap,
-           timeSeriesReplaceTag(seq_group, 'big', '$1000000000', 'seq', '(?P<1000000000>.+)') AS group_above_cap,
-           timeSeriesReplaceTag(seq_group, 'literal_dollar', '$$1', 'seq', '(.*)') AS group_literal_dollar,
-           timeSeriesReplaceTag(seq_group, 'trailing_dollar', 'price$', 'seq', '(.*)') AS group_trailing_dollar,
-           timeSeriesReplaceTag(seq_group, 'dollar_then_punct', '$.tail', 'seq', '(.*)') AS group_dollar_then_punct
+    SELECT [('seq', '0123456789a')] AS seq_tags,
+           timeSeriesReplaceTag(seq_tags, 'eleventh', '$11', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS tags_eleventh,
+           timeSeriesReplaceTag(seq_tags, 'eleventh_braced', '${11}', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS tags_eleventh_braced,
+           timeSeriesReplaceTag(seq_tags, 'leading_zero', '$01', 'seq', '(.*)') AS tags_leading_zero_unbraced,
+           timeSeriesReplaceTag(seq_tags, 'leading_zero', '${01}', 'seq', '(.*)') AS tags_leading_zero_braced,
+           timeSeriesReplaceTag(seq_tags, 'big', '$999999999', 'seq', '(?P<999999999>.+)') AS tags_at_cap,
+           timeSeriesReplaceTag(seq_tags, 'big', '$1000000000', 'seq', '(?P<1000000000>.+)') AS tags_above_cap,
+           timeSeriesReplaceTag(seq_tags, 'literal_dollar', '$$1', 'seq', '(.*)') AS tags_literal_dollar,
+           timeSeriesReplaceTag(seq_tags, 'trailing_dollar', 'price$', 'seq', '(.*)') AS tags_trailing_dollar,
+           timeSeriesReplaceTag(seq_tags, 'dollar_then_punct', '$.tail', 'seq', '(.*)') AS tags_dollar_then_punct
 );
 
 SELECT '';
 SELECT 'timeSeriesThrowDuplicateSeriesIf:';
 
-SELECT timeSeriesThrowDuplicateSeriesIf(0, group)
+SELECT timeSeriesThrowDuplicateSeriesIf(0, tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    SELECT [('__name__', 'up')] AS tags
 );
 
-SELECT timeSeriesThrowDuplicateSeriesIf(1, group)
+SELECT timeSeriesThrowDuplicateSeriesIf(1, tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    SELECT [('__name__', 'up')] AS tags
 );  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 SELECT '';
 SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized all-zero:';
 
-SELECT timeSeriesThrowDuplicateSeriesIf(materialize(toUInt8(0)), group)
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(toUInt8(0)), tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    SELECT [('__name__', 'up')] AS tags
     FROM numbers(4)
 );
 
 SELECT '';
 SELECT 'timeSeriesThrowDuplicateSeriesIf negative zero:';
 
-SELECT timeSeriesThrowDuplicateSeriesIf(materialize(CAST('-0.0', 'Float64')), group)
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(CAST('-0.0', 'Float64')), tags)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    SELECT [('__name__', 'up')] AS tags
     FROM numbers(2)
 );
 
 SELECT '';
 SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized nonzero:';
 
-SELECT timeSeriesThrowDuplicateSeriesIf(number = 2, group)
+SELECT timeSeriesThrowDuplicateSeriesIf(number = 2, tags)
 FROM
 (
     SELECT number,
-           timeSeriesTagsToGroup([('__name__', 'up'), ('instance', toString(number))]) AS group
+           [('__name__', 'up'), ('instance', toString(number))] AS tags
     FROM numbers(4)
 );  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 SELECT '';
-SELECT 'timeSeriesRemoveTag vectorized dense groups:';
+SELECT 'timeSeriesRemoveTag vectorized:';
 
-SELECT timeSeriesGroupToTags(new_group)
+SELECT new_tags
 FROM
 (
     SELECT number,
-           timeSeriesTagsToGroup([('__name__', 'metric'), ('instance', toString(number))]) AS old_group,
-           timeSeriesRemoveTag(old_group, '__name__') AS new_group
+           [('__name__', 'metric'), ('instance', toString(number))] AS old_tags,
+           timeSeriesRemoveTag(old_tags, '__name__') AS new_tags
     FROM numbers(6)
 )
 ORDER BY number;
 
 SELECT '';
-SELECT 'timeSeriesRemoveTag vectorized sparse groups:';
+SELECT 'timeSeriesRemoveTag vectorized from an array of tag sets:';
 
 WITH
     (
-        SELECT groupArray(group)
+        SELECT groupArray(tags)
         FROM
         (
             SELECT number,
-                   timeSeriesTagsToGroup([('__name__', 'metric'), ('instance', toString(number))]) AS group
+                   [('__name__', 'metric'), ('instance', toString(number))] AS tags
             FROM numbers(32)
             ORDER BY number
         )
-    ) AS groups
-SELECT timeSeriesGroupToTags(timeSeriesRemoveTag(groups[number * 8 + 1], '__name__'))
+    ) AS tag_sets
+SELECT timeSeriesRemoveTag(tag_sets[number * 8 + 1], '__name__')
 FROM numbers(4)
 ORDER BY number;
 
 SELECT '';
-SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated dense groups:';
+SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated tag sets:';
 
 WITH
     (
-        SELECT groupArray(group)
+        SELECT groupArray(tags)
         FROM
         (
             SELECT number,
-                   timeSeriesTagsToGroup([('shared', 'value'), ('unique', toString(number))]) AS group
+                   [('shared', 'value'), ('unique', toString(number))] AS tags
             FROM numbers(3)
             ORDER BY number
         )
-    ) AS groups
+    ) AS tag_sets
 SELECT count(),
-       uniqExact(new_group),
-       groupUniqArray(timeSeriesGroupToTags(new_group))
+       uniqExact(new_tags),
+       groupUniqArray(new_tags)
 FROM
 (
-    SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 2, 1, 3, 2, 1][number + 1]], ['shared']) AS new_group
+    SELECT timeSeriesRemoveAllTagsExcept(tag_sets[[1, 2, 1, 3, 2, 1][number + 1]], ['shared']) AS new_tags
     FROM numbers(6)
 );
 
 SELECT '';
-SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:';
+SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated tag sets (2):';
 
 WITH
     (
-        SELECT groupArray(group)
+        SELECT groupArray(tags)
         FROM
         (
             SELECT number,
-                   timeSeriesTagsToGroup([('shared', 'value'), ('unique', toString(number))]) AS group
+                   [('shared', 'value'), ('unique', toString(number))] AS tags
             FROM numbers(32)
             ORDER BY number
         )
-    ) AS groups
+    ) AS tag_sets
 SELECT count(),
-       uniqExact(new_group),
-       groupUniqArray(timeSeriesGroupToTags(new_group))
+       uniqExact(new_tags),
+       groupUniqArray(new_tags)
 FROM
 (
-    SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_group
+    SELECT timeSeriesRemoveAllTagsExcept(tag_sets[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_tags
     FROM numbers(5)
 );
+
+SELECT '';
+SELECT 'A trailing zero byte of a String tag value is kept by the next operation, the padding of FixedString is not:';
+
+WITH timeSeriesReplaceTag([], 'x', unhex('00'), '', '') AS t
+SELECT t, hex(timeSeriesExtractTag(t, 'x')), timeSeriesRemoveTags(t, []) = t;
+
+SELECT timeSeriesRemoveTags(CAST([('x', 'a')], 'Array(Tuple(FixedString(2), FixedString(2)))'), []);

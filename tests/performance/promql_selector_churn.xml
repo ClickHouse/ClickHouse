@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        PromQL selectors over a metric with a high churn: 200000 series which stopped long before the queried range and 2000 live
+        series. The samples are read for the live series only, and their tags are joined from the series matching the selector.
+    -->
+    <create_query>CREATE TABLE promql_churn_ts ENGINE = TimeSeries</create_query>
+
+    <fill_query>
+        INSERT INTO promql_churn_ts (metric_name, tags, samples)
+        SELECT
+            'churn_metric',
+            map('pod', concat('old-', toString(number)), 'job', toString(number % 10)),
+            arrayMap(step -> (toDateTime64(1000 + step * 15, 3), toFloat64(step)), range(40))
+        FROM numbers_mt(200000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO promql_churn_ts (metric_name, tags, samples)
+        SELECT
+            'churn_metric',
+            map('pod', concat('live-', toString(number)), 'job', toString(number % 10)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(step)), range(240))
+        FROM numbers_mt(2000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQueryRange('promql_churn_ts', 'rate(churn_metric[5m])', 1001800, 1003600, 60) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_churn_ts', 'sum by (job) (rate(churn_metric[5m]))', 1001800, 1003600, 60) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_churn_ts</drop_query>
+</test>

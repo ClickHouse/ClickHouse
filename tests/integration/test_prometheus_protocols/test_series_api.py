@@ -274,7 +274,7 @@ def test_series_records_query_finish():
         int(
             node.query(
                 "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
-                "AND query LIKE '%timeSeriesIdToTags%' AND query NOT LIKE '%query_log%'"
+                "AND query LIKE '%series_tags%' AND query NOT LIKE '%query_log%'"
             )
         )
         > 0

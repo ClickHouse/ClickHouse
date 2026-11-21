@@ -70,11 +70,11 @@ ASTPtr makePresenceMask(ASTPtr values)
 
 ASTPtr makeJoinKeyColumn(String & side, ASTPtr && join_group, ConverterContext & context)
 {
-    if (!isZeroGroupAST(join_group))
+    if (!isNoTagsAST(join_group))
         return std::move(join_group);
 
     SelectQueryBuilder builder;
-    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
     join_group->setAlias(ColumnNames::JoinGroup);
     builder.select_list.push_back(std::move(join_group));

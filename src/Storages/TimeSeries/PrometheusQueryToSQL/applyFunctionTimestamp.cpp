@@ -112,7 +112,7 @@ namespace
 
                 SelectQueryBuilder builder;
                 builder.from_table = subquery_name;
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
                 ASTPtr values_col = make_intrusive<ASTIdentifier>(ColumnNames::Values);
                 ASTPtr range_arr = makeASTFunction(

@@ -6,7 +6,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Applies the `by(labels)` or `without(labels)` modifier from an aggregation operator to a `group` expression,
+/// Applies the `by(labels)` or `without(labels)` modifier from an aggregation operator to a `tags` expression,
 /// produces a new group expression with the appropriate tags, and updates `metric_name_dropped` accordingly.
 /// If `drop_metric_name` is true, the metric name `__name__` is automatically added to the remove list
 /// in the `without(labels)` case even if it is not explicitly listed.

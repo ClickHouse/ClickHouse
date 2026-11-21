@@ -106,13 +106,14 @@ $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'lim / on(instance)
 
 # Prints the label values each selector filters by. EXPLAIN keeps the selector filters in the plan only for an empty table.
 # Only the filter lines are looked at: the join with the time ranges table lists `metric_name` among its input columns too.
+# The filters on the tags of the series (computed from `metric_name` by `timeSeriesTagsToMap`) aren't selector filters.
 function selectors()
 {
     echo "$1"
     $CLIENT -q "
         SELECT DISTINCT arrayStringConcat(extractAll(explain, '= \'([a-z0-9]+)\''), ' ') AS filter
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))
-        WHERE explain LIKE '%Filter column:%metric_name%'
+        WHERE explain LIKE '%Filter column:%metric_name%' AND explain NOT LIKE '%timeSeriesTagsToMap%'
         ORDER BY filter"
 }
 
@@ -151,8 +152,10 @@ selectors "$(and_of_lim 21) / on(job) req{job=\"api\"}"
 echo "-- the setting turns the pushdown off"
 CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
 
-# Prints how many selectors the query reads and how many joins it makes.
-# Only the hash joins are counted: the PromQL operators are executed with a hash join, while each selector joins the time ranges table with a merge join.
+# Prints how many times the query reads the tags table and how many joins it makes.
+# A selector reads the tags table twice: for the identifiers of the samples, and for the tags joined to them.
+# Only the hash joins are counted: the PromQL operators and the joins of the tags are executed with a hash join,
+# while each selector joins the time ranges table with a merge join.
 function reads()
 {
     $CLIENT -q "

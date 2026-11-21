@@ -73,14 +73,11 @@ void checkArgumentTypes(
 
 ASTPtr setValueLabel(ASTPtr group, const String & label_name)
 {
-    auto tags_without_value_label = makeASTFunction(
-        "timeSeriesGroupToTags", makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(label_name)));
-
-    return makeASTFunction(
-        "timeSeriesTagsToGroup",
-        std::move(tags_without_value_label),
-        make_intrusive<ASTLiteral>(label_name),
-        make_intrusive<ASTIdentifier>(LABEL_VALUE));
+    ASTs args;
+    args.push_back(makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(label_name)));
+    args.push_back(make_intrusive<ASTLiteral>(label_name));
+    args.push_back(make_intrusive<ASTIdentifier>(LABEL_VALUE));
+    return timeSeriesNormalizedTagsToAST(std::move(args));
 }
 
 ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_node, ASTPtr group, const String & label_name, bool & metric_name_dropped)
@@ -148,7 +145,7 @@ SQLQueryPiece applyAggregationOperatorCountValues(
             SQLSubquery{context.subqueries.size(), std::move(vector_argument.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
         builder.select_list.back()->setAlias(ColumnNames::OriginalGroup);
 
         auto array_join = makeASTFunction(
@@ -253,7 +250,7 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         builder.from_table = context.subqueries.back().name;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
 
         const size_t num_steps = stepsInTimeSeriesRange(res.start_time, res.end_time, res.step);
         auto grid_indices = makeASTFunction("range", make_intrusive<ASTLiteral>(1u), make_intrusive<ASTLiteral>(num_steps + 1));
