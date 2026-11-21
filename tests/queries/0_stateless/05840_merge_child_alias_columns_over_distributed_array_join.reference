@@ -1,0 +1,15 @@
+merge_alias_aj_dist	merge_alias_aj_child
+merge_alias_aj_dist	merge_alias_aj_child
+a-2
+b-3
+a	a-2	1
+b	b-3	2
+merge_alias_aj_dist	1	merge_alias_aj_child	1	a-2	a	1
+merge_alias_aj_dist	1	merge_alias_aj_child	1	b-3	b	2
+merge_alias_aj_child	4
+merge_alias_aj_dist	merge_alias_aj_child
+merge_alias_aj_dist	merge_alias_aj_child
+merge_alias_aj_dist	merge_alias_aj_child
+merge_alias_aj_dist	merge_alias_aj_child
+merge_alias_aj_dist	merge_alias_aj_child	1	a-2
+merge_alias_aj_dist	merge_alias_aj_child	1	b-3
