@@ -454,6 +454,8 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     ColumnRawPtrs fixed_columns;
     Sizes fixed_sizes;
     Columns materialized_columns;
+    /// Owns the fixed-width key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 
     /// The values of the only fixed-width key column when they are as wide as `Keys`: such values are their
     /// own packed form, so they are read in place, without packing. Null otherwise.
@@ -523,9 +525,15 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
         if (has_low_cardinality_fixed_key && !sub_range)
             materializeLowCardinalityColumns();
 
+        /// The fixed-width values are packed into the key as raw bytes, so negative zeros are canonicalized in advance,
+        /// unless the caller has done it. A top-level `LowCardinality` column is not canonicalized here: it is either
+        /// materialized above, or the copy of its sub-range is canonicalized in `packCopyOfSubRange`.
+        if (!rows.negative_zeros_canonicalized)
+            canonicalizeNegativeZeroInKeyColumns(fixed_columns, canonicalized_columns);
+
         if (has_low_cardinality_fixed_key && sub_range)
         {
-            packCopyOfSubRange(rows.begin, rows_end);
+            packCopyOfSubRange(rows.begin, rows_end, rows.negative_zeros_canonicalized);
         }
         else if (fixed_columns.size() == 1 && fixed_sizes[0] == sizeof(Keys))
         {
@@ -634,13 +642,16 @@ private:
     /// Packs the fixed-width values of rows [begin, end) into `prepared_keys`, for a state of a sub-range
     /// with a `LowCardinality` fixed-width key. It packs a copy of these rows only, with the
     /// `LowCardinality` columns materialized, as the packing reads the values in place.
-    void packCopyOfSubRange(size_t begin, size_t end)
+    void packCopyOfSubRange(size_t begin, size_t end, bool negative_zeros_canonicalized)
     {
         Columns copies;
         ColumnRawPtrs copied_columns;
         for (const IColumn * column : fixed_columns)
         {
             copies.push_back(column->cut(begin, end - begin)->convertToFullColumnIfLowCardinality());
+            if (!negative_zeros_canonicalized)
+                if (ColumnPtr canonical = canonicalizeNegativeZero(*copies.back()))
+                    copies.back() = std::move(canonical);
             copied_columns.push_back(copies.back().get());
         }
         prepared_keys_begin = begin;
