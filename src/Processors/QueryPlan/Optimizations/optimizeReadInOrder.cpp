@@ -148,6 +148,9 @@ struct FindReadingStepContext
     /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
     /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards.
     VectorWithMemoryTracking<const IJoin *> traversed_joins = {};
+
+    /// Whether the traversal descended through an `ARRAY JOIN` or `arrayJoin` that drops the rows of empty arrays.
+    bool traversed_row_dropping_array_join = false;
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -186,7 +189,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         return nullptr;
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    {
+        if (const auto * array_join = typeid_cast<ArrayJoinStep *>(step))
+            data.traversed_row_dropping_array_join |= !array_join->isLeft() || array_join->hasElementFilter();
+        else if (const auto * expression = typeid_cast<ExpressionStep *>(step))
+            data.traversed_row_dropping_array_join |= expression->getExpression().hasArrayJoin();
+        else if (const auto * filter = typeid_cast<FilterStep *>(step))
+            data.traversed_row_dropping_array_join |= filter->getExpression().hasArrayJoin();
         return findReadingStep(*node.children.front(), data);
+    }
 
     /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
     /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
@@ -1562,7 +1573,10 @@ InputOrderInfoPtr buildInputOrderInfo(
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return nullptr;
 
-        const bool allow_split_by_values = reads_by_values && find_reading_ctx.traversed_joins.empty();
+        /// The streams of the values stop at the limit, so no step may drop rows the key condition does not describe,
+        /// and `exact_rows_before_limit`, which counts every row, is not supported.
+        const bool allow_split_by_values = reads_by_values && find_reading_ctx.traversed_joins.empty()
+            && !find_reading_ctx.traversed_row_dropping_array_join && !optimization_settings.exact_rows_before_limit;
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,

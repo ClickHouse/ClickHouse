@@ -166,6 +166,24 @@ WHERE explain ILIKE '%Read in order by values%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') AND (ts < 100 OR ts > 1000) ORDER BY ts DESC LIMIT 10)
 WHERE explain ILIKE '%Read in order by values%';
 
+SELECT 'array join and exact rows before limit';
+-- An ARRAY JOIN that drops the rows of empty arrays keeps the usual plan, a LEFT ARRAY JOIN drops none.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, a, b FROM t_in_set_order_exact ARRAY JOIN if(ts < 8, [1], []) AS a, if(ts < 8, [2], []) AS b WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, a FROM t_in_set_order_exact ARRAY JOIN if(ts < 8, [1], []) AS a WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10 SETTINGS query_plan_top_k_through_array_join = 0)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, arrayJoin(if(ts < 8, [1], [])) AS a FROM t_in_set_order_exact WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10 SETTINGS query_plan_lower_array_join_function = 0)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, a, b FROM t_in_set_order_exact LEFT ARRAY JOIN if(ts < 8, [1], []) AS a, if(ts < 8, [2], []) AS b WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10)
+WHERE explain ILIKE '%Read in order by values%';
+-- `exact_rows_before_limit` counts all 20000 rows.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_exact WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10 SETTINGS exact_rows_before_limit = 1)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT '' FROM t_in_set_order_exact WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 10
+SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0, format_template_row_format = '${0:Raw}', format_template_rows_between_delimiter = '',
+    format_template_resultset_format = '${data}{"rows_before_limit_at_least":${rows_before_limit:Raw}}\n'
+FORMAT Template;
+
 DROP TABLE t_in_set_order_exact;
 DROP TABLE t_in_set_order_name;
 DROP TABLE t_in_set_order_key_name;

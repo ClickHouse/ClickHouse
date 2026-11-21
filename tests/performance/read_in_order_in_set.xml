@@ -12,6 +12,8 @@
     <query>SELECT workspace, timestamp FROM logs_in_set WHERE workspace IN ('0', '1', '2') AND toUnixTimestamp64Nano(timestamp) % 100000000 = 7 ORDER BY timestamp DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT k, ts FROM in_set_u64 WHERE k IN ('0', '1') ORDER BY intDiv(ts, 100000000), ts DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT k, ts FROM in_set_u64 WHERE k IN ('0', '1') AND ts IN range(1, 20000000, 8192) ORDER BY ts DESC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+    <query>SELECT k, ts, a, b FROM in_set_u64 ARRAY JOIN if(ts &lt; 8, [1], []) AS a, if(ts &lt; 8, [2], []) AS b WHERE k IN ('0', '1') ORDER BY ts DESC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+    <query>SELECT k, ts, arrayJoin(if(ts &lt; 8, [1], [])) AS a FROM in_set_u64 WHERE k IN ('0', '1') ORDER BY ts DESC LIMIT 10 SETTINGS query_plan_lower_array_join_function = 0, use_query_condition_cache = 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS logs_in_set</drop_query>
     <drop_query>DROP TABLE IF EXISTS in_set_u64</drop_query>

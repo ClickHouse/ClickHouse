@@ -50,3 +50,10 @@ whole order and exact condition
 0
 0
 0
+array join and exact rows before limit
+0
+0
+0
+1
+0
+{"rows_before_limit_at_least":20000}
