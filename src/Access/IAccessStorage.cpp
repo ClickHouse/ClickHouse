@@ -644,19 +644,10 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     SettingsChanges & settings,
     bool check_valid_until = true);
 
-/// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
-/// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
-/// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
-/// `VALID UNTIL` of an allowed login, contradicting the "skip this authentication type entirely" contract.
-static bool authenticationTypeIsAllowed(AuthenticationType type, bool allow_no_password, bool allow_plaintext_password)
-{
-    if (type == AuthenticationType::NO_PASSWORD)
-        return allow_no_password;
-    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
-        return allow_plaintext_password;
-    return true;
-}
-
+/// Both the primary authentication loop and the fail-close ambiguity scan below must apply `authenticationTypeIsAllowed`,
+/// otherwise a disabled method could still narrow the `GRANTS` or shorten the `VALID UNTIL` of an allowed login,
+/// contradicting the "skip this authentication type entirely" contract. `userAcceptsEmptyPassword` in
+/// StartupWarnings.cpp mirrors these gates for the empty password: keep them in sync.
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
