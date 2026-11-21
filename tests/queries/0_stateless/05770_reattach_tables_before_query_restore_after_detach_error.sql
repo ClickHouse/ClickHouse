@@ -1,5 +1,6 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-parallel, no-fasttest
 -- Tag no-replicated-database: tables of `Replicated` databases are not reattached.
+-- Tags no-parallel, no-fasttest: the failpoint is server-global state.
 
 -- `DETACH TABLE ... SYNC` removes the table from the database first and then waits until it is no longer in use.
 -- If it fails after the table is removed (e.g. the wait is cancelled), the table must be attached back.

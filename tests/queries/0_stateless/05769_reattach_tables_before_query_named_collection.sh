@@ -26,21 +26,24 @@ $CLICKHOUSE_CLIENT -q "
 
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_url'")
 
-function count_detaches()
+# Both the internal `DETACH TABLE ... SYNC` and, with `database_atomic_wait_for_drop_and_detach_synchronously`,
+# the internal `ATTACH TABLE` log this message, so check only whether it is there.
+function was_reattached()
 {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS text_log;
-        SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND message = 'Waiting for detached table $uuid to be no longer in use'"
+        SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR
+            AND message = 'Waiting for detached table $uuid to be no longer in use'"
 }
 
 $CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
-echo "user without NAMED COLLECTION: $(count_detaches) detaches"
+echo "user without NAMED COLLECTION, reattached: $(was_reattached)"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE t_url"
 
 $CLICKHOUSE_CLIENT -q "GRANT NAMED COLLECTION ON $collection TO $user"
 
 $CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
-echo "user with NAMED COLLECTION: $(count_detaches) detaches"
+echo "user with NAMED COLLECTION, reattached: $(was_reattached)"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t_url"
 
 $CLICKHOUSE_CLIENT -q "
