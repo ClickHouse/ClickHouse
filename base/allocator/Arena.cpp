@@ -1576,6 +1576,16 @@ void * arenaReallocate(
 
 /// --- Misc ----------------------------------------------------------------------------------------------------------
 
+/// jemalloc: arena_set_extent_hooks
+extent_hooks_t * arenaSetExtentHooks(ThreadState & thread_state, Arena * arena, extent_hooks_t * extent_hooks_ptr)
+{
+    static_assert(config::background_thread);
+    BackgroundThreadInfo * info = arenaBackgroundThreadInfoGet(arena);
+    MutexLock lock(&thread_state, info->mutex);
+    /// `pa_shard_disable_hpa` (no using the HPA now that we have the custom hooks): HPA is dropped.
+    return arena->base->extentHooksSet(extent_hooks_ptr);
+}
+
 /// jemalloc: arena_dss_prec_get
 SbrkPrecedence arenaSbrkPrecedenceGet(Arena * arena)
 {

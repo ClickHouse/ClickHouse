@@ -571,15 +571,135 @@ TEST(MallctlExperimentalAPI, ArenasCreateExtended)
     CHECK_EQ(len, size_t(0));
     len = sizeof(unsigned);
     CHECK_EQ(je_mallctl(node, &arena_idx, &len, &config, sizeof(config) - 1), EINVAL);
-    /// Custom extent hooks are not supported.
-    extent_hooks_t custom_hooks = extent_hooks_default_extent_hooks;
-    config.extent_hooks_ptr = &custom_hooks;
-    CHECK_EQ(je_mallctl(node, &arena_idx, &len, &config, sizeof(config)), EINVAL);
 
     unsigned num_arenas_after;
     len = sizeof(unsigned);
     REQUIRE(je_mallctl("arenas.narenas", &num_arenas_after, &len, nullptr, 0) == 0);
     CHECK_EQ(num_arenas_after, num_arenas_before + 2);
+}
+
+/// --- Custom extent hooks -----------------------------------------------------------------------------------------------
+
+namespace
+{
+
+/// A table that wraps the default one and counts the calls, like `JemallocNoDumpArenas` in ClickHouse.
+extent_hooks_t * counting_default_hooks = nullptr;
+extent_hooks_t counting_hooks;
+unsigned counting_alloc_calls = 0;
+unsigned counting_alloc_arena_idx = 0;
+
+void * countingAlloc(extent_hooks_t * hooks, void * new_addr, size_t size, size_t alignment, bool * zero, bool * commit, unsigned arena_idx)
+{
+    CHECK(hooks == &counting_hooks);
+    ++counting_alloc_calls;
+    counting_alloc_arena_idx = arena_idx;
+    return counting_default_hooks->alloc(counting_default_hooks, new_addr, size, alignment, zero, commit, arena_idx);
+}
+
+}
+
+TEST(MallctlExperimentalAPI, CustomExtentHooks)
+{
+    size_t hooks_len = sizeof(counting_default_hooks);
+    REQUIRE(je_mallctl("arena.0.extent_hooks", &counting_default_hooks, &hooks_len, nullptr, 0) == 0);
+    REQUIRE(counting_default_hooks == &extent_hooks_default_extent_hooks);
+
+    counting_hooks = *counting_default_hooks;
+    counting_hooks.alloc = countingAlloc;
+    extent_hooks_t * hooks = &counting_hooks;
+
+    /// `arenas.create` with a custom table: the metadata of the arena is allocated with it too.
+    unsigned arena_idx = 0;
+    size_t len = sizeof(arena_idx);
+    REQUIRE(je_mallctl("arenas.create", &arena_idx, &len, &hooks, sizeof(hooks)) == 0);
+    CHECK(counting_alloc_calls > 0);
+    CHECK_EQ(counting_alloc_arena_idx, arena_idx);
+
+    char name[64];
+    snprintf(name, sizeof(name), "arena.%u.extent_hooks", arena_idx);
+    extent_hooks_t * current = nullptr;
+    REQUIRE(je_mallctl(name, &current, &hooks_len, nullptr, 0) == 0);
+    CHECK(current == &counting_hooks);
+
+    /// Large and small allocations of the arena come from the hooks.
+    int flags = MALLOCX_ARENA(arena_idx) | MALLOCX_TCACHE_NONE;
+    unsigned calls_before = counting_alloc_calls;
+    constexpr size_t large_size = size_t(64) << 20;
+    char * large = static_cast<char *>(je_mallocx(large_size, flags));
+    REQUIRE(large != nullptr);
+    CHECK(counting_alloc_calls > calls_before);
+    CHECK_EQ(counting_alloc_arena_idx, arena_idx);
+    memset(large, 1, large_size);
+    unsigned lookup_idx = 0;
+    len = sizeof(lookup_idx);
+    void * lookup_ptr = large;
+    REQUIRE(je_mallctl("arenas.lookup", &lookup_idx, &len, &lookup_ptr, sizeof(lookup_ptr)) == 0);
+    CHECK_EQ(lookup_idx, arena_idx);
+
+    void * small[1000];
+    for (void *& p : small)
+    {
+        p = je_mallocx(100, flags);
+        REQUIRE(p != nullptr);
+        memset(p, 2, 100);
+    }
+    /// Zeroed memory is zeroed with custom hooks as well, also when it is recycled.
+    for (void * p : small)
+        je_dallocx(p, flags);
+    je_dallocx(large, flags);
+    char * zeroed = static_cast<char *>(je_mallocx(large_size, flags | MALLOCX_ZERO));
+    REQUIRE(zeroed != nullptr);
+    bool all_zero = true;
+    for (size_t i = 0; i < large_size; i += 1024)
+        all_zero &= zeroed[i] == 0;
+    CHECK(all_zero);
+    je_dallocx(zeroed, flags);
+
+    /// Purging goes through the hooks of the table (the default ones here).
+    snprintf(name, sizeof(name), "arena.%u.purge", arena_idx);
+    CHECK_EQ(je_mallctl(name, nullptr, nullptr, nullptr, 0), 0);
+
+    /// Replacing the table returns the previous one.
+    snprintf(name, sizeof(name), "arena.%u.extent_hooks", arena_idx);
+    extent_hooks_t * default_hooks = counting_default_hooks;
+    extent_hooks_t * old_hooks = nullptr;
+    REQUIRE(je_mallctl(name, &old_hooks, &hooks_len, &default_hooks, sizeof(default_hooks)) == 0);
+    CHECK(old_hooks == &counting_hooks);
+    REQUIRE(je_mallctl(name, &current, &hooks_len, nullptr, 0) == 0);
+    CHECK(current == counting_default_hooks);
+    calls_before = counting_alloc_calls;
+    void * p = je_mallocx(size_t(256) << 20, flags);
+    REQUIRE(p != nullptr);
+    CHECK_EQ(counting_alloc_calls, calls_before);
+    je_dallocx(p, flags);
+    REQUIRE(je_mallctl(name, &old_hooks, &hooks_len, &hooks, sizeof(hooks)) == 0);
+    CHECK(old_hooks == counting_default_hooks);
+
+    /// `experimental.arenas_create_ext` accepts a custom table too.
+    TestArenaConfig config = {&counting_hooks, true};
+    unsigned arena_idx2 = 0;
+    len = sizeof(arena_idx2);
+    REQUIRE(je_mallctl("experimental.arenas_create_ext", &arena_idx2, &len, &config, sizeof(config)) == 0);
+    CHECK_EQ(counting_alloc_arena_idx, arena_idx2);
+
+    /// A table without `dalloc`, `split` and `merge`: the allocations still work, the extents are just not split or
+    /// merged.
+    counting_hooks.split = nullptr;
+    counting_hooks.merge = nullptr;
+    counting_hooks.dalloc = nullptr;
+    p = je_mallocx(size_t(8) << 20, MALLOCX_ARENA(arena_idx2) | MALLOCX_TCACHE_NONE);
+    REQUIRE(p != nullptr);
+    memset(p, 3, size_t(8) << 20);
+    je_dallocx(p, MALLOCX_ARENA(arena_idx2) | MALLOCX_TCACHE_NONE);
+    counting_hooks = *counting_default_hooks;
+    counting_hooks.alloc = countingAlloc;
+
+    for (unsigned idx : {arena_idx, arena_idx2})
+    {
+        snprintf(name, sizeof(name), "arena.%u.destroy", idx);
+        CHECK_EQ(je_mallctl(name, nullptr, nullptr, nullptr, 0), 0);
+    }
 }
 
 /// --- experimental.thread.activity_callback ---------------------------------------------------------------------------

@@ -361,9 +361,7 @@ int arenaIMuzzyDecayMs(
     return arenaIDecayMsImpl(thread_state, numeric_path, old_value, old_length_ptr, new_value, new_length, false);
 }
 
-/// Custom extent hooks are not supported (the default hooks are always used): writing any other table than
-/// `extent_hooks_default_extent_hooks` returns `EINVAL` (jemalloc would install it). Otherwise as in jemalloc: writing to
-/// a missing auto arena creates it.
+/// Writing to a missing auto arena creates it.
 /// jemalloc: arena_i_extent_hooks_ctl
 int arenaIExtentHooks(
     ThreadState & thread_state, const size_t * numeric_path, size_t, void * old_value, size_t * old_length_ptr, void * new_value, size_t new_length)
@@ -390,8 +388,6 @@ int arenaIExtentHooks(
             extent_hooks_t * new_extent_hooks_ptr = nullptr;
             if (int result = write(new_value, new_length, new_extent_hooks_ptr))
                 return result;
-            if (new_extent_hooks_ptr != &extent_hooks_default_extent_hooks)
-                return EINVAL;
             ArenaConfig config = arena_config_default;
             config.extent_hooks_ptr = new_extent_hooks_ptr;
             if (arenaInit(&thread_state, arena_idx, &config) == nullptr)
@@ -405,10 +401,7 @@ int arenaIExtentHooks(
             extent_hooks_t * new_extent_hooks_ptr = nullptr;
             if (int result = write(new_value, new_length, new_extent_hooks_ptr))
                 return result;
-            if (new_extent_hooks_ptr != &extent_hooks_default_extent_hooks)
-                return EINVAL;
-            /// jemalloc: arena_set_extent_hooks (installing the default table again does not change anything).
-            old_extent_hooks_ptr = arenaGetExtentHooks(arena)->getExtentHooksPtr();
+            old_extent_hooks_ptr = arenaSetExtentHooks(thread_state, arena, new_extent_hooks_ptr);
             if (int result = read(old_value, old_length_ptr, old_extent_hooks_ptr))
                 return result;
         }
@@ -548,8 +541,6 @@ int arenasNumThreadCacheBins(
         thread_state, numeric_path, numeric_path_length, old_value, old_length_ptr, new_value, new_length);
 }
 
-/// Custom extent hooks are not supported: writing any other table than `extent_hooks_default_extent_hooks` returns
-/// `EINVAL` (see `arena.<i>.extent_hooks`).
 /// jemalloc: arenas_create_ctl
 int arenasCreate(
     ThreadState & thread_state, const size_t *, size_t, void * old_value, size_t * old_length_ptr, void * new_value, size_t new_length)
@@ -562,8 +553,6 @@ int arenasCreate(
     extent_hooks_t * extent_hooks_ptr = const_cast<extent_hooks_t *>(config.extent_hooks_ptr);
     if (int result = write(new_value, new_length, extent_hooks_ptr))
         return result;
-    if (extent_hooks_ptr != &extent_hooks_default_extent_hooks)
-        return EINVAL;
     config.extent_hooks_ptr = extent_hooks_ptr;
     unsigned arena_idx = mallctlArenaInit(thread_state, &config);
     if (arena_idx == UINT_MAX)

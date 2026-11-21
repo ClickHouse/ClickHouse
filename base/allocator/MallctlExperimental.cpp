@@ -267,8 +267,6 @@ int experimentalArenasIActivePagesPtr(
     return EFAULT;
 }
 
-/// Custom extent hooks are not supported: like `arenas.create`, only the default table is accepted (`EINVAL`
-/// otherwise).
 /// jemalloc: experimental_arenas_create_ext_ctl
 int experimentalArenasCreateExtended(
     ThreadState & thread_state, const size_t *, size_t, void * old_value, size_t * old_length_ptr, void * new_value, size_t new_length)
@@ -280,8 +278,6 @@ int experimentalArenasCreateExtended(
         return result;
     if (int result = write(new_value, new_length, config))
         return result;
-    if (config.extent_hooks_ptr != &extent_hooks_default_extent_hooks)
-        return EINVAL;
 
     unsigned arena_idx = mallctlArenaInit(thread_state, &config);
     if (arena_idx == UINT_MAX)

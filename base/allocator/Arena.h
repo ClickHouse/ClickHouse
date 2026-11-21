@@ -63,7 +63,7 @@ inline constexpr uint64_t ARENA_DEFERRED_PURGE_NUM_PAGES_THRESHOLD = 1024;
 /// jemalloc: arena_config_t
 struct ArenaConfig
 {
-    /// Extent hooks to be used for the arena (always the default table: custom hooks are not supported).
+    /// Extent hooks to be used for the arena.
     const extent_hooks_t * extent_hooks_ptr;
     /// Use extent hooks for metadata (base) allocations when true.
     bool metadata_use_hooks;
@@ -306,6 +306,10 @@ ALLOCATOR_ALWAYS_INLINE ExtentHooks * arenaGetExtentHooks(Arena * arena)
 {
     return arena->base->extentHooksGet();
 }
+
+/// Installs a hooks table for the arena; returns the previous one.
+/// jemalloc: arena_set_extent_hooks
+extent_hooks_t * arenaSetExtentHooks(ThreadState & thread_state, Arena * arena, extent_hooks_t * extent_hooks_ptr);
 
 /// jemalloc: arena_decay (declared here for `arenaDecayTicks`)
 void arenaDecay(ThreadState * thread_state, Arena * arena, bool is_background_thread, bool all);

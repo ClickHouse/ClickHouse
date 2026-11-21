@@ -3,10 +3,11 @@
 /// Extent hooks: the interface between the page-level algorithms and the OS.
 /// jemalloc: `ehooks.h`, `src/ehooks.c`.
 ///
-/// Only the default hooks are implemented (custom extent hooks are a dropped feature: ClickHouse never installs them).
-/// `ExtentHooks` (= `ehooks_t`) keeps the arena index and the pointer to the public `extent_hooks_t` table, which is
-/// always `extent_hooks_default_extent_hooks` (its address is what `arena.<i>.extent_hooks` returns). All operations call
-/// the default implementations directly (no function pointers on the hot path).
+/// `ExtentHooks` (= `ehooks_t`) keeps the arena index and the pointer to the public `extent_hooks_t` table. It is
+/// `extent_hooks_default_extent_hooks` unless the application installed its own table with `arenas.create`,
+/// `experimental.arenas_create_ext` or `arena.<i>.extent_hooks` (ClickHouse does: `JemallocNoDumpArenas`). For the
+/// default table every operation calls the default implementation directly (no function pointers on the hot path);
+/// the hooks of a custom table are called out of line (`extentHooksCustom*`), under the raw reentrancy guards.
 ///
 /// DSS (`sbrk`) is dropped too: allocation always uses mmap, so the DSS branches of the default hooks reduce to the
 /// non-DSS case; `SbrkPrecedence` remains only for reporting through mallctl (and for the side effects of a failed DSS
@@ -155,6 +156,52 @@ inline void extentHooksDebugZeroCheck(void * addr, size_t size)
     }
 }
 
+/// --- Hooks of a custom table (the non-default branches of jemalloc's `ehooks_*`) --------------------------------------
+///
+/// A hook that the table does not have fails (returns true), except `alloc`, which is mandatory, and `destroy`, which
+/// then does nothing. The hooks are called under the raw reentrancy guards (`ehooks_pre_reentrancy`,
+/// `ehooks_post_reentrancy`): the usual guards assert that the arena is not arena 0, which may have custom hooks too.
+
+void * extentHooksCustomAlloc(
+    ThreadState * thread_state,
+    extent_hooks_t * extent_hooks_ptr,
+    void * new_addr,
+    size_t size,
+    size_t alignment,
+    bool * zero,
+    bool * commit,
+    unsigned arena_idx);
+bool extentHooksCustomDeallocate(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, bool committed, unsigned arena_idx);
+void extentHooksCustomDestroy(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, bool committed, unsigned arena_idx);
+bool extentHooksCustomCommit(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, size_t offset, size_t length, unsigned arena_idx);
+bool extentHooksCustomDecommit(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, size_t offset, size_t length, unsigned arena_idx);
+bool extentHooksCustomPurgeLazy(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, size_t offset, size_t length, unsigned arena_idx);
+bool extentHooksCustomPurgeForced(
+    ThreadState * thread_state, extent_hooks_t * extent_hooks_ptr, void * addr, size_t size, size_t offset, size_t length, unsigned arena_idx);
+bool extentHooksCustomSplit(
+    ThreadState * thread_state,
+    extent_hooks_t * extent_hooks_ptr,
+    void * addr,
+    size_t size,
+    size_t size_a,
+    size_t size_b,
+    bool committed,
+    unsigned arena_idx);
+bool extentHooksCustomMerge(
+    ThreadState * thread_state,
+    extent_hooks_t * extent_hooks_ptr,
+    void * addr_a,
+    size_t size_a,
+    void * addr_b,
+    size_t size_b,
+    bool committed,
+    unsigned arena_idx);
+
 /// jemalloc: ehooks_t
 class ExtentHooks
 {
@@ -194,38 +241,33 @@ public:
     /// jemalloc: ehooks_dalloc_will_fail
     ALLOCATOR_ALWAYS_INLINE bool deallocateWillFail() const
     {
-        assertDefault();
-        return options.retain;
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (extent_hooks_ptr == &extent_hooks_default_extent_hooks)
+            return options.retain;
+        return extent_hooks_ptr->dalloc == nullptr;
     }
 
-    /// jemalloc: ehooks_split_will_fail (the default table has `split`)
-    ALLOCATOR_ALWAYS_INLINE bool splitWillFail() const
-    {
-        assertDefault();
-        return false;
-    }
+    /// jemalloc: ehooks_split_will_fail
+    ALLOCATOR_ALWAYS_INLINE bool splitWillFail() const { return getExtentHooksPtr()->split == nullptr; }
 
-    /// jemalloc: ehooks_merge_will_fail (the default table has `merge`)
-    ALLOCATOR_ALWAYS_INLINE bool mergeWillFail() const
-    {
-        assertDefault();
-        return false;
-    }
+    /// jemalloc: ehooks_merge_will_fail
+    ALLOCATOR_ALWAYS_INLINE bool mergeWillFail() const { return getExtentHooksPtr()->merge == nullptr; }
 
+    /// Before the guard hooks are officially introduced, limit the use to the default hooks only.
     /// jemalloc: ehooks_guard_will_fail
-    ALLOCATOR_ALWAYS_INLINE bool guardWillFail() const
-    {
-        assertDefault();
-        return false;
-    }
+    ALLOCATOR_ALWAYS_INLINE bool guardWillFail() const { return !areDefault(); }
 
     /// jemalloc: ehooks_alloc
     ALLOCATOR_ALWAYS_INLINE void *
     alloc(ThreadState * thread_state, void * new_addr, size_t size, size_t alignment, bool * zero, bool * commit) const
     {
-        assertDefault();
         [[maybe_unused]] bool original_zero = *zero;
-        void * result = extentHooksDefaultAllocImpl(thread_state, new_addr, size, alignment, zero, commit, idxGet());
+        void * result;
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            result = extentHooksDefaultAllocImpl(thread_state, new_addr, size, alignment, zero, commit, idxGet());
+        else
+            result = extentHooksCustomAlloc(thread_state, extent_hooks_ptr, new_addr, size, alignment, zero, commit, idxGet());
         ALLOCATOR_ASSERT(new_addr == nullptr || result == nullptr || new_addr == result);
         ALLOCATOR_ASSERT(!original_zero || *zero);
         if constexpr (config::debug)
@@ -238,105 +280,138 @@ public:
 
     /// Returns true on error (the memory was not deallocated).
     /// jemalloc: ehooks_dalloc
-    ALLOCATOR_ALWAYS_INLINE bool deallocate(ThreadState * /*tsdn*/, void * addr, size_t size, bool /*committed*/) const
+    ALLOCATOR_ALWAYS_INLINE bool deallocate(ThreadState * thread_state, void * addr, size_t size, bool committed) const
     {
-        assertDefault();
-        return extentHooksDefaultDeallocateImpl(addr, size);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            return extentHooksDefaultDeallocateImpl(addr, size);
+        return extentHooksCustomDeallocate(thread_state, extent_hooks_ptr, addr, size, committed, idxGet());
     }
 
     /// jemalloc: ehooks_destroy
-    ALLOCATOR_ALWAYS_INLINE void destroy(ThreadState * /*tsdn*/, void * addr, size_t size, bool /*committed*/) const
+    ALLOCATOR_ALWAYS_INLINE void destroy(ThreadState * thread_state, void * addr, size_t size, bool committed) const
     {
-        assertDefault();
-        extentHooksDefaultDestroyImpl(addr, size);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            extentHooksDefaultDestroyImpl(addr, size);
+        else
+            extentHooksCustomDestroy(thread_state, extent_hooks_ptr, addr, size, committed, idxGet());
     }
 
     /// Returns true on error.
     /// jemalloc: ehooks_commit
-    ALLOCATOR_ALWAYS_INLINE bool commit(ThreadState * /*tsdn*/, void * addr, size_t size, size_t offset, size_t length) const
+    ALLOCATOR_ALWAYS_INLINE bool commit(ThreadState * thread_state, void * addr, size_t size, size_t offset, size_t length) const
     {
-        assertDefault();
-        bool error = extentHooksDefaultCommitImpl(addr, offset, length);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        bool error;
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            error = extentHooksDefaultCommitImpl(addr, offset, length);
+        else
+            error = extentHooksCustomCommit(thread_state, extent_hooks_ptr, addr, size, offset, length, idxGet());
         if constexpr (config::debug)
         {
             if (!error)
                 extentHooksDebugZeroCheck(addr, size);
         }
-        (void)size;
         return error;
     }
 
     /// Returns true on error.
     /// jemalloc: ehooks_decommit
-    ALLOCATOR_ALWAYS_INLINE bool decommit(ThreadState * /*tsdn*/, void * addr, size_t /*size*/, size_t offset, size_t length) const
+    ALLOCATOR_ALWAYS_INLINE bool decommit(ThreadState * thread_state, void * addr, size_t size, size_t offset, size_t length) const
     {
-        assertDefault();
-        return extentHooksDefaultDecommitImpl(addr, offset, length);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            return extentHooksDefaultDecommitImpl(addr, offset, length);
+        return extentHooksCustomDecommit(thread_state, extent_hooks_ptr, addr, size, offset, length, idxGet());
     }
 
     /// Returns true on error.
     /// jemalloc: ehooks_purge_lazy
-    ALLOCATOR_ALWAYS_INLINE bool purgeLazy(ThreadState * /*tsdn*/, void * addr, size_t /*size*/, size_t offset, size_t length) const
+    ALLOCATOR_ALWAYS_INLINE bool purgeLazy(ThreadState * thread_state, void * addr, size_t size, size_t offset, size_t length) const
     {
-        assertDefault();
-        return extentHooksDefaultPurgeLazyImpl(addr, offset, length);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if constexpr (pages::can_purge_lazy)
+        {
+            if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+                return extentHooksDefaultPurgeLazyImpl(addr, offset, length);
+        }
+        return extentHooksCustomPurgeLazy(thread_state, extent_hooks_ptr, addr, size, offset, length, idxGet());
     }
 
     /// Returns true on error. (`purge_forced` is required to zero, but it is not checked even in debug mode: that
     /// would touch the pages.)
     /// jemalloc: ehooks_purge_forced
-    ALLOCATOR_ALWAYS_INLINE bool purgeForced(ThreadState * /*tsdn*/, void * addr, size_t /*size*/, size_t offset, size_t length) const
+    ALLOCATOR_ALWAYS_INLINE bool purgeForced(ThreadState * thread_state, void * addr, size_t size, size_t offset, size_t length) const
     {
-        assertDefault();
-        return extentHooksDefaultPurgeForcedImpl(addr, offset, length);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if constexpr (pages::can_purge_forced)
+        {
+            if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+                return extentHooksDefaultPurgeForcedImpl(addr, offset, length);
+        }
+        return extentHooksCustomPurgeForced(thread_state, extent_hooks_ptr, addr, size, offset, length, idxGet());
     }
 
     /// Returns true on error.
     /// jemalloc: ehooks_split
     ALLOCATOR_ALWAYS_INLINE bool
-    split(ThreadState * /*tsdn*/, void * /*addr*/, size_t /*size*/, size_t /*size_a*/, size_t /*size_b*/, bool /*committed*/) const
+    split(ThreadState * thread_state, void * addr, size_t size, size_t size_a, size_t size_b, bool committed) const
     {
-        assertDefault();
-        return extentHooksDefaultSplitImpl();
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            return extentHooksDefaultSplitImpl();
+        return extentHooksCustomSplit(thread_state, extent_hooks_ptr, addr, size, size_a, size_b, committed, idxGet());
     }
 
     /// Returns true on error (the extents must not be merged).
     /// jemalloc: ehooks_merge
     ALLOCATOR_ALWAYS_INLINE bool
-    merge(ThreadState * thread_state, void * addr_a, size_t /*size_a*/, void * addr_b, size_t /*size_b*/, bool /*committed*/) const
+    merge(ThreadState * thread_state, void * addr_a, size_t size_a, void * addr_b, size_t size_b, bool committed) const
     {
-        assertDefault();
-        return extentHooksDefaultMergeImpl(thread_state, addr_a, addr_b);
+        extent_hooks_t * extent_hooks_ptr = getExtentHooksPtr();
+        if (ALLOCATOR_LIKELY(extent_hooks_ptr == &extent_hooks_default_extent_hooks))
+            return extentHooksDefaultMergeImpl(thread_state, addr_a, addr_b);
+        return extentHooksCustomMerge(thread_state, extent_hooks_ptr, addr_a, size_a, addr_b, size_b, committed, idxGet());
     }
 
     /// jemalloc: ehooks_zero
     ALLOCATOR_ALWAYS_INLINE void zero(ThreadState * /*tsdn*/, void * addr, size_t size) const
     {
-        assertDefault();
-        extentHooksDefaultZeroImpl(addr, size);
+        if (ALLOCATOR_LIKELY(areDefault()))
+        {
+            extentHooksDefaultZeroImpl(addr, size);
+        }
+        else
+        {
+            /// It would be correct to try using the user-provided purge hooks (since they are required to have zeroed
+            /// the extent if they indicate success), but we don't necessarily know their cost. We'll be conservative
+            /// and use memset.
+            memset(addr, 0, size);
+        }
     }
 
-    /// Returns true on error.
+    /// Returns true on error (always for custom hooks, which have no guard hook).
     /// jemalloc: ehooks_guard
     ALLOCATOR_ALWAYS_INLINE bool guard(ThreadState * /*tsdn*/, void * guard1, void * guard2) const
     {
-        assertDefault();
+        if (!areDefault())
+            return true;
         extentHooksDefaultGuardImpl(guard1, guard2);
         return false;
     }
 
-    /// Returns true on error.
+    /// Returns true on error (always for custom hooks, which have no guard hook).
     /// jemalloc: ehooks_unguard
     ALLOCATOR_ALWAYS_INLINE bool unguard(ThreadState * /*tsdn*/, void * guard1, void * guard2) const
     {
-        assertDefault();
+        if (!areDefault())
+            return true;
         extentHooksDefaultUnguardImpl(guard1, guard2);
         return false;
     }
 
 private:
-    ALLOCATOR_ALWAYS_INLINE void assertDefault() const { ALLOCATOR_ASSERT(areDefault()); }
-
     unsigned idx = 0;
     /// Logically an `extent_hooks_t *`.
     std::atomic<extent_hooks_t *> ptr{nullptr};

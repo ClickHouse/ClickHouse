@@ -60,7 +60,7 @@ ALLOCATOR_ALWAYS_INLINE void b0AllocHeaderSize(size_t * header_size, size_t * al
 }
 
 /// jemalloc: base_map
-void * Base::map(ThreadState * /*tsdn*/, ExtentHooks * extent_hooks, unsigned /*ind*/, size_t size)
+void * Base::map(ThreadState * thread_state, ExtentHooks * extent_hooks, unsigned /*ind*/, size_t size)
 {
     bool zero = true;
     bool commit = true;
@@ -74,37 +74,55 @@ void * Base::map(ThreadState * /*tsdn*/, ExtentHooks * extent_hooks, unsigned /*
         ALLOCATOR_ASSERT(size == hugePageCeiling(size));
         alignment = HUGE_PAGE;
     }
-    /// Only the default hooks exist (custom extent hooks are dropped): jemalloc calls `extent_alloc_mmap` directly
-    /// for them, bypassing `ehooks_default_alloc_impl`.
-    ALLOCATOR_ASSERT(extent_hooks->areDefault());
-    (void)extent_hooks;
-    return extentAllocMmap(nullptr, size, alignment, &zero, &commit);
+    /// For the default hooks `extent_alloc_mmap` is called directly, bypassing `ehooks_default_alloc_impl`.
+    if (extent_hooks->areDefault())
+        return extentAllocMmap(nullptr, size, alignment, &zero, &commit);
+    return extent_hooks->alloc(thread_state, nullptr, size, alignment, &zero, &commit);
 }
 
 /// Cascade through dalloc, decommit, purge_forced, and purge_lazy, stopping at first success. This cascade is
-/// performed for consistency with the cascade in `extent_dalloc_wrapper`. This function is only ever called as a side
-/// effect of arena destruction.
+/// performed for consistency with the cascade in `extent_dalloc_wrapper` because an application's custom hooks may
+/// not support e.g. dalloc. This function is only ever called as a side effect of arena destruction, so although it
+/// might seem pointless to do anything besides dalloc here, the application may in fact want the end state of all
+/// associated virtual memory to be in some consistent-but-allocated state.
 /// jemalloc: base_unmap
-void Base::unmap(ThreadState * /*tsdn*/, ExtentHooks * extent_hooks, unsigned /*ind*/, void * addr, size_t size)
+void Base::unmap(ThreadState * thread_state, ExtentHooks * extent_hooks, unsigned /*ind*/, void * addr, size_t size)
 {
-    ALLOCATOR_ASSERT(extent_hooks->areDefault());
-    (void)extent_hooks;
-    if (!extentDeallocateMmap(addr, size))
+    if (extent_hooks->areDefault())
     {
-    }
-    else if (!pages::decommit(addr, size))
-    {
-    }
-    else if (!pages::purgeForced(addr, size))
-    {
-    }
-    else if (!pages::purgeLazy(addr, size))
-    {
+        if (!extentDeallocateMmap(addr, size))
+        {
+        }
+        else if (!pages::decommit(addr, size))
+        {
+        }
+        else if (!pages::purgeForced(addr, size))
+        {
+        }
+        else if (!pages::purgeLazy(addr, size))
+        {
+        }
+        else
+        {
+            /// Nothing worked. This should never happen.
+            ALLOCATOR_NOT_REACHED();
+        }
     }
     else
     {
-        /// Nothing worked. This should never happen.
-        ALLOCATOR_NOT_REACHED();
+        if (!extent_hooks->deallocate(thread_state, addr, size, true))
+        {
+        }
+        else if (!extent_hooks->decommit(thread_state, addr, size, 0, size))
+        {
+        }
+        else if (!extent_hooks->purgeForced(thread_state, addr, size, 0, size))
+        {
+        }
+        else if (!extent_hooks->purgeLazy(thread_state, addr, size, 0, size))
+        {
+        }
+        /// Otherwise nothing worked. That's the application's problem.
     }
 
     /// label_done:

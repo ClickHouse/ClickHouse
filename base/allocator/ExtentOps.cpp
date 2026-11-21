@@ -1222,6 +1222,10 @@ void * extentHooksAllocWithSbrk(
 {
     if constexpr (!config::have_sbrk)
         return extent_hooks->alloc(thread_state, new_addr, size, alignment, zero, commit);
+    /// The DSS is a part of the default alloc hook. (A custom hook that calls the default table's `alloc` gets the
+    /// attempt in jemalloc as well; this is not reproduced, the C entry point does not know the page allocator.)
+    if (!extent_hooks->areDefault())
+        return extent_hooks->alloc(thread_state, new_addr, size, alignment, zero, commit);
 
     Arena * arena = arenaGet(thread_state, extent_hooks->idxGet(), false);
     /// A null arena indicates `arena_create`.
