@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/JemallocCacheAllocator.h>
@@ -50,11 +51,13 @@ struct UncompressedCacheCell
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
+    String path;
 
     ~UncompressedCacheCell()
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
         data = {};
+        String().swap(path);
     }
 };
 
@@ -62,7 +65,7 @@ struct UncompressedSizeWeightFunction
 {
     size_t operator()(const UncompressedCacheCell & x) const
     {
-        return x.data.size();
+        return x.data.size() + x.path.capacity();
     }
 };
 
@@ -84,6 +87,9 @@ public:
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset);
+
+    /// Remove the blocks of the files whose paths start with one of the prefixes.
+    void removeEntriesUnderPaths(const Strings & prefixes);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

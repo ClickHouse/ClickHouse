@@ -1189,6 +1189,9 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// Removes the entries of this table from the columns cache and from the caches keyed by file path.
+    void clearCachesOfTable() const;
+
     /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
     /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
     /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each

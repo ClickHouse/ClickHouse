@@ -330,7 +330,7 @@ void QueryConditionCache::write(
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
 #else
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id); };
 #endif
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
@@ -432,6 +432,13 @@ void QueryConditionCache::clear()
     cache.clear();
 }
 
+void QueryConditionCache::removeTable(const UUID & table_id)
+{
+    std::function<bool(const Key &, const Cache::MappedPtr &)> predicate
+        = [&](const Key &, const Cache::MappedPtr & entry) { return entry->table_id == table_id; };
+    cache.remove(predicate);
+}
+
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     cache.setMaxSizeInBytes(max_size_in_bytes);
@@ -442,8 +449,9 @@ size_t QueryConditionCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
-QueryConditionCache::Entry::Entry(size_t mark_count)
-    : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
+QueryConditionCache::Entry::Entry(size_t mark_count, const UUID & table_id_)
+    : table_id(table_id_)
+    , matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
 {
 }
 
