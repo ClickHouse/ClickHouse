@@ -177,6 +177,11 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The sizes of the subcolumns among `column_names` that the part has, as getSubcolumnSize returns them, and, if
+    /// `with_columns`, of its columns among them, as getColumnSize returns them. The subcolumn sizes not calculated yet are
+    /// calculated with one reader per column, or, if `only_from_memory`, nullopt is returned.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
