@@ -336,8 +336,10 @@ size_t NativeWriter::write(const Block & block)
             SerializationInfoPtr info;
             if (cached_type)
             {
-                /// Typed paths in `JSON` are materialized, as in `getSerializationAndColumn`.
-                column.column = materializeObjectTypedPaths(column.column);
+                /// Typed paths in `JSON` are materialized, as in `getSerializationAndColumn`. The column is
+                /// made full first, as `writeData` does: a constant or compressed column hides the `JSON`
+                /// column, so its typed paths would stay sparse and the kinds would not match the data.
+                column.column = materializeObjectTypedPaths(column.column->convertToFullColumnIfConst()->decompress());
                 info = column.type->getSerializationInfo(*column.column, getSerializationInfoSettings(client_revision));
                 serialization = getCachedSerialization(*cached_type, *info);
             }
