@@ -768,6 +768,14 @@ Minimal number of compressed bytes to do fsync for part after merge (0 - disable
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
 Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
 )", 0) \
+    DECLARE(UInt64, min_compressed_bytes_to_drop_page_cache_after_fetch, 0, R"(
+Minimal number of compressed bytes of a fetched part to drop its files from the OS page cache
+(0 - disabled). Fetching big parts from other replicas otherwise evicts the data that is actually
+being read from the page cache. Each file is dropped as soon as it is written, after fsync, because
+the page cache does not drop dirty pages. Applies only to files written to local disks, and only on
+systems with `posix_fadvise` (for example, Linux).
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
 Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
 (kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
