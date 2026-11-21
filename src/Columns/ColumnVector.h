@@ -360,6 +360,15 @@ protected:
 template <class TCol>
 concept is_col_vector = std::is_same_v<TCol, ColumnVector<typename TCol::ValueType>>;
 
+/// Specialization of enable_endian_serialize for ColumnVector
+/// Only multi-byte types require endian conversion
+template <typename T>
+struct enable_endian_serialize<ColumnVector<T>> : std::bool_constant<(sizeof(T) > 1)> {};
+
+/// IPv6 is serialized in big endian format for historical reasons
+template <>
+struct enable_endian_serialize<ColumnVector<IPv6>> : std::false_type {};
+
 /// Prevent implicit template instantiation of ColumnVector for common types
 
 extern template class ColumnVector<UInt8>;
