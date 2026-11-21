@@ -1,0 +1,38 @@
+results: plain subcolumn
+[1,4]
+[2,6]
+results: toString-wrapped (index path)
+[1,4]
+[2,6]
+results: toString-wrapped (brute force, no skip indexes)
+[1,4]
+[2,6]
+index condition: plain subcolumn, absent value
+['      Parts: 0 | Granules: 0','      Prewhere filter column:  data.host = \'absent\' AND __text_index_vals_equals_bc25aef04973703196e08c36fc2a6e9e','          Condition: true','          Granules: 4/4','          Name: vals','          Condition: (mode: All; tokens: ["absent"])','          Granules: 0/4']
+results: toString-wrapped non-string value
+[7]
+[7]
+index condition: toString-wrapped, absent value
+['      Parts: 0 | Granules: 0','      Prewhere filter column:  toString(data.host) = \'absent\' AND __text_index_vals_equals_bc25aef04973703196e08c36fc2a6e9e','          Condition: true','          Granules: 4/4','          Name: vals','          Condition: (mode: All; tokens: ["absent"])','          Granules: 0/4']
+index condition: toString-wrapped, LIKE
+['         Parts: 1 | Granules: 4','             Condition: true','             Granules: 4/4','             Name: vals','             Condition: (mode: All; tokens: [])','             Granules: 4/4']
+index condition: toString-wrapped, absent non-string value
+['      Parts: 0 | Granules: 0','      Prewhere filter column:  toString(data.n) = \'999\' AND __text_index_vals_equals_202fbe35b7af3d6a443df431efd2e606','          Condition: true','          Granules: 4/4','          Name: vals','          Condition: (mode: All; tokens: ["999"])','          Granules: 0/4']
+render settings: conversion-wrapped predicates must not use the index
+results: DateTime64 path, default settings (index still used)
+[1]
+[1]
+index condition: toString-wrapped DateTime64, default settings (index used)
+['      Parts: 1 | Granules: 1','      Prewhere filter column:  toString(data.ts) = \'2024-01-01 00:00:00.123000\' AND __text_index_vals_equals_0e6a85031526370c9e6994ad756c0880','          Condition: true','          Granules: 3/3','          Name: vals','          Condition: (mode: All; tokens: ["00", "01", "123000", "2024"])','          Granules: 1/3']
+results: DateTime64 path, cut_trailing_zeros (rendered text differs from indexed text)
+[1]
+[1]
+[1]
+[1]
+index condition: toString-wrapped, cut_trailing_zeros (no pruning)
+['         Parts: 1 | Granules: 3','             Condition: true','             Granules: 3/3']
+index condition: CAST-wrapped, cut_trailing_zeros (no pruning)
+['         Parts: 1 | Granules: 3','             Condition: true','             Granules: 3/3']
+results: Bool path, custom representation
+[1]
+[1]

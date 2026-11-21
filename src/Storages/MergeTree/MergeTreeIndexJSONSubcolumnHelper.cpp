@@ -195,6 +195,9 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
                 func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+        else if (fname == "toString" && func.getArgumentsSize() == 1)
+            json_info = tryMatchJSONSubcolumnToIndex(
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
     }
 
     return json_info;

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include "config.h"
@@ -1150,6 +1151,23 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+static bool isStringConversionOfJSONPath(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+    const auto function = node.toFunctionNode();
+    const auto & name = function.getFunctionName();
+    return name == "CAST" || name == "_CAST" || name == "toString";
+}
+
+static bool textRenderingSettingsAreDefault(const ContextPtr & context)
+{
+    const auto format_settings = getFormatSettings(context);
+    return !format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+        && format_settings.bool_true_representation == "true"
+        && format_settings.bool_false_representation == "false";
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -1287,6 +1305,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
+    const bool text_rendering_settings_default = textRenderingSettingsAreDefault(getContext());
+
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
     auto index_column_node = unwrapLosslessConversion(argument_node);
 
@@ -1320,6 +1340,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
+        if (!text_rendering_settings_default && isStringConversionOfJSONPath(index_column_node))
+            return false;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
@@ -2493,8 +2515,13 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
         if (auto array_join_argument = node.getArrayJoinArgument(); array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
             return true;
-        return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
+        if (tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types))
+        {
+            if (textRenderingSettingsAreDefault(getContext()) || !isStringConversionOfJSONPath(node))
+                return true;
+            return hasIndexForColumn(node.getColumnName());
+        }
+        return hasIndexForColumn(node.getColumnName());
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
