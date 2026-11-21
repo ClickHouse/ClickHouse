@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -47,6 +48,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsString insert_deduplication_token;
+}
 
 namespace TimeSeriesSetting
 {
@@ -801,6 +807,14 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
+    /// These pipelines are created again for each block, so a deduplication token is made unique per block.
+    if ((kind == ViewTarget::Tags) || (kind == ViewTarget::TimeRanges))
+    {
+        const auto & token = getContext()->getSettingsRef()[Setting::insert_deduplication_token].value;
+        if (!token.empty())
+            pipeline->context->setSetting("insert_deduplication_token", fmt::format("{}:{}:{}", token, kind, input_block_number));
+    }
+
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
@@ -876,6 +890,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
 
     if (insert_metric_families)
         consumeMetricFamilies(block);
+
+    ++input_block_number;
 }
 
 
@@ -978,7 +994,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         ExpressionActionsSettings(getContext(), CompileExpressions::yes));
 
     /// Build the full tags source header WITH the "id" column (what we push to the pipeline).
-    Block tags_header;
     tags_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     for (const auto & column : tags_header_before_id)
     {
@@ -996,7 +1011,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// the tags table above; the converting actions inside the pipeline convert them to the types of the table.
     if (time_series_storage.hasTarget(ViewTarget::TimeRanges))
     {
-        Block time_ranges_header;
         time_ranges_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MaxTime});
@@ -1194,17 +1208,35 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
             tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
-    /// Tags are pushed first so that if the samples insert fails,
-    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+    /// A push is not a commit: a target pipeline can keep rows until `finish`.
+    /// So the tags and the time ranges of a block are committed before its samples are pushed.
     if (tags_block.rows())
+    {
+        if (!tags_pipeline)
+            tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
         tags_pipeline->push(std::move(tags_block));
+    }
+    if (tags_pipeline)
+    {
+        tags_pipeline->executor->finish();
+        tags_pipeline.reset();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
+    }
 
     /// Step 4. Assemble and push the time ranges block.
     /// The time ranges are pushed before the samples: a time range without samples is harmless (the samples
     /// are filtered by their timestamps anyway), while samples outside of the stored time range of their
     /// time series would be invisible to queries filtering time series by time.
-    if (time_ranges_pipeline && total_samples)
+    if (time_ranges_header.columns() && total_samples)
+    {
+        if (!time_ranges_pipeline)
+            time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_header);
         time_ranges_pipeline->push(makeTimeRangesBlock(filter, *id_column, id_type, ts_timestamps, timestamp_type, ts_offsets, num_time_series));
+        time_ranges_pipeline->executor->finish();
+        time_ranges_pipeline.reset();
+    }
 
     /// Step 5. Assemble and push the samples blocks.
     /// The samples table is written before the recent samples table: if the insert fails between
