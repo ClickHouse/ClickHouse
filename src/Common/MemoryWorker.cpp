@@ -455,9 +455,11 @@ MemoryWorker::MemoryWorker(
             host_memory_bytes = static_cast<uint64_t>(num_pages) * static_cast<uint64_t>(page_size_bytes);
     }
 
-    if (config.use_cgroup)
-    {
 #if defined(OS_LINUX)
+    /// Cgroup capacity also constrains a process whose resident memory is measured separately.
+    /// Keep the limit readers even when correction from cgroup usage is disabled, including
+    /// when dynamic adjustment is enabled later through a configuration reload.
+    {
         try
         {
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
@@ -470,9 +472,12 @@ MemoryWorker::MemoryWorker(
                 (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
 
             cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
-            source = MemoryUsageSource::Cgroups;
-            if (rss_update_period_ms == 0)
-                rss_update_period_ms = cgroups_memory_usage_tick_ms;
+            if (config.use_cgroup)
+            {
+                source = MemoryUsageSource::Cgroups;
+                if (rss_update_period_ms == 0)
+                    rss_update_period_ms = cgroups_memory_usage_tick_ms;
+            }
 
             /// Open files for the cgroup memory limit so the dynamic hard-limit
             /// adjustment can read them cheaply on each tick. v1 and v2 use different
@@ -507,7 +512,8 @@ MemoryWorker::MemoryWorker(
                 }
             }
 
-            return;
+            if (config.use_cgroup)
+                return;
         }
         catch (...)
         {
@@ -524,8 +530,8 @@ MemoryWorker::MemoryWorker(
             cgroups_v2_lookup.reset();
             source = MemoryUsageSource::None;
         }
-#endif
     }
+#endif
 
 #if USE_JEMALLOC
     static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
