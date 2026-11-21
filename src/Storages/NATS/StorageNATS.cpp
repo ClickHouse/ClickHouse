@@ -32,6 +32,7 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
+#include <Storages/NATS/NATSStreamSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -51,6 +52,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsMilliseconds stream_poll_timeout_ms;
 extern const SettingsNonZeroUInt64 max_insert_block_size;
 extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -97,6 +99,7 @@ static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
+extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -627,6 +630,40 @@ size_t StorageNATS::getMaxBlockSize() const
 }
 
 
+void StorageNATS::readStream(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr local_context)
+{
+    const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine NATS");
+
+    auto modified_context = addSettings(local_context);
+
+    NATSStreamSource::Params params{
+        .connection = getConsumersConnection(),
+        .stream_name = getStreamName(),
+        .subjects = subjects,
+        .format_name = format_name,
+        .handle_error_mode = (*nats_settings)[NATSSetting::nats_handle_error_mode],
+        .max_block_size = getMaxBlockSize(),
+        .poll_timeout_ms = std::max<size_t>(100, modified_context->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
+        .table_name = getStorageID().getTableName(),
+    };
+
+    auto source = std::make_shared<NATSStreamSource>(
+        std::move(params), storage_snapshot, modified_context, column_names, stream_settings, log);
+    source->setStorageLimits(query_info.storage_limits);
+
+    auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    step->setStepDescription("Read from NATS STREAM");
+    query_plan.addStep(std::move(step));
+    query_plan.addInterpreterContext(modified_context);
+}
+
 void StorageNATS::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -637,6 +674,12 @@ void StorageNATS::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    if (query_info.isStream())
+    {
+        readStream(query_plan, column_names, storage_snapshot, query_info, local_context);
+        return;
+    }
+
     const auto connection = getConsumersConnection();
     if (!connection || num_created_consumers == 0)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
@@ -1702,6 +1745,16 @@ ATTACH TABLE consumer;
 ```
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM nats_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) is supported for a table that reads a JetStream stream (`nats_stream`). It reads the subjects of the table with its own ephemeral ordered consumer, which does not acknowledge the messages of the durable consumer of the table. The cursor is a map from the stream name to the stream sequence of the last read message:
+
+```sql
+SELECT * FROM nats_table STREAM CURSOR {'events_stream': 41}
+```
+
+Without the cursor, the stream is read from the beginning. `STREAM BOUNDED` finishes once it has read the messages pending at its start, so such a table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The core NATS keeps no messages, so a table without `nats_stream` does not support `STREAM`. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 

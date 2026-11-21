@@ -6,6 +6,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
@@ -136,7 +137,7 @@ namespace
         return referenced_tables.contains(view_id.getQualifiedName());
     }
 
-    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    ASTSelectQuery & getSingleSelectQuery(const ASTPtr & select_with_union)
     {
         auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
         if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
@@ -145,6 +146,13 @@ namespace
         auto * select = union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!select)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a plain SELECT query");
+
+        return *select;
+    }
+
+    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    {
+        auto * select = &getSingleSelectQuery(select_with_union);
 
         auto tables = select->tables();
         if (!tables || tables->children.size() != 1)
@@ -178,6 +186,19 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
+        /// A `LIMIT` can close the source before the bounded read finishes, and then the read does not report
+        /// the cursor it advanced to: the refresh would succeed with the previous cursor and append the same rows again.
+        const auto & select = getSingleSelectQuery(select_with_union);
+        if (select.limitLength() || select.limitOffset())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Incremental refresh does not support LIMIT");
+        if (const auto settings_ast = select.settings())
+        {
+            for (const auto & change : settings_ast->as<const ASTSetQuery &>().changes)
+                if ((change.name == "limit" || change.name == "offset") && !change.value.isNull() && change.value != Field(0))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Incremental refresh does not support the setting {}", change.name);
+        }
+
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
             return;
@@ -191,16 +212,17 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
-        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
-        /// read from the beginning on every refresh, appending the same rows again.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (!merge_tree)
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`. A source
+        /// that supports STREAM but does not report the cursor would be read from the beginning on every refresh,
+        /// appending the same rows again.
+        if (!source->reportsStreamingCursor())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                "Incremental refresh source table {} has engine {}, which does not report the cursor of a streaming read",
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
+        if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,

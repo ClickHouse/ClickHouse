@@ -351,13 +351,27 @@ class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
-/// The cursor that a bounded streaming read of a `MergeTree` table (`STREAM BOUNDED`) advanced to.
+/// The cursor that a bounded streaming read (`STREAM BOUNDED`) advanced to, see `IStorage::reportsStreamingCursor`.
 /// It exists only for the incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which
 /// persists it to resume the next refresh. Other streaming queries must not rely on it.
+///
+/// A read of a composite table (`Merge`, `Distributed`) gives each of its parts a child holder, which places the cursor
+/// of the part under its own key path (e.g. database and table) in the parent.
 struct StreamingCursor
 {
     std::mutex mutex;
     CursorTreeNodePtr tree;
+
+    /// Merge the cursor of a finished read into this holder (or into the parent under `path`). The trees are merged
+    /// in the form they are persisted in, where a key with a dot is split into a path, so that a part of the cursor
+    /// reported by a read replaces the same part of the cursor of the previous refresh.
+    void merge(const CursorTreeNodePtr & cursor);
+
+    static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, Strings path);
+
+private:
+    std::shared_ptr<StreamingCursor> parent;
+    Strings path;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
