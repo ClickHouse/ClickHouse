@@ -28,10 +28,10 @@ option (ENABLE_DCL "Accept access management - `CREATE USER`, `GRANT` and the re
 
 # Asserted by the `parser-size` test. A build that legitimately grows past its ceiling should have
 # the number here raised in the same change, deliberately and visibly - these are what a browser
-# downloads. Each is about 8% over the corresponding measurement in README.md.
+# downloads. Each is above the corresponding measurement in README.md, by 0.3% to 3.5% when last raised.
 set (MAX_SIZE_FULL              2220000 CACHE STRING "Byte ceiling for the default build")
 set (MAX_SIZE_NO_DCL            2000000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
-set (MAX_SIZE_NO_FORMATTING     1065000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
+set (MAX_SIZE_NO_FORMATTING     1068000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
 set (MAX_SIZE_NO_FORMATTING_DCL  875000 CACHE STRING "Byte ceiling for both off")
 
 if (ENABLE_FORMATTING AND ENABLE_DCL)

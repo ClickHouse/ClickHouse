@@ -3,6 +3,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/PartialASTCapture.h>
 
 
 namespace DB
@@ -10,6 +11,7 @@ namespace DB
 
 bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    const PartialASTUnionScope partial_ast_union_scope(expected);
     ASTPtr list_node;
     ParserUnionList parser;
 
