@@ -2,12 +2,17 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
+#include <array>
+
 namespace DB
 {
 
 class MergeTreeReadPoolParallelReplicas : public MergeTreeReadPoolBase
 {
 public:
+    /// The only automatically chosen sizes of a segment, the unit in which the coordinator distributes marks between replicas.
+    static constexpr std::array<size_t, 3> mark_segment_size_borders{128, 1024, 16384};
+
     MergeTreeReadPoolParallelReplicas(
         ParallelReadingExtension extension_,
         RangesInDataParts && parts_,
