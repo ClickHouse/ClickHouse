@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
+#include <Processors/Sources/LazyReadFromFileGroupsSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>

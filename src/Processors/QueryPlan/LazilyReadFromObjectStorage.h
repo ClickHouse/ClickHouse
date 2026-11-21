@@ -39,10 +39,6 @@ struct LazyObjectStorageFileRegistry
 
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 
-/// The number of leaf columns a columnar file stores for `header` (each Tuple element, Map keys and values, the nested column
-/// of Array, Nullable and LowCardinality), or nullopt for a `JSON` or `Dynamic` column, whose number depends on the file.
-std::optional<size_t> countLeafColumns(const Block & header);
-
 /// Shared state between the two branches of lazy materialization for object storage.
 struct ObjectStorageLazyMaterializingRows : public ILazyMaterializingRows
 {

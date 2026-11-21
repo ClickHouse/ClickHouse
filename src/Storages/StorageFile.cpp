@@ -62,6 +62,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Sources/LazyReadFromFileGroupsSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -2942,13 +2943,20 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
 
     lazy_row_index_registry = std::make_shared<LazyFileRegistry>();
 
+    const auto lazy_read_leaf_columns = countLeafColumnsToRead(
+        lazy_info->format_header,
+        storage->format_settings ? *storage->format_settings : getFormatSettings(getContext()),
+        boost::iequals(storage->format_name, "Vortex"));
     auto lazy_source_header = std::make_shared<const Block>(lazy_info->source_header);
     auto lazy_step = std::make_unique<LazilyReadFromFile>(
         std::move(lazy_source_header),
         storage,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        lazy_read_leaf_columns,
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }
@@ -3315,6 +3323,12 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (split_file)
         num_streams = std::min(split_file->buckets.size(), max_num_streams);
 
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
 
@@ -3381,7 +3395,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 }
 
 /// Reads only the specified rows of the specified files, for the lazy branch of lazy
-/// materialization (see LazilyReadFromFile). Single stream: files in the given (registration)
+/// materialization (see LazilyReadFromFile). Reads a contiguous group of the files in the given (registration)
 /// order, rows within a file in ascending order (guaranteed by `parquet.preserve_order`).
 class StorageFileLazyRowsSource final : public ISource, WithContext
 {
@@ -3392,16 +3406,17 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_,
+        FormatParserSharedResourcesPtr parser_shared_resources_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , max_block_size(max_block_size_)
         , files(std::move(files_))
+        , parser_shared_resources(std::move(parser_shared_resources_))
     {
         read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
-        parser_shared_resources = std::make_shared<FormatParserSharedResources>(getContext()->getSettingsRef(), /*num_streams_=*/ 1);
     }
 
     String getName() const override { return "StorageFileLazyRows"; }
@@ -3580,10 +3595,12 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files,
+    FormatParserSharedResourcesPtr parser_shared_resources)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
-        std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
+        std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files),
+        std::move(parser_shared_resources));
 }
 
 
