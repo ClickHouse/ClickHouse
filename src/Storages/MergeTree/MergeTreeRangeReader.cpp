@@ -98,6 +98,8 @@ void FilterWithCachedCount::materialize(const ColumnPtr & filter_column) const
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
+    /// `index` writes the kept rows to new columns: it is faster than the mask filter only when few rows are kept.
+    const bool few_rows_kept = sparse_indices && sparse_indices->size() * 8 <= filter.size();
 
     for (auto & column : columns)
     {
@@ -107,9 +109,10 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            if (sparse_indices)
+            if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
+                few_rows_kept || (column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData()))
             {
-                /// `index` costs per kept row, `filter` per row of the whole filter.
+                /// `index` shares the values of a sparse column whose non-default rows are exactly the kept ones.
                 column = column->index(*sparse_indices, 0);
             }
             else if (canInplaceFilter(column))
