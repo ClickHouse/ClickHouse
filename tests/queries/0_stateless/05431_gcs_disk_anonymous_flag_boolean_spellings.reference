@@ -1,0 +1,10 @@
+no_sign_request_off: refused_for_credentials
+no_sign_request_no: refused_for_credentials
+no_sign_request_00: refused_for_credentials
+no_sign_request_garbage: refused_for_credentials
+no_sign_request_on: accepted
+no_sign_request_yes: accepted
+use_environment_credentials_off: accepted
+use_environment_credentials_no: accepted
+use_environment_credentials_on: refused_for_credentials
+use_environment_credentials_garbage: refused_for_credentials

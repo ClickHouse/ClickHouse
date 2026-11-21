@@ -47,15 +47,26 @@ struct URI
         std::string_view uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
-        S3UriStyle uri_style = S3UriStyle::AUTO);
+        S3UriStyle uri_style = S3UriStyle::AUTO,
+        bool validate_bucket_name = true);
     void addRegionToURI(std::string_view region);
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
     /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.
     bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
+    /// Checks the S3 rules for a bucket name. A caller passing `validate_bucket_name = false` to the constructor
+    /// checks the rules of its own service instead (e.g. native GCS allows dotted bucket names of up to 222 characters).
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
+    /// Checks the Google Cloud Storage rules for the length of a bucket name: 3 to 63 characters, or up to 222 for a
+    /// name with dots, each dot-separated component of which has at most 63 characters.
+    static void validateGCSBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
+
+    /// The URL with its scheme replaced by the `url_scheme_mappers` of the server (or the built-in ones), the way
+    /// the constructor resolves it, e.g. `gs://bucket/key` -> `https://storage.googleapis.com/bucket/key`.
+    /// Everything after the authority is kept verbatim. A URL with a scheme that has no mapper is returned as is.
+    static std::string applySchemeMapper(const std::string & url);
 
 private:
     bool tryInitPathStyle();

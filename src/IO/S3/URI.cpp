@@ -40,6 +40,32 @@ namespace S3
 namespace
 {
 
+/// The `url_scheme_mappers` of the server configuration, or the built-in ones. Empty without a global context.
+NameToNameMap getSchemeMapper()
+{
+    NameToNameMap mapper;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        return mapper;
+
+    const auto & config = context->getConfigRef();
+    if (config.has("url_scheme_mappers"))
+    {
+        Strings config_keys;
+        config.keys("url_scheme_mappers", config_keys);
+        for (const std::string & config_key : config_keys)
+            mapper[config_key] = config.getString("url_scheme_mappers." + config_key + ".to");
+    }
+    else
+    {
+        mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+        mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+        mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
+        mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
+    }
+    return mapper;
+}
+
 /// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
 /// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
 /// text, are not masked, so a URI must not be put into them as is.
@@ -68,7 +94,8 @@ String maskedQuotedString(String value)
 
 }
 
-URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
+URI::URI(
+    std::string_view uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style, bool validate_bucket_name)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -99,29 +126,9 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     if (!keep_presigned_query_parameters && looks_like_presigned)
         looks_like_presigned = false;
 
-    NameToNameMap mapper;
-    auto context = Context::getGlobalContextInstance();
-    if (context)
-    {
-        const auto *config = &context->getConfigRef();
-        if (config->has("url_scheme_mappers"))
-        {
-            Strings config_keys;
-            config->keys("url_scheme_mappers", config_keys);
-            for (const std::string & config_key : config_keys)
-                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
-        }
-        else
-        {
-            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
-            mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
-            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
-        }
-
-        if (!mapper.empty())
-            URIConverter::modifyURI(uri, mapper);
-    }
+    const NameToNameMap mapper = getSchemeMapper();
+    if (!mapper.empty())
+        URIConverter::modifyURI(uri, mapper);
 
     storage_name = "S3";
 
@@ -181,8 +188,30 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     }
     }
 
-    validateBucket(bucket, uri);
+    if (validate_bucket_name)
+        validateBucket(bucket, uri);
     validateKey(key, uri);
+}
+
+std::string URI::applySchemeMapper(const std::string & url)
+{
+    const size_t scheme_end = url.find("://");
+    if (scheme_end == std::string::npos)
+        return url;
+
+    const size_t path_begin = std::min(url.find_first_of("/?#", scheme_end + 3), url.size());
+    const Poco::URI origin(url.substr(0, path_begin));
+
+    NameToNameMap mapper = getSchemeMapper();
+    const auto it = mapper.find(origin.getScheme());
+    if (it == mapper.end())
+        return url;
+
+    Macros macros({{"bucket", origin.getHost()}});
+    const String mapped_origin = macros.expand(it->second);
+    if (mapped_origin.empty())
+        return url;
+    return mapped_origin + url.substr(path_begin);
 }
 
 bool URI::tryInitPathStyle()
@@ -265,6 +294,27 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
+            maskedQuotedString(bucket),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
+}
+
+void URI::validateGCSBucket(const String & bucket, const Poco::URI & uri)
+{
+    /// https://cloud.google.com/storage/docs/buckets#naming
+    bool valid = bucket.length() >= 3 && bucket.length() <= 222 && (bucket.length() <= 63 || bucket.contains('.'));
+    for (size_t begin = 0; valid && begin <= bucket.length();)
+    {
+        size_t end = bucket.find('.', begin);
+        if (end == String::npos)
+            end = bucket.length();
+        valid = end - begin <= 63;
+        begin = end + 1;
+    }
+
+    if (!valid)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bucket name length is out of bounds in GCS URI: {}{}",
             maskedQuotedString(bucket),
             !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }
