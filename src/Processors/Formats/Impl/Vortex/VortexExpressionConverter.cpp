@@ -703,7 +703,7 @@ VortexExpressionPtr VortexExpressionConverter::convertEmpty(const RPNBuilderFunc
     if (!column || !isString(column->cmp_type))
         return nullptr;
 
-    auto literal = makeLiteral(*column->field->type(), column->cmp_type, Field(String()), std::make_shared<DataTypeString>());
+    auto literal = makeLiteral(column->field->type, column->cmp_type, Field(String()), std::make_shared<DataTypeString>());
     if (!literal)
         return nullptr;
 
