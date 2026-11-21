@@ -182,13 +182,14 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-For external secret management (e.g. using a secrets operator), you can reference a pre-existing Kubernetes secret:
+To load the default connections and sources from a pre-existing Kubernetes secret, for example one managed by a secrets operator:
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-external-secret"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "my-external-secret"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 <Tip>
@@ -208,17 +209,21 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-Create the connection secret separately:
+Create the connection secret separately. Both `connections.json` and `sources.json` are required. This example uses an empty sources list; configure sources in the UI after installation, or provide source definitions as shown in [External ClickHouse](/clickstack/deployment/helm-deployment-options#external-clickhouse-secret):
 ```bash
 cat <<EOF > connections.json
 [
@@ -232,10 +237,13 @@ cat <<EOF > connections.json
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell
