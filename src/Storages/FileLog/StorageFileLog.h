@@ -142,6 +142,26 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+    /// Read state of one file, shown in `system.filelog_files`.
+    struct FileStatistics
+    {
+        String file_name;
+        UInt64 offset = 0;
+        UInt64 num_records_read = 0;
+        UInt64 last_poll_time = 0;
+        String last_exception;
+        UInt64 last_exception_time = 0;
+        bool stuck = false;
+        bool open_failed = false;
+    };
+    using InodeToFileStatistics = std::unordered_map<UInt64, FileStatistics>;
+
+    InodeToFileStatistics getFileStatistics() const;
+    void addRecordsRead(UInt64 inode, size_t num_records);
+
+    /// A file smaller than its stored offset was truncated in place and is read again from its start.
+    static UInt64 getReadOffset(UInt64 stored_offset, UInt64 file_size) { return file_size < stored_offset ? 0 : stored_offset; }
+
     const LoggerPtr & getLog() const { return log; }
 
     void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
@@ -189,6 +209,10 @@ private:
 
     std::mutex file_infos_mutex;
 
+    /// Separate from `file_infos_mutex`, which a read round holds for its whole duration.
+    mutable std::mutex file_statistics_mutex;
+    InodeToFileStatistics file_statistics TSA_GUARDED_BY(file_statistics_mutex);
+
     /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
     std::atomic<bool> has_files_to_reopen = false;
 
@@ -220,8 +244,17 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    bool streamToViews();
+    bool streamToViews(std::vector<UInt64> & round_inodes);
     bool checkDependencies(const StorageID & table_id);
+
+    void syncFileStatistics();
+    void eraseFileStatistics(UInt64 inode);
+    void setFileOffset(UInt64 inode, const FileMeta & meta);
+    void setFilePolled(UInt64 inode);
+    void setFileOpenFailed(UInt64 inode, const String & error);
+    void setFileOpened(UInt64 inode);
+    void setFilesException(const std::vector<UInt64> & inodes, const String & exception);
+    void setFilesConsuming(const std::vector<UInt64> & inodes);
 
     bool updateFileInfos();
 
