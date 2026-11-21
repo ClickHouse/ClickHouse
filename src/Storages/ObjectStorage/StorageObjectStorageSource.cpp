@@ -1419,7 +1419,9 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
         format_settings,
-        read_context);
+        read_context,
+        "",
+        configuration->getHeadersForSchemaCache());
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
@@ -1691,7 +1693,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             getUniqueStoragePathIdentifier(*configuration, *object_info),
             object_info->getFileFormat().value_or(configuration->format),
             format_settings,
-            context_);
+            context_,
+            "",
+            configuration->getHeadersForSchemaCache());
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {

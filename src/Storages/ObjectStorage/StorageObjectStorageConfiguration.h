@@ -148,6 +148,8 @@ public:
 
     [[nodiscard]] virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
+    [[nodiscard]] virtual String getHeadersForSchemaCache() const { return ""; }
+
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;

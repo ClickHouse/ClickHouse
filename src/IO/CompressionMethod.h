@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <Core/Defines.h>
@@ -39,7 +40,7 @@ enum class CompressionMethod : uint8_t
 };
 
 /// How the compression method is named in HTTP.
-std::string toContentEncodingName(CompressionMethod method);
+std::string toContentEncodingName(CompressionMethod method, std::optional<SnappyMode> snappy_mode = std::nullopt);
 
 /** Choose compression method from path and hint.
   * if hint is "auto" or empty string, then path is analyzed,
