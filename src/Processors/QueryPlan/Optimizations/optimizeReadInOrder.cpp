@@ -1740,8 +1740,9 @@ bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names &
 /// Whether a `LIMIT` above the step at the top of `stack` can stop reading early, i.e. no step in between reads its input till the end.
 bool canStopReadingEarly(const Stack & stack)
 {
-    for (size_t i = stack.size(); i-- > 0;)
+    for (size_t i = stack.size(); i > 0;)
     {
+        --i;
         const QueryPlan::Node & node = *stack[i].node;
         const IQueryPlanStep * step = node.step.get();
         if (const auto * limit = typeid_cast<const LimitStep *>(step))

@@ -7,6 +7,7 @@
 
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -1307,7 +1308,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     LOG_DEBUG(
         log,
         "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
+        /// The shrink can also grow the byte count, e.g. when it rewrites blocks into new allocations.
+        ReadableSize(static_cast<double>(total_bytes_in_join) - static_cast<double>(new_total_bytes_in_join)),
         ReadableSize(current_memory_usage - new_current_memory_usage),
         ReadableSize(new_total_bytes_in_join),
         ReadableSize(new_current_memory_usage));

@@ -26,6 +26,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -896,6 +897,7 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,
