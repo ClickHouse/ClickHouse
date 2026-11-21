@@ -2207,6 +2207,38 @@ column during merge
 If true, lightweight delete is optimized on vertical merge.
 )", 0, \
         {"25.9", false, true, "New setting"}) \
+    /** Vertical insert settings */ \
+    DECLARE(UInt64, enable_vertical_insert_algorithm, 1, R"(
+Enable vertical algorithm for INSERT operations.
+When enabled and activation thresholds are met, columns will be written
+sequentially to reduce memory usage during inserts into wide tables.
+)", 0, \
+        {"26.11", 0, 1, "New setting"}) \
+    DECLARE(UInt64, vertical_insert_algorithm_min_rows_to_activate, 10000, R"(
+Minimum rows in an INSERT block to activate vertical insert algorithm.
+Smaller blocks use standard horizontal insert.
+)", 0, \
+        {"26.11", 10000, 10000, "New setting"}) \
+    DECLARE(UInt64, vertical_insert_algorithm_min_columns_to_activate, 100, R"(
+Minimum non-PK columns to activate vertical insert algorithm.
+Tables with fewer columns use standard horizontal insert.
+)", 0, \
+        {"26.11", 100, 100, "New setting"}) \
+    DECLARE(UInt64, vertical_insert_algorithm_min_bytes_to_activate, 0, R"(
+Minimum uncompressed bytes in an INSERT block to activate vertical insert.
+Set to 0 to disable byte-based activation.
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
+    DECLARE(UInt64, vertical_insert_algorithm_columns_batch_size, 100, R"(
+Number of columns to write per batch during vertical insert.
+Higher values may reduce writer churn but can increase memory usage.
+)", 0, \
+        {"26.11", 100, 100, "New setting"}) \
+    DECLARE(UInt64, vertical_insert_algorithm_columns_batch_bytes, 0, R"(
+Target uncompressed bytes per batch during vertical insert.
+Set to 0 to disable byte-based batching.
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
 If true, a rows-TTL merge can use the vertical merge algorithm instead of falling back to a
 horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `VersionedCollapsing`

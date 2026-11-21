@@ -30,6 +30,7 @@ public:
         StreamBaseManifestPtr stream_base_manifest);
 
     void write(const Block & block) override;
+    void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
     void finalizeIndexGranularity();
     MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
 
