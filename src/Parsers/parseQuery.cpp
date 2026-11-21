@@ -594,14 +594,14 @@ ASTPtr tryParseQuery(
 
     /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
+    /// A multi-statement parse checks only the current statement to avoid repeatedly lexing
+    /// every subsequent statement.
     UnmatchedParentheses unmatched_parens
-        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
+        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens), allow_multi_statements);
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
-        /// report parens that live in later statements. Restrict to parens inside
-        /// the current statement; otherwise the highlight loop in
-        /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
+        /// A single-statement parse can still see tokens after a semicolon in invalid input.
+        /// Keep the reported parentheses within the displayed statement.
         const char * statement_end = current_statement_end(last_token.end);
         UnmatchedParentheses scoped_parens;
         for (const auto & paren : unmatched_parens)
