@@ -602,8 +602,17 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (table_id.empty())
+            {
+                /// Clearing the whole cache evicts the entries of every table, so it requires the privilege on all tables.
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+                system_context->clearVectorSimilarityIndexCache();
+            }
+            else
+            {
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+                getContext()->clearVectorSimilarityIndexCache(table_id);
+            }
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -650,8 +659,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
-            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
-            /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
+            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`) is reclaimed too.
             /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
             /// concurrent operations are not affected: the actual CHJIT survives until every user
             /// has released its handle. After the cache->clear() above, the only remaining
@@ -2773,6 +2781,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, database_name);
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
@@ -3134,8 +3143,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
+        }
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             break;
@@ -3547,15 +3561,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM);
             break;
         }
-        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
-        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
-        /// END are not statements.
+        /// The parser cases of the failpoint statements, of SYSTEM SET COVERAGE TEST and of the Amber
+        /// statements never read an ON CLUSTER clause, so those cluster spellings do not parse and reach
+        /// no host. UNKNOWN and END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
+        case Type::DROP_AMBER_NODE:
+        case Type::ALLOCATE_AMBER_VOLUME:
+        case Type::CREATE_AMBER_VOLUME:
+        case Type::DROP_AMBER_VOLUME:
         case Type::UNKNOWN:
         case Type::END: break;
     }

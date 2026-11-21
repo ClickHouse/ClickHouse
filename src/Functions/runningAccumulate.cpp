@@ -56,43 +56,43 @@ public:
         return std::make_shared<FunctionRunningAccumulate>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isStateful() const override
+    [[nodiscard]] bool isStateful() const override
     {
         return true;
     }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Finalizing an arbitrary aggregate state can throw. The declaration above answers a different
     /// question, so it must not decide whether unused rows of a replicated argument are finalized.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(M : AggregateFunction) -> aggregateFunctionReturnType(M)"
                " OR (M : AggregateFunction, Any) -> aggregateFunctionReturnType(M)";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -107,7 +107,7 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
@@ -195,7 +195,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 <Warning title="Deprecated">
 The state is reset for each new block of data.
-Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions) instead.
+Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions/index) instead.
 You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 </Warning>
 )";

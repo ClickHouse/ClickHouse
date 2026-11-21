@@ -24,14 +24,14 @@ public:
     static ASTs getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control, bool with_implicit = false, bool final = false);
     static ASTs getAttachGrantQueries(const IAccessEntity & user_or_role);
 
-    bool ignoreQuota() const override;
-    bool ignoreLimits() const override;
+    [[nodiscard]] bool ignoreQuota() const override;
+    [[nodiscard]] bool ignoreLimits() const override;
 
 private:
     QueryPipeline executeImpl();
-    ASTs getGrantQueries() const;
-    AccessRights getAccessCheckedByQuery() const;
-    std::vector<AccessEntityPtr> getEntities() const;
+    [[nodiscard]] ASTs getGrantQueries() const;
+    [[nodiscard]] AccessRights getAccessCheckedByQuery() const;
+    [[nodiscard]] std::vector<AccessEntityPtr> getEntities() const;
 
     ASTPtr query_ptr;
 };

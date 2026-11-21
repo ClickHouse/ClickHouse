@@ -14,17 +14,16 @@ String ASTShowGrantsQuery::getID(char) const
 ASTPtr ASTShowGrantsQuery::clone() const
 {
     auto res = make_intrusive<ASTShowGrantsQuery>(*this);
+    res->children.clear();
 
     if (for_roles)
         res->for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
 
     /// Re-add the children in the order the parser produces them: the query first, then the output options.
-    res->children.clear();
     res->for_query = nullptr;
     if (for_query)
         res->set(res->for_query, for_query->clone());
     cloneOutputOptions(*res);
-
     return res;
 }
 
