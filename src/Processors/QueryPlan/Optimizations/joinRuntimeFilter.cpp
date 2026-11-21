@@ -3,11 +3,13 @@
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -218,18 +220,43 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
 }
 
 /// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer to another integer type,
-/// which wraps around, or a number to a float.
+/// which wraps around, or a number to a float. Arrays and tuples are checked element by element, paired as `CAST` pairs them.
 static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to)
 {
-    if (canBeSafelyCast(from, to))
-        return true;
-
     /// A NULL cannot be converted to a type that is not `Nullable`.
     if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
         return false;
 
     const auto from_nested = removeNullable(removeLowCardinality(from));
     const auto to_nested = removeNullable(removeLowCardinality(to));
+
+    /// `Nothing` has no values, e.g. the elements of `[]`.
+    if (isNothing(from_nested))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
+    if (from_array && to_array)
+        return canCastWithoutThrowing(from_array->getNestedType(), to_array->getNestedType());
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
+    if (from_tuple && to_tuple)
+    {
+        const auto positions = tryGetTupleCastElementPositions(*from_tuple, *to_tuple);
+        if (!positions)
+            return false;
+        for (size_t i = 0; i < positions->size(); ++i)
+        {
+            const auto & position = (*positions)[i];
+            if (position && !canCastWithoutThrowing(from_tuple->getElements()[*position], to_tuple->getElements()[i]))
+                return false;
+        }
+        return true;
+    }
+
+    if (canBeSafelyCast(from, to))
+        return true;
 
     /// A number converted to a float is rounded, never rejected.
     if (isFloat(to_nested) && (isInteger(from_nested) || isFloat(from_nested)))
@@ -277,51 +304,6 @@ static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
             arguments.push_back({child->result_type, child->column != nullptr, typeid_cast<const ColumnConst *>(child->column.get())});
         return !node->function_base->canThrow(arguments);
     });
-}
-
-/// Whether the probe key can be computed on any row without throwing, also where the expressions and filters right below
-/// the join compute the columns it reads: the runtime filter is merged with them when it is pushed down.
-static bool canComputeProbeKeyOnAnyRow(const ActionsDAG::Node * key, const QueryPlan::Node * probe)
-{
-    if (!canComputeKeyOnAnyRow(key))
-        return false;
-
-    auto add_inputs = [](const ActionsDAG::Node * node, NameSet & columns)
-    {
-        for (const auto * reachable : findReachableNodes({node}))
-            if (reachable->type == ActionsDAG::ActionType::INPUT)
-                columns.insert(reachable->result_name);
-    };
-
-    NameSet columns;
-    add_inputs(key, columns);
-    for (const auto * plan_node = probe; plan_node && !columns.empty();
-         plan_node = plan_node->children.size() == 1 ? plan_node->children.front() : nullptr)
-    {
-        const ActionsDAG * dag = nullptr;
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(plan_node->step.get()))
-            dag = &expression->getExpression();
-        else if (const auto * filter = typeid_cast<const FilterStep *>(plan_node->step.get()))
-            dag = &filter->getExpression();
-        else
-            break;
-
-        /// The filter is not merged with a step that has an `arrayJoin`, see `tryMergeExpressions` and `tryMergeFilters`.
-        if (dag->hasArrayJoin())
-            break;
-
-        NameSet next_columns;
-        for (const auto * output : dag->getOutputs())
-        {
-            if (!columns.contains(output->result_name))
-                continue;
-            if (!canComputeKeyOnAnyRow(output))
-                return false;
-            add_inputs(output, next_columns);
-        }
-        columns = std::move(next_columns);
-    }
-    return true;
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -505,8 +487,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * build_filter_node = node.children[1];
 
     /// For each key pair, whether its probe key can throw, in the order `preCalculateKeys` returns the keys. It is checked
-    /// as the query wrote it and where the steps right below the join compute it; the normalization that `preCalculateKeys`
-    /// adds (`trimRight` of zero bytes, a cast to the common type) cannot throw.
+    /// as the query wrote it; the normalization that `preCalculateKeys` adds (`trimRight` of zero bytes, a cast to the
+    /// common type) cannot throw.
     VectorWithMemoryTracking<bool> probe_key_can_throw;
 
     /// The runtime filter is built on the build (right) side and is addressed by name
@@ -535,12 +517,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             if (lhs.fromLeft() && rhs.fromRight())
             {
                 build_key_names.insert(rhs.getColumnName());
-                probe_key_can_throw.push_back(!canComputeProbeKeyOnAnyRow(lhs.getNode(), apply_filter_node));
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(lhs.getNode()));
             }
             else if (lhs.fromRight() && rhs.fromLeft())
             {
                 build_key_names.insert(lhs.getColumnName());
-                probe_key_can_throw.push_back(!canComputeProbeKeyOnAnyRow(rhs.getNode(), apply_filter_node));
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(rhs.getNode()));
             }
         }
 
