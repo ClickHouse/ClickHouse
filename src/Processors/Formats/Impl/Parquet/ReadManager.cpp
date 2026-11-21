@@ -424,8 +424,10 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 {
                     for (auto & c : row_group.columns)
                         clearColumnChunk(c, diff);
-                    release_top_k_admission = true;
                 }
+                /// A row group with subgroups usually released its top-K admission when they were read, see
+                /// `finishRowSubgroupStage`; one whose top-K sort column is in the columns cache releases it here.
+                release_top_k_admission = true;
                 /// All subgroups are delivered (or there are none), so nothing forms columns from
                 /// the cached ones any more. Don't keep the columns alive after the cache evicts them.
                 row_group.cached_columns.clear();
@@ -720,6 +722,15 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
         if (*advanced_ptr == row_group.subgroups.size())
         {
+            /// When the top-K sort column is served from the columns cache, the row group is read in almost no
+            /// time: the filter on that column needs no reading or decoding, and the other columns are read only
+            /// for the rows that pass it. If it released its top-K admission now, the next row groups would start
+            /// before the sorting has seen any of its rows, and all of them would be checked against the threshold
+            /// of the first few, so a file in the cache would be read almost whole. It holds the admission until
+            /// it is delivered instead, see `ReadStage::Deallocated` in `finishRowGroupStage`.
+            const bool top_k_column_from_cache = reader.top_k_primitive_idx.has_value()
+                && row_group.columns.at(*reader.top_k_primitive_idx).served_from_cache;
+
             /// If we've read (not necessarily delivered) all subgroups, we can deallocate things
             /// like dictionary page and offset index. Clear all columns (including PREWHERE-only),
             /// since we scheduled ColumnData prefetches for all of them and must release the memory.
@@ -728,7 +739,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
             reader.flushColumnsCacheWrites(row_group);
 
-            releaseTopKAdmission(row_group_idx, diff);
+            if (!top_k_column_from_cache)
+                releaseTopKAdmission(row_group_idx, diff);
         }
     }
 }
