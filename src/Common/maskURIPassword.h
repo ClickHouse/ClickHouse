@@ -68,7 +68,7 @@ inline bool maskAzureConnectionStringSecrets(std::string & str)
 }
 
 /// Whether `authority` is `host [ ":" port ]` of RFC 3986, sections 3.2.2 and 3.2.3.
-static constexpr bool isURIHostAndPort(std::string_view authority)
+inline bool isURIHostAndPort(std::string_view authority)
 {
     auto is_hex_digit = [](char c) { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
     auto is_reg_name_char = [](char c)
@@ -110,106 +110,186 @@ static constexpr bool isURIHostAndPort(std::string_view authority)
 /// Where RFC 3986, section 3.2, ends the authority of a URI. `Poco::URI` ends it there too.
 inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
 
-/// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}` and an offset
-/// at which to search for another password range.
+/// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}`.
 /// RFC 3986: the authority ends at the first '/', '?' or '#', and the password is its userinfo after the first ':'.
 /// Input that breaks the grammar is masked more, never less:
 /// - a raw '@' in the password: the userinfo runs to the last '@' of the authority (`u:pw@1@host` hides `pw@1`);
 /// - an authority cut short by a raw '/', '?' or '#' in the password: it runs to the last '@' (`u:pa/ss@host`).
 /// `authority_terminators` are where the consumer of the URI ends its userinfo. By default only '/', as the MongoDB
 /// driver does, since the consumer of a text is not always known; pass `URI_AUTHORITY_TERMINATORS` for `Poco::URI`.
-static constexpr std::tuple<size_t, size_t, size_t>
-findURIPasswordRange(const std::string & text, const size_t offset = 0, std::string_view authority_terminators = "/")
+inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std::string_view authority_terminators = "/")
 {
-    static constexpr std::string_view SEPARATOR = "//";
-    auto find_next_separator = [&text](const size_t off) -> size_t
+    static constexpr std::string_view SEPARATOR = "://";
+
+    for (size_t separator = text.find(SEPARATOR); separator != std::string_view::npos;
+         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
     {
-        const size_t first_at = text.find('@', off);
-        if (first_at == std::string_view::npos)
-            return std::string_view::npos;
-        size_t starting_offset = text.find(SEPARATOR, off);
-        if (off > 0)
-        {
-            if (starting_offset == std::string_view::npos)
-            {
-                starting_offset = std::string_view(text).substr(off, first_at - off).find('|');
-                if (starting_offset == std::string_view::npos)
-                    return std::string_view::npos;
-                starting_offset += off;
-            }
-            if (starting_offset > first_at)
-                if (const size_t first_pipe = std::string_view(text).substr(off, first_at - off).find('|');
-                    first_pipe != std::string_view::npos)
-                    return first_pipe + off;
-        }
-        return first_at > starting_offset ? starting_offset : off;
-    };
-    for (size_t separator = find_next_separator(offset); separator != std::string_view::npos;)
-    {
-        const size_t authority_begin = [&]
-        {
-            if (const char first = text[separator]; first == '/' || first == '|')
-                return text[separator + 1] == '/' ? 2 : 1;
-            return 0;
-        }() + separator;
-        const size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
-        auto bounded = std::string_view(text).substr(authority_begin, userinfo_bound - authority_begin);
+        size_t authority_begin = separator + SEPARATOR.length();
+        size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
+        std::string_view bounded = text.substr(authority_begin, userinfo_bound - authority_begin);
 
-        if (const size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos && at_sign > 0)
+        if (size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos)
         {
-            const size_t colon = bounded.substr(0, at_sign).find(':');
-            const size_t next_pipe = bounded.find("|", at_sign + 1);
-            if (colon != std::string::npos)
-            {
-                return {
-                    authority_begin + colon + 1,
-                    authority_begin + at_sign,
-                    next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
-            }
-            if (isURIHostAndPort(
-                    next_pipe == std::string::npos ? bounded.substr(at_sign + 1) : bounded.substr(at_sign + 1, next_pipe - at_sign - 1)))
-                return {
-                    authority_begin,
-                    authority_begin + at_sign,
-                    next_pipe == std::string::npos ? userinfo_bound : authority_begin + next_pipe};
-            return {authority_begin, authority_begin + at_sign, userinfo_bound};
+            if (size_t colon = bounded.find(':'); colon < at_sign)
+                return {authority_begin + colon + 1, authority_begin + at_sign};
+            continue;
         }
 
-        const size_t authority_end = std::min(text.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin), text.length());
-        auto authority = std::string_view(text).substr(authority_begin, authority_end - authority_begin);
-        const size_t last_at = text.rfind('@');
-        if (last_at == std::string::npos)
-        {
-            return {std::string_view::npos, std::string_view::npos, text.length()};
-        }
-        if (const size_t colon = authority.find(':'); colon != std::string_view::npos && !isURIHostAndPort(authority))
-            return {authority_begin + colon + 1, last_at, text.length()};
+        size_t authority_end = std::min(text.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin), text.length());
+        std::string_view authority = text.substr(authority_begin, authority_end - authority_begin);
+        size_t colon = authority.find(':');
 
-        break;
+        if (colon == std::string_view::npos || isURIHostAndPort(authority))
+            continue;
+
+        if (size_t at_sign = text.rfind('@'); at_sign != std::string_view::npos && at_sign > authority_end)
+            return {authority_begin + colon + 1, at_sign};
     }
 
-    return {std::string_view::npos, std::string_view::npos, text.length()};
+    return {std::string_view::npos, std::string_view::npos};
 }
+
 
 /// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
 inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    bool result = false;
-    size_t offset = 0;
-    while (offset < uri.length())
+    enum token
     {
-        if (auto [password_begin, password_end, next_offset] = findURIPasswordRange(uri, offset, authority_terminators);
-            password_begin != std::string::npos)
+        SCHEMA_SEPARATOR,
+        PIPE,
+        AUTHORITY_TERMINATOR,
+        AT,
+        COLON
+    };
+    std::vector<std::pair<token, size_t>> tokens_and_offset;
+    for (size_t i = 0; i < uri.length(); ++i)
+    {
+        switch (const char c = uri[i]; c)
         {
-            uri.replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
-            result = true;
-            offset = password_begin + HIDDEN_SECRET.length() + next_offset - password_end;
-        } else
-        {
-            break;
+            case '@': {
+                if (const size_t tokens_so_far = tokens_and_offset.size(); tokens_so_far > 2
+                    && (tokens_and_offset[tokens_so_far - 3].first == AUTHORITY_TERMINATOR
+                        || tokens_and_offset[tokens_so_far - 3].first == SCHEMA_SEPARATOR)
+                    && tokens_and_offset[tokens_so_far - 2].first == COLON
+                    && (tokens_and_offset[tokens_so_far - 1].first == AUTHORITY_TERMINATOR
+                        || tokens_and_offset[tokens_so_far - 1].first == PIPE))
+                    tokens_and_offset.back() = {AT, i};
+                else if (
+                    tokens_so_far == 2
+                    && (tokens_and_offset[0].first == AUTHORITY_TERMINATOR || tokens_and_offset[0].first == SCHEMA_SEPARATOR)
+                    && (tokens_and_offset[1].first == COLON || tokens_and_offset[1].first == PIPE))
+                {
+                    if (tokens_and_offset[1].first == COLON)
+                        tokens_and_offset[0] = tokens_and_offset[1];
+                    tokens_and_offset[1] = {AT, i};
+                }
+                else if (tokens_so_far > 0 && tokens_and_offset.back().first == AT)
+                    tokens_and_offset.back() = {AT, i};
+                else if (
+                    tokens_so_far == 0 || tokens_and_offset.back().first != SCHEMA_SEPARATOR || tokens_and_offset.back().second + 2 != i)
+                    tokens_and_offset.push_back({AT, i});
+                break;
+            }
+            case '|': {
+                if (i + 2 < uri.length() && uri[i + 1] == '/' && uri[i + 2] == '/')
+                {
+                    tokens_and_offset.push_back({SCHEMA_SEPARATOR, i + 1});
+                    i += 2;
+                }
+                else
+                    tokens_and_offset.push_back({PIPE, i});
+                break;
+            }
+            case ':': {
+                if (i + 2 < uri.length() && uri[i + 1] == '/' && uri[i + 2] == '/')
+                {
+                    if (tokens_and_offset.empty() || tokens_and_offset.back().first != SCHEMA_SEPARATOR)
+                        tokens_and_offset.push_back({SCHEMA_SEPARATOR, i + 1});
+                    else
+                        tokens_and_offset.push_back({COLON, i});
+                    i += 2;
+                }
+                else if (tokens_and_offset.empty() || tokens_and_offset.back().first != COLON)
+                    tokens_and_offset.push_back({COLON, i});
+                break;
+            }
+            case '/': {
+                if (i + 1 < uri.length() && uri[i + 1] == '/')
+                {
+                    tokens_and_offset.push_back({SCHEMA_SEPARATOR, i});
+                    i += 1;
+                    break;
+                }
+                [[fallthrough]];
+            }
+            default:
+                if (authority_terminators.contains(c))
+                {
+                    if (tokens_and_offset.size() == 2 && tokens_and_offset[0].first == SCHEMA_SEPARATOR
+                        && tokens_and_offset[1].first == COLON
+                        && isURIHostAndPort(
+                            std::string_view(uri).substr(tokens_and_offset[0].second + 2, i - tokens_and_offset[0].second - 2)))
+                        tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                    else if (tokens_and_offset.empty() || tokens_and_offset.back().first != AUTHORITY_TERMINATOR)
+                        tokens_and_offset.push_back({AUTHORITY_TERMINATOR, i});
+                    else
+                        tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                }
         }
     }
-    return result;
+    while (!tokens_and_offset.empty() && tokens_and_offset.back().first != AT)
+        tokens_and_offset.pop_back();
+
+    if (tokens_and_offset.empty())
+        return false;
+
+    size_t copied_offset = 0;
+    std::string result;
+    size_t i = 0;
+    if (tokens_and_offset[0].first == AUTHORITY_TERMINATOR && uri[0] == '/')
+        ++i;
+
+    if (i + 1 < tokens_and_offset.size() && tokens_and_offset[i].first == COLON && tokens_and_offset[i + 1].first == AT)
+    {
+        result.append(uri, 0, tokens_and_offset[i].second + 1);
+        result.append("[HIDDEN]");
+        copied_offset = tokens_and_offset[i + 1].second;
+        i++;
+    }
+    else if (tokens_and_offset[i].first == AT)
+    {
+        if (i > 0)
+            result.append(uri, copied_offset, tokens_and_offset[i - 1].second + 1);
+
+        result.append("[HIDDEN]");
+        copied_offset = tokens_and_offset[i].second;
+    }
+    for (; i < tokens_and_offset.size(); ++i)
+    {
+        if (const auto first_token = tokens_and_offset[i].first; first_token == SCHEMA_SEPARATOR || first_token == PIPE)
+        {
+            if (i + 2 < tokens_and_offset.size() && tokens_and_offset[i + 1].first == COLON && tokens_and_offset[i + 2].first == AT)
+            {
+                result.append(uri, copied_offset, tokens_and_offset[i + 1].second - copied_offset + 1);
+                result.append("[HIDDEN]");
+                copied_offset = tokens_and_offset[i + 2].second;
+                i += 2;
+            }
+            else if (i + 1 < tokens_and_offset.size() && tokens_and_offset[i + 1].first == AT)
+            {
+                const size_t first_token_length = first_token == SCHEMA_SEPARATOR ? 2 : 1;
+                result.append(uri, copied_offset, tokens_and_offset[i].second - copied_offset + first_token_length);
+                result.append("[HIDDEN]");
+                copied_offset = tokens_and_offset[i + 1].second;
+                i++;
+            }
+        }
+    }
+    if (result.empty())
+        return false;
+    result.append(uri, copied_offset);
+    uri = result;
+    return true;
 }
 
 /// Hides the secret option values and the URI password of a MongoDB connection string or option list; returns whether any was hidden.
@@ -275,7 +355,7 @@ inline bool maskMongoDBConnectionString(std::string & str)
         name_begin = value_end + 1;
     }
 
-    if (auto [password_begin, password_end, _] = findURIPasswordRange(str); password_begin != std::string::npos)
+    if (auto [password_begin, password_end] = findURIPasswordRange(str); password_begin != std::string::npos)
         hidden.emplace_back(password_begin, password_end);
 
     if (hidden.empty())
