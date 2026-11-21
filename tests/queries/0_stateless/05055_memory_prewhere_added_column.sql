@@ -1,7 +1,7 @@
 -- A column added by `ALTER TABLE ... ADD COLUMN` is missing from the blocks written before the
--- `ALTER`. The reading source reads it as the default value of its type, so `PREWHERE` on a column
--- with a `DEFAULT` expression is rejected, while `PREWHERE` on a column without one is allowed and
--- gives the same result as `WHERE`.
+-- `ALTER`. The reading source evaluates the `DEFAULT` expression for those blocks, but `PREWHERE` on
+-- a column with a `DEFAULT` expression is rejected, while `PREWHERE` on a column without one is
+-- allowed and gives the same result as `WHERE`.
 
 SET optimize_move_to_prewhere = 1;
 
