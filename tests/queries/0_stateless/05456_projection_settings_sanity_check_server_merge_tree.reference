@@ -1,0 +1,8 @@
+merge_tree section
+2
+['by_ts','by_ts_id','by_ts_small']
+table SETTINGS
+2
+['by_ts','by_ts_id','by_ts_small']
+table without the lower settings
+number_of_free_entries_in_pool_to_execute_mutation' setting (20)
