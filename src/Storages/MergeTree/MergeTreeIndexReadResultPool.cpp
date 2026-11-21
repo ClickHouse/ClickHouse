@@ -692,8 +692,8 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
     }
     catch (const Exception & e)
     {
-        /// The filter also runs on rows the query does not read, so a failure only disables the projection index for this part.
-        if (isQueryOuterGuardError(e.code()))
+        /// The filter also runs on rows the query does not read, so only an error evaluating it disables the projection index for this part.
+        if (isQueryOuterGuardError(e.code()) || !task->getReadersChain().prewhereEvaluationFailed())
             throw;
         return nullptr;
     }

@@ -910,3 +910,44 @@ def test_check_table_broken_projection_columns(cluster):
     assert sum("serialization.json" in line for line in lines) == 1
 
     node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_projection_index_read_error_fails_query(cluster):
+    # An error reading a `_part_offset` projection used as an index fails the query;
+    # only an error evaluating its filter disables the index for the part.
+    node = cluster.instances["node"]
+
+    table_name = "t_projection_index_read_error"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, a UInt64, x UInt64, PROJECTION p (SELECT a, x, _part_offset ORDER BY a))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
+        """
+    )
+    node.query(
+        f"INSERT INTO {table_name} SELECT number, number % 10, intDiv(number, 100) FROM numbers(10000)"
+    )
+
+    data_path = node.query(
+        f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table_name}' AND active"
+    ).strip()
+    # Corrupt the second compressed block of the projection column, keeping the file size, so that
+    # the index evaluates its filter on the first block before the read fails.
+    # A compressed block is a 16-byte checksum followed by its size (UInt32 at offset 17, header included).
+    file = f"{data_path}p.proj/a.bin"
+    bash(
+        node,
+        f"printf 'corrupt!' | dd of='{file}' bs=1 seek=$((16 + $(od -An -tu4 -j17 -N4 '{file}') + 40)) conv=notrunc status=none",
+    )
+
+    query = (
+        f"SELECT count() FROM {table_name} WHERE id >= 1024 AND a = 8 "
+        "SETTINGS optimize_use_projections = 1, min_table_rows_to_use_projection_index = 0, "
+        "max_block_size = 128, optimize_use_projection_filtering = "
+    )
+    assert "CHECKSUM_DOESNT_MATCH" in node.query_and_get_error(query + "1")
+    assert node.query(query + "0").strip() == "898"
+
+    node.query(f"DROP TABLE {table_name} SYNC")

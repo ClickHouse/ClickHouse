@@ -745,7 +745,7 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
 void MergeTreeReadersChain::executePrewhereActions(
     MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader, bool keep_additional_columns)
 {
-    reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns);
+    reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns, prewhere_evaluation_failed);
     result.checkInternalConsistency();
 
     if (!result.can_return_prewhere_column_without_filtering && is_last_reader)
