@@ -3397,12 +3397,14 @@ public:
             auto select_expected = expected;
             /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
             select_expected.failed_keyword_readings = nullptr;
+            select_expected.failed_subquery_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
                 pos = select_pos;
                 select_expected.failed_keyword_readings = expected.failed_keyword_readings;
+                select_expected.failed_subquery_readings = expected.failed_subquery_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;
@@ -3715,7 +3717,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     return false;
 }
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
@@ -3778,7 +3780,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},

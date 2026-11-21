@@ -116,7 +116,7 @@ public:
 
     bool isExpensive() const override { return function->isExpensive(); }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override;
 
     ComparisonOrderDomain getComparisonOrderDomain() const override
     {
@@ -177,6 +177,7 @@ public:
     bool isExpensive() const override { return function->isExpensive(); }
 
     String getName() const override { return function->getName(); }
+    void checkAccessOnBuild() const override { function->checkAccessOnBuild(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }

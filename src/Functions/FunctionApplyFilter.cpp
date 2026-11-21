@@ -110,6 +110,7 @@ public:
         if (!filter->isReady())
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFilterLookupsBeforeBuildFinished);
+            filter->recordLookupBeforeReady(input_rows_count);
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
         }
 

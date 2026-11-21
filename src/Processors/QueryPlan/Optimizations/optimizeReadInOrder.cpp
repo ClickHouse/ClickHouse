@@ -49,6 +49,9 @@
 #include <Common/typeid_cast.h>
 
 #include <stack>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -119,7 +122,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
     return nullptr;
 }
 
-using StepStack = std::vector<IQueryPlanStep*>;
+using StepStack = VectorWithMemoryTracking<IQueryPlanStep*>;
 
 
 struct FindReadingStepContext
@@ -138,13 +141,13 @@ struct FindReadingStepContext
     /// The joins which must be pinned to their order-preserving mode by `keepLeftPipelineInOrder`
     /// when the in-order read is installed. `FilledJoinStep` never appears here: a filled join
     /// preserves the left order unconditionally and needs no pin.
-    std::list<JoinStep *> joins_to_keep_in_order = {};
+    ListWithMemoryTracking<JoinStep *> joins_to_keep_in_order = {};
 
     /// Every join the traversal descended through, filled or not. The join-specific guards (the
     /// parallel-replica bailouts and the no-virtual-row INNER check) must see all of them: a
     /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
     /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards.
-    std::vector<const IJoin *> traversed_joins = {};
+    VectorWithMemoryTracking<const IJoin *> traversed_joins = {};
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -255,7 +258,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// FixedColumns are columns which values become constants after filtering.
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
 /// Fixed columns are 'x' and 'y'.
-using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
+using FixedColumns = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
 
 /// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
 /// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
@@ -391,7 +394,7 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
-    std::stack<const ActionsDAG::Node *> stack;
+    StackWithMemoryTracking<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
 
     while (!stack.empty())
@@ -537,7 +540,7 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
     /// with the same column name (e.g., one from filter expression and one from SELECT).
     /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
-    std::unordered_set<std::string_view> fixed_input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> fixed_input_names;
     for (const auto * node : fixed_columns)
     {
         if (node->type == ActionsDAG::ActionType::INPUT)
@@ -557,8 +560,8 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    StackWithMemoryTracking<Frame> stack;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     for (const auto & node : dag.getNodes())
     {
         if (visited.contains(&node))
@@ -705,11 +708,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
         const MatchedTrees::Match * monotonic = nullptr;
     };
 
-    std::vector<MatchInfo> match_infos;
+    VectorWithMemoryTracking<MatchInfo> match_infos;
     match_infos.reserve(description.size());
 
     /// For every fixed `ORDER BY` column: the read direction in which it is ordered like its key column, 0 if there is none.
-    std::vector<int> fixed_column_directions;
+    VectorWithMemoryTracking<int> fixed_column_directions;
 
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
@@ -995,15 +998,15 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const Names & unordered_keys,
     const ActionsDAG & sorting_key_dag,
     const Names & sorting_key_columns,
-    const std::vector<bool> & sorting_key_reverse_flags)
+    const std::vector<bool> & sorting_key_reverse_flags) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `KeyDescription::reverse_flags` is std::vector
 {
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
 
     /// For every column in PK find any match from GROUP BY key.
-    using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
+    using ReverseMatches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
-    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
+    UnorderedSetWithMemoryTracking<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     if (dag)
     {
@@ -1079,7 +1082,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
         /// Direction for current sort key.
         int current_direction = 0;
         bool strict_monotonic = true;
-        std::unordered_set<std::string_view>::iterator group_by_key_it;
+        UnorderedSetWithMemoryTracking<std::string_view>::iterator group_by_key_it;
 
         const ActionsDAG::Node * sort_column_node = sorting_key_dag.tryFindInOutputs(sorting_key_column);
         /// This should not happen.
@@ -1438,13 +1441,38 @@ InputOrderInfoPtr buildInputOrderInfo(
     if (!reading_node)
         return nullptr;
 
-    const auto & description = sorting.getSortDescription();
+    SortDescription description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
     const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
+
+    /// A function of the query is matched with a function of the sorting key by its name, arguments and type, which
+    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
+    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
+    /// A window sorting matches only the columns of the table: the description stops at the first column computed by the
+    /// query, and only columns of the table fixed by the filter are taken into account.
+    if ((sorting.isWindowSorting() || sorting.hasPartitions()) && dag)
+    {
+        auto is_table_column = [](const ActionsDAG::Node * column_node)
+        {
+            while (column_node && column_node->type == ActionsDAG::ActionType::ALIAS)
+                column_node = column_node->children.front();
+            return column_node && column_node->type == ActionsDAG::ActionType::INPUT;
+        };
+
+        size_t table_columns_prefix = 0;
+        while (table_columns_prefix < description.size()
+               && is_table_column(dag->tryFindInOutputs(description[table_columns_prefix].column_name)))
+            ++table_columns_prefix;
+        description.resize(table_columns_prefix);
+        if (description.empty())
+            return nullptr;
+
+        std::erase_if(fixed_columns, [](const ActionsDAG::Node * fixed_node) { return fixed_node->type != ActionsDAG::ActionType::INPUT; });
+    }
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -2021,6 +2049,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
+    /// Processing every table partition by its own window needs neither a scatter nor a merge, which is
+    /// cheaper than merging the streams read in order and scattering them again.
+    if (sorting->hasPartitions() && optimization_settings.window_partitions_independently && canOptimizeWindowPerPartition(node))
+        return;
+
     bool apply_virtual_row = true;
     ReadFromMergeTree * virtual_row_reader = nullptr;
 
@@ -2031,7 +2064,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         bool use_buffering = false;
         const SortDescription * max_sort_descr = nullptr;
 
-        std::vector<InputOrderInfoPtr> infos;
+        VectorWithMemoryTracking<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
 
         for (const auto * child : union_node->children)
@@ -2044,7 +2077,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 return;
         }
 
-        std::vector<ReadFromMergeTree *> virtual_row_readers;
+        VectorWithMemoryTracking<ReadFromMergeTree *> virtual_row_readers;
         for (auto * child : union_node->children)
         {
             ReadFromMergeTree * child_virtual_row_reader = nullptr;
@@ -2095,6 +2128,10 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
             if (additional_sorting)
             {
+                /// The helper sorting feeds the window sorting, so it is read in order with the same restrictions.
+                if (sorting->isWindowSorting() || sorting->hasPartitions())
+                    typeid_cast<SortingStep &>(*additional_sorting).setWindowSorting();
+
                 auto & sort_node = nodes.emplace_back();
                 sort_node.step = std::move(additional_sorting);
                 sort_node.children.push_back(child);
@@ -2131,7 +2168,7 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
         return;
 
     /// Nodes all of whose output streams reach the sorting.
-    std::vector<QueryPlan::Node *> stack{node.children.front()};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{node.children.front()};
     while (!stack.empty())
     {
         QueryPlan::Node * child = stack.back();
@@ -2297,7 +2334,7 @@ void optimizeAggregationInOrder(
     auto order_info = buildInputOrderInfo(*aggregating, aggregating->getParams().keys, *node.children.front(), optimization_settings);
     if (order_info.input_order)
     {
-        std::unordered_set<std::string_view> used_keys;
+        UnorderedSetWithMemoryTracking<std::string_view> used_keys;
         for (const auto & desc : order_info.sort_description)
             used_keys.insert(desc.column_name);
 

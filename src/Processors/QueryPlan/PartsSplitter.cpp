@@ -2,6 +2,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <base/sort.h>
 
 #include <Core/Field.h>
@@ -28,7 +29,6 @@
 
 #include <algorithm>
 #include <list>
-#include <map>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -1383,7 +1383,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     if (!within_partition)
         return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
 
-    std::map<String, RangesInDataParts> parts_by_partition;
+    MapWithMemoryTracking<String, RangesInDataParts> parts_by_partition;
     for (auto & part : ranges_in_data_parts)
         parts_by_partition[part.data_part->info.getPartitionId()].push_back(std::move(part));
 

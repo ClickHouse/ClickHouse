@@ -943,6 +943,8 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
+    checkAccessOnBuild();
+
     FunctionBasePtr base;
 
     /// Use FunctionBaseFixedArrayAdaptor if default implementation for FixedArray is enabled and we have FixedArray in arguments.
