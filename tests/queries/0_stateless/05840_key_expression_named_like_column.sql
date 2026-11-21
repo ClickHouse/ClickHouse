@@ -1,5 +1,5 @@
--- A key, skip index or projection sorting key expression that has the name of a stored column replaced that column when the
--- table was written:
+-- A key, skip index or projection sorting key expression that has the name of a stored column was used in place of that
+-- column when the table was written or queried:
 -- https://github.com/ClickHouse/ClickHouse/issues/133178
 
 DROP TABLE IF EXISTS t_src;
