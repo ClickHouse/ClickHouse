@@ -31,7 +31,7 @@ public:
     /// What a filtered source grant (`GRANT READ ON S3('...')`) is matched against: the `endpoint` of
     /// an object storage disk, when the description gives it literally. Empty otherwise, and then the
     /// unfiltered grant on the source is required, as for `file`.
-    const String & getFunctionURI() const override { return function_uri; }
+    std::string_view getFunctionURI() const override { return function_uri; }
 
 protected:
     StoragePtr executeImpl(
