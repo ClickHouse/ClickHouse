@@ -14,8 +14,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/PackedStringRef.h>
-#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
+#include <base/arithmeticOverflow.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
@@ -64,7 +64,7 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
 #endif
 {
     /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
-    /// eagerly reading `offsets[static_cast<ssize_t>(position) - 1]` below, which would go out of bounds on
+    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
     /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
     if (length == 0)
         return;
