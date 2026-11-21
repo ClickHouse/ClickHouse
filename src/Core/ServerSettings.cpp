@@ -1828,10 +1828,10 @@ When this is set, [`user_files_path`](#user_files_path) is interpreted as a path
 both `/user_files/` and `user_files` refer to the directory `user_files` on the disk, and the default configuration value `/var/lib/clickhouse/user_files/`
 refers to the directory `var/lib/clickhouse/user_files` on the disk. The path must not point outside the disk. If `user_files_path` is not configured, user files are stored at the root of the disk.
 
-:::note
-Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine.
+<Note>
+Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/reference/functions/table-functions/file) table function and the `File` table engine.
 
-Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, `SQLite`, and reading `file()` / `File` with `format = 'Distributed'` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
+Features that require a local filesystem path — for example the [filesystem()](/reference/functions/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, `SQLite`, and reading `file()` / `File` with `format = 'Distributed'` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
 
 The following `file()` and `File` modes are not supported with `user_files_policy` at all, on any disk type, and throw an exception:
 - archive syntax (`file('archive.zip :: data.csv')`);
@@ -1840,7 +1840,7 @@ The following `file()` and `File` modes are not supported with `user_files_polic
 The `rename_files_after_processing` setting additionally requires the policy's disk to be a plain local disk.
 
 A plain object storage disk (such as `s3_plain`) used for user files must not set `object_metadata_cache_size`, and a disk with `plain_rewritable` metadata is not supported for user files: their in-memory metadata is not invalidated by changes made by other servers sharing the disk. This also applies when such a disk is wrapped by an `encrypted` disk.
-:::
+</Note>
 
 **Example**
 
