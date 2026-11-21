@@ -143,6 +143,8 @@ public:
 
     std::exception_ptr getLastException() const override;
 
+    void shutdown() const override;
+
     bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
     ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;

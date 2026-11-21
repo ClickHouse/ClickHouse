@@ -36,6 +36,9 @@ public:
 
     void unloadAllDictionaries() const;
 
+    /// Stops the background threads of the loaded dictionaries and joins the loading threads.
+    void shutdownDictionaries();
+
     [[nodiscard]] QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
     /// Translates the name a query uses (`db.dict`, or `dict` against the current database) into the key the loader

@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
+#include <unordered_set>
 
 #include "config.h"
 
@@ -197,6 +198,26 @@ bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dic
 void ExternalDictionariesLoader::unloadAllDictionaries() const
 {
     unloadAll();
+}
+
+void ExternalDictionariesLoader::shutdownDictionaries()
+{
+    /// Until a pass after a join finds no new dictionary: a running load may publish one with an update in flight.
+    std::unordered_set<LoadablePtr> stopped;
+    while (true)
+    {
+        joinLoadingThreads();
+        bool found_new = false;
+        for (const auto & object : getLoadedObjects())
+        {
+            if (!stopped.insert(object).second)
+                continue;
+            found_new = true;
+            std::static_pointer_cast<const IDictionary>(object)->shutdown();
+        }
+        if (!found_new)
+            break;
+    }
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const

@@ -4,9 +4,11 @@
 #include <base/chrono_io.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfiledLocks.h>
+#include <base/sleep.h>
 
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
@@ -41,6 +43,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace FailPoints
+{
+    extern const char cache_dictionary_update_sleep[];
+}
+
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::CacheDictionary(
     const StorageID & dict_id_,
@@ -70,6 +77,12 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::~CacheDictionary()
+{
+    update_queue.stopAndWait();
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void CacheDictionary<dictionary_key_type>::shutdown() const
 {
     update_queue.stopAndWait();
 }
@@ -630,6 +643,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     {
         try
         {
+            fiu_do_on(FailPoints::cache_dictionary_update_sleep, { sleepForSeconds(5); });
+
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;

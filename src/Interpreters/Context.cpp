@@ -1294,6 +1294,9 @@ struct ContextSharedPart : boost::noncopyable
 
         stopIntrospectionServers();
 
+        /// Not earlier: storages (the final flush of `Buffer`) and introspection queries may still use dictionaries.
+        SHUTDOWN(log, "dictionaries background threads", external_dictionaries_loader, shutdownDictionaries());
+
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
