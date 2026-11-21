@@ -525,7 +525,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 if (!nested_type.isValueRepresentedByInteger() &&
                     !isStringOrFixedString(nested_type) &&
                     !typeid_cast<const DataTypeIPv6 *>(&nested_type) &&
-                    !typeid_cast<const DataTypeUUID *>(&nested_type))
+                    !typeid_cast<const DataTypeUUID *>(&nested_type) &&
+                    !WhichDataType(nested_type).isUUID2())
                         break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);

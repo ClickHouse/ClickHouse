@@ -161,7 +161,8 @@ SELECT
 
 Introduced in: v24.5.0
 
-Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](/reference/data-types/uuid) or a [UUID2](/reference/data-types/uuid2) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+The binary representation depends only on the UUID value, not on which of the two types holds it.
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     
 
@@ -173,7 +174,7 @@ UUIDToNum(uuid[, variant = 1])
 
 **Arguments**
 
-- `uuid` — UUID. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
+- `uuid` — UUID. [`UUID`](/reference/data-types/uuid) or [`UUID2`](/reference/data-types/uuid2)
 - `variant` — Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`. [`(U)Int*`](/reference/data-types/int-uint)
 
 **Returned value**
@@ -225,7 +226,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Arguments**
 
-- `uuid` — A UUID version 7. [`String`](/reference/data-types/string)
+- `uuid` — A UUID version 7. [`UUID`](/reference/data-types/uuid) or [`UUID2`](/reference/data-types/uuid2)
 - `timezone` — Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value. [`String`](/reference/data-types/string)
 
 **Returned value**

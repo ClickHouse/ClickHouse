@@ -204,7 +204,9 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
+    /// `UUID2` shares `Field::UUID` with the historical `UUID` but keeps the two halves swapped, and a literal
+    /// holding such a `Field` would be read back as a historical `UUID`, so pass its canonical text instead.
+    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t) || isUUID2(t); });
 }
 
 /// Return true if the text of a `Field` of this type is not cast back from `String` to the same value:

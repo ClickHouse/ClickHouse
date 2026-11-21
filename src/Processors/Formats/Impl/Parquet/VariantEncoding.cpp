@@ -994,6 +994,8 @@ String getWrittenTypeName(const IDataType & type)
         case TypeIndex::Enum16:
             return "String";
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
+            /// The Parquet variant has a single UUID primitive, which holds the canonical bytes. It reads back as `UUID`.
             return "UUID";
         case TypeIndex::Object:
             return "JSON";
@@ -1285,6 +1287,13 @@ public:
             case TypeIndex::UUID:
             {
                 UUIDPrimitive::encode(out, assert_cast<const ColumnUUID &>(column).getData()[row]);
+                return;
+            }
+            case TypeIndex::UUID2:
+            {
+                /// `UUID2` stores the two 64-bit halves swapped relative to `UUID`: convert to the layout of `UUID`,
+                /// so that the same canonical bytes are written for the same textual value.
+                UUIDPrimitive::encode(out, UUIDHelpers::swapHalves(assert_cast<const ColumnUUID &>(column).getData()[row]));
                 return;
             }
             case TypeIndex::Array:

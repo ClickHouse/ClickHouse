@@ -4,6 +4,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -27,10 +28,16 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
 
     for (size_t i = 0; i < parameters.size(); ++i)
     {
-        ASTPtr literal;
+        if (const auto * literal = parameters[i]->as<ASTLiteral>())
+        {
+            params_row[i] = literal->value;
+            continue;
+        }
+
+        EvaluateConstantExpressionResult evaluated;
         try
         {
-            literal = evaluateConstantExpressionAsLiteral(parameters[i], context);
+            evaluated = evaluateConstantExpression(parameters[i], context);
         }
         catch (Exception & e)
         {
@@ -45,7 +52,9 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
             throw;
         }
 
-        params_row[i] = literal->as<ASTLiteral>()->value;
+        /// The parameters lose their types, so their `UUID2` values are brought to the layout of an untyped
+        /// `UUID` value, the same as the analyzer does for the parameters of a function.
+        params_row[i] = convertUUID2LeavesToUUIDLayout(evaluated.first, *evaluated.second);
     }
 
     return params_row;

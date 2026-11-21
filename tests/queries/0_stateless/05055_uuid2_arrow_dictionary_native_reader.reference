@@ -1,0 +1,2 @@
+library writer, dictionary-encoded LowCardinality(UUID2), native reader: LowCardinality(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+library writer, dictionary-encoded LowCardinality(UUID), native reader: LowCardinality(UUID)	61f0c404-5cb3-11e7-907b-a6006ad3dba0

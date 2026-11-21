@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils.h>
@@ -513,13 +514,16 @@ public:
     }
 };
 
+/// `UUID2` keeps the two 64-bit halves in the opposite order to `UUID` (`swap_halves`), and `transformUUID` preserves
+/// the version and the variant bits at their positions in the layout of `UUID`.
 class UUIDModel : public IModel
 {
 private:
     UInt64 seed;
+    bool swap_halves;
 
 public:
-    explicit UUIDModel(UInt64 seed_) : seed(seed_) {}
+    explicit UUIDModel(UInt64 seed_, bool swap_halves_ = false) : seed(seed_), swap_halves(swap_halves_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -536,7 +540,15 @@ public:
 
         res_data.resize(src_data.size());
         for (size_t i = 0; i < src_column.size(); ++i)
-            transformUUID(src_data[i], res_data[i], seed);
+        {
+            if (swap_halves)
+            {
+                transformUUID(UUIDHelpers::swapHalves(src_data[i]), res_data[i], seed);
+                res_data[i] = UUIDHelpers::swapHalves(res_data[i]);
+            }
+            else
+                transformUUID(src_data[i], res_data[i], seed);
+        }
 
         return res_column;
     }
@@ -1699,6 +1711,9 @@ public:
 
         if (typeid_cast<const DataTypeUUID *>(&data_type))
             return std::make_unique<UUIDModel>(seed);
+
+        if (typeid_cast<const DataTypeUUID2 *>(&data_type))
+            return std::make_unique<UUIDModel>(seed, /*swap_halves=*/true);
 
         if (typeid_cast<const DataTypeIPv4 *>(&data_type))
             return std::make_unique<UnderlyingIntegerModel<ColumnIPv4, UInt32>>(seed);

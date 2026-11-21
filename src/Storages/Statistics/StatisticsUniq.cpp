@@ -118,7 +118,8 @@ bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type)
+        || isUUID2(inner_data_type);
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

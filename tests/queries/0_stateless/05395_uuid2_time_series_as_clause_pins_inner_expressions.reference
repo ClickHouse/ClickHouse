@@ -1,0 +1,4 @@
+ts_copy	UUID	CAST(reinterpretAsUUID(sipHash128(metric_name, tags)), \'UUID1\')
+ts_new	UUID2	CAST(reinterpretAsUUID(sipHash128(metric_name, tags)), \'UUID2\')
+ts_old	UUID	CAST(reinterpretAsUUID(sipHash128(metric_name, tags)), \'UUID\')
+http_requests	{'__name__':'http_requests','job':'api'}

@@ -98,3 +98,12 @@ SELECT icebergBucket(13, 'iceberg' :: FixedString(7));
 SELECT icebergBucket(13, '\x00\x01\x02\x03' :: FixedString(4));
 SELECT icebergBucket(13, '\x00\x01\x02\x03' :: String);
 SELECT icebergBucket(13, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+
+-- `UUID2` must hash identically to `UUID` for the same textual value (function-parity / Iceberg-support contract).
+SELECT 'UUID2 parity';
+SELECT icebergHash('f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID2) = icebergHash('f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+SELECT icebergBucket(5, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID2) = icebergBucket(5, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+SELECT icebergBucket(13, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID2) = icebergBucket(13, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+-- Non-const column path (a real column of several distinct values), still exercising the `UUID2` branch.
+SELECT countIf(icebergHash(s :: UUID2) != icebergHash(s :: UUID)) = 0
+FROM (SELECT arrayJoin(['00000000-0000-0000-0000-000000000000', 'f79c3e09-677c-4bbd-a479-3f349cb785e7', 'ffffffff-ffff-ffff-ffff-ffffffffffff', '12345678-1234-5678-1234-567812345678']) AS s);

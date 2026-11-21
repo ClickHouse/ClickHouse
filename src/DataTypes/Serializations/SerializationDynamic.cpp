@@ -20,6 +20,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -748,6 +749,9 @@ void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, c
     }
 
     getDataTypesCache().getSerialization(field_type->getName(), field_type)->deserializeBinary(field, istr, settings);
+    /// Like `ColumnDynamic::get`, return a `Field` without a type: its `UUID2` values in the layout of `UUID`, as
+    /// `serializeBinary` above (which infers `UUID` for them) and the consumers of the values of `JSON` expect.
+    field = convertUUID2LeavesToUUIDLayout(field, *field_type);
 }
 
 void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

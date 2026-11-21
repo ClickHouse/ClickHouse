@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -13,6 +15,7 @@
 #include <IO/VarInt.h>
 
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/NaNUtils.h>
@@ -569,8 +572,22 @@ public:
 
         this->parameters = params_;
 
+        /// The parameter is untyped, so its `UUID` values have the layout of the `UUID` data type (see
+        /// `convertUUID2LeavesToUUIDLayout`), while the keys of a type with `UUID2` have the layout of `UUID2`.
+        const bool keys_have_uuid2 = anyInTypeTree(*keys_type_, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
         for (const Field & f : keys_to_keep_values)
-            keys_to_keep.emplace(f);
+        {
+            if (!keys_have_uuid2)
+            {
+                keys_to_keep.emplace(f);
+                continue;
+            }
+
+            /// A value that is not representable in the type of the keys does not match any key.
+            Field converted = convertUntypedFieldToType(f, *keys_type_);
+            if (!converted.isNull())
+                keys_to_keep.emplace(std::move(converted));
+        }
     }
 
     static String getNameImpl()
@@ -802,6 +819,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
             name, args[0]->getName());
 
     DataTypePtr keys_type = array_type->getNestedType();
+    /// The keys are kept in a `Field`.
+    assertTypeCanBeKeptInField(name, *keys_type);
 
     DataTypes values_types;
     values_types.reserve(args.size() - 1);

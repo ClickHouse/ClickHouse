@@ -1,0 +1,8 @@
+-- a scalar `format` call keeps its data arguments
+0
+id UUID x
+-- the `format` table function still has its schema materialized
+1
+UUID2
+-- ... including in the `CREATE TABLE ... AS <table function>` position
+UUID2

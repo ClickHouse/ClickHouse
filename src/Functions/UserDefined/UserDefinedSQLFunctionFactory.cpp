@@ -437,8 +437,14 @@ void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
             recreate_driver_ast.or_replace = true;
             recreate_driver_ast.if_not_exists = false;
 
+            /// The stored definition is already resolved: `uuid_type_version` was materialized into it when it was
+            /// created. Replay it with the version that does not substitute anything, so that a historical `UUID`
+            /// in the signature is not reinterpreted with the current value of the setting.
+            auto recreate_context = Context::createCopy(current_context);
+            recreate_context->setSetting("uuid_type_version", Field(UInt64(1)));
+
             ASTPtr query = recreate_ast;
-            auto interpreter = InterpreterFactory::instance().get(query, current_context);
+            auto interpreter = InterpreterFactory::instance().get(query, recreate_context);
             interpreter->execute();
         }
         catch (...)
