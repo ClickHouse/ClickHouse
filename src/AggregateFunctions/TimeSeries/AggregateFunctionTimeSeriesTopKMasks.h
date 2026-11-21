@@ -4,7 +4,12 @@
 #include <cmath>
 #include <utility>
 
+#include <memory>
+#include <unordered_map>
+
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -16,6 +21,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <base/sort.h>
@@ -40,15 +47,20 @@ enum class TimeSeriesTopKMasksKind : UInt8
     LimitK,  /// At each time step keep the k series with the smallest sampling keys among those having a value.
 };
 
+/// A series key of a type other than UInt64: the key value in the binary format of its data type.
+/// It is shared between the heap entries (one per time step) of the same series.
+using TimeSeriesTopKMasksGenericKey = std::shared_ptr<const String>;
+
 /// State of the `timeSeries{TopK,BottomK,LimitK}Masks` aggregate functions: one bounded heap per time step, O(number_of_time_steps * k) in total.
-template <typename RankType>
+/// `KeyType` is UInt64 or `TimeSeriesTopKMasksGenericKey`.
+template <typename RankType, typename KeyType>
 struct AggregateFunctionTimeSeriesTopKMasksData
 {
     /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series.
     struct Entry
     {
         RankType rank;
-        UInt64 key;
+        KeyType key;
     };
 
     /// A binary heap of at most k entries with the worst kept entry at the front (see `better()` in the aggregate function).
@@ -65,20 +77,25 @@ struct AggregateFunctionTimeSeriesTopKMasksData
 };
 
 /// Implements timeSeries{TopK,BottomK,LimitK}Masks(k, key[, sampling_key], values): bounded per-step selection of series for PromQL topk/bottomk/limitk (the semantics are documented with the factory registration in the .cpp file).
-template <TimeSeriesTopKMasksKind kind, typename ValueType>
+/// If `generic_key` is false then `key` is UInt64, otherwise it is a value of any comparable type (e.g. an array of tags)
+/// which is kept in the state in the binary format of its data type, so keys are compared and merged by their serialized bytes.
+template <TimeSeriesTopKMasksKind kind, typename ValueType, bool generic_key>
 class AggregateFunctionTimeSeriesTopKMasks final :
     public IAggregateFunctionDataHelper<
-        AggregateFunctionTimeSeriesTopKMasksData<std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>>,
-        AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>
+        AggregateFunctionTimeSeriesTopKMasksData<
+            std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>,
+            std::conditional_t<generic_key, TimeSeriesTopKMasksGenericKey, UInt64>>,
+        AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, generic_key>>
 {
 public:
     /// For `topk` and `bottomk` candidates are ranked by their Float64 value, for `limitk` by their UInt64 sampling key.
     using RankType = std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>;
+    using KeyType = std::conditional_t<generic_key, TimeSeriesTopKMasksGenericKey, UInt64>;
 
-    using Data = AggregateFunctionTimeSeriesTopKMasksData<RankType>;
+    using Data = AggregateFunctionTimeSeriesTopKMasksData<RankType, KeyType>;
     using Entry = typename Data::Entry;
     using Heap = typename Data::Heap;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, generic_key>>;
 
     static constexpr UInt8 FORMAT_VERSION = 1;
 
@@ -97,25 +114,25 @@ public:
 
     [[nodiscard]] String getName() const override { return getNameImpl(); }
 
-    static DataTypePtr createResultType()
+    static DataTypePtr createResultType(const DataTypePtr & key_type)
     {
-        DataTypes element_types{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())};
+        DataTypes element_types{key_type, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())};
         Names element_names{"key", "steps_mask"};
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::move(element_types), std::move(element_names)));
     }
 
     explicit AggregateFunctionTimeSeriesTopKMasks(const DataTypes & argument_types_)
-        : Base(argument_types_, {}, createResultType())
+        : Base(argument_types_, {}, createResultType(argument_types_[1]))
         , k_is_per_step(argument_types_[0]->getTypeId() == TypeIndex::Array)
     {
+        if constexpr (generic_key)
+            key_serialization = argument_types_[1]->getDefaultSerialization();
     }
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const UInt64 key = columns[1]->getUInt(row_num);
-
         const auto & values_column = assert_cast<const ColumnArray &>(*columns[values_argument_index]);
         const auto & values_offsets = values_column.getOffsets();
         const size_t values_begin = values_offsets[row_num - 1];
@@ -135,6 +152,8 @@ public:
             initializeState(state, num_steps, columns, row_num);
         else
             checkStateMatchesRow(state, num_steps, columns, row_num);
+
+        const KeyType key = readKey(*columns[1], row_num);
 
         [[maybe_unused]] UInt64 sampling_key = 0;
         if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
@@ -195,13 +214,31 @@ public:
         for (UInt64 k : state.k_per_step)
             writeBinaryLittleEndian(k, buf);
 
+        /// A generic key is written once into a table of distinct keys, and entries refer to it by index.
+        [[maybe_unused]] std::unordered_map<const String *, UInt64> key_indices;
+        if constexpr (generic_key)
+        {
+            VectorWithMemoryTracking<const String *> distinct_keys;
+            for (const Heap & heap : state.heaps)
+                for (const Entry & entry : heap)
+                    if (key_indices.emplace(entry.key.get(), distinct_keys.size()).second)
+                        distinct_keys.push_back(entry.key.get());
+
+            writeVarUInt(distinct_keys.size(), buf);
+            for (const String * key : distinct_keys)
+                writeStringBinary(*key, buf);
+        }
+
         for (const Heap & heap : state.heaps)
         {
             writeVarUInt(heap.size(), buf);
             for (const Entry & entry : heap)
             {
                 writeBinaryLittleEndian(entry.rank, buf);
-                writeBinaryLittleEndian(entry.key, buf);
+                if constexpr (generic_key)
+                    writeVarUInt(key_indices.at(entry.key.get()), buf);
+                else
+                    writeBinaryLittleEndian(entry.key, buf);
             }
         }
     }
@@ -236,6 +273,19 @@ public:
             state.k_per_step.push_back(k);
         }
 
+        VectorWithMemoryTracking<KeyType> distinct_keys;
+        if constexpr (generic_key)
+        {
+            size_t num_distinct_keys = 0;
+            readVarUInt(num_distinct_keys, buf);
+            for (size_t i = 0; i != num_distinct_keys; ++i)
+            {
+                String key;
+                readStringBinary(key, buf);
+                distinct_keys.push_back(std::make_shared<const String>(std::move(key)));
+            }
+        }
+
         for (size_t t = 0; t != num_steps; ++t)
         {
             size_t heap_size = 0;
@@ -253,8 +303,21 @@ public:
             {
                 Entry entry;
                 readBinaryLittleEndian(entry.rank, buf);
-                readBinaryLittleEndian(entry.key, buf);
-                heap.push_back(entry);
+                if constexpr (generic_key)
+                {
+                    UInt64 key_index = 0;
+                    readVarUInt(key_index, buf);
+                    if (key_index >= distinct_keys.size())
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                                        "Cannot deserialize state of aggregate function {}: key index {} is out of range ({} keys)",
+                                        getName(), key_index, distinct_keys.size());
+                    entry.key = distinct_keys[key_index];
+                }
+                else
+                {
+                    readBinaryLittleEndian(entry.key, buf);
+                }
+                heap.push_back(std::move(entry));
             }
         }
 
@@ -267,7 +330,7 @@ public:
 
         auto & result_column = assert_cast<ColumnArray &>(to);
         auto & result_tuple = assert_cast<ColumnTuple &>(result_column.getData());
-        auto & key_data = assert_cast<ColumnUInt64 &>(result_tuple.getColumn(0)).getData();
+        IColumn & key_column = result_tuple.getColumn(0);
         auto & mask_column = assert_cast<ColumnArray &>(result_tuple.getColumn(1));
         auto & mask_offsets = mask_column.getOffsets();
         auto & mask_data = assert_cast<ColumnUInt8 &>(mask_column.getData()).getData();
@@ -275,7 +338,7 @@ public:
         const size_t num_steps = state.heaps.size();
 
         /// Invert the per-step heaps into (key, step) pairs sorted by key, i.e. one run of pairs per selected series.
-        VectorWithMemoryTracking<std::pair<UInt64, UInt64>> selected;
+        VectorWithMemoryTracking<std::pair<KeyType, UInt64>> selected;
         size_t num_selected = 0;
         for (const Heap & heap : state.heaps)
             num_selected += heap.size();
@@ -283,21 +346,24 @@ public:
         for (size_t t = 0; t != num_steps; ++t)
             for (const Entry & entry : state.heaps[t])
                 selected.emplace_back(entry.key, t);
-        ::sort(selected.begin(), selected.end());
+        ::sort(selected.begin(), selected.end(), [](const auto & a, const auto & b)
+        {
+            return keyLess(a.first, b.first) || (!keyLess(b.first, a.first) && a.second < b.second);
+        });
 
         for (size_t i = 0; i != selected.size();)
         {
-            const UInt64 key = selected[i].first;
-            key_data.push_back(key);
+            const KeyType & key = selected[i].first;
+            insertKey(key_column, key);
 
             const size_t mask_begin = mask_data.size();
             mask_data.resize_fill(mask_begin + num_steps, 0);
-            for (; i != selected.size() && selected[i].first == key; ++i)
+            for (; i != selected.size() && keyEquals(key, selected[i].first); ++i)
                 mask_data[mask_begin + selected[i].second] = 1;
             mask_offsets.push_back(mask_data.size());
         }
 
-        result_column.getOffsets().push_back(key_data.size());
+        result_column.getOffsets().push_back(key_column.size());
     }
 
 private:
@@ -325,7 +391,53 @@ private:
             }
         }
         /// Deterministic tie-breaking: prefer the series with the smaller key.
-        return a.key < b.key;
+        return keyLess(a.key, b.key);
+    }
+
+    /// Keys are ordered numerically if they are UInt64 and by their serialized bytes otherwise.
+    static bool keyLess(const KeyType & a, const KeyType & b)
+    {
+        if constexpr (generic_key)
+            return *a < *b;
+        else
+            return a < b;
+    }
+
+    static bool keyEquals(const KeyType & a, const KeyType & b)
+    {
+        if constexpr (generic_key)
+            return *a == *b;
+        else
+            return a == b;
+    }
+
+    /// Reads the key of the series from row `row_num` of the `key` argument.
+    KeyType readKey(const IColumn & key_column, size_t row_num) const
+    {
+        if constexpr (generic_key)
+        {
+            WriteBufferFromOwnString out;
+            key_serialization->serializeBinary(key_column, row_num, out, FormatSettings{});
+            return std::make_shared<const String>(out.str());
+        }
+        else
+        {
+            return key_column.getUInt(row_num);
+        }
+    }
+
+    /// Appends the key to the column of keys of the result.
+    void insertKey(IColumn & key_column, const KeyType & key) const
+    {
+        if constexpr (generic_key)
+        {
+            ReadBufferFromString in(*key);
+            key_serialization->deserializeBinary(key_column, in, FormatSettings{});
+        }
+        else
+        {
+            assert_cast<ColumnUInt64 &>(key_column).insertValue(key);
+        }
     }
 
     /// Keeps `heap` holding the (at most k) best entries seen so far, with the worst kept entry at the front (`better` is the "less" comparator of the heap).
@@ -403,6 +515,9 @@ private:
 
     /// Whether the first argument (`k`) is an array with one value per time step rather than a single value.
     const bool k_is_per_step;
+
+    /// How keys of a type other than UInt64 are converted to bytes and back, it's the same on all servers.
+    SerializationPtr key_serialization;
 };
 
 }
