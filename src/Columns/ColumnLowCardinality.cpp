@@ -1075,12 +1075,15 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 
 void ColumnLowCardinality::insertDictionaryIndex(UInt64 index)
 {
-    if (index >= getDictionary().size())
+    /// Read the dictionary through the const overload: it is usually shared, and the non-const `WrappedPtr`
+    /// accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
+    const size_t dictionary_size = std::as_const(*this).getDictionary().size();
+    if (index >= dictionary_size)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "LowCardinality dictionary index {} is out of range for dictionary of size {}",
             index,
-            getDictionary().size());
+            dictionary_size);
 
     idx.insertIndex(index);
 }

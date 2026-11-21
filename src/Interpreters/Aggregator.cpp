@@ -1433,7 +1433,7 @@ void Aggregator::normalizeSingleLowCardinalityDictionary(
     if (was_two_level && AggregatedDataVariants::isConvertibleToTwoLevel(method_chosen))
         normalized.init(method_chosen);
     else
-        normalized.init(method_chosen, result.sizeWithoutOverflowRow());
+        normalized.init(method_chosen, AggregatedDataVariants::SizeHint{.keys = result.sizeWithoutOverflowRow()});
     normalized.keys_size = params.keys_size;
     normalized.key_sizes = key_sizes;
 

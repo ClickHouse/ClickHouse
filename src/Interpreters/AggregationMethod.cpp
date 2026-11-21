@@ -1,3 +1,4 @@
+#include <utility>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/AggregationMethod.h>
@@ -151,7 +152,9 @@ void AggregationMethodSingleLowCardinalityDictionaryIndex<TData>::insertKeyIntoC
     auto & column = assert_cast<ColumnLowCardinality &>(*key_columns_low_cardinality[0]);
     if (column.empty())
         column.setSharedDictionary(dictionary);
-    else if (column.getDictionaryPtr().get() != dictionary.get())
+    /// Compare addresses through the const overload: the dictionary is shared, and the non-const `WrappedPtr`
+    /// accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
+    else if (std::as_const(column).getDictionaryPtr().get() != dictionary.get())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary in single-dictionary aggregation result");
 
     column.insertDictionaryIndex(key);
