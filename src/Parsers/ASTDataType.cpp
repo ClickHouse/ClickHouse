@@ -245,10 +245,21 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     auto & arguments = table_function.arguments->children;
     const auto argument_at = [&arguments](size_t index) -> ASTPtr * { return index < arguments.size() ? &arguments[index] : nullptr; };
 
+    /// These table functions have only positional arguments. An argument of the form `structure = ...` is an ordinary
+    /// comparison there (for example, a row of `values` that refers to a `WITH` alias named `structure`), not a schema.
+    const bool has_only_positional_arguments = equalsCaseInsensitiveString(table_function.name, "values")
+        || equalsCaseInsensitiveString(table_function.name, "format") || equalsCaseInsensitiveString(table_function.name, "input")
+        || equalsCaseInsensitiveString(table_function.name, "null")
+        || equalsCaseInsensitiveString(table_function.name, "generateRandom");
+
     /// Named arguments override a positional structure slot. This also covers the object-storage table-function
     /// family, whose positional signatures differ according to credentials, but all share `structure = ...`.
     for (auto & argument : arguments)
     {
+        if (has_only_positional_arguments)
+            break;
+
+
         auto * equals = argument->as<ASTFunction>();
         if (!equals || !equalsCaseInsensitiveString(equals->name, "equals") || !equals->arguments
             || equals->arguments->children.size() != 2)
