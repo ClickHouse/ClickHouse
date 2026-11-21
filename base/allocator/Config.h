@@ -215,6 +215,13 @@ inline constexpr bool have_clock_monotonic = !os_darwin;
 inline constexpr bool threaded_init = os_linux;
 inline constexpr bool mutex_init_callback = os_freebsd;
 inline constexpr bool lazy_lock = os_freebsd;
+/// JEMALLOC_HAVE_DLSYM: undefined by `contrib/jemalloc-cmake` for every platform. With it, the background threads
+/// find `pthread_create` with `dlsym(RTLD_NEXT)` and call it through the returned pointer, which Clang CFI rejects
+/// (the target is outside the binary). Without it, `pthread_create` is called directly.
+/// Unlike jemalloc, the lookup is kept with `lazy_lock` (FreeBSD), where it is required: `pthread_create` is
+/// interposed there, so a direct call would recurse, and jemalloc without `JEMALLOC_HAVE_DLSYM` aborts at boot with
+/// "Error in dlsym(RTLD_NEXT, \"pthread_create\")" instead.
+inline constexpr bool have_dlsym = lazy_lock;
 
 /// The thread-specific data implementation.
 inline constexpr ThreadStateImpl thread_state_impl

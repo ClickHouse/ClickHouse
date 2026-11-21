@@ -202,7 +202,7 @@ bool backgroundThreadStatsRead(ThreadState * thread_state, BackgroundThreadStats
 /// jemalloc: background_thread_ctl_init
 void backgroundThreadMallctlInit(ThreadState * thread_state);
 
-/// Calls the real `pthread_create` (resolved with `dlsym`); sets `is_threaded` with lazy locking.
+/// Calls the real `pthread_create` (resolved with `dlsym` if `config::have_dlsym`); sets `is_threaded` with lazy locking.
 /// jemalloc: pthread_create_wrapper
 int pthreadCreateWrapper(pthread_t * thread, const pthread_attr_t * attributes, void * (*start_routine)(void *), void * arg);
 

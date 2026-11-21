@@ -60,9 +60,12 @@ bool pthreadCreateFunctionPtrInit()
         return false;
     /// Try the next symbol first, because 1) when use lazy_lock we have a wrapper for pthread_create; and 2)
     /// application may define its own wrapper as well (and can call malloc within the wrapper).
-    pthread_create_function_ptr = reinterpret_cast<PthreadCreateFunction>(dlsym(RTLD_NEXT, "pthread_create"));
-    if (pthread_create_function_ptr == nullptr)
-        pthread_create_function_ptr = reinterpret_cast<PthreadCreateFunction>(dlsym(RTLD_DEFAULT, "pthread_create"));
+    if constexpr (config::have_dlsym)
+    {
+        pthread_create_function_ptr = reinterpret_cast<PthreadCreateFunction>(dlsym(RTLD_NEXT, "pthread_create"));
+        if (pthread_create_function_ptr == nullptr)
+            pthread_create_function_ptr = reinterpret_cast<PthreadCreateFunction>(dlsym(RTLD_DEFAULT, "pthread_create"));
+    }
     if (pthread_create_function_ptr == nullptr)
     {
         if constexpr (config::lazy_lock)
