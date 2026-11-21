@@ -1391,8 +1391,7 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan 
 {
     auto new_plan = extractSubplan(root, nodes);
 
-    /// The subplan may be executed after `source_plan` has been consumed into a pipeline (e.g. the
-    /// right side of a `JOIN` converted to `IN` is built later as a set), so it must keep the same
+    /// The subplan may be executed after `source_plan` has been consumed into a pipeline, so it must keep the same
     /// execution limits and hold the same table locks, storage holders and interpreter contexts.
     /// append copies the shared handles, so ownership is only shared, never moved out of the source.
     new_plan.max_threads = source_plan.max_threads;
