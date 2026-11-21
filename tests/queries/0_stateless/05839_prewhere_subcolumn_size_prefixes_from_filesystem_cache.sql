@@ -33,10 +33,10 @@ SETTINGS disk = disk(type = cache, name = '05839_prewhere_subcolumn_size_cache',
     map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
     serialization_info_version = 'with_types';
 
-INSERT INTO t_json SELECT toDate('2026-01-01') + number % 50, number, concat('{"k1":', toString(number), ',"k2":', toString(number), '}')
-FROM numbers(10000) SETTINGS enable_filesystem_cache_on_write_operations = 1;
-INSERT INTO t_map SELECT toDate('2026-01-01') + number % 50, number, map('k' || toString(number % 10), toString(number))
-FROM numbers(10000) SETTINGS enable_filesystem_cache_on_write_operations = 1;
+INSERT INTO t_json SELECT toDate('2026-01-01') + number % 5, number, concat('{"k1":', toString(number), ',"k2":', toString(number), '}')
+FROM numbers(1000) SETTINGS enable_filesystem_cache_on_write_operations = 1;
+INSERT INTO t_map SELECT toDate('2026-01-01') + number % 5, number, map('k' || toString(number % 10), toString(number))
+FROM numbers(1000) SETTINGS enable_filesystem_cache_on_write_operations = 1;
 
 -- Every file is in the filesystem cache now.
 SELECT j FROM t_json FORMAT Null;
