@@ -1,0 +1,30 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Same bucket, prefix and metadata path as `s3_bucket_root`, so the two disks share a
+                 storage namespace. Both are writable, which is the configuration that loses data.
+                 The metadata path has to match too: a disk that keeps its metadata locally reports that
+                 local path as its own path, so two disks over one bucket but with a metadata path each
+                 are two namespaces, not one. -->
+            <s3_bucket_root_alias>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/shared/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/s3_bucket_root_metadata/</metadata_path>
+            </s3_bucket_root_alias>
+        </disks>
+        <policies>
+            <object_storage_same_bucket>
+                <volumes>
+                    <original>
+                        <disk>s3_bucket_root</disk>
+                    </original>
+                    <alias>
+                        <disk>s3_bucket_root_alias</disk>
+                    </alias>
+                </volumes>
+            </object_storage_same_bucket>
+        </policies>
+    </storage_configuration>
+</clickhouse>

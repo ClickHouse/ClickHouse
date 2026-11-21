@@ -101,7 +101,11 @@ static fs::path getPathInInnermostDelegate(const DiskPtr & disk, const fs::path 
                 ErrorCodes::LOGICAL_ERROR,
                 "Disk {} at {} is not located inside its delegate disk {} at {}",
                 inner->getName(), inner_path, delegate->getName(), delegate_path);
-        const String prefix = inner_path.substr(delegate_path.size());
+        String prefix = inner_path.substr(delegate_path.size());
+        /// When the delegate's root does not end with a separator, the wrapper inserts one before its own prefix
+        /// (`DiskEncrypted::getPath`), but the prefix is relative to the delegate's root.
+        if (!delegate_path.empty() && !delegate_path.ends_with('/') && prefix.starts_with('/'))
+            prefix.erase(0, 1);
         if (!result.starts_with(prefix))
             result = prefix + result;
         inner = delegate;

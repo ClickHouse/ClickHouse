@@ -11,6 +11,57 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
+            <!-- Two disks over different buckets and with different metadata paths are different storages,
+                 so a policy may hold both. -->
+            <s3_bucket_root>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/shared/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/s3_bucket_root_metadata/</metadata_path>
+            </s3_bucket_root>
+            <s3_bucket_root2>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root2/data/disks/shared/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/s3_bucket_root2_metadata/</metadata_path>
+            </s3_bucket_root2>
+            <!-- An `encrypted` disk takes a path that already starts with its own `path` as already prefixed,
+                 so `encrypted_store_prefix` keeps the parts of an `Atomic` table at `store/...` of
+                 `local_under_encrypted`, the same files that `encrypted_no_path` and the local disk itself use. -->
+            <local_under_encrypted>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/local_under_encrypted/</path>
+            </local_under_encrypted>
+            <encrypted_store_prefix>
+                <type>encrypted</type>
+                <disk>local_under_encrypted</disk>
+                <path>store/</path>
+                <key>1234567812345678</key>
+            </encrypted_store_prefix>
+            <encrypted_no_path>
+                <type>encrypted</type>
+                <disk>local_under_encrypted</disk>
+                <key>1234567812345678</key>
+            </encrypted_no_path>
+            <!-- A separate disk: the orphaned parts check would find the parts of a table on
+                 `local_under_encrypted` through `encrypted_store_prefix` too. -->
+            <local_under_encrypted2>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/local_under_encrypted2/</path>
+            </local_under_encrypted2>
+            <!-- `reload_encrypted_store_prefix` over this disk is added to `reload_policy` by a configuration reload. -->
+            <reload_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/reload_local/</path>
+            </reload_local>
+            <encrypted_other_prefix>
+                <type>encrypted</type>
+                <disk>local_under_encrypted2</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </encrypted_other_prefix>
         </disks>
         <policies>
             <local>
@@ -37,6 +88,43 @@
                     </s3>
                 </volumes>
             </hybrid>
+            <reload_policy>
+                <volumes>
+                    <main>
+                        <disk>reload_local</disk>
+                    </main>
+                </volumes>
+            </reload_policy>
+            <object_storage_different_buckets>
+                <volumes>
+                    <root>
+                        <disk>s3_bucket_root</disk>
+                    </root>
+                    <root2>
+                        <disk>s3_bucket_root2</disk>
+                    </root2>
+                </volumes>
+            </object_storage_different_buckets>
+            <encrypted_store_prefix_alias>
+                <volumes>
+                    <prefixed>
+                        <disk>encrypted_store_prefix</disk>
+                    </prefixed>
+                    <unprefixed>
+                        <disk>encrypted_no_path</disk>
+                    </unprefixed>
+                </volumes>
+            </encrypted_store_prefix_alias>
+            <encrypted_beside_wrapped_disk>
+                <volumes>
+                    <plain>
+                        <disk>local_under_encrypted2</disk>
+                    </plain>
+                    <encrypted>
+                        <disk>encrypted_other_prefix</disk>
+                    </encrypted>
+                </volumes>
+            </encrypted_beside_wrapped_disk>
 
         </policies>
     </storage_configuration>

@@ -16,6 +16,26 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
+/// Whether two disks read and write the same files, by endpoint, bucket and path, or list the same
+/// local directory.
+bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
+
+/// Whether two disks are two ways into the same files, so that a storage policy holding both loads
+/// every part twice and removes one copy as a duplicate. `StoragePolicy` rejects such a pair, whether
+/// the disks are writable or read-only, and whether or not one of them is a layer over the other.
+///
+/// Registering both is allowed: two disks over one storage are only a danger to the table that reads
+/// through both of them, and a disk is registered long before it is known which policy will hold it.
+/// Two single-disk policies over one storage are a supported setup, a `cache` disk beside another
+/// `cache` disk over the same disk for one.
+bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs);
+
+/// Throws if two of `disks` keep the files at `relative_path` in the same storage, so that a table with this data
+/// path loads every part twice and removes one copy as a duplicate. Unlike the check of the storage policy, which
+/// compares the roots of the disks, this one follows where `relative_path` actually goes through the `encrypted`
+/// layers, which do not prefix a path that already starts with their own `path`.
+void checkDisksHaveDistinctStorageForPath(const Disks & disks, const String & relative_path, const String & storage_policy_name);
+
 /// The metadata storage below the `encrypted` and `cache` layers of `disk`, or nullptr if `disk` is not over an object storage disk.
 MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk);
 

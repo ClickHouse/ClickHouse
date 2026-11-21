@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Keeps the parts of an `Atomic` table at `store/...` of `reload_local`, where `reload_local` keeps them. -->
+            <reload_encrypted_store_prefix>
+                <type>encrypted</type>
+                <disk>reload_local</disk>
+                <path>store/</path>
+                <key>1234567812345678</key>
+            </reload_encrypted_store_prefix>
+        </disks>
+        <policies>
+            <reload_policy>
+                <volumes>
+                    <extra>
+                        <disk>reload_encrypted_store_prefix</disk>
+                    </extra>
+                </volumes>
+            </reload_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

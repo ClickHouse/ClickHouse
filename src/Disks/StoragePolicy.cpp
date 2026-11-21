@@ -125,6 +125,7 @@ StoragePolicy::StoragePolicy(
         checkVolumesAreReadOnly();
 
     buildVolumeIndices();
+    validateDisksHaveDistinctStorageNamespaces();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
@@ -169,6 +170,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
                         move_factor, backQuote(name));
 
     buildVolumeIndices();
+    validateDisksHaveDistinctStorageNamespaces();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
@@ -202,6 +204,8 @@ StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
             }
         }
     }
+
+    validateDisksHaveDistinctStorageNamespaces();
 }
 
 
@@ -512,6 +516,42 @@ void StoragePolicy::buildVolumeIndices()
             }
 
             volume_index_by_disk_name[disk_name] = index;
+        }
+    }
+}
+
+void StoragePolicy::validateDisksHaveDistinctStorageNamespaces() const
+{
+    /// Two writable disks over one and the same storage make `MergeTree` enumerate every part twice, which
+    /// it reports as duplicate parts and resolves by removing one copy - and that deletes the data. The
+    /// disks of one policy are the disks one table reads through, so this is where the pair is a danger.
+    ///
+    /// Registration cannot decide this: a disk is created long before it is known which policy will hold
+    /// it, and two disks over one storage used by separate policies are a supported setup.
+    ///
+    /// The volumes are flattened here instead of calling `getDisks`, because the constructors call this
+    /// and a virtual call during construction does not reach an override.
+    Disks policy_disks;
+    for (const auto & volume : volumes)
+        for (const auto & disk : volume->getDisks())
+            policy_disks.push_back(disk);
+
+    for (size_t i = 0; i < policy_disks.size(); ++i)
+    {
+        for (size_t j = i + 1; j < policy_disks.size(); ++j)
+        {
+            if (policy_disks[i] == policy_disks[j])
+                continue;
+
+            if (areDisksDuplicateStorage(policy_disks[i], policy_disks[j]))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disks {} and {} in storage policy {} resolve to the same storage namespace ({}). "
+                    "A policy that holds both of them loads every part twice",
+                    backQuote(policy_disks[i]->getName()),
+                    backQuote(policy_disks[j]->getName()),
+                    backQuote(name),
+                    quoteString(policy_disks[i]->getPath()));
         }
     }
 }
