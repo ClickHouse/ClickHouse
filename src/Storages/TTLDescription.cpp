@@ -1,5 +1,7 @@
 #include <Storages/TTLDescription.h>
 
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -1501,6 +1503,17 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
+                /// A table name in the predicate is resolved against the session's database at CREATE,
+                /// but TTL merges analyze the stored predicate in a context with no current database, so
+                /// an unqualified spelling wedges every merge with UNKNOWN_DATABASE forever. Store it
+                /// qualified, the way CHECK constraints resolve a table name (issue #121218). Attach paths
+                /// skip this: their definition was already qualified when it was first written.
+                if (validation_mode == TTLValidationMode::Validate)
+                {
+                    AddDefaultDatabaseVisitor qualify(context, context->getCurrentDatabase());
+                    qualify.visitDDL(where_expr_ast);
+                }
+
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
