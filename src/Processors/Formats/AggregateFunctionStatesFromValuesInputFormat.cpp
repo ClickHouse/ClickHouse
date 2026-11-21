@@ -84,13 +84,8 @@ DataTypePtr getTypeToParse(const DataTypePtr & type, Mode mode)
     return type;
 }
 
-/// The mask can be shorter than the chunk: it is resized only up to the last row that was set.
-bool isMissingRow(const BlockMissingValues::RowsBitMask * missing_rows, size_t row)
-{
-    return missing_rows && row < missing_rows->size() && (*missing_rows)[row];
-}
-
 /// `missing_rows` are the rows that the input did not have: the underlying format filled them with the default of the argument type.
+/// Only in the `value` mode: in the `array` mode such a row is an empty array, which adds nothing to its state anyway.
 ColumnPtr buildStates(
     const ColumnPtr & column, const DataTypeAggregateFunction & type, Mode mode, const BlockMissingValues::RowsBitMask * missing_rows)
 {
@@ -141,25 +136,24 @@ ColumnPtr buildStates(
         states.push_back(place);
     }
 
-    /// A missing row keeps its empty state.
-    for (size_t row = 0; row < num_rows;)
+    /// One call for the whole chunk: some functions convert their whole argument columns on every call.
+    if (mode == Mode::Array)
     {
-        if (isMissingRow(missing_rows, row))
-        {
-            ++row;
-            continue;
-        }
-
-        size_t end = row + 1;
-        while (end < num_rows && !isMissingRow(missing_rows, end))
-            ++end;
-
-        if (mode == Mode::Array)
-            function->addBatchArray(row, end, states.data(), 0, argument_column_ptrs.data(), offsets->data(), &arena);
-        else
-            function->addBatch(row, end, states.data(), 0, argument_column_ptrs.data(), &arena);
-
-        row = end;
+        function->addBatchArray(0, num_rows, states.data(), 0, argument_column_ptrs.data(), offsets->data(), &arena);
+    }
+    else if (missing_rows)
+    {
+        /// A missing row keeps its empty state: `addBatch` skips the rows without a place.
+        /// The mask can be shorter than the chunk, it is resized only up to the last row that was set.
+        PaddedPODArray<AggregateDataPtr> places(states.begin(), states.end());
+        for (size_t row = 0; row < std::min(num_rows, missing_rows->size()); ++row)
+            if ((*missing_rows)[row])
+                places[row] = nullptr;
+        function->addBatch(0, num_rows, places.data(), 0, argument_column_ptrs.data(), &arena);
+    }
+    else
+    {
+        function->addBatch(0, num_rows, states.data(), 0, argument_column_ptrs.data(), &arena);
     }
 
     return res;
@@ -250,11 +244,12 @@ std::optional<Block> AggregateFunctionStatesFromValuesInputFormat::getHeaderToPa
 }
 
 AggregateFunctionStatesFromValuesInputFormat::AggregateFunctionStatesFromValuesInputFormat(
-    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_)
+    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_, bool forward_missing_values_)
     : IInputFormat(std::move(header_), in_)
     , underlying(std::move(underlying_))
     , port(underlying->getPort().getHeader(), this)
     , mode(mode_)
+    , forward_missing_values(forward_missing_values_)
 {
     connect(underlying->getPort(), port);
     port.setNeeded();
@@ -293,9 +288,8 @@ Chunk AggregateFunctionStatesFromValuesInputFormat::read()
     const Block & parsed_header = underlying->getPort().getHeader();
     size_t num_rows = chunk.getNumRows();
     Columns columns = chunk.detachColumns();
-    /// The values that the input did not have, for the chunk just pulled. It is still forwarded by `getMissingValues`,
-    /// so that the `DEFAULT` expressions of the columns are computed for these rows as well.
-    const BlockMissingValues * missing_values = underlying->getMissingValues();
+    /// The values that the input did not have, for the chunk just pulled.
+    const BlockMissingValues * missing_values = mode == Mode::Value ? underlying->getMissingValues() : nullptr;
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const BlockMissingValues::RowsBitMask * missing_rows = nullptr;

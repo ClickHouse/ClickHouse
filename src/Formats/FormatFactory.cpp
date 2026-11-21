@@ -624,6 +624,9 @@ InputFormatPtr FormatFactory::getInputImpl(
     std::optional<Block> header_to_parse
         = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(sample, format_settings.aggregate_function_input_format);
     const Block & format_sample = header_to_parse ? *header_to_parse : sample;
+    FormatSettings format_settings_to_parse = format_settings;
+    if (header_to_parse && format_settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
+        format_settings_to_parse.defaults_for_omitted_fields = true;
 
     // Decide whether to use ParallelParsingInputFormat.
 
@@ -659,9 +662,9 @@ InputFormatPtr FormatFactory::getInputImpl(
         const auto & input_getter = creators.input_creator;
 
         /// Const reference is copied to lambda.
-        auto parser_creator = [input_getter, format_sample, row_input_format_params, format_settings]
+        auto parser_creator = [input_getter, format_sample, row_input_format_params, format_settings_to_parse]
             (ReadBuffer & input) -> InputFormatPtr
-            { return input_getter(input, format_sample, row_input_format_params, format_settings); };
+            { return input_getter(input, format_sample, row_input_format_params, format_settings_to_parse); };
 
         /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
         ///       ParallelParsingInputFormat.
@@ -671,7 +674,7 @@ InputFormatPtr FormatFactory::getInputImpl(
             parser_creator,
             creators.file_segmentation_engine_creator,
             name,
-            format_settings,
+            format_settings_to_parse,
             max_parsing_threads,
             settings[Setting::min_chunk_bytes_for_parallel_parsing],
             max_block_size,
@@ -687,20 +690,20 @@ InputFormatPtr FormatFactory::getInputImpl(
         && object_with_metadata.has_value())
     {
         format = creators.random_access_input_creator_with_metadata(
-            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings_to_parse, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info, object_with_metadata, context);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings_to_parse, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info);
     }
     // 4. Use the normal creator for sequential reading
     else
     {
-        format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
+        format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings_to_parse);
         if (format_filter_info && format_filter_info->column_mapper)
             format->setColumnMapper(format_filter_info->column_mapper);
     }
@@ -723,7 +726,11 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     if (header_to_parse)
         format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
-            std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
+            std::make_shared<const Block>(sample),
+            &buf,
+            std::move(format),
+            format_settings.aggregate_function_input_format,
+            format_settings.defaults_for_omitted_fields);
 
     format->setSupportsResetParser(creators.supports_reset_parser && !parallel_parsing);
     return format;

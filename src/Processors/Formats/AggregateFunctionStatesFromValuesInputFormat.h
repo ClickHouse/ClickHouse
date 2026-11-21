@@ -28,7 +28,11 @@ public:
     /// or nullopt if `header` has no `AggregateFunction` columns and the underlying format can be used as is.
     static std::optional<Block> getHeaderToParse(const Block & header, Mode mode);
 
-    AggregateFunctionStatesFromValuesInputFormat(SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_);
+    /// In the `value` mode, the underlying format must report the values the input does not have even without
+    /// `input_format_defaults_for_omitted_fields`, so that their states stay empty. `forward_missing_values_` is that setting:
+    /// without it, they are not passed on to compute the `DEFAULT` expressions of the columns.
+    AggregateFunctionStatesFromValuesInputFormat(
+        SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_, bool forward_missing_values_);
 
     String getName() const override { return "AggregateFunctionStatesFromValuesInputFormat"; }
 
@@ -38,7 +42,7 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read) override { underlying->setBucketsToRead(buckets_to_read); }
-    const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
+    const BlockMissingValues * getMissingValues() const override { return forward_missing_values ? underlying->getMissingValues() : nullptr; }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
@@ -61,6 +65,7 @@ private:
     /// Connected to the output port of the underlying format, which is driven by this processor and is not a part of the pipeline.
     InputPort port;
     Mode mode;
+    bool forward_missing_values;
 };
 
 }
