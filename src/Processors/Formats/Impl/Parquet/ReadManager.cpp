@@ -95,6 +95,7 @@ void ReadManager::init(
     row_groups_to_read = std::move(row_groups_to_read_);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
+    reader.initFilteredColumnsCache();
 
     /// The row groups of other buckets of a split file are neither read nor pruned by this reader. Otherwise,
     /// the row groups not in the bucket count as pruned, e.g. the ones the query condition cache knows to
@@ -502,6 +503,10 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
     VectorWithMemoryTracking<Task> add_tasks;
 
+    /// The step starts with the offset index, once per row subgroup.
+    if (stage == ReadStage::OffsetIndex && row_subgroup.filter.rows_pass > 0)
+        reader.lookUpFilteredColumns(row_group, row_subgroup, step_idx);
+
     while (true) // offset index, then data
     {
         bool is_offset_index = stage == ReadStage::OffsetIndex;
@@ -512,8 +517,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 continue;
 
             ColumnChunk & c = row_group.columns.at(i);
-            /// Formed from the columns cache instead, see `Reader::getOrFormOutputColumn`.
-            if (c.served_from_cache)
+            /// Formed from the columns cache instead, see `Reader::getOrFormOutputColumn` and `Reader::lookUpFilteredColumns`.
+            if (c.served_from_cache || row_subgroup.columns.at(i).from_filtered_cache)
                 continue;
             if (is_offset_index)
             {
@@ -1225,14 +1230,15 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
         /// The columns of this step served from the columns cache have no task, but forming them
         /// can copy their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
         /// the subgroup is delivered. Account for them as for the columns that are decoded.
-        if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
+        /// The same for the columns taken from the cache by the rows that passed, see `Reader::lookUpFilteredColumns`.
+        if ((!row_group.cached_columns.empty() || reader.filtered_columns_cache_possible) && row_subgroup.filter.rows_pass > 0)
         {
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
             {
                 const ColumnChunk & column = row_group.columns.at(i);
-                if (!column.served_from_cache || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
-                    continue;
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
+                if (!(column.served_from_cache || subchunk.from_filtered_cache) || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
+                    continue;
                 if (subchunk.column_and_offsets_memory)
                     continue;
                 subchunk.column_and_offsets_memory = reserveOutputColumnMemory(i, row_group, row_subgroup, diff);

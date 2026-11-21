@@ -1896,6 +1896,8 @@ The server successfully detected this situation and will download merged part fr
     M(VortexConvertMicroseconds, "Time spent turning the Arrow arrays a Vortex scan delivers into ClickHouse columns", ValueType::Microseconds) \
     M(VortexReadWaitMicroseconds, "Time the pipeline spent waiting for a Vortex scan to deliver the next split", ValueType::Microseconds) \
     M(ParquetRowsDecodedAsDictionaryIndexes, "Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value", ValueType::Number) \
+    M(ParquetFilteredColumnsCacheHits, "Number of Parquet columns decoded for a set of rows of a row subgroup (the rows that passed the earlier PREWHERE steps, or the rows lazy materialization requested) that were taken from the columns cache instead of being read", ValueType::Number) \
+    M(ParquetFilteredColumnsCacheMisses, "Number of Parquet columns decoded for a set of rows of a row subgroup (the rows that passed the earlier PREWHERE steps, or the rows lazy materialization requested) that were looked up in the columns cache and not found", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \

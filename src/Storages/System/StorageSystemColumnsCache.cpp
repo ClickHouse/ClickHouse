@@ -178,7 +178,7 @@ protected:
             col_part->insert(meta.part_name);
             col_column->insert(meta.column_name);
             col_row_begin->insert(meta.row_begin);
-            col_row_end->insert(meta.row_begin + meta.rows);
+            col_row_end->insert(meta.row_begin + (meta.rows_span ? meta.rows_span : meta.rows));
             col_rows->insert(meta.rows);
             col_bytes->insert(meta.bytes);
 
@@ -233,7 +233,7 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
         {"column", std::make_shared<DataTypeString>(), "Name of the column."},
         {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index of the cached range (inclusive)."},
         {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index of the cached range (exclusive)."},
-        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the cached range (`row_end - row_begin`)."},
+        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows the entry holds: `row_end - row_begin`, or fewer for an entry of a Parquet read that holds only the rows a filter kept (after `PREWHERE`, or the rows lazy materialization requested)."},
         {"bytes", std::make_shared<DataTypeUInt64>(), "Memory the entry retains, in bytes: the allocated size of the cached column plus a small per-entry overhead. This is the quantity the cache is bounded by, so the sum of this column over all entries stays within `columns_cache_size`. It can be larger than the logical size of the rows, because a column keeps the capacity it was allocated with."}
     };
 
