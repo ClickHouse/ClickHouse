@@ -1,0 +1,186 @@
+1	a
+2	b
+subquery over the left table
+inner
+1	a
+2	b
+3	e
+left
+1	a
+2	b
+3	e
+4	
+right
+0	f
+1	a
+2	b
+3	e
+full
+0	f
+1	a
+2	b
+3	e
+4	
+any left
+1	a
+2	b
+3	e
+4	
+left semi
+1
+2
+3
+left anti
+4
+subquery over the right table
+inner
+1	a
+2	b
+left
+1	a
+2	b
+3	
+4	
+join_use_nulls = 1
+1	a
+2	b
+3	e
+4	\N
+-
+1	a
+2	b
+3	\N
+4	\N
+-
+1	a
+2	b
+3	e
+4	\N
+\N	f
+exists
+1	a
+2	b
+-
+4	e
+-
+1	a
+2	b
+-
+4	e
+one subquery per side
+1	a
+2	b
+left side is a join
+1	a	10
+2	b	20
+4	e	50
+or
+1	a
+2	b
+3	e
+4	e
+alias shared with SELECT
+1	10
+2	20
+3	50
+Join engine on the right
+1	a
+2	b
+3	e
+4	
+-
+1	a
+2	b
+3	
+4	
+join algorithms
+1	a
+2	b
+3	e
+1	a
+2	b
+3	e
+1	a
+2	b
+3	e
+1	a
+2	b
+3	e
+1	a
+2	b
+3	e
+1	a
+2	b
+3	e
+-
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+decorrelation settings
+1	a
+2	b
+3	e
+4	
+1	a
+2	b
+3	e
+4	
+1	a
+2	b
+3	e
+4	
+1	a
+2	b
+3	e
+4	
+-
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+1	a
+2	b
+3	
+4	
+not supported
+generated data, subquery over the left table
+inner	1
+left	1
+right	1
+full	1
+generated data, subquery over the right table
+inner	1
+left	1
+right	1
+full	1
+generated data, exists
+1
