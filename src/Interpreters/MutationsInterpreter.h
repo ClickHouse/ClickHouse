@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/PartitionIds.h>
+#include <IO/Progress.h>
 
 
 namespace DB
@@ -53,11 +53,12 @@ IsStorageTouched isStorageTouchedByMutations(
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
 /// other accesses; the function does not call `MutationCommand::ast` itself.
-/// `resolved_partition_ids` is `MutationCommand::resolved_partition_ids`: when it is
-/// set, the partition literals of the AST must not be resolved again.
+/// `resolved_partition_ids` is `MutationCommand::partition_ids` - the partitions of a scoped command as
+/// they were resolved when the mutation entry was created or loaded. When it is set, it is the source of
+/// truth for the `IN PARTITION` part of the filter and the partition expression is not evaluated at all.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
-    const std::optional<PartitionIds> & resolved_partition_ids,
+    const std::optional<NameSet> & resolved_partition_ids,
     const StoragePtr & storage,
     ContextPtr context
 );
@@ -255,7 +256,7 @@ private:
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-        const ASTAlterCommand * alter, const std::optional<PartitionIds> & resolved_partition_ids) const;
+        const ASTAlterCommand * alter, const std::optional<NameSet> & resolved_partition_ids) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;

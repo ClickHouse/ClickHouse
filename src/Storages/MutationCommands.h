@@ -119,14 +119,20 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// The partitions this command is scoped to (`IN PARTITION p` or `IN PARTITION p1, p2, ...`),
-    /// resolved when the mutation was created and persisted together with the mutation entry.
-    /// When it is set, executors must use it instead of resolving the partition literals of the
-    /// AST again: after a key-safe partition key type change (e.g. `Enum8 -> Int8`) the original
-    /// literals no longer parse against the current partition key. It is not set for commands
-    /// that are not partition-scoped, and for mutations whose entry does not carry the resolved
-    /// scope. Never empty when set.
-    std::optional<PartitionIds> resolved_partition_ids = {};
+    /// Whether the command names specific partitions (`... IN PARTITION p`), which scopes it to those
+    /// partitions alone. Recorded at parse time so that a caller which has to respect the scope can
+    /// find the few commands that have one without re-parsing `ast_text` for every command.
+    bool has_partition = false;
+
+    /// The ids of the partitions the command is scoped to, resolved from the partition expression once,
+    /// when the mutation entry is created (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
+    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path. The
+    /// resolution also rewrites the expression in `ast_text` to `ID '...'`, so the persisted entry pins
+    /// the same partitions and resolving them again when the entry is read back evaluates nothing.
+    /// Stays `std::nullopt` for a command with no partition, and for a scoped command whose expression
+    /// could not be resolved - a consumer that has to respect the scope then applies the command to no
+    /// partition at all rather than to the ones it does not name.
+    std::optional<NameSet> partition_ids = {};
 
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
@@ -146,6 +152,11 @@ struct MutationCommand
     [[nodiscard]] bool isDropOrRename() const;
     [[nodiscard]] bool affectsAllColumns() const;
 };
+
+/// Whether the command is scoped to specific partitions (`... IN PARTITION p`, or the multi-partition
+/// `... IN PARTITION p1, p2` of `DELETE`/`UPDATE`), so that it applies to the parts of those partitions
+/// alone. `IN PARTITION ALL` names no specific partition and is not a scope.
+bool isCommandScopedToPartitions(const ASTAlterCommand & command);
 
 /// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
 /// command into a `column -> expression` map. The returned `ASTPtr`s point

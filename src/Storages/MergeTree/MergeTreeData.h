@@ -52,9 +52,12 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
+
+struct QueryIdHolder;
 
 /// Number of streams is not number parts, but number or parts*files, hence 100.
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
@@ -613,6 +616,9 @@ public:
 
     bool supportsFinal() const override;
 
+    bool supportsParallelInsert() const override { return true; }
+    bool isInsertOrderSensitive() const override;
+
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 
@@ -699,9 +705,13 @@ public:
 
     protected:
         [[nodiscard]] NameSet getColumnsUpdatedInPatches() const;
-        /// Adds the commands applicable on the fly to the parts of partition `partition_id`.
-        void addSupportedCommands(
-            const MutationCommands & commands, UInt64 mutation_version, const String & partition_id, MutationCommands & result_commands) const;
+        void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name partitions other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
+        /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
+
         /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
         void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
@@ -1375,12 +1385,12 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
     PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
 
-    /// Rewrites the `IN PARTITION <value>` (or `IN PARTITION <value1>, <value2>, ...`) clause of
-    /// every partition-scoped command into the `IN PARTITION ID '<id>'` form, resolving the
-    /// partition values through the current table metadata once, pins the resolved ids into
-    /// `MutationCommand::resolved_partition_ids` and returns the union of the partitions affected
-    /// by the mutation as a whole. The returned set is empty when at least one command is not
-    /// partition-scoped, i.e. when the mutation affects all partitions.
+    /// Resolves the partition scope of the commands with `resolvePartitionIdsOfScopedCommands`:
+    /// the `IN PARTITION <value>` (or `IN PARTITION <value1>, <value2>, ...`) clause of every
+    /// partition-scoped command is rewritten into the `IN PARTITION ID '<id>'` form and the
+    /// resolved ids are pinned into `MutationCommand::partition_ids`. Returns the union of the
+    /// partitions affected by the mutation as a whole. The returned set is empty when at least
+    /// one command is not partition-scoped, i.e. when the mutation affects all partitions.
     /// Unlike a partition value, a partition id is decoded without the partition key, so the
     /// rewritten command can be serialized, re-parsed and executed after a key-safe partition
     /// key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
@@ -1401,7 +1411,7 @@ public:
     static bool changesTypeOfPartitionKeyColumns(
         const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, const String & column_name);
 
-    /// Pins `MutationCommand::resolved_partition_ids` for partition-scoped commands of a legacy
+    /// Pins `MutationCommand::partition_ids` for partition-scoped commands of a legacy
     /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
     /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`
     /// literals. When the entry is scoped to a single partition, the id is recovered from the
@@ -1581,6 +1591,24 @@ public:
     };
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
+
+    /** For every command that names partitions (`... IN PARTITION p`), resolves the partition ids into
+      * `MutationCommand::partition_ids`, so that the per-part command selection of a mutations snapshot
+      * can respect the scope without evaluating anything itself.
+      *
+      * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
+      * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
+      * being read), so it is resolved exactly once - when the mutation entry is created - and never
+      * while a storage snapshot is being built. The expression is also replaced in `ast_text` with the
+      * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
+      * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
+      * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
+      *
+      * With @only_pinned, which is used when a persisted entry is read back, only the commands whose
+      * partitions are all named as `ID '...'` are resolved; a partition expression of an entry created
+      * by an older version is left unresolved and is not evaluated.
+      */
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned = false) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
@@ -1835,6 +1863,9 @@ public:
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+
+    /// Removes the entries of the data parts of this table from the vector similarity index cache.
+    void clearVectorSimilarityIndexCache() const;
 
 protected:
     friend class IMergeTreeDataPart;

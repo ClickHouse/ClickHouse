@@ -2751,13 +2751,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -3930,7 +3930,8 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true);
+                true /*apply_ttl*/,
+                true /*force*/);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -3983,7 +3984,7 @@ private:
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
                 ctx->source_part->rows_count,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                [&] { return ctx->source_part->getTotalColumnsReadSize().data_uncompressed; },
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
@@ -4382,7 +4383,8 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true);
+                    true /*apply_ttl*/,
+                    true /*force*/);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -4871,34 +4873,40 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (command.resolved_partition_ids)
+    /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
+    /// entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and they are
+    /// the source of truth here. A partition expression is arbitrary user SQL and may evaluate to a
+    /// different partition later - re-evaluating it per part would let the set of parts the mutation
+    /// rewrites diverge from the one the pending on-the-fly reads have already been answering from.
+    /// The expression is re-evaluated below only for an entry whose ids are not resolved.
+    if (command.has_partition && command.partition_ids)
     {
-        /// The partition scope of the command was resolved when the mutation was created and
-        /// persisted with it, so the partition literals must not be resolved again here: they may
-        /// no longer parse against the current partition key (see `resolved_partition_ids`).
-        if (!command.resolved_partition_ids->contains(part->info.getPartitionId()))
+        if (!command.partition_ids->contains(part->info.getPartitionId()))
             return true;
     }
-    else if (auto alter = command.ast(); alter && alter->partition)
+    else if (auto alter = command.ast())
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        if (part->info.getPartitionId() != command_partition_id)
-            return true;
-    }
-    else if (alter && alter->partitions)
-    {
-        bool part_in_partitions = false;
-        for (const auto & partition_ast : alter->partitions->children)
+        if (alter->partition)
         {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
-            {
-                part_in_partitions = true;
-                break;
-            }
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            if (part->info.getPartitionId() != command_partition_id)
+                return true;
         }
-        if (!part_in_partitions)
-            return true;
+        else if (alter->partitions)
+        {
+            bool part_in_partitions = false;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+                if (part->info.getPartitionId() == command_partition_id)
+                {
+                    part_in_partitions = true;
+                    break;
+                }
+            }
+            if (!part_in_partitions)
+                return true;
+        }
     }
 
     /// APPLY PATCHES command is handled separately.
