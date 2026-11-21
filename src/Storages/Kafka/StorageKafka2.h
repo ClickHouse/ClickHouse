@@ -110,6 +110,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// A streaming query reads the partitions with its own consumer, see `KafkaStreamSource`.
+    bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
+
     SinkToStoragePtr
     write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -138,6 +142,13 @@ public:
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 
 private:
+    void readStream(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr query_context);
+
     // Stream thread
     struct TaskContext
     {

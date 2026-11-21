@@ -9,6 +9,7 @@ import time
 
 from kafka import KafkaProducer
 import kafka.errors
+from kafka.admin import NewPartitions
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -4486,6 +4487,119 @@ def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
 
     # Without the fix the revocation is counted twice, so the gauge ends one below where it started.
     assert_eq_with_retry(instance, metric_query, str(before))
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
+    """`STREAM` reads the partitions with its own consumer, starting after the offsets of the cursor
+    {topic: {partition: offset}}, without consuming the messages for the consumer group."""
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    # A dot in the topic name is written as %2E in the cursor.
+    topic = f"stream.cursor_{suffix}"
+    cursor_topic = topic.replace(".", "%2E")
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    with k.kafka_topic(admin_client, topic, num_partitions=2):
+        producer = k.get_kafka_producer(kafka_cluster.kafka_port, k.producer_serializer, 15)
+
+        def produce(partition, keys):
+            for key in keys:
+                producer.send(topic=topic, value=json.dumps({"key": key}), partition=partition)
+            producer.flush()
+
+        produce(0, [0, 1, 2])
+        produce(1, [10, 11])
+
+        instance.query(
+            create_query_generator(
+                kafka_table,
+                "key UInt64",
+                topic_list=topic,
+                consumer_group=topic,
+            )
+        )
+
+        def query(q):
+            return instance.query(q, settings={"enable_streaming_queries": 1})
+
+        everything = "0\t0\t0\n0\t1\t1\n0\t2\t2\n1\t0\t10\n1\t1\t11\n"
+        select_everything = f"SELECT _partition, _offset, key FROM test.{kafka_table} STREAM BOUNDED ORDER BY ALL"
+        assert query(select_everything) == everything
+        # Nothing was consumed for the consumer group, so the same messages are read again.
+        assert query(select_everything) == everything
+
+        assert (
+            query(f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 0, '1': 1}}}} ORDER BY ALL")
+            == "1\n2\n"
+        )
+
+        # A cursor outside of a partition is an error, instead of reading the partition from the beginning.
+        bounded_beyond_end = f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 10}}}}"
+        assert "BAD_ARGUMENTS" in instance.query_and_get_error(bounded_beyond_end, settings={"enable_streaming_queries": 1})
+        unbounded_beyond_end = f"SELECT key FROM test.{kafka_table} STREAM CURSOR {{'{cursor_topic}': {{'0': 10}}}} LIMIT 1"
+        instance.query_and_get_error(unbounded_beyond_end, settings={"enable_streaming_queries": 1})
+        max_offset = f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 9223372036854775807}}}}"
+        assert "BAD_ARGUMENTS" in instance.query_and_get_error(max_offset, settings={"enable_streaming_queries": 1})
+        # The dot in the topic name is not escaped.
+        unescaped = f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{topic}': {{'0': 0}}}}"
+        assert "INVALID_CURSOR_LOOKUP" in instance.query_and_get_error(unescaped, settings={"enable_streaming_queries": 1})
+
+        # An unbounded stream waits for new messages.
+        produce(0, [3])
+        produce(1, [12])
+        assert (
+            query(
+                f"SELECT key FROM (SELECT key FROM test.{kafka_table} STREAM CURSOR {{'{cursor_topic}': {{'0': 2, '1': 1}}}} LIMIT 2) ORDER BY ALL"
+            )
+            == "3\n12\n"
+        )
+
+        # An unbounded stream finds the partitions added while it runs.
+        query_id = f"stream_new_partition_{suffix}"
+        request = instance.get_query_request(
+            f"SELECT key FROM test.{kafka_table} STREAM CURSOR {{'{cursor_topic}': {{'0': 3, '1': 2}}}} LIMIT 1",
+            settings={"enable_streaming_queries": 1},
+            query_id=query_id,
+        )
+        assert_eq_with_retry(instance, f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'", "1")
+        admin_client.create_partitions({topic: NewPartitions(total_count=3)})
+        # The metadata of the producer does not have the new partition yet.
+        for _ in range(60):
+            producer = k.get_kafka_producer(kafka_cluster.kafka_port, k.producer_serializer, 15)
+            if 2 in producer.partitions_for(topic):
+                break
+            producer.close()
+            time.sleep(0.5)
+        produce(2, [20])
+        assert request.get_answer() == "20\n"
+
+        # An incremental refresh appends only the messages that arrived after the previous refresh.
+        instance.query(f"CREATE TABLE test.{kafka_table}_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+        instance.query(
+            f"""CREATE MATERIALIZED VIEW test.{kafka_table}_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+                TO test.{kafka_table}_target EMPTY AS SELECT key FROM test.{kafka_table}"""
+        )
+
+        def refresh():
+            instance.query(f"SYSTEM REFRESH VIEW test.{kafka_table}_mv")
+            instance.query(f"SYSTEM WAIT VIEW test.{kafka_table}_mv")
+            return instance.query(f"SELECT count(), sum(key) FROM test.{kafka_table}_target")
+
+        assert refresh() == "8\t59\n"
+        produce(1, [13])
+        assert refresh() == "9\t72\n"
+        assert refresh() == "9\t72\n"
+
+        instance.query(f"DROP TABLE test.{kafka_table}_mv")
+        instance.query(f"DROP TABLE test.{kafka_table}_target")
+        instance.query(f"DROP TABLE test.{kafka_table}")
 
 
 if __name__ == "__main__":
