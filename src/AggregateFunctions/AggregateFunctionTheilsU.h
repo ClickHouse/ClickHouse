@@ -8,8 +8,6 @@
 namespace DB
 {
 
-struct TheilsUWindowData;
-
 /// add() — O(1) with low constant factor
 /// getResult() — O(|count_a| + |count_b| + |count_ab|)
 /// Suitable to be used in GROUP BY
@@ -19,13 +17,6 @@ struct TheilsUData : CrossTabAggregateData
     {
         return "theilsU";
     }
-
-    using WindowData = TheilsUWindowData;
-
-    using CrossTabAggregateData::merge;
-
-    /// Merge window state into aggregation state. Window-specific cached fields are intentionally ignored.
-    void merge(const TheilsUWindowData & other);
 
     /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
     [[nodiscard]] Float64 getResult() const
@@ -80,13 +71,6 @@ struct TheilsUData : CrossTabAggregateData
 /// This implementation ensures add() is always O(1) regardless of data distribution.
 struct TheilsUWindowData : CrossTabCountsState
 {
-    static const char * getName()
-    {
-        return TheilsUData::getName();
-    }
-
-    static constexpr AggregateFunctionStateVariant state_representation = AggregateFunctionStateVariant::Window;
-
     void add(UInt64 hash1, UInt64 hash2)
     {
         ++count;
@@ -96,79 +80,6 @@ struct TheilsUWindowData : CrossTabCountsState
 
         const UInt128 hash_pair{hash1, hash2};
         addToCountAndSum(count_ab, hash_pair, 1, sum_ab_nlogn);
-    }
-
-    void merge(const TheilsUWindowData & other)
-    {
-        if (other.count == 0)
-            return;
-
-        if (count == 0)
-        {
-            *this = other;
-            return;
-        }
-
-        count += other.count;
-
-        for (const auto & [key, add_value] : other.count_a)
-            addToCountAndSum(count_a, key, add_value, sum_a_nlogn);
-
-        for (const auto & [key, add_value] : other.count_b)
-            addToCountAndSum(count_b, key, add_value, sum_b_nlogn);
-
-        for (const auto & [key, add_value] : other.count_ab)
-            addToCountAndSum(count_ab, key, add_value, sum_ab_nlogn);
-    }
-
-    void merge(const CrossTabAggregateData & other)
-    {
-        if (other.count == 0)
-            return;
-
-        if (count == 0)
-        {
-            count = other.count;
-            count_a = other.count_a;
-            count_b = other.count_b;
-            count_ab = other.count_ab;
-
-            /// Restore cached Σ n logn sums
-            sum_a_nlogn = recomputeNLogNSum(count_a);
-            sum_b_nlogn = recomputeNLogNSum(count_b);
-            sum_ab_nlogn = recomputeNLogNSum(count_ab);
-            return;
-        }
-
-        count += other.count;
-
-        for (const auto & [key, add_value] : other.count_a)
-            addToCountAndSum(count_a, key, add_value, sum_a_nlogn);
-
-        for (const auto & [key, add_value] : other.count_b)
-            addToCountAndSum(count_b, key, add_value, sum_b_nlogn);
-
-        for (const auto & [key, add_value] : other.count_ab)
-            addToCountAndSum(count_ab, key, add_value, sum_ab_nlogn);
-    }
-
-    /// Keep the same serialization format as CrossTabAggregateData
-    void serialize(WriteBuffer & buf) const
-    {
-        writeBinary(count, buf);
-        count_a.write(buf);
-        count_b.write(buf);
-        count_ab.write(buf);
-    }
-
-    void deserialize(ReadBuffer & buf)
-    {
-        CrossTabCountsState::deserialize(buf);
-
-        /// Restore cached Σ n logn sums
-        sum_a_nlogn = recomputeNLogNSum(count_a);
-        sum_b_nlogn = recomputeNLogNSum(count_b);
-        sum_ab_nlogn = recomputeNLogNSum(count_ab);
     }
 
     [[nodiscard]] Float64 getResult() const
@@ -282,20 +193,6 @@ private:
         cur += add_value;
         sum_xlogx.add(nlogn(cur) - before);
     }
-
-    template <typename Map>
-    static CompensatedSum recomputeNLogNSum(const Map & map)
-    {
-        CompensatedSum sum;
-        for (const auto & [_, value] : map)
-            sum.add(nlogn(value));
-        return sum;
-    }
 };
-
-inline void TheilsUData::merge(const TheilsUWindowData & other)
-{
-    CrossTabCountsState::merge(static_cast<const CrossTabCountsState &>(other));
-}
 
 }

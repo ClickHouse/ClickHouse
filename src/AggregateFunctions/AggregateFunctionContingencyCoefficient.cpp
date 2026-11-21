@@ -44,23 +44,6 @@ struct ContingencyData : CrossTabAggregateData
 };
 
 
-struct ContingencyWindowData : CrossTabPhiSquaredWindowData
-{
-    static const char * getName()
-    {
-        return ContingencyData::getName();
-    }
-
-    [[nodiscard]] Float64 getResult() const
-    {
-        if (count < 2)
-            return std::numeric_limits<Float64>::quiet_NaN();
-
-        Float64 phi_sq = getPhiSquared();
-        return std::sqrt(phi_sq / (phi_sq + 1.0));
-    }
-};
-
 }
 
 void registerAggregateFunctionContingency(AggregateFunctionFactory & factory);
@@ -111,14 +94,7 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
         },
-        documentation,
-        {},
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            assertBinary(name, argument_types);
-            assertNoParameters(name, parameters);
-            return std::make_shared<AggregateFunctionCrossTab<ContingencyWindowData>>(argument_types);
-        }
+        documentation
     });
 }
 

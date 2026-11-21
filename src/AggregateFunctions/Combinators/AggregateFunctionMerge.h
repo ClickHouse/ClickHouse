@@ -11,6 +11,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   * Aggregate functions with the `Merge` suffix accept `DataTypeAggregateFunction` as an argument
@@ -22,11 +27,18 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    AggregateFunctionPtr argument_func;
-    bool merge_state_from_different_variant = false;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
+        , nested_func(nested_)
+    {
+        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
+
+        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
+    }
 
     String getName() const override
     {
@@ -109,32 +121,6 @@ public:
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
-    }
-
-    /// Can `nested` merge the states of `argument_func`, which `-Merge` reads as its argument?
-    static bool canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func)
-    {
-        if (nested.haveSameStateRepresentation(argument_func))
-            return true;
-        return argument_func.getName() == nested.getName() && nested.canMergeStateFromDifferentVariant(argument_func);
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }

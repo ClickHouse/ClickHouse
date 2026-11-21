@@ -17,8 +17,6 @@ public:
     [[nodiscard]] String getName() const override { return "State"; }
 
     [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
-    [[nodiscard]] bool returnsNestedState() const override { return true; }
-
     [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         return arguments;
