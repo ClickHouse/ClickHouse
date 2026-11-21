@@ -1,0 +1,24 @@
+-- the step gets the element conjunct, the filter above keeps only the conjunct with rand
+1
+1
+1
+-- two arrays: each step gets its conjunct
+2
+-- the conjunct above still filters: it is the same as id % 2 = 0
+[4,14,24,34,44,54]
+[4,14,24,34,44,54]
+[(0,'',''),(10,'','b1'),(20,'',''),(30,'','b1'),(40,'',''),(50,'','b1')]
+[(0,'',''),(10,'','b1'),(20,'',''),(30,'','b1'),(40,'',''),(50,'','b1')]
+-- the filter column is in the result
+[(4,1),(14,1),(24,1),(34,1),(44,1),(54,1)]
+-- a stateful function above must see all the rows: no fusion
+0
+4
+4
+-- the conjuncts that can move do not read an element: no fusion
+0
+60
+-- a conjunct that can throw keeps its guard above: no fusion
+0
+1
+2

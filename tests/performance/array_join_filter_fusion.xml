@@ -31,6 +31,9 @@
     <query>SELECT elem, payload FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) FORMAT Null</query>
     <!-- many elements from few rows: sorting must keep the payload lazy -->
     <query>SELECT elem, payload FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem != 'e7' AND (id % 1000 = 0 OR elem = 'none') ORDER BY elem FORMAT Null</query>
+    <!-- the conjunct with rand stays in a filter above, the element conjunct is fused -->
+    <query>SELECT sum(id) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND rand() % 2 = 0</query>
+    <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND rand() % 2 = 0 SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
 
