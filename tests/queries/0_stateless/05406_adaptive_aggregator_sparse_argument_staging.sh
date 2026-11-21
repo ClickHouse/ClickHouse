@@ -10,8 +10,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # holding key 0 after their first learning slice of 4096 rows. Each query reads its table twice, so that two threads
 # aggregate. Each part runs in its own clickhouse-local process, so the counters in `system.events` belong to it alone.
 # The settings that the freeze and the memory use depend on are pinned, and `max_threads_min_free_memory_per_thread = 0`
-# keeps both threads whatever the free memory.
+# keeps both threads whatever the free memory. The columns cache is disabled, because its copies of the read columns
+# would take the memory of the first query over its limit.
 settings="
+SET use_columns_cache = 0;
 SET max_threads = 2, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192, preferred_block_size_bytes = 0;
 SET adaptive_aggregator_freeze_threshold = 1, adaptive_aggregator_freeze_threshold_bytes = 0, adaptive_aggregator_disable_thaw = 1;
 SET group_by_two_level_threshold = 100000000, group_by_two_level_threshold_bytes = 0;

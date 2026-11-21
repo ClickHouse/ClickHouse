@@ -70,7 +70,8 @@ MergeTreeReadPool::MergeTreeReadPool(
     , backoff_state{pool_settings.threads}
 {
     columns_cache_stripe_marks.assign(parts_ranges.size(), 0);
-    if (owned_columns_cache && (reader_settings.enable_columns_cache_reads || reader_settings.enable_columns_cache_writes))
+    if (pool_settings.align_tasks_to_columns_cache_stripes && owned_columns_cache
+        && (reader_settings.enable_columns_cache_reads || reader_settings.enable_columns_cache_writes))
     {
         /// An aligned cut moves to the nearest end of a stripe, so a stripe larger than the share of a thread
         /// gives whole stripes to the first threads and nothing to the others: a table with wide rows has a

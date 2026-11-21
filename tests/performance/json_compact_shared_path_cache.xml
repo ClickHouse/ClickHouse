@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <max_threads>1</max_threads>
         <max_block_size>8192</max_block_size>
     </settings>

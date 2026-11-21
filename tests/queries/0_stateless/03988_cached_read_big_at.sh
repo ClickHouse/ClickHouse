@@ -62,6 +62,7 @@ function check()
             enable_filesystem_cache = 1,
             max_download_threads = 1,
             enable_parallel_replicas = 0,
+            use_columns_cache = 0,
             remote_read_min_bytes_for_seek = 65536" 2>&1)
     if [ "$result" == "$EXPECTED" ]; then
         echo "$name OK"

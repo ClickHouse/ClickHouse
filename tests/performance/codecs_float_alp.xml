@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
         <enable_alp_codec>1</enable_alp_codec>
     </settings>

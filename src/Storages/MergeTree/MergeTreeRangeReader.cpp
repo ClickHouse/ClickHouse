@@ -1124,13 +1124,21 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
     return index_granularity->getRowsCountInRange(current_mark, end_mark);
 }
 
+/// A whole stripe of the columns cache is read as one block only if it is at most this many times the
+/// rows the read asked for, see `alignRowsToColumnsCacheStripes`.
+static constexpr size_t MAX_STRIPE_ROWS_TO_BLOCK_ROWS = 4;
+
 /// The rows from the current position to the end of the stripe of the columns cache that is the
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
 /// A block that is a whole stripe is served from the cache and written to it without a copy.
 /// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
 /// much less: the block shares the columns of the cache, so its size costs no memory. But not beyond
-/// twice `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs. Only if every reader of the
-/// chain can: the columns a later reader reads from disk would make the block as large.
+/// twice `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs. And not when the stripe
+/// is more than `MAX_STRIPE_ROWS_TO_BLOCK_ROWS` times `rows_num`, which is then what `preferred_block_size_bytes`
+/// allows for wide rows (it is not less than a granule, which is 1/8 of a stripe by default): the functions
+/// that process a block of tens of megabytes work out of the CPU cache, which costs more than the copy of
+/// the rows of smaller blocks from the cache. Only if every reader of the chain can: the columns a later
+/// reader reads from disk would make the block as large.
 size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
     size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
 {
@@ -1139,7 +1147,7 @@ size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows)
+    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows || stripe_rows / MAX_STRIPE_ROWS_TO_BLOCK_ROWS > rows_num)
         return rows;
     for (auto * reader : columns_cache_readers)
     {

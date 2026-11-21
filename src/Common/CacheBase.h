@@ -168,6 +168,18 @@ public:
         return cache_policy->contains(key);
     }
 
+    /// If the key is in the cache, calls func() under the mutex of the cache, so that the entry cannot be
+    /// evicted meanwhile, and returns true. Like `contains`, does not change the priority of the entry.
+    template <typename Func>
+    bool doIfContains(const Key & key, Func && func) const
+    {
+        std::lock_guard lock(mutex);
+        if (!cache_policy->contains(key))
+            return false;
+        func();
+        return true;
+    }
+
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
@@ -264,11 +276,20 @@ public:
 
     void clear()
     {
+        clearAndThen([] {});
+    }
+
+    /// Like `clear`, and calls func() under the mutex of the cache right after, so that nothing is inserted
+    /// in between. The cache policy removes the entries without calling `onEntryRemoval`.
+    template <typename Func>
+    void clearAndThen(Func && func)
+    {
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
         misses = 0;
         cache_policy->clear();
+        func();
     }
 
     void remove(const Key & key)

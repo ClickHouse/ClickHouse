@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(MobilePhoneModel)</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(SearchPhrase)</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(URL)</query>

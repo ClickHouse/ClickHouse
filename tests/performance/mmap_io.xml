@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <local_filesystem_read_method>mmap</local_filesystem_read_method>
         <min_bytes_to_use_mmap_io>1</min_bytes_to_use_mmap_io>
     </settings>
