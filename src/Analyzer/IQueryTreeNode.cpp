@@ -290,6 +290,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->alias_is_hidden = node_to_clone->alias_is_hidden;
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
 
@@ -356,7 +357,7 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
     auto converted_node = toASTImpl(options);
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
-        converted_node->setAlias(alias);
+        converted_node->setAlias(alias_is_hidden && *alias_is_hidden && !options.write_hidden_aliases ? String{} : alias);
 
     converted_node->setParenthesized(parenthesized);
 
@@ -373,7 +374,8 @@ String IQueryTreeNode::formatOriginalASTForErrorMessage() const
 
 String IQueryTreeNode::formatConvertedASTForErrorMessage() const
 {
-    return toAST()->formatForErrorMessage();
+    /// Some passes use the result as an alias, so it has to differ for the nodes that are not equal.
+    return toAST({.write_hidden_aliases = true})->formatForErrorMessage();
 }
 
 String IQueryTreeNode::dumpTree() const

@@ -1,0 +1,13 @@
+predicate push down
+-2	1
+-2	1
+(2,3)	-2	1
+(2,3)	-2	1
+-3	3
+-3
+-2
+predicate push down: a filter could refer to the alias
+2
+2
+2
+2
