@@ -519,8 +519,9 @@ PrewhereStepOrder MergeTreeSelectProcessor::chooseRuntimeFilterStepOrder(const M
 
 bool MergeTreeSelectProcessor::partStoresReorderableStepColumns(const MergeTreeReadTaskInfo & info) const
 {
-    /// Patches count as value-updated columns too.
-    if (info.alter_conversions && !info.alter_conversions->getValueUpdatedColumns().empty())
+    /// A pending alter or patch converts or fills columns on read.
+    if (info.alter_conversions
+        && (!info.alter_conversions->getAllUpdatedColumns().empty() || !info.alter_conversions->getValueUpdatedColumns().empty()))
         return false;
     const auto & part_columns = info.data_part_info->getColumnsDescription();
     const auto & key_columns_per_step = reorderable_runtime_filter_steps.key_columns_per_step;

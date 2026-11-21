@@ -46,7 +46,8 @@ namespace DB
 /// - Parquet: a file-side cast of the key (a file storing `b` as String read as UInt64) runs on the rows the step sees, so a
 ///   moved step can parse a value the filter ahead would have removed. It parses that value with runtime filters off too.
 /// - MergeTree: each step reads exactly its own key columns, and the part stores them as is. So a moved step neither needs a
-///   column another step reads (a key `a + b`) nor one the reader fills from others (`ALTER ADD COLUMN b DEFAULT a * 2`).
+///   column another step reads (a key `a + b`) nor one the reader fills from others (`ALTER ADD COLUMN b DEFAULT a * 2`) or
+///   converts (a pending `MODIFY COLUMN b UInt64` over String would parse `b` on rows the filter ahead removes).
 /// - MergeTree: no reorder with predicate statistics, which are counted per step position.
 ///
 /// A step after the range may see other rows, as a filter that passes most rows it sees is switched off for some blocks and a
