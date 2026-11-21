@@ -3837,7 +3837,8 @@ static BlockIO executeQueryImpl(
             }
         }
 
-        if (process_list_entry)
+        /// A query without a pipeline has done all its work in the interpreter, so it has finished even if it was killed meanwhile.
+        if (process_list_entry && (query_plan || res.pipeline.initialized()))
         {
             /// Query was killed before execution
             auto query_status = process_list_entry->getQueryStatus();

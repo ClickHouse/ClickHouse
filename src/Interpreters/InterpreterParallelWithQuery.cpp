@@ -5,6 +5,7 @@
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
@@ -184,9 +185,16 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     try
     {
         CompletedPipelineExecutor executor(combined_pipeline);
+        bool cancelled = false;
         if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
+            executor.setCancelCallback(
+                [&cancelled, callback = std::move(cancel_callback)] { return cancelled = callback() || cancelled; },
+                std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
         executor.execute();
+
+        /// Only the callback can stop this pipeline (it has no process list element), and a stopped one has not done all its work.
+        if (auto query_status = getContext()->getProcessListElementSafe(); cancelled && query_status)
+            query_status->throwIfKilled();
     }
     catch (...)
     {
