@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -265,6 +266,19 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
 
+    /// The query hash for plan-time probes of the partial aggregate cache is computed before the plan is optimized,
+    /// but the optimization can apply the GROUP BY top-K heap, which makes per-part states unsuitable for the cache,
+    /// switch the aggregation to in-order or to the radix partitioned `uniqExact`, which do not consume plan-time hits,
+    /// or the plan can have reads that do not feed the aggregation. See `planCanConsumePartialAggregatePlanHits`.
+    std::optional<BuildQueryPipelineSettings> build_pipeline_settings_without_partial_aggregate_cache;
+    const BuildQueryPipelineSettings * effective_build_pipeline_settings = &build_pipeline_settings;
+    if (build_pipeline_settings.partial_aggregate_cache_query_hash && !planCanConsumePartialAggregatePlanHits(*this, build_pipeline_settings.optimize_uniq_exact_radix_partitioning))
+    {
+        build_pipeline_settings_without_partial_aggregate_cache.emplace(build_pipeline_settings);
+        build_pipeline_settings_without_partial_aggregate_cache->partial_aggregate_cache_query_hash.reset();
+        effective_build_pipeline_settings = &*build_pipeline_settings_without_partial_aggregate_cache;
+    }
+
     /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
     /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
     /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
@@ -298,7 +312,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
+            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), *effective_build_pipeline_settings);
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);

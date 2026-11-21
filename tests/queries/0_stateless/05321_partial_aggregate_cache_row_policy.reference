@@ -1,0 +1,11 @@
+--- Unrestricted user, twice
+1	110
+2	220
+1	110
+2	220
+--- Restricted user sees only the rows allowed by the row policy
+1	10
+2	20
+--- Unrestricted user again
+1	110
+2	220

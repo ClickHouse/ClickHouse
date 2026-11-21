@@ -1,0 +1,24 @@
+--- Both parts
+0	1
+1	2
+2	2
+0	1
+1	2
+2	2
+--- After the first part is dropped
+1	1
+2	1
+3	1
+1	1
+2	1
+3	1
+--- No cache traffic with the top-K heap
+0	0
+--- Without the top-K heap the cache is used
+1	1
+2	1
+3	1
+1	1
+2	1
+3	1
+1

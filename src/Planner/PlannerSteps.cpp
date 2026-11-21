@@ -64,6 +64,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
@@ -77,6 +78,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 
@@ -103,7 +105,9 @@ namespace Setting
 {
     extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
@@ -420,19 +424,78 @@ LimitRangeConditions buildLimitRangeConditions(
     return {std::move(actions), std::move(start_column_name), std::move(end_column_name)};
 }
 
+/// A table expression that is not a `MergeTree` table (a `View`, a `Merge` or `Distributed` table, a table
+/// function, a subquery) may read data whose identity is not represented by the per-part partial aggregate cache key.
+bool hasNonMergeTreeTableInputs(const SelectQueryInfo & select_query_info)
+{
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        const auto * table_node = table_expression->as<TableNode>();
+        if (!table_node || !table_node->getStorage()->isMergeTree())
+            return true;
+    }
+
+    return false;
+}
+
+/// Row policies are applied per table expression in `PlannerJoinTree`, so the query-level
+/// `SelectQueryInfo::row_level_filter` is not set here. The partial aggregate cache is shared by all users,
+/// and the policies are not represented in its key, so check the effective row policy of every table.
+bool hasRowPolicyOnTableInputs(const SelectQueryInfo & select_query_info, const ContextPtr & context)
+{
+    if (select_query_info.row_level_filter)
+        return true;
+
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        if (const auto * table_node = table_expression->as<TableNode>(); table_node && getEffectiveRowPolicyFilter(*table_node->getStorage(), context))
+            return true;
+    }
+
+    return false;
+}
+
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const SelectQueryInfo & select_query_info,
     const Settings & settings,
     bool aggregate_descriptions_remove_arguments = false,
     std::optional<UInt64> trivial_group_by_limit = {})
 {
+    const auto & query_context = planner_context->getQueryContext();
+
+    const bool has_row_level_filter = hasRowPolicyOnTableInputs(select_query_info, query_context);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
+    /// The partial aggregate cache key analyzes the whole query: compute it only when the cache is enabled.
+    const bool use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
+    const UInt64 partial_aggregate_semantic_key = !use_partial_aggregate_cache ? 0 : partialAggregateCacheSemanticKey(
+        select_query_info.query,
+        query_context->getCurrentDatabase(),
+        settings,
+        has_row_level_filter,
+        has_additional_table_filters,
+        hasNonMergeTreeTableInputs(select_query_info));
+
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;
     if (aggregate_descriptions_remove_arguments)
     {
         for (auto & aggregate_description : aggregate_descriptions)
             aggregate_description.argument_names.clear();
     }
+
+    /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
+    const bool has_nondeterministic_functions = partial_aggregate_semantic_key != 0
+        && astContainsNonDeterministicFunctions(select_query_info.query, query_context);
+    const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 
     /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
     /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
@@ -442,7 +505,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     /// spills and is re-seeded with them (see `Aggregator::Params::SharedKeptKeysControl`), so a
     /// query that needs to spill keeps spilling exactly as without the optimization.
     auto aggregator_params = getAggregatorParams(
-        planner_context->getQueryContext(),
+        query_context,
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row);
@@ -457,6 +520,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys)
         aggregator_params.empty_result_for_aggregation_by_empty_set = true;
 
+    aggregator_params.query_semantic_hash_for_partial_cache = partial_cache_semantic_key;
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -778,6 +842,7 @@ void addAggregationStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const Settings & settings,
     std::optional<UInt64> trivial_group_by_limit)
 {
@@ -786,6 +851,7 @@ void addAggregationStep(QueryPlan & query_plan,
         planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         settings,
         /*aggregate_descriptions_remove_arguments=*/false,
         trivial_group_by_limit);
@@ -1118,6 +1184,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node)
 {
     if (!query_node.isGroupByWithCube() && !query_node.isGroupByWithRollup())
@@ -1129,6 +1196,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         settings,
         true /*aggregate_descriptions_remove_arguments*/);
 

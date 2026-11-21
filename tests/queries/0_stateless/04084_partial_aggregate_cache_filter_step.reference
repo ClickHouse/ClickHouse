@@ -1,0 +1,11 @@
+--- FilterStep: reference result without cache
+1	33333333	6667
+2	33333333	6667
+--- FilterStep: warm cache (expect misses)
+1	33333333	6667
+2	33333333	6667
+0	2
+--- FilterStep: second run (expect plan-time hits)
+1	33333333	6667
+2	33333333	6667
+2	0
