@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/SecretString.h>
 #include <base/types.h>
 
 #include <nats.h>
@@ -25,10 +26,10 @@ struct NATSConfiguration
     std::vector<String> servers;
 
     String username;
-    String password;
-    String token;
+    SecretString password;
+    SecretString token;
     String credential_file;
-    String credentials;
+    SecretString credentials;
     String ca_file;
     String client_cert_file;
     String client_key_file;

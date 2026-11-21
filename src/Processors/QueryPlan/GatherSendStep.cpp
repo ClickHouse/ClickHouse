@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -56,6 +57,11 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* filter_column_name */ std::nullopt,
                 /* blocks_are_granules_size */ false));
     }
+
+    /// Combine small chunks: every chunk becomes one packet. A sorted gather sends every chunk at
+    /// once, because `GatherReceiveStep` merges the streams in order and waits for the rows it needs next.
+    if (!maintain_sort_description)
+        ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
 
     /// A serializer on every stream; the sink takes packets only. After the merge above one stream is
     /// left, and its serializer is the only one.
