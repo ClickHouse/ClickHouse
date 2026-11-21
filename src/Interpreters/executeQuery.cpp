@@ -3042,11 +3042,16 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            {
                 query_end = insert_query->data;
+            }
+            else if (const auto * create_query = out_ast->as<ASTCreateQuery>(); create_query && create_query->insert_data)
+            {
+                query_end = create_query->insert_data;
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -3308,7 +3313,19 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+            {
                 insert_query->tail = std::move(istr);
+            }
+            else if (auto * create_query = out_ast->as<ASTCreateQuery>();
+                    create_query && (create_query->has_and_insert || create_query->has_as_insert))
+            {
+                ASTPtr input_function;
+                if (create_query->insert_select)
+                    create_query->tryFindInputFunction(input_function);
+
+                if (!create_query->insert_select || input_function)
+                    create_query->insert_tail = std::move(istr);
+            }
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -3414,6 +3431,41 @@ static BlockIO executeQueryImpl(
             }
 
             insert_query->tail.reset();
+        }
+        else if (auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr;
+                create_query && create_query->insert_select && (create_query->insert_data || create_query->insert_tail))
+        {
+            ASTPtr input_function;
+
+            auto synthetic_insert = make_intrusive<ASTInsertQuery>();
+            synthetic_insert->select = create_query->insert_select;
+            synthetic_insert->format = create_query->insert_format;
+            synthetic_insert->data = create_query->insert_data;
+            synthetic_insert->end = create_query->insert_data_end;
+
+            synthetic_insert->tryFindInputFunction(input_function);
+            if (input_function)
+            {
+                synthetic_insert->tail = std::move(create_query->insert_tail);
+
+                const ASTSelectQuery * select_query_hint = synthetic_insert->select->as<ASTSelectQuery>();
+                if (!select_query_hint)
+                {
+                    if (const auto * union_query = synthetic_insert->select->as<ASTSelectWithUnionQuery>();
+                        union_query && union_query->list_of_selects->children.size() == 1)
+                        select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                }
+
+                StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
+                auto & input_storage = dynamic_cast<StorageInput &>(*storage);
+                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
+                auto pipe = getSourceFromASTInsertQuery(
+                    synthetic_insert, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+
+                input_storage.setPipe(std::move(pipe));
+                create_query->insert_data = nullptr;
+                create_query->insert_data_end = nullptr;
+            }
         }
         else if (!insert_query || !insert_query->returning)
         {
@@ -4031,6 +4083,10 @@ static BlockIO executeQueryImpl(
 
         throw;
     }
+
+    /// CREATE ... AS/AND INSERT executes an ASTInsertQuery synthesized internally; expose it to the caller as the real parsed query.
+    if (res.insert_query)
+        out_ast = res.insert_query;
 
     return res;
 }
