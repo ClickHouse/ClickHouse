@@ -10,6 +10,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/sortBlockByPackedKey.h>
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -24,18 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 #endif
 }
-
-/// Column with description for sort
-struct ColumnWithSortDescription
-{
-    ColumnPtr column = nullptr;
-    SortColumnDescription description;
-
-    /// It means, that this column is ColumnConst
-    bool column_const = false;
-};
-
-using ColumnsWithSortDescriptions = std::vector<ColumnWithSortDescription>;
 
 namespace
 {
@@ -192,16 +181,32 @@ void getBlockSortPermutationImpl(
     {
         size_t size = block.rows();
         permutation.resize(size);
-        iota(permutation.data(), size, IColumn::Permutation::value_type(0));
 
         if (limit >= size)
             limit = 0;
 
         EqualRanges ranges;
-        ranges.emplace_back(0, permutation.size());
+        size_t sorted_entries = 0;
 
-        for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+        if (!limit)
+            sorted_entries = trySortByPackedKey(
+                columns_with_sort_descriptions,
+                size,
+                stability == IColumn::PermutationSortStability::Stable,
+                equal_ranges != nullptr,
+                permutation,
+                ranges);
+
+        if (!sorted_entries)
         {
+            iota(permutation.data(), size, IColumn::Permutation::value_type(0));
+            ranges.emplace_back(0, permutation.size());
+        }
+
+        for (size_t entry = sorted_entries; entry < columns_with_sort_descriptions.size(); ++entry)
+        {
+            const auto & column_with_sort_description = columns_with_sort_descriptions[entry];
+
             while (!ranges.empty() && limit && limit <= ranges.back().from)
                 ranges.pop_back();
 

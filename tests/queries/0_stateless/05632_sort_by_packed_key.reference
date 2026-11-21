@@ -1,0 +1,81 @@
+blocks	[20000]
+uid, ts	1
+uh, ts	1
+ih DESC, neg	1
+small, d	1
+i8, dc DESC	1
+e, b, dt	1
+ip, cat	1
+cat, uh, ts	1
+uid, uh, ts	1
+uid, uh, ih, ts	1
+spread, ts	1
+spread DESC, dc	1
+wide, cat	1
+c5, small	1
+inc, ts	1
+rev, ts	1
+n DESC, ts	1
+uid DESC, ts DESC	1
+cat, toString(n)	1
+mix, ts	1
+rep, ts	1
+cat, n	1
+cat, n DESC	1
+cat, rev	1
+cat, n	1
+uid, n	1
+spread, n	1
+small, rev DESC	1
+c5, n	1
+cat, rev	1
+cat, n DESC	1
+cat, late1	1
+cat, late2	1
+cat, jit	1
+cat, jit DESC	1
+cat, rjit	1
+cat, rjit DESC	1
+cat, jlate	1
+small, jit	1
+small, jit DESC	1
+small, jlate	1
+mid, jit	1
+mid, jit DESC	1
+mid, jlate	1
+cat, uh, jit	1
+cat DESC, uh, rjit	1
+uid, n DESC	1
+spread, n DESC	1
+b, n DESC	1
+mid, rjit	1
+cat, asc, wide	1
+cat, asc DESC, wide	1
+cat, rev, wide	1
+cat, rev DESC, wide	1
+small, asc DESC, ts	1
+uid, asc DESC, ts	1
+cat, uh, asc DESC, wide	1
+spread, mid, asc DESC, ts	1
+c5, asc, wide	1
+c5, asc DESC, wide	1
+cat, inc DESC, wide	1
+cat, jit DESC, wide	1
+cat, jit, wide	1
+small, jit DESC, wide	1
+mid, rjit, wide	1
+mid, rjit DESC, wide	1
+cat, uh, jit DESC, wide	1
+cat, jlate DESC, wide	1
+cat, tj DESC, wide	1
+uid, jit DESC, wide	1
+cat, late1 DESC	1
+cat, jlate DESC	1
+small, jlate DESC	1
+cat, jlate, wide	1
+cat, tj DESC	1
+small, tj DESC	1
+b, inc DESC	1
+cat, inc DESC	1
+b, uinc DESC	1
+cat, tjlate DESC	1

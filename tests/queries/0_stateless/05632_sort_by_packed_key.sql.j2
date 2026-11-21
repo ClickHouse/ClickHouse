@@ -1,0 +1,66 @@
+-- A block of 20000 rows is sorted by a packed key of its leading integer columns, and column by column with a LIMIT:
+-- both must give the same order. INSERT and external DISTINCT are in 05632_sort_by_packed_key_2 and _3.
+
+SET optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE IF EXISTS src;
+CREATE TABLE src ENGINE = Memory AS SELECT
+    number AS n,
+    reinterpretAsUUID(sipHash128(n % 50)) AS uid,
+    sipHash64(n % 50) AS uh,
+    toInt64(sipHash64(n % 37)) AS ih,
+    toUInt16(n % 300) AS small,
+    toUInt16(n % 2000) AS mid,
+    toInt8(toInt16(n % 200) - 100) AS i8,
+    toInt32(toInt64(n % 101) - 50) AS neg,
+    toDecimal64(toInt64(n % 1000) - 500, 3) AS dc,
+    toDateTime64('2026-01-01 00:00:00', 3, 'UTC') + toIntervalMillisecond(n * 7 % 997) AS ts,
+    toDate('2026-01-01') + n % 17 AS d,
+    toDateTime('2026-01-01 00:00:00', 'UTC') + n % 23 AS dt,
+    CAST(['a', 'b', 'c'][n % 3 + 1], 'Enum8(\'a\' = -3, \'b\' = 0, \'c\' = 5)') AS e,
+    toBool(n % 5 = 0) AS b,
+    toIPv4(n % 13) AS ip,
+    toUInt8(n % 64) AS cat,
+    toUInt32(intHash32(n) % 1000 * 1000003) AS spread,
+    sipHash64(n) AS wide,
+    if(n % 10 = 0, sipHash64(n), sipHash64(n % 100)) AS mix,
+    sipHash64(sipHash64(n) % 1000) AS rep,
+    n DIV 7 AS inc,
+    toUInt128(inc) AS uinc,
+    toUInt32(n * 3 + 1) AS asc,
+    toInt64(20000) - toInt64(n) AS rev,
+    if(n = 64, 0, n + 1) AS late1,
+    if(n = 19999, 0, n + 1) AS late2,
+    n + sipHash64(n) % 64 AS jit,
+    toInt64(30000) - toInt64(jit) AS rjit,
+    jit DIV 128 AS tj,
+    if(n = 19990, 0, jit) AS jlate,
+    if(n = 19990, 0, tj) AS tjlate,
+    materialize(toUInt8(5)) AS c5
+FROM numbers(20000) SETTINGS max_block_size = 20000, max_insert_block_size = 20000, min_insert_block_size_rows = 20000, max_insert_threads = 1;
+
+SELECT 'blocks', groupUniqArray(blockSize()) FROM src;
+
+-- ORDER BY: `toString(n)` makes the order total and is never packed. The LIMIT leaves out the last row.
+{% for k in ['uid, ts', 'uh, ts', 'ih DESC, neg', 'small, d', 'i8, dc DESC', 'e, b, dt', 'ip, cat', 'cat, uh, ts', 'uid, uh, ts', 'uid, uh, ih, ts', 'spread, ts', 'spread DESC, dc', 'wide, cat', 'c5, small', 'inc, ts', 'rev, ts', 'n DESC, ts', 'uid DESC, ts DESC', 'cat, toString(n)', 'mix, ts', 'rep, ts', 'cat, n', 'cat, n DESC', 'cat, rev'] -%}
+SELECT '{{ k }}', arrayPopBack((SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }}, toString(n))))
+    = (SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }}, toString(n) LIMIT 19999));
+{% endfor -%}
+
+-- The last column is already in order (`n` increases, `rev` decreases), in the reverse order, or out of order in one row.
+-- A middle column whose values strictly increase (`asc`) or decrease (`rev`) through the block decides the order alone,
+-- and so does one that does so within each group of rows equal on the columns before it (`jit`, `rjit`).
+-- `jit` increases within each value of `cat`, `small`, `mid` and (`cat`, `uh`), but not through the block, nor within `uid`.
+{% for k in ['cat, n', 'uid, n', 'spread, n', 'small, rev DESC', 'c5, n', 'cat, rev', 'cat, n DESC', 'cat, late1', 'cat, late2', 'cat, jit', 'cat, jit DESC', 'cat, rjit', 'cat, rjit DESC', 'cat, jlate', 'small, jit', 'small, jit DESC', 'small, jlate', 'mid, jit', 'mid, jit DESC', 'mid, jlate', 'cat, uh, jit', 'cat DESC, uh, rjit', 'uid, n DESC', 'spread, n DESC', 'b, n DESC', 'mid, rjit', 'cat, asc, wide', 'cat, asc DESC, wide', 'cat, rev, wide', 'cat, rev DESC, wide', 'small, asc DESC, ts', 'uid, asc DESC, ts', 'cat, uh, asc DESC, wide', 'spread, mid, asc DESC, ts', 'c5, asc, wide', 'c5, asc DESC, wide', 'cat, inc DESC, wide', 'cat, jit DESC, wide', 'cat, jit, wide', 'small, jit DESC, wide', 'mid, rjit, wide', 'mid, rjit DESC, wide', 'cat, uh, jit DESC, wide', 'cat, jlate DESC, wide', 'cat, tj DESC, wide', 'uid, jit DESC, wide', 'cat, late1 DESC', 'cat, jlate DESC', 'small, jlate DESC', 'cat, jlate, wide'] -%}
+SELECT '{{ k }}', arrayPopBack((SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }})))
+    = (SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }} LIMIT 19999));
+{% endfor -%}
+
+-- With equal values in a last column in the reverse order, an unstable sort may order such rows either way: compare the values.
+{% for k in ['cat, tj DESC', 'small, tj DESC', 'b, inc DESC', 'cat, inc DESC', 'b, uinc DESC', 'cat, tjlate DESC'] -%}
+{% set columns = k | replace(' DESC', '') -%}
+SELECT '{{ k }}', arrayPopBack((SELECT groupArray(({{ columns }})) FROM (SELECT {{ columns }} FROM src ORDER BY {{ k }})))
+    = (SELECT groupArray(({{ columns }})) FROM (SELECT {{ columns }} FROM src ORDER BY {{ k }} LIMIT 19999));
+{% endfor -%}
+
+DROP TABLE src;

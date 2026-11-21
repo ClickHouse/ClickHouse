@@ -1,0 +1,66 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+-- A block of 20000 rows inserted into MergeTree is sorted by a packed key of its leading integer key columns:
+-- the part must keep the order of a column-by-column sort with a LIMIT.
+-- The keys are split between 05632_sort_by_packed_key_2 and _3. Also external DISTINCT.
+
+SET optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE IF EXISTS src;
+CREATE TABLE src ENGINE = Memory AS SELECT
+    number AS n,
+    reinterpretAsUUID(sipHash128(n % 50)) AS uid,
+    sipHash64(n % 50) AS uh,
+    toInt64(sipHash64(n % 37)) AS ih,
+    toUInt16(n % 300) AS small,
+    toUInt16(n % 2000) AS mid,
+    toInt8(toInt16(n % 200) - 100) AS i8,
+    toInt32(toInt64(n % 101) - 50) AS neg,
+    toDecimal64(toInt64(n % 1000) - 500, 3) AS dc,
+    toDateTime64('2026-01-01 00:00:00', 3, 'UTC') + toIntervalMillisecond(n * 7 % 997) AS ts,
+    toDate('2026-01-01') + n % 17 AS d,
+    toDateTime('2026-01-01 00:00:00', 'UTC') + n % 23 AS dt,
+    CAST(['a', 'b', 'c'][n % 3 + 1], 'Enum8(\'a\' = -3, \'b\' = 0, \'c\' = 5)') AS e,
+    toBool(n % 5 = 0) AS b,
+    toIPv4(n % 13) AS ip,
+    toUInt8(n % 64) AS cat,
+    toUInt32(intHash32(n) % 1000 * 1000003) AS spread,
+    sipHash64(n) AS wide,
+    if(n % 10 = 0, sipHash64(n), sipHash64(n % 100)) AS mix,
+    sipHash64(sipHash64(n) % 1000) AS rep,
+    n DIV 7 AS inc,
+    toUInt128(inc) AS uinc,
+    toUInt32(n * 3 + 1) AS asc,
+    toInt64(20000) - toInt64(n) AS rev,
+    if(n = 64, 0, n + 1) AS late1,
+    if(n = 19999, 0, n + 1) AS late2,
+    n + sipHash64(n) % 64 AS jit,
+    toInt64(30000) - toInt64(jit) AS rjit,
+    jit DIV 128 AS tj,
+    if(n = 19990, 0, jit) AS jlate,
+    if(n = 19990, 0, tj) AS tjlate,
+    materialize(toUInt8(5)) AS c5
+FROM numbers(20000) SETTINGS max_block_size = 20000, max_insert_block_size = 20000, min_insert_block_size_rows = 20000, max_insert_threads = 1;
+
+SELECT 'blocks', groupUniqArray(blockSize()) FROM src;
+
+-- INSERT: the rows come in the order of `n`, so the stable order is (sorting key, n), and every row is written once.
+{% set insert_keys = ['small, jlate', 'mid, jit', 'mid, jit DESC', 'mid, jlate', 'uid, jit', 'cat, uh, jit', 'cat, inc DESC, ts', 'cat, rev DESC, ts', 'uid, rev', 'spread, rev', 'mid, rjit', 'small, tj DESC', 'b, inc DESC', 'cat, inc DESC', 'b, uinc DESC', 'cat, asc DESC, ts', 'uid, asc DESC, ts', 'small, asc DESC, wide', 'c5, asc DESC, ts', 'cat, rev DESC, wide', 'cat, jit DESC, wide', 'small, jit, wide', 'mid, rjit DESC, wide', 'cat, tj DESC, wide', 'cat, jlate DESC, wide', 'uid, jit DESC, wide', 'cat, uh, jit DESC, wide', 'cat, jlate DESC', 'small, jlate DESC', 'cat, tjlate DESC', 'cat, late1 DESC'] -%}
+DROP TABLE IF EXISTS {% for k in insert_keys %}t{{ loop.index }}{{ ', ' if not loop.last }}{% endfor %};
+{% for k in insert_keys -%}
+{% set columns = k | replace(' DESC', '') | replace('identity(1), ', '') -%}
+CREATE TABLE t{{ loop.index }} ENGINE = MergeTree ORDER BY ({{ k }}) SETTINGS optimize_row_order = 0, allow_experimental_reverse_key = 1 EMPTY AS SELECT n, {{ columns }} FROM src;
+INSERT INTO t{{ loop.index }} SELECT n, {{ columns }} FROM src SETTINGS max_block_size = 20000, min_insert_block_size_rows = 20000, max_insert_block_size = 20000, max_insert_threads = 1, max_threads = 1;
+SELECT 'INSERT {{ k }}', arrayPopBack((SELECT groupArray(n) FROM (SELECT n FROM t{{ loop.index }} ORDER BY _part, _part_offset)))
+    = (SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }}, n LIMIT 19999))
+    AND (SELECT (count(), sum(cityHash64(n))) FROM t{{ loop.index }}) = (SELECT (count(), sum(cityHash64(n))) FROM src);
+{% endfor -%}
+DROP TABLE {% for k in insert_keys %}t{{ loop.index }}{{ ', ' if not loop.last }}{% endfor %};
+
+-- External DISTINCT keeps the first row of each range of equal rows.
+SELECT 'DISTINCT cat, uh',
+    (SELECT (count(), sum(cityHash64(cat, uh))) FROM (SELECT DISTINCT cat, uh FROM src
+        SETTINGS max_bytes_before_external_distinct = 1, max_bytes_ratio_before_external_distinct = 0, max_untracked_memory = 0, max_block_size = 20000))
+    = (SELECT (count(), sum(cityHash64(cat, uh))) FROM (SELECT DISTINCT cat, uh FROM src
+        SETTINGS max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0));
+
+DROP TABLE src;
