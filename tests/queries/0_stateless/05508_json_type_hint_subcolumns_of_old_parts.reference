@@ -248,6 +248,11 @@ a subcolumn passed between pending mutations gets the patches of an older type w
 a subcolumn of a path is not read from another column named as the path
 2	999999
 2	999999
+a path is read and cast as stored when the skip rules change only for other paths
+42	2	2
+42	2	2
+a path the changed skip rules skip is read from the converted column
+2	\N	\N	{"a":"42"}
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1

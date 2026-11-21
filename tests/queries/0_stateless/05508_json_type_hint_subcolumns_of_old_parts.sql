@@ -66,6 +66,9 @@ DROP TABLE IF EXISTS t_shadowed_path_wide;
 DROP TABLE IF EXISTS t_shadowed_path_compact;
 DROP TABLE IF EXISTS t_scalar_sibling_nullable_wide;
 DROP TABLE IF EXISTS t_scalar_sibling_nullable_compact;
+DROP TABLE IF EXISTS t_other_skip_wide;
+DROP TABLE IF EXISTS t_other_skip_compact;
+DROP TABLE IF EXISTS t_own_skip;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -616,6 +619,25 @@ SYSTEM STOP MERGES t_shadowed_path_compact;
 ALTER TABLE t_shadowed_path_compact MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
 SELECT j.a.size, `j.a` FROM t_shadowed_path_compact;
 
+SELECT 'a path is read and cast as stored when the skip rules change only for other paths';
+CREATE TABLE t_other_skip_wide (id UInt64, j JSON(a UInt32, b String)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_other_skip_wide VALUES (1, '{"a" : 42, "b" : "bad", "c" : 1, "d" : {"e" : 2}}');
+SYSTEM STOP MERGES t_other_skip_wide;
+ALTER TABLE t_other_skip_wide MODIFY COLUMN j JSON(a String, b UInt64, SKIP c, SKIP REGEXP '^d') SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT j.a, length(j.a), j.a.size FROM t_other_skip_wide;
+CREATE TABLE t_other_skip_compact (id UInt64, j JSON(a UInt32, b String)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
+INSERT INTO t_other_skip_compact VALUES (1, '{"a" : 42, "b" : "bad", "c" : 1, "d" : {"e" : 2}}');
+SYSTEM STOP MERGES t_other_skip_compact;
+ALTER TABLE t_other_skip_compact MODIFY COLUMN j JSON(a String, b UInt64, SKIP c, SKIP REGEXP '^d') SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT j.a, length(j.a), j.a.size FROM t_other_skip_compact;
+
+SELECT 'a path the changed skip rules skip is read from the converted column';
+CREATE TABLE t_own_skip (id UInt64, j JSON(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_own_skip VALUES (1, '{"a" : 42, "c" : 1, "d" : {"e" : 2}}');
+SYSTEM STOP MERGES t_own_skip;
+ALTER TABLE t_own_skip MODIFY COLUMN j JSON(a String, SKIP c, SKIP REGEXP '^d') SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT j.a.size, j.c, j.d.e, j FROM t_own_skip;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -679,3 +701,6 @@ DROP TABLE t_shadowed_path_wide;
 DROP TABLE t_shadowed_path_compact;
 DROP TABLE t_scalar_sibling_nullable_wide;
 DROP TABLE t_scalar_sibling_nullable_compact;
+DROP TABLE t_other_skip_wide;
+DROP TABLE t_other_skip_compact;
+DROP TABLE t_own_skip;

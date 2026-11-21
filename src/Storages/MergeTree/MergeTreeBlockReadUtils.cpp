@@ -20,6 +20,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
+#include <Common/re2.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -271,6 +272,40 @@ bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
     return std::ranges::any_of(type.getTypedPaths(), [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
 }
 
+/// Whether a skip rule that only one of the objects has can skip @path or, when @with_paths_under, a path under it.
+/// Skipping a path skips the paths under it, and a regexp skips a path it matches partially or fully, as a setting says.
+bool skipRulesDifferOnPath(const DataTypeObject & lhs, const DataTypeObject & rhs, const String & path, bool with_paths_under)
+{
+    auto has_own_rule_on_path = [&](const DataTypeObject & object, const DataTypeObject & other)
+    {
+        for (const auto & path_to_skip : object.getPathsToSkip())
+            if (!other.getPathsToSkip().contains(path_to_skip)
+                && (path.starts_with(path_to_skip) || (with_paths_under && path_to_skip.starts_with(path + "."))))
+                return true;
+
+        const auto & other_regexps = other.getPathRegexpsToSkip();
+        for (const auto & regexp : object.getPathRegexpsToSkip())
+        {
+            if (std::ranges::find(other_regexps, regexp) != other_regexps.end())
+                continue;
+
+            if (with_paths_under)
+                return true;
+
+            re2::RE2 compiled(regexp);
+            for (size_t pos = path.find('.');; pos = path.find('.', pos + 1))
+            {
+                if (re2::RE2::PartialMatch(path.substr(0, pos), compiled))
+                    return true;
+                if (pos == String::npos)
+                    break;
+            }
+        }
+        return false;
+    };
+    return has_own_rule_on_path(lhs, rhs) || has_own_rule_on_path(rhs, lhs);
+}
+
 /// Whether converting an object @in_part to @in_storage keeps the value of the path @substream reads: the same skip rules and
 /// typed paths on the path, its prefixes and, for a value that includes them, the paths under it, except @hinted_path.
 bool objectPathValueIsKept(
@@ -278,8 +313,7 @@ bool objectPathValueIsKept(
 {
     const auto * object_in_storage = typeid_cast<const DataTypeObject *>(in_storage);
     const auto * object_in_part = typeid_cast<const DataTypeObject *>(in_part);
-    if (!object_in_storage || !object_in_part || object_in_storage->getPathsToSkip() != object_in_part->getPathsToSkip()
-        || object_in_storage->getPathRegexpsToSkip() != object_in_part->getPathRegexpsToSkip())
+    if (!object_in_storage || !object_in_part)
         return false;
 
     const auto & typed_paths_in_storage = object_in_storage->getTypedPaths();
@@ -308,8 +342,13 @@ bool objectPathValueIsKept(
 
     /// The distinct paths depend on all paths.
     if (!path)
-        return std::ranges::all_of(typed_paths_in_storage, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); })
+        return object_in_storage->getPathsToSkip() == object_in_part->getPathsToSkip()
+            && object_in_storage->getPathRegexpsToSkip() == object_in_part->getPathRegexpsToSkip()
+            && std::ranges::all_of(typed_paths_in_storage, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); })
             && std::ranges::all_of(typed_paths_in_part, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); });
+
+    if (skipRulesDifferOnPath(*object_in_storage, *object_in_part, *path, value_includes_paths_under))
+        return false;
 
     for (size_t pos = path->find('.'); pos != String::npos; pos = path->find('.', pos + 1))
         if (!typed_path_is_kept(path->substr(0, pos)))
