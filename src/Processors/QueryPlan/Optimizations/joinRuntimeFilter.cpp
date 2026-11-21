@@ -486,10 +486,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
-    /// For each key pair, whether its probe key can throw, in the order `preCalculateKeys` returns the keys. It is checked
-    /// as the query wrote it; the normalization that `preCalculateKeys` adds (`trimRight` of zero bytes, a cast to the
-    /// common type) cannot throw.
+    /// For each key pair, in the order `preCalculateKeys` returns the keys: whether its probe key can throw, and its type,
+    /// both as the query wrote it. `preCalculateKeys` may cast the key to the common type (`String` vs `FixedString`
+    /// keys, also as tuple elements), and this cast is checked below together with the cast of the filter itself.
     VectorWithMemoryTracking<bool> probe_key_can_throw;
+    DataTypes probe_key_types;
 
     /// The runtime filter is built on the build (right) side and is addressed by name
     /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
@@ -518,11 +519,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             {
                 build_key_names.insert(rhs.getColumnName());
                 probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(lhs.getNode()));
+                probe_key_types.push_back(lhs.getType());
             }
             else if (lhs.fromRight() && rhs.fromLeft())
             {
                 build_key_names.insert(lhs.getColumnName());
                 probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(rhs.getNode()));
+                probe_key_types.push_back(rhs.getType());
             }
         }
 
@@ -540,6 +543,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
+    DataTypes join_key_probe_types_as_written;
 
     /// Collect equality predicates for runtime filter construction.
     /// Non-equality predicates (e.g. range conditions) are skipped for non-ANTI-JOIN:
@@ -599,6 +603,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     continue;
                 join_keys_probe_side.emplace_back(probe_keys[i]->result_type, probe_keys[i]->result_name);
                 join_keys_build_side.emplace_back(build_keys[i]->result_type, build_keys[i]->result_name);
+                join_key_probe_types_as_written.push_back(probe_key_types[i]);
             }
             if (!isPassthroughActions(key_dags->first.actions_dag))
                 makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
@@ -680,15 +685,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    /// The filter casts the probe key to the common type itself, see `createRuntimeFilterCondition`.
+    /// The probe key as written is cast to the common type, by `preCalculateKeys` or by the filter itself
+    /// (see `createRuntimeFilterCondition`).
     for (size_t i = common_types.size(); i-- > 0;)
     {
-        if (canCastWithoutThrowing(join_keys_probe_side[i].type, common_types[i]))
+        if (canCastWithoutThrowing(join_key_probe_types_as_written[i], common_types[i]))
             continue;
         if (check_left_does_not_contain)
             return false;
         join_keys_probe_side.erase(join_keys_probe_side.begin() + i);
         join_keys_build_side.erase(join_keys_build_side.begin() + i);
+        join_key_probe_types_as_written.erase(join_key_probe_types_as_written.begin() + i);
         common_types.erase(common_types.begin() + i);
     }
     if (join_keys_build_side.empty())
