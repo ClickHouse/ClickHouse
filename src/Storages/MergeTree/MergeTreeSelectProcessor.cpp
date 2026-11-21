@@ -199,9 +199,9 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     return index_read_result;
 }
 
-/// A mark that the primary key skips against the top-K threshold has all its rows beyond the threshold, so the
-/// `__topKFilter` would have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not
-/// match the PREWHERE either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
+/// A mark skipped against the top-K threshold has all its rows beyond the threshold, so the `__topKFilter` would
+/// have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not match the PREWHERE
+/// either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
 /// (see `MergeTreeSelectProcessor::read`), so it is only reused by the same plan over the same parts.
 static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info, const MergeTreeReaderSettings & reader_settings)
 {
