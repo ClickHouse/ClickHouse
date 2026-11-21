@@ -1,0 +1,12 @@
+nb literal	[false,true]
+nb global	[false,true]
+nb 0,10	[true]
+nb array	[false,true]
+nb subquery	[false,true]
+nb has	[false,true]
+nb in	[true]
+nb tlp	2
+lcnb literal	[false,true]
+skip literal	[false,true]
+skip subquery	[false,true]
+tostring literal	[false,true]
