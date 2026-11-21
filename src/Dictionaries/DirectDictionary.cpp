@@ -284,7 +284,14 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
                 auto block_key = block_keys_extractor.extractCurrentKey();
 
                 const auto * it = requested_key_to_index.find(block_key);
-                chassert(it);
+
+                /// The source can return a key that is not byte-identical to the requested one,
+                /// e.g. `0` for `-0.0` or the canonical NaN for another NaN, so the requested key is not found.
+                if (!it)
+                {
+                    block_keys_extractor.rollbackCurrentKey();
+                    continue;
+                }
 
                 auto & result_data_found_indexes = it->getMapped();
                 for (size_t result_data_found_index : result_data_found_indexes)
