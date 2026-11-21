@@ -3185,6 +3185,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
+                    lambda_scope.sql_udf_calls_not_substituted = true;
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
@@ -3203,7 +3204,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// resolveLambda resolves the body via resolveExpressionNode, which itself
                     /// pushes the aggregate function before resolving its arguments.
                     scope.pushExpressionNode(function_to_resolve_untyped);
-                    node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
+                    const bool previous_sql_udf_calls_not_substituted = scope.sql_udf_calls_not_substituted;
+                    scope.sql_udf_calls_not_substituted = true;
+                    {
+                        SCOPE_EXIT({ scope.sql_udf_calls_not_substituted = previous_sql_udf_calls_not_substituted; });
+                        node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
+                    }
                     scope.popExpressionNode();
                     node = function_to_resolve_untyped;
                 }

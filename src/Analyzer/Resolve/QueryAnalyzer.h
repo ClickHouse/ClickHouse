@@ -138,6 +138,10 @@ private:
         const ProjectionNames & parameters_projection_names,
         const ProjectionNames & arguments_projection_names);
 
+    static ProjectionName calculateInlinedCallProjectionName(const QueryTreeNodePtr & call_node,
+        ProjectionNames arguments_projection_names,
+        const IdentifierResolveScope & scope);
+
     static ProjectionName calculateWindowProjectionName(const QueryTreeNodePtr & window_node,
         const QueryTreeNodePtr & parent_window_node,
         const String & parent_window_name,

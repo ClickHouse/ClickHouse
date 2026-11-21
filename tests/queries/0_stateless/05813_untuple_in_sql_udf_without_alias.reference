@@ -1,0 +1,97 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/131545
+untuple_value_05813(11).1	untuple_value_05813(22).1
+11	22
+-- the inner query alone
+untuple_value_05813(11).1	untuple_value_05813(22).1
+11	22
+-- column arguments
+untuple_value_05813(number).1	untuple_value_05813(plus(number, 1)).1
+0	1
+1	2
+-- nested function
+untuple_value_nested_05813(11).1	untuple_value_nested_05813(22).1
+11	22
+-- lambda arguments
+untuple_map_05813(x -> (x + 1), [1]).1	untuple_map_05813(x -> (x + 2), [1]).1
+[2]	[3]
+map_05813(x -> (x + number), [1])	map_05813(x -> (x * number), [1])
+[1]	[0]
+[2]	[1]
+untuple_map_05813(x -> toTypeName(tuple(x AS a)), [1]).1	untuple_map_05813(x -> toTypeName(tuple(x AS b)), [1]).1
+['Tuple(a UInt8)']	['Tuple(b UInt8)']
+-- a lambda argument called in the body
+apply_lambda_05813(y -> untuple(tuple(y)), 11).1	apply_lambda_05813(y -> untuple(tuple(y)), 22).1
+11	22
+wrap_apply_lambda_05813(11).1	wrap_apply_lambda_05813(22).1
+11	22
+-- a SQL UDF called in a WITH lambda: the WITH call names the columns
+l(11).1	l(22).1
+11	22
+l(11).1	l(22).1
+11	22
+l(x -> (x + 1), 1).1	l(x -> (x + 2), 1).1
+2	3
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+k(x -> (x + 1), 1)	k(x -> (x + 2), 1)
+2	3
+-- a SQL UDF called elsewhere in a WITH lambda body
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+l(x -> (x + 1), [1])	l(x -> (x + 2), [1])
+[2]	[3]
+l(x -> (x + 1), 1)	l(x -> (x + 2), 1)
+2	3
+l(x -> (x + 1), 1)	l(x -> (x + 2), 1)
+2	3
+l(11).1	l(22).1
+[11]	[22]
+-- WITH lambdas without a SQL UDF call keep their names: stored view definitions keep WITH lambdas
+l(__projection_name_placeholder, 1)
+2
+tupleElement((x), \'1\')
+11
+tupleElement((x), \'1\')
+11
+l(__projection_name_placeholder, [1])
+[2]
+-- a SQL UDF passed by name keeps the names too: CREATE substitutes only SQL UDF calls
+tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), identity_05813(__function_ref_arg_0)), [x])), \'1\')
+[11]
+tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), wrap_identity_05813(__function_ref_arg_0)), [x])), \'1\')
+[11]
+tupleElement((arrayMap(lambda(tuple(__composed_arg_1), toString(identity_05813(__composed_arg_1))), [x])), \'1\')
+['11']
+l(__projection_name_placeholder, [1])
+[2]
+tupleElement((number), \'1\')
+0
+[11]
+[22]
+-- nor a SQL UDF call in an APPLY lambda or in the body of a SQL UDF passed by name: CREATE keeps them too
+tupleElement((a), \'1\')
+11
+tupleElement((a), \'1\')
+11
+quantile(apply_lambda_05813(__projection_name_placeholder, 0))(a)
+2
+arrayMap(lambda(tuple(__function_ref_arg_0), tupleElement((arrayMap(lambda(tuple(y), tupleElement((x), \'1\')), [x])), \'1\')), [11])
+[[11]]
+11
+33
+-- an alias still names the columns
+a.1	b.1
+11	22
+-- views: CREATE substitutes SQL UDFs
+tupleElement((11), \'1\')	tupleElement((22), \'1\')
+11	22
+tupleElement((x), \'1\')
+11
+-- remote()
+untuple_value_05813(plus(dummy, 11)).1	untuple_value_05813(plus(dummy, 22)).1
+11	22
+-- names inside the body keep the parameter name
+1
+{"number":0}
