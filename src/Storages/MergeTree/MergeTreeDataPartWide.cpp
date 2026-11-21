@@ -273,7 +273,7 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
     if (checksums.empty() || isEmpty() || subcolumns.empty())
         return sizes;
 
-    /// Only the prefixes are read, so small reads without prefetches, but through the caches the query reads the part with.
+    /// Only the prefixes are read: no prefetches, but through the caches the query reads the part with.
     ReadSettings read_settings = getReadSettingsForMetadata();
     const ReadSettings query_read_settings = getReadSettings();
     read_settings.enable_filesystem_cache = query_read_settings.enable_filesystem_cache;

@@ -1,10 +1,11 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-distributed-cache
--- no-fasttest: needs the s3_cache storage policy, a cache disk over MinIO.
+-- no-fasttest: needs the S3 disk.
 -- no-parallel-replicas: the replicas would size and read the parts, so the requests are not counted on the initiator.
 -- no-distributed-cache: the distributed cache would serve the reads instead of the filesystem cache.
 
 -- Sizing a JSON path or a key of a bucketed Map for PREWHERE reads the serialization prefixes of every part:
 -- the filesystem cache must serve them when it holds them.
+-- A cache of its own: on the shared s3_cache the segments of other tests' reads can push these reads past the cache.
 
 SET enable_filesystem_cache = 1;
 SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
@@ -20,11 +21,15 @@ DROP TABLE IF EXISTS t_map;
 
 CREATE TABLE t_json (d Date, id UInt64, j JSON)
 ENGINE = MergeTree PARTITION BY d ORDER BY id
-SETTINGS storage_policy = 's3_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS disk = disk(type = cache, name = '05839_prewhere_subcolumn_size_cache', path = '05839_prewhere_subcolumn_size_cache/',
+    max_size = '1Gi', cache_on_write_operations = 1, load_metadata_asynchronously = 0, disk = 's3_disk'),
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 CREATE TABLE t_map (d Date, id UInt64, m Map(String, String))
 ENGINE = MergeTree PARTITION BY d ORDER BY id
-SETTINGS storage_policy = 's3_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS disk = disk(type = cache, name = '05839_prewhere_subcolumn_size_cache', path = '05839_prewhere_subcolumn_size_cache/',
+    max_size = '1Gi', cache_on_write_operations = 1, load_metadata_asynchronously = 0, disk = 's3_disk'),
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
     serialization_info_version = 'with_types';
 
