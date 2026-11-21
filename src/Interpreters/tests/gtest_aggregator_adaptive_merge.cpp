@@ -143,7 +143,7 @@ Aggregator::Params makeAdaptiveParams(const Names & keys, const AggregateDescrip
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
         /*enable_parallel_single_level_merge_by_index_=*/true,
-        /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
+        /*enable_packed_string_keys_=*/true, /*enable_fixed_and_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
         /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
         /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
 }

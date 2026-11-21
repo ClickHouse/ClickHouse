@@ -664,9 +664,8 @@ public:
             ILazyMaterializingRowsPtr lazy_materializing_rows;
             if (lazy.merge_tree_reading)
             {
-                auto rows = std::make_shared<LazyMaterializingRows>(std::move(lazy.parts));
-                lazy.merge_tree_reading->setLazyMaterializingRows(rows);
-                lazy_materializing_rows = std::move(rows);
+                /// The main read fills the rows when it builds its pipeline, see `ReadFromMergeTree::hasLazilyReadColumns`.
+                lazy_materializing_rows = lazy.merge_tree_reading->getLazyMaterializingRows();
                 lazy_plan.addStep(std::move(lazy.merge_tree_reading));
             }
             else
@@ -763,7 +762,6 @@ private:
         /// Set by `apply`.
         std::unique_ptr<LazilyReadFromMergeTree> merge_tree_reading;
         std::unique_ptr<LazilyReadFromObjectStorage> object_storage_reading;
-        RangesInDataParts parts;
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
@@ -1089,6 +1087,8 @@ private:
     Assembled assembleSource(QueryPlan::Node * node, size_t source, const VectorWithMemoryTracking<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
+        /// The fragment does not inherit the resources of the plan: `apply` puts it back into that plan,
+        /// which already holds them, and appending them again would multiply them with every rewrite.
         Assembled result;
         auto & plan = result.plan;
         plan = QueryPlan::extractSubplan(node, nodes);
@@ -1126,13 +1126,6 @@ private:
                 if (lazy->merge_tree_reading)
                     lazy_header = lazy->merge_tree_reading->getOutputHeader().get();
 
-                /// The lazy read fetches exactly the rows the main read selected, addressed by their row
-                /// index. It must not apply the vector search rescoring filter again: that one belongs to
-                /// the main read, and applying it against the candidates of the vector index can drop a
-                /// requested row.
-                lazy->parts = merge_tree->getParts();
-                for (auto & part : lazy->parts)
-                    part.read_hints.use_vector_search_result_filter = false;
             }
         }
         else if (lazy)

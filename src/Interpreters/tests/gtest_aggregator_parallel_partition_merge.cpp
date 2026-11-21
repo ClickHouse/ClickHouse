@@ -89,6 +89,7 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*enable_parallel_single_level_merge_=*/true,
         /*enable_parallel_single_level_merge_by_index_=*/true,
         /*enable_packed_string_keys_=*/true,
+        /*enable_fixed_and_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
