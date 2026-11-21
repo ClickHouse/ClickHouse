@@ -459,6 +459,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 projection_columns, projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
+
+            if (String reason = data_part->getProjectionPartDeletedRowsReason(*projection); !reason.empty())
+                throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", reason);
         }
         catch (...)
         {
