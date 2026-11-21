@@ -344,34 +344,38 @@ void NO_INLINE Set::insertFromBlockImpl(
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    ColumnUInt8::Container * out_filter,
+    ColumnUInt64::Container * out_new_rows)
 {
+    auto insert = [&]<bool has_null_map>()
+    {
+        if (out_filter)
+            insertFromBlockImplCase<Method, has_null_map, true, false>(method, key_columns, rows, variants, null_map, out_filter, out_new_rows);
+        else if (out_new_rows)
+            insertFromBlockImplCase<Method, has_null_map, false, true>(method, key_columns, rows, variants, null_map, out_filter, out_new_rows);
+        else
+            insertFromBlockImplCase<Method, has_null_map, false, false>(method, key_columns, rows, variants, null_map, out_filter, out_new_rows);
+    };
+
     if (null_map)
-    {
-        if (out_filter)
-            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter);
-        else
-            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter);
-    }
+        insert.template operator()<true>();
     else
-    {
-        if (out_filter)
-            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter);
-        else
-            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter);
-    }
+        insert.template operator()<false>();
 }
 
 
-template <typename Method, bool has_null_map, bool build_filter>
+template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
 void NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     [[maybe_unused]] ConstNullMapPtr null_map,
-    [[maybe_unused]] ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ColumnUInt8::Container * out_filter,
+    [[maybe_unused]] ColumnUInt64::Container * out_new_rows)
 {
+    static_assert(!(build_filter && collect_new_rows));
+
     typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// For all rows
@@ -393,6 +397,12 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
+
+        if constexpr (collect_new_rows)
+        {
+            if (emplace_result.isInserted())
+                out_new_rows->push_back(i);
+        }
     }
 }
 
@@ -493,9 +503,16 @@ bool Set::insertFromColumns(const Columns & columns)
     size_t rows = columns.at(0)->size();
 
     SetKeyColumns holder;
-    /// Filter to extract distinct values from the block.
+    /// The rows whose keys are new to the set, to add them to the explicit elements.
+    size_t keys_before = 0;
     if (fill_set_elements)
-        holder.filter = ColumnUInt8::create(rows);
+    {
+        if (find_new_set_elements_by_filter)
+            holder.filter = ColumnUInt8::create(rows);
+        else
+            holder.new_rows = ColumnUInt64::create();
+        keys_before = data->getTotalRowCount();
+    }
 
     bool inserted = insertFromColumnsImpl(columns, holder);
     if (inserted && fill_set_elements)
@@ -507,7 +524,10 @@ bool Set::insertFromColumns(const Columns & columns)
             set_elements.clear();
         }
         else
+        {
             appendSetElements(holder);
+            find_new_set_elements_by_filter = (data->getTotalRowCount() - keys_before) * 8 >= rows;
+        }
     }
 
     return inserted;
@@ -555,7 +575,14 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
 
     data->callOnMethod([&](auto & method)
     {
-        insertFromBlockImpl(method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr);
+        insertFromBlockImpl(
+            method,
+            holder.key_columns,
+            rows,
+            *data,
+            null_map,
+            holder.filter ? &holder.filter->getData() : nullptr,
+            holder.new_rows ? &holder.new_rows->getData() : nullptr);
     });
 
     bool within_limits = limits.check(data->getTotalRowCount(), data->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -576,7 +603,8 @@ void Set::appendSetElements(SetKeyColumns & holder)
     size_t rows = holder.key_columns.at(0)->size();
     for (size_t i = 0; i < keys_size; ++i)
     {
-        auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
+        auto filtered_column = holder.new_rows ? holder.key_columns[i]->index(*holder.new_rows, 0)
+                                               : holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
             set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
