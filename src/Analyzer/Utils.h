@@ -172,10 +172,8 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
   */
 bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
 
-/** Returns true if short-circuit evaluation can execute some function in `node` lazily, as `findLazyExecutedNodes` decides:
-  * a function is lazy if it is suitable for lazy execution (any function if `every_function_is_lazy`) or has a lazy argument.
+/** Returns true if short-circuit evaluation can execute some function in `node` lazily, as `findLazyExecutedNodes` decides.
   * With `only_functions_that_can_throw`, only a lazily executed function that can throw counts (`and`, `or`, `not` excepted).
-  * Do not visit subqueries.
   */
 bool canBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_function_is_lazy, bool only_functions_that_can_throw = false);
 

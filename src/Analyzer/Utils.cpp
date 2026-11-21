@@ -1008,7 +1008,6 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
 
 bool canBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_function_is_lazy, bool only_functions_that_can_throw)
 {
-    /// Pre-order: every node comes before its descendants.
     std::vector<const IQueryTreeNode *> nodes;
     std::vector<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(node.get());
@@ -1072,7 +1071,6 @@ bool canBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_functi
             }
         }
 
-        /// Laziness propagates to every ancestor, so the root is lazy as soon as any node is.
         if (lazy && !only_functions_that_can_throw)
             return true;
 

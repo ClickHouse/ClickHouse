@@ -1308,7 +1308,6 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{ .new_node = new_or_node, .common_expressions = {} };
 }
 
-/// True if `node` may throw on rows on which it was skipped by short-circuit evaluation.
 static bool canThrowIfExecutedEarlier(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     const auto short_circuit = context->getSettingsRef()[Setting::short_circuit_function_evaluation];
@@ -1417,8 +1416,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         leading_exprs_set.insert(leading_expr);
     }
 
-    /// A disjunct evaluates its conditions in order, so a common condition that can throw stays in the
-    /// disjuncts unless every disjunct starts with it.
+    /// A disjunct evaluates its conditions in order, so a common that can throw is extracted only if every disjunct starts with it.
     std::erase_if(common_exprs, [&](const QueryTreeNodePtr & expr)
     {
         if (leading_exprs_set.contains(keys(expr)) || !canThrowIfExecutedEarlier(expr, context))
@@ -1483,7 +1481,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(keys(expr)); });
     size_t leading_common_expressions = leading_exprs_end - common_exprs.begin();
 
-    /// A condition kept in the disjuncts by the filter above is in every one of them, so the reduced disjuncts can all be one conjunction.
+    /// Conditions kept in the disjuncts can make all reduced disjuncts equal.
     if (new_or_arguments.size() == 1)
         return CommonExpressionExtractionResult{
             .new_node = std::move(new_or_arguments.front()),
@@ -1579,7 +1577,6 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
             auto & common_expressions = result.common_expressions;
             for (size_t i = 0; i < result.leading_common_expressions; ++i)
                 insert_possible_new_top_level_arg(std::move(common_expressions[i]));
-            /// The other common conditions cannot throw, so they keep guarding a remaining disjunction that can.
             const bool guard_new_node = result.new_node != nullptr && canThrowIfExecutedEarlier(result.new_node, context);
             if (result.new_node != nullptr && !guard_new_node)
                 insert_possible_new_top_level_arg(std::move(result.new_node));
