@@ -121,6 +121,8 @@ Converter::Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, Pr
     , settings(std::move(settings_))
     , result_type(DB::PrometheusQueryToSQL::getResultType(*promql_tree, settings))
 {
+    /// Checked here so that schema inference fails like the execution does.
+    checkFunctionNames(promql_tree->getRoot());
 }
 
 
