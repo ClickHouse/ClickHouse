@@ -62,8 +62,11 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    CompressionStatePtr codec_state;
     /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
     CompressionCodecPtr uncompressed_codec;
+    /// The block size requested at construction; `setCodec` limits it again for the new codec.
+    size_t requested_buf_size;
 
     PODArray<char> compressed_buffer;
 };
