@@ -5,6 +5,7 @@
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET enable_hash_join_row_store = 1;
+SET enable_join_in_memory_compression = 0; -- it disables the row store
 SET min_rows_ratio_for_hash_join_row_store = 0; -- take the output ratio out of the decision
 SET collect_hash_table_stats_during_joins = 0;
 SET query_plan_join_swap_table = 0;
