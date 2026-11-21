@@ -127,7 +127,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
         disk_name, endpoint, allow_list_entry);
 
     /// system.warnings keeps one message per type, so the message lists all disks seen so far.
-    /// No lock: disk creation runs under storage_policies_mutex in Context::getOrCreateDisk.
+    /// No lock: disk creation is serialized by custom_disk_creation_mutex in Context::getOrCreateDisk.
     static std::set<std::string> disks;
     disks.insert(fmt::format("`{}` -> `{}`", disk_name, endpoint));
     global_context->addOrUpdateWarningMessage(

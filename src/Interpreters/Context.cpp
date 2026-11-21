@@ -664,6 +664,10 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
+    /// Serializes creation of custom disks (`disk(...)` in SQL). Creating a disk may do a network request
+    /// (the access check), so it must not run under `storage_policies_mutex`, which most queries need.
+    /// Lock order: `custom_disk_creation_mutex` first, then `storage_policies_mutex` (never the reverse).
+    mutable std::mutex custom_disk_creation_mutex;
     /// Protects the ZooKeeper client and its connection attempt. Not held while connecting, except by config reload.
     mutable std::timed_mutex zookeeper_mutex;
 
@@ -8755,17 +8759,42 @@ DiskPtr Context::getDisk(const String & name) const
 
 DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
 {
+    /// Creating a disk can take long (it checks access to the remote endpoint), so `storage_policies_mutex`
+    /// is held only to look the disk up and to register it, and not while `creator` runs.
+
+    /// Fast path: an existing disk is returned without waiting for a creation of another disk in progress.
+    {
+        std::lock_guard lock(shared->storage_policies_mutex);
+        if (auto existing_disk = getDiskSelector(lock)->tryGet(name))
+            return existing_disk;
+    }
+
+    /// Creators are serialized by a separate mutex, so the same disk is never created twice at the same time.
+    std::lock_guard creation_lock(shared->custom_disk_creation_mutex);
+
+    DisksMap disks_map;
+    {
+        std::lock_guard lock(shared->storage_policies_mutex);
+
+        /// The disk may have been created while this thread was waiting for `custom_disk_creation_mutex`.
+        if (auto existing_disk = getDiskSelector(lock)->tryGet(name))
+            return existing_disk;
+
+        disks_map = getDisksMap(lock);
+    }
+
+    /// No lock on `storage_policies_mutex` here.
+    auto disk = creator(disks_map);
+
     std::lock_guard lock(shared->storage_policies_mutex);
 
     auto disk_selector = getDiskSelector(lock);
 
-    auto disk = disk_selector->tryGet(name);
-    if (!disk)
-    {
-        disk = creator(getDisksMap(lock));
-        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
-    }
+    /// A config reload may have added a disk with this name in the meantime. Do not overwrite it.
+    if (auto existing_disk = disk_selector->tryGet(name))
+        return existing_disk;
 
+    const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
     return disk;
 }
 
