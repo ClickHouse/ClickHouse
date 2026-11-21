@@ -426,8 +426,8 @@ String getInsertDataSchemaMismatchDescriptionImpl(
         }
         catch (...)
         {
-            /// Unescaping the header fields failed, so the decisions cannot be compared: treat it as a
-            /// disagreement, which omits the explanation.
+            /// Unescaping the header fields failed, so the decisions cannot be compared: it is Ok to
+            /// treat it as a disagreement, which omits the explanation.
             format_header_detection_agrees_with_parser = false;
         }
     }

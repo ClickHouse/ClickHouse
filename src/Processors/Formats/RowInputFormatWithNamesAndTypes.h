@@ -268,8 +268,8 @@ protected:
 
 private:
     void tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out);
-    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const;
-    VectorWithMemoryTracking<String> readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const;
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
