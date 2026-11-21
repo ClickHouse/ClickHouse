@@ -240,8 +240,8 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output
+                /// Zero units, no need to print. But if it's seconds or the minimum unit and no other unit is printed, print "0 seconds" or "0 hours" nevertheless.
+                if ((unit_multiplier != 1 && !is_minimum_unit) || has_output
                     || fractional_str.substr(0, subSecondDigits(min_unit)) != std::string(subSecondDigits(min_unit), '0'))
                     return;
             }

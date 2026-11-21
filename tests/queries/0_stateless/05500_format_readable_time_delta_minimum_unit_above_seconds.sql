@@ -21,3 +21,11 @@ SELECT formatReadableTimeDelta(90060.5, 'days', 'minutes');
 SELECT formatReadableTimeDelta(86400 + 3600 + 30, 'days', 'minutes');
 SELECT formatReadableTimeDelta(365 * 86400 + 30.5 * 86400 + 3600 + 30, 'years', 'minutes');
 SELECT formatReadableTimeDelta(-(86400 + 3600 + 30), 'days', 'minutes');
+
+-- A value below one minimum unit above seconds prints zero of that unit (previously an empty string or a bare "-").
+SELECT x, formatReadableTimeDelta(x, 'days', 'hours') FROM (SELECT arrayJoin([-5400, -1800, 0, 1800, 5400]) AS x) ORDER BY x;
+SELECT formatReadableTimeDelta(30, 'minutes', 'minutes');
+SELECT formatReadableTimeDelta(-0.5, 'years', 'years');
+SELECT formatReadableTimeDelta(materialize(86399.9), 'months', 'days');
+SELECT formatReadableTimeDelta(toIntervalMinute(59), 'days', 'hours');
+SELECT x, formatReadableTimeDelta(x, 'minutes', 'seconds') FROM (SELECT arrayJoin([-0.5, 0, 0.5]) AS x) ORDER BY x;
