@@ -523,12 +523,17 @@ namespace HistogramMetrics
 #undef M
 
 
-std::vector<MetricFamily *> keeper_histograms
+const std::vector<MetricFamily *> & getKeeperHistograms()
 {
+    /// Resolve family references on first use, after static initialization has completed.
+    static const std::vector<MetricFamily *> histograms
+    {
 #define M(NAME) &(NAME),
-    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+        APPLY_FOR_KEEPER_HISTOGRAMS(M)
 #undef M
-};
+    };
+    return histograms;
+}
 
 }
 
