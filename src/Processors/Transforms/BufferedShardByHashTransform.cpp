@@ -17,7 +17,7 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
     , sorting_columns(std::move(sorting_columns_))
-    , pending(num_shards)
+    , queues(num_shards)
     , has_rows_in_current_chunk(num_shards, 0)
     , bound_sent(num_shards, 0)
 {
@@ -43,7 +43,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     for (const auto & output : outputs)
     {
         if (output.isFinished())
-            pending[shard] = {};
+            queues[shard].clear();
         else
             all_finished = false;
         ++shard;
@@ -60,22 +60,17 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     if (has_input_chunk)
         return Status::Ready;
 
-    /// Push the pending pieces of the current input chunk. The scatter is blocked while any of them cannot be
-    /// pushed.
-    bool blocked = false;
+    /// Push the oldest pending piece of every shard whose port can take it.
     shard = 0;
     for (auto & output : outputs)
     {
-        if (!output.isFinished() && pending[shard].hasRows())
+        auto & queue = queues[shard];
+        if (!queue.empty() && !output.isFinished() && output.canPush())
         {
-            if (output.canPush())
-            {
-                if (shard == last_row_shard)
-                    bound_sent[shard] = 1;
-                output.push(std::exchange(pending[shard], {}));
-            }
-            else
-                blocked = true;
+            if (queue.front().chunk_number == current_chunk_number && shard == last_row_shard)
+                bound_sent[shard] = 1;
+            output.push(std::move(queue.front().chunk));
+            queue.pop_front();
         }
         ++shard;
     }
@@ -88,7 +83,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         shard = 0;
         for (auto & output : outputs)
         {
-            if (!pending[shard].hasRows())
+            if (queues[shard].empty())
                 output.finish();
             else
                 fully_drained = false;
@@ -97,17 +92,28 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return fully_drained ? Status::Finished : Status::PortFull;
     }
 
-    /// Tell the bound of the current input chunk to every shard that waits for this stream (can accept a chunk
-    /// and has nothing pending) when its merge could otherwise wait for it forever: the shard got no rows from
-    /// the chunk, or this scatter cannot read further because another shard's port is full (see the class
-    /// comment). A shard that got rows and is not blocking anything receives the next bound with the next chunk.
+    /// The scatter cannot read further while some shard has `max_pending_pieces` pieces it cannot push.
+    bool blocked = false;
+    for (const auto & queue : queues)
+    {
+        if (queue.size() >= max_pending_pieces)
+        {
+            blocked = true;
+            break;
+        }
+    }
+
+    /// Tell the bound of the last input chunk to every shard that waits for this stream (can accept a chunk and
+    /// has nothing pending) when its merge could otherwise wait for it forever: the shard got no rows from the
+    /// chunk, or this scatter cannot read further because of another shard (see the class comment). A shard that
+    /// got rows while the scatter is not blocked receives the next bound with the next chunk.
     if (bound.columns())
     {
         shard = 0;
         for (auto & output : outputs)
         {
-            if (!bound_sent[shard] && !pending[shard].hasRows() && (blocked || !has_rows_in_current_chunk[shard])
-                && output.canPush())
+            if (!bound_sent[shard] && queues[shard].empty() && (blocked || !has_rows_in_current_chunk[shard])
+                && !output.isFinished() && output.canPush())
             {
                 output.push(makeMarker());
                 bound_sent[shard] = 1;
@@ -119,13 +125,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     if (blocked)
         return Status::PortFull;
 
-    /// Every piece is pushed. Read the next chunk if some shard can take data now.
+    /// Read the next chunk if some shard can take data now.
     input.setNeeded();
 
     bool any_output_can_push = false;
     for (const auto & output : outputs)
     {
-        if (output.canPush())
+        /// A port closed by the downstream can still report that it is needed.
+        if (!output.isFinished() && output.canPush())
         {
             any_output_can_push = true;
             break;
@@ -175,6 +182,7 @@ void BufferedShardByHashTransform::splitInputChunk()
             shard_columns[shard].push_back(std::move(split[shard]));
     }
 
+    ++current_chunk_number;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -182,7 +190,7 @@ void BufferedShardByHashTransform::splitInputChunk()
         has_rows_in_current_chunk[shard] = shard_rows != 0;
         bound_sent[shard] = 0;
         if (shard_rows != 0 && !output_it->isFinished())
-            pending[shard] = Chunk(std::move(shard_columns[shard]), shard_rows);
+            queues[shard].push_back({Chunk(std::move(shard_columns[shard]), shard_rows), current_chunk_number});
     }
 
     /// The stream is sorted, so the sort columns of the last row bound everything it can send later.
