@@ -30,3 +30,89 @@ remove key subcolumn -> reject:
 widen key subcolumn enum (safe) -> allowed:
 1	x	10
 2	y	20
+add Nullable level, key subcolumn loses its Nullable -> reject:
+key subcolumn values (NULL, = 0, total):	6	1	12
+add Nullable level, key subcolumn keeps its Nullable -> allowed:
+add unrelated typed path under a kept Nullable level -> allowed:
+same, as a lazy type hint change -> allowed:
+type:	Nullable(JSON(a Nullable(Int64), b String, c String))
+key lookup (data.a = 0):	1
+key subcolumn loses its Nullable under a kept Nullable level -> reject:
+same, as a lazy type hint change -> reject:
+remove the Nullable level with a DEFAULT -> reject:
+key subcolumn values (NULL, = 0, total):	6	1	12
+partition key, add Nullable level, key subcolumn loses its Nullable -> reject:
+Tuple element gets a Nullable level, key subcolumn loses its Nullable -> reject:
+change non-key Tuple element -> allowed:
+type:	Tuple(j JSON(a Nullable(Int64)), b Int64)
+key subcolumn values (NULL, = 0, total):	6	1	12
+Array element gets a Nullable level, key subcolumn loses its Nullable -> reject:
+skip index, key subcolumn loses its Nullable under a kept Nullable level, lazy -> reject:
+drop the key element, its name resolves to a sibling path -> reject:
+change the sibling path, the key element is kept -> allowed:
+type:	Tuple(`j.a` Int64, j JSON(a Int64))
+key lookup (c.`j.a` = 1):	1
+dynamic path with a type hint, other paths change -> reject:
+key subcolumn values:	[0.5,1.5,2]
+dynamic path with a type hint, only a Nullable level is added -> allowed:
+type:	Nullable(JSON)
+key lookup (data.b.:Float64 = 1.5):	1
+Map key type change, the key subcolumn reads another entry -> reject:
+key subcolumn values:	[0,1,2]
+Map key type change, the key subcolumn does not depend on it -> allowed:
+type:	Map(Int64, Int64)
+key lookup (m.values = [1]):	1
+Variant to Dynamic, the key subcolumn keeps its values -> allowed:
+type:	Dynamic
+key lookup (v.Int64 = 2):	1
+JSON skip rule for a prefix of the key path or a part of it -> reject:
+key subcolumn values:	[0,1,2]
+JSON skip rule for another path -> allowed:
+type:	JSON(`b.c` Int64, SKIP c)
+key lookup (data.b.c = 1):	1
+typed path above a dynamic key path is added -> reject:
+key subcolumn values:	[0,1,2]
+typed path above a dynamic key path is removed -> reject:
+key subcolumn NULLs:	3
+combined subcolumn in a key expression, JSON type change -> reject:
+key subcolumn values:	['0','1','2']
+typed Dynamic path, other paths change -> reject:
+key subcolumn values:	[0.5,1.5,2]
+typed path above a typed key path is added -> reject:
+key subcolumn values:	[0,1,2]
+typed Variant path, other paths change -> reject:
+key subcolumn values:	['1','x']
+typed Float64 path, other paths change -> reject:
+key subcolumn values:	[-inf,1,inf]
+typed Decimal path, other paths change -> reject:
+key subcolumn values:	[12345678901234567.81,12345678901234567.82,12345678901234567.83]
+typed Enum path to an integer type -> reject:
+key subcolumn values:	[0,1,2]
+typed DateTime path, other paths change -> reject:
+key subcolumn values:	[1729989000,1729990800,1729992600]
+typed Bool path, other paths change -> reject:
+key subcolumn values:	[0,1,2]
+typed SimpleAggregateFunction(any, Bool) path in the partition key, other paths change -> reject:
+key subcolumn values:	[0,1,2]
+typed Date32 path, other paths change -> reject:
+key subcolumn values:	[0,1,2147483647]
+key subcolumn 31 levels deep, a sibling changes -> allow:
+UInt64	0
+Array(JSON) sizes, the JSON changes -> allow:
+key subcolumn values:	[1,0,2]
+Array(Tuple(size0 ...)) sizes, the element size0 changes -> allow:
+key subcolumn values:	[1,0,2]
+Array(Array(JSON)) inner sizes, the JSON changes -> allow:
+key subcolumn values:	[[1],[0],[2]]
+LineString sizes in the partition key, LineString -> MultiLineString -> reject:
+key subcolumn values:	[2,3]
+Array(LineString) inner sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> reject:
+key subcolumn values:	[[2],[3]]
+Array(LineString) outer sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> allow:
+key subcolumn values:	[1,2]
+Array(Tuple(arr Array(JSON))) inner sizes, the JSON changes -> allow:
+key subcolumn values:	[[1],[0],[2]]
+Array(Tuple(g LineString)) inner sizes in the partition key, LineString -> MultiLineString -> reject:
+key subcolumn values:	[[2],[3]]
+typed UInt128 path in the partition key, other paths change -> reject:
+key subcolumn values:	[18446744073709551617,18446744073709551618]
