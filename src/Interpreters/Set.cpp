@@ -970,7 +970,7 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
 }
 
 /// Whether a column holding at most one value keeps a small, bounded size however often it is updated.
-/// `LowCardinality` grows its dictionary on every insert; a `Tuple` of fixed-width values, also inside `Nullable`, is not fixed-width itself.
+/// `LowCardinality` grows its dictionary on every insert; `ColumnTuple` does not report fixed-width values even when its elements do.
 static bool keepsBoundedSizeWhenReused(const IColumn & column)
 {
     if (column.lowCardinality())
