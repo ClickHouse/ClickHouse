@@ -104,7 +104,10 @@ CREATE HYPOTHETICAL INDEX h ON t_expr_alias (c3) TYPE minmax; -- { serverError B
 ALTER TABLE t_expr_alias ADD COLUMN c5 Int64 ALIAS c0 * 2, ADD INDEX i5 c5 TYPE minmax;
 ALTER TABLE t_expr_alias MODIFY COLUMN c5 Int64 ALIAS (c0 * 2 AS x); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_expr_alias ADD COLUMN c6 String ALIAS lower(src), ADD INDEX i6 src TYPE text(tokenizer = splitByNonAlpha, preprocessor = c6);
-ALTER TABLE t_expr_alias MODIFY COLUMN c6 String ALIAS lower(src AS x); -- { serverError BAD_ARGUMENTS }
+-- The installed transform is bound, so redeclare it to check the changed `ALIAS` expression.
+ALTER TABLE t_expr_alias MODIFY COLUMN c6 String ALIAS lower(src AS x),
+    DROP INDEX i6,
+    ADD INDEX i6 src TYPE text(tokenizer = splitByNonAlpha, preprocessor = c6); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_ttl_subquery (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0
 TTL d + INTERVAL 1 DAY WHERE c0 < (SELECT count() AS n FROM {CLICKHOUSE_DATABASE:Identifier}.t_src AS s WHERE s.x > 0);
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_expr_alias', 't_ttl_subquery');
