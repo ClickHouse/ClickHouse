@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <base/scope_guard.h>
 
 #include <array>
 #include <atomic>
@@ -32,6 +34,11 @@ namespace ProfileEvents
     extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
     extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
     extern const Event CommonBackgroundExecutorWaitMicroseconds;
+}
+
+namespace DB::FailPoints
+{
+    extern const char merge_tree_background_task_marked_for_deletion[];
 }
 
 std::random_device device;
@@ -513,4 +520,129 @@ TEST(Executor, ShutdownReleasesPendingTasks)
         EXPECT_TRUE(cancelled[i].load())
             << "task " << i << " was left in the pending queue and not cancelled on executor shutdown";
     }
+}
+
+
+/// Task that keeps asking for another step and whose destructor blocks until released once it has run a step,
+/// so the shutdown drain keeps it alive for as long as the test needs.
+class BlockingDestructionTask : public IExecutableTask
+{
+public:
+    BlockingDestructionTask(
+        const String & name_,
+        std::latch & step_executed_,
+        std::latch & destruction_started_,
+        std::shared_future<void> destruction_released_,
+        std::atomic<bool> & destroyed_)
+        : name(name_)
+        , step_executed(step_executed_)
+        , destruction_started(destruction_started_)
+        , destruction_released(std::move(destruction_released_))
+        , destroyed(destroyed_)
+    {}
+
+    ~BlockingDestructionTask() override
+    {
+        /// Not blocking a task that never ran: `trySchedule` failing must fail the test, not hang it.
+        if (step_reported)
+        {
+            destruction_started.count_down();
+            destruction_released.wait();
+        }
+        destroyed = true;
+    }
+
+    bool executeStep() override
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!step_reported.exchange(true))
+            step_executed.count_down();
+        return true;
+    }
+
+    void cancel() noexcept override {}
+    StorageID getStorageID() const override { return {"test", name}; }
+    void onCompleted() override {}
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::blocking_destruction"; }
+
+private:
+    String name;
+    std::latch & step_executed;
+    std::latch & destruction_started;
+    std::shared_future<void> destruction_released;
+    std::atomic<bool> & destroyed;
+    std::atomic<bool> step_reported{false};
+};
+
+
+/// A task that `wait()` is still destroying must keep `removeTasksCorrespondingToStorage` waiting.
+/// Otherwise a storage tearing down its background work during shutdown (a `ReplicatedMergeTree` restarting thread on
+/// a ZooKeeper session expiry) re-initializes its replication queue while a merge task still holds its future parts.
+TEST(Executor, RemoveTasksWaitsForTasksDrainedOnShutdown)
+{
+    /// Declared before the executor so they outlive it (its destructor calls `wait`).
+    std::latch step_executed(1);
+    std::latch destruction_started(1);
+    std::promise<void> destruction_release;
+    std::promise<void> remove_returned;
+    std::atomic<bool> destroyed{false};
+    std::atomic<bool> destroyed_when_returned{false};
+
+    /// `removeTasksCorrespondingToStorage` pauses at this fail point once it has found a task it must wait for.
+    /// Enabled before any task exists: if this throws, unwinding must not reach a task blocked in its destructor.
+    const String fail_point = FailPoints::merge_tree_background_task_marked_for_deletion;
+    FailPointInjection::enableFailPoint(fail_point);
+    SCOPE_EXIT({ FailPointInjection::disableFailPoint(fail_point); });
+
+    auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        10, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    ASSERT_TRUE(executor->trySchedule(std::make_shared<BlockingDestructionTask>(
+        "drained_storage", step_executed, destruction_started, destruction_release.get_future().share(), destroyed)));
+
+    /// The task is now cycling through `pending`, so `wait()` finds it there.
+    step_executed.wait();
+
+    std::thread shutdown_thread([&] { executor->wait(); });
+
+    /// The drain is inside the task's destructor: the task is alive and owned by `wait()`.
+    destruction_started.wait();
+
+    auto remove_returned_future = remove_returned.get_future();
+    std::thread remove_thread([&]
+    {
+        executor->removeTasksCorrespondingToStorage({"test", "drained_storage"});
+        destroyed_when_returned = destroyed.load();
+        remove_returned.set_value();
+        /// Wakes `waitForPause` below if the call returned without pausing.
+        FailPointInjection::disableFailPoint(fail_point);
+    });
+
+    /// Returns once the call has either paused before waiting for the task, or returned.
+    FailPointInjection::waitForPause(fail_point);
+    FailPointInjection::disableFailPoint(fail_point);
+
+    /// The task is still being destroyed, so the call must still be waiting for it.
+    EXPECT_EQ(remove_returned_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout)
+        << "removeTasksCorrespondingToStorage returned while the shutdown drain was still destroying a task of that storage";
+
+    destruction_release.set_value();
+
+    remove_thread.join();
+    shutdown_thread.join();
+
+    EXPECT_TRUE(destroyed_when_returned.load())
+        << "removeTasksCorrespondingToStorage returned while a task of that storage was still alive in the shutdown drain";
+    EXPECT_TRUE(destroyed.load());
 }
