@@ -1,0 +1,34 @@
+-- primary key
+1	1
+1
+1
+2
+2
+1
+Granules: 1/3
+Granules: 2/3
+1
+1
+1
+-- minmax skip index
+1
+Granules: 3/3
+Granules: 1/3
+-- statistics part pruning
+1
+1
+-- composite member
+1	1
+1	1
+1	1
+-- custom-named wrapper
+1
+-- pattern operand
+-- incomparable member
+-- string member
+1	1
+1
+1
+-- numeric member
+2
+2

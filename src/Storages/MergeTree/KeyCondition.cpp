@@ -23,7 +23,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/misc.h>
+#include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionVariantAdaptor.h>
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
@@ -45,6 +47,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
@@ -59,6 +62,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -2450,32 +2454,50 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
+/// Row 0 of `column`, which must not be NULL, as a one-row column of the type of its value: the active member of
+/// a `Variant` or a `Dynamic`, `column` itself for any other type.
+static ColumnWithTypeAndName getActiveMember(const IColumn & column, const DataTypePtr & type)
+{
+    if (isDynamic(type))
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
+        const auto & variant_column = dynamic_column.getVariantColumn();
+        if (variant_column.globalDiscriminatorAt(0) != dynamic_column.getSharedVariantDiscriminator())
+            return getActiveMember(variant_column, dynamic_column.getVariantInfo().variant_type);
+
+        ReadBufferFromMemory buf(dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(0)));
+        auto member_type = decodeDataType(buf);
+        auto member_column = member_type->createColumn();
+        member_type->getDefaultSerialization()->deserializeBinary(*member_column, buf, {});
+        return {std::move(member_column), member_type, ""};
+    }
+
+    if (isVariant(type))
+    {
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+        const auto discriminator = variant_column.globalDiscriminatorAt(0);
+        chassert(discriminator < variant_type.getVariants().size());
+        return {
+            variant_column.getVariantByGlobalDiscriminator(discriminator).cut(variant_column.offsetAt(0), 1),
+            variant_type.getVariant(discriminator),
+            ""};
+    }
+
+    return {column.getPtr(), type, ""};
+}
+
 /// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
 /// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
-/// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
-/// resolves types stored in the shared variant. Other value types do not use padded string comparison.
+/// is non-NULL, so an erased constant must have an active member type. Other value types do not use
+/// padded string comparison.
 static bool isFixedStringConstant(
     const Field & value, const IColumn & column, const DataTypePtr & type)
 {
     if (value.getType() != Field::Types::String)
         return false;
 
-    DataTypePtr value_type = type;
-    if (isDynamic(type))
-    {
-        value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
-        chassert(value_type);
-    }
-    else if (isVariant(type))
-    {
-        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-        const auto discriminator = variant_column.globalDiscriminatorAt(0);
-        chassert(discriminator < variant_type.getVariants().size());
-        value_type = variant_type.getVariant(discriminator);
-    }
-
-    value_type = removeLowCardinalityAndNullable(value_type);
+    const auto value_type = removeLowCardinalityAndNullable(getActiveMember(column, type).type);
     if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(value_type.get()))
     {
         chassert(value.safeGet<String>().size() == fixed_string_type->getN());
@@ -2969,6 +2991,22 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
         if (isQueryOuterGuardError(e.code()))
             throw;
         return nullptr;
+    }
+}
+
+/// Whether the function accepts arguments of these types.
+static bool canBuildFunction(const String & name, const ColumnsWithTypeAndName & arguments, const ContextPtr & context)
+{
+    try
+    {
+        FunctionFactory::instance().get(name, context)->build(arguments);
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return false;
     }
 }
 
@@ -5800,6 +5838,34 @@ void KeyCondition::extractBinaryComparisonAtoms(
 
         group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
         return;
+    }
+
+    /// A comparison whose adaptor executes per member of the constant compares the key with the constant's active member.
+    if (!reverseComparisonOperator(func_name).empty())
+    {
+        const auto & function = *func.getFunctionBase();
+        const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function);
+        const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function);
+        if ((dynamic_adaptor && dynamic_adaptor->getDynamicArgumentIndex() == const_arg_pos)
+            || (variant_adaptor && variant_adaptor->getVariantArgumentIndex() == const_arg_pos))
+        {
+            const auto & data_column = assert_cast<const ColumnConst &>(*constant.column).getDataColumn();
+            const auto member = getActiveMember(data_column, constant.type);
+            const auto member_type = removeLowCardinality(member.type);
+
+            /// The member is compared as a column: unlike a constant string, a column of strings is not converted to the
+            /// type of a non-string key. Such a member, or one the comparison rejects, is left to execution.
+            const auto & key_type = function.getArgumentTypes()[1 - const_arg_pos];
+            ColumnsWithTypeAndName arguments(2);
+            arguments[const_arg_pos].type = member_type;
+            arguments[1 - const_arg_pos].type = key_type;
+            if ((isStringOrFixedString(removeLowCardinalityAndNullable(member_type))
+                 && !isStringOrFixedString(removeLowCardinalityAndNullable(key_type)))
+                || !canBuildFunction(function.getName(), arguments, func.getContext()))
+                return;
+
+            constant = {ColumnConst::create(member.column->convertToFullColumnIfLowCardinality(), 1), member_type, constant.name};
+        }
     }
 
     const size_t key_arg_pos = 1 - const_arg_pos;

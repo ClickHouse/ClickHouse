@@ -51,6 +51,7 @@ public:
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return return_type; }
+    size_t getDynamicArgumentIndex() const { return dynamic_argument_index; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
