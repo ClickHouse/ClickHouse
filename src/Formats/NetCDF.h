@@ -92,7 +92,7 @@ struct NetCDFVariable
     /// non-record variable, without the padding.
     UInt64 slab_size = 0;
 
-    const NetCDFAttribute * tryGetAttribute(std::string_view attribute_name) const;
+    [[nodiscard]] const NetCDFAttribute * tryGetAttribute(std::string_view attribute_name) const;
 };
 
 struct NetCDFHeader

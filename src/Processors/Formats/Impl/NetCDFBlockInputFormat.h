@@ -72,7 +72,7 @@ struct NetCDFTableLayout
     UInt64 num_rows = 0;
     VectorWithMemoryTracking<Column> columns;
 
-    NamesAndTypesList getNamesAndTypes() const;
+    [[nodiscard]] NamesAndTypesList getNamesAndTypes() const;
 };
 
 NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const FormatSettings & settings);
