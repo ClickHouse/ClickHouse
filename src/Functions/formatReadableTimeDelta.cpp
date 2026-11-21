@@ -151,7 +151,7 @@ public:
                 bool has_output = false;
 
                 Float64 whole_part = 0;
-                std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
+                std::string fractional_str = getFractionalString(std::modf(value, &whole_part), whole_part);
 
                 switch (max_unit) /// A kind of Duff Device.
                 {
@@ -330,7 +330,7 @@ private:
         return whole_part < 1 && fractional_str.substr(0, digits) == std::string(digits, '0');
     }
 
-    static std::string getFractionalString(const Float64 & fractional_part)
+    static std::string getFractionalString(const Float64 & fractional_part, Float64 & whole_part)
     {
         DB::DoubleConverter<true>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
@@ -338,7 +338,13 @@ private:
         if (!DB::DoubleConverter<false>::instance().ToFixed(fractional_part, 9, &builder))
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print double number: {}", fractional_part);
 
-        return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
+        std::string str(buffer, builder.position());
+
+        /// A fraction close to 1 is rounded to `1.000000000`, carry it into the whole part.
+        if (str[0] == '1')
+            whole_part += 1;
+
+        return str.substr(2);   /// do not return `0.` -- we don't need it
     }
 
     [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
