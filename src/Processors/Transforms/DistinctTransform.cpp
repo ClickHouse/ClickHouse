@@ -59,11 +59,28 @@ DistinctTransform::DistinctTransform(
 
 IProcessor::Status DistinctTransform::prepare()
 {
-    /// Emit the held back rows once the input is exhausted.
-    if (!pending_chunks.empty() && !has_input && !has_output && input.isFinished())
+    /// Emit the held back rows once the input is exhausted. `ISimpleTransform::prepare` finishes the output when it
+    /// sees the input finished, which a concurrent upstream can do after a check made here, so while rows are held
+    /// it is called only when the input cannot finish under it: once the rows are taken, or with a chunk to pull.
+    if (!pending_chunks.empty() && !has_input && !has_output && !output.isFinished())
     {
-        output_data.chunk = flushPendingChunks();
-        has_output = true;
+        if (!output.canPush())
+        {
+            input.setNotNeeded();
+            return Status::PortFull;
+        }
+
+        if (input.isFinished())
+        {
+            output_data.chunk = flushPendingChunks();
+            has_output = true;
+        }
+        else
+        {
+            input.setNeeded();
+            if (!input.hasData())
+                return Status::NeedData;
+        }
     }
 
     return ISimpleTransform::prepare();
