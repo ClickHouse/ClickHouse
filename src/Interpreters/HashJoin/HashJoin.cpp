@@ -121,7 +121,7 @@ size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, size_t cel
 {
     /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
     static constexpr size_t max_cells_per_key = 4;
-    /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
+    /// `SpillingHashJoin` counts the maps twice, so a reserve over half of the budget would make it switch at the first block.
     static constexpr size_t budget_divisor = 2;
 
     if (!keys || !max_reserve_bytes)
@@ -784,6 +784,14 @@ size_t HashJoin::getTotalByteCount() const
 
     doDebugAsserts();
     return data->total_bytes.load(std::memory_order_relaxed);
+}
+
+size_t HashJoin::getSpillByteCount() const
+{
+    if (!data)
+        return 0;
+
+    return data->spill_bytes.load(std::memory_order_relaxed);
 }
 
 void HashJoin::setTotals(const Block & block)
