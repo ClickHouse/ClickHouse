@@ -23,11 +23,12 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw, const std::optional<String> & execution_database)
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
+    data.current_database = execution_database.value_or(current_database);
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
@@ -230,8 +231,9 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     if (qualified_name.database.empty())
     {
-        /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-        qualified_name.database = data.default_database;
+        /// It can be table/dictionary from the database against which the unqualified names are resolved,
+        /// or an XML dictionary, but we cannot distinguish it here.
+        qualified_name.database = data.current_database;
     }
     data.dependencies.emplace(std::move(qualified_name));
 }

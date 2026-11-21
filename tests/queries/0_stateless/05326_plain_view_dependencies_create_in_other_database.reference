@@ -1,0 +1,5 @@
+source is stored unqualified	1
+after create	session_db	[]
+after create	views_db	['create_other_db_view']
+after alter	session_db	[]
+after alter	views_db	['create_other_db_view']

@@ -1,0 +1,4 @@
+before rename	1
+after rename	1
+source after insert	[1,2]
+qualified alias	100
