@@ -201,19 +201,20 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods");
         }
 
-        if (!query.alter)
+        /// `CREATE` validates all the methods the user ends up with, including the implicit default one.
+        /// `ALTER` validates only the methods introduced by the query: methods the user already has may have been
+        /// set up while their type was still allowed, and must not block unrelated alters.
+        const auto & authentication_methods_to_check = query.alter ? authentication_methods : user.authentication_methods;
+        for (const auto & authentication_method : authentication_methods_to_check)
         {
-            for (const auto & authentication_method : user.authentication_methods)
+            auto auth_type = authentication_method.getType();
+            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
             {
-                auto auth_type = authentication_method.getType();
-                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                                    toString(auth_type),
-                                    AuthenticationTypeInfo::get(auth_type).name);
-                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                                toString(auth_type),
+                                AuthenticationTypeInfo::get(auth_type).name);
             }
         }
 
