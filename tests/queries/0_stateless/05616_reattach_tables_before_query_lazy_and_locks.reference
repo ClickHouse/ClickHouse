@@ -1,0 +1,6 @@
+1
+materialized view, stopped merges	2
+1
+lazy Set, persistent = 0	1
+lazy Join, persistent = 0	1
+lazy MergeTree	1

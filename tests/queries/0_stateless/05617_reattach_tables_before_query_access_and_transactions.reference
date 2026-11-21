@@ -1,0 +1,8 @@
+restricted user: not reattached
+default user: reattached
+user without TABLE ENGINE: not reattached
+user with TABLE ENGINE: reattached
+table function, restricted user: not reattached
+table function, default user: not reattached
+transactions	[1]
+implicit transaction	1
