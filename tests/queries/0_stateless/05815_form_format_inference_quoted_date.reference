@@ -1,0 +1,10 @@
+a	Nullable(String)					
+b	Nullable(String)					
+c	Nullable(String)					
+text	\'2026-11-17\'	\'2026-11-17 10:20:30\'
+a	Nullable(String)					
+\'2026-11-17\'
+a	Nullable(String)					
+b	Nullable(Date)					
+c	Nullable(DateTime)					
+text	2026-11-17	2026-11-17 10:20:30
