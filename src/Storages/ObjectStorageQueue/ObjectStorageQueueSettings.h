@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 
 
 namespace DB
@@ -75,6 +76,7 @@ struct ObjectStorageQueueSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;

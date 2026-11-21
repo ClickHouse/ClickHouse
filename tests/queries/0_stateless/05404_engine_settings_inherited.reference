@@ -1,0 +1,43 @@
+AzureQueue	min_insert_block_size_bytes_for_materialized_views	1
+AzureQueue	min_insert_block_size_rows_for_materialized_views	1
+Executable	max_command_execution_time	0
+ExecutablePool	max_command_execution_time	1
+Kafka	format_csv_delimiter	1
+Kafka	kafka_max_block_size	1
+MySQL	mysql_datatypes_support_level	1
+PostgreSQL	postgresql_connection_pool_size	1
+RabbitMQ	rabbitmq_vhost	1
+S3Queue	keeper_path	1
+S3Queue	min_insert_block_size_bytes_for_materialized_views	1
+S3Queue	min_insert_block_size_rows_for_materialized_views	1
+Kafka	input_format_allow_errors_num	0	1	0	0
+Kafka	input_format_allow_errors_ratio	0	1	0	0
+Kafka	input_format_skip_unknown_fields	1	1	0	0
+NATS	input_format_allow_errors_num	0	1	0	0
+NATS	input_format_allow_errors_ratio	0	1	0	0
+NATS	input_format_skip_unknown_fields	1	1	0	0
+RabbitMQ	input_format_allow_errors_num	0	1	0	0
+RabbitMQ	input_format_allow_errors_ratio	0	1	0	0
+RabbitMQ	input_format_skip_unknown_fields	1	1	0	0
+FileLog	input_format_csv_detect_header	0	1	1	0
+FileLog	input_format_custom_detect_header	0	1	1	0
+FileLog	input_format_tsv_detect_header	0	1	1	0
+Kafka	input_format_csv_detect_header	0	1	1	0
+Kafka	input_format_custom_detect_header	0	1	1	0
+Kafka	input_format_tsv_detect_header	0	1	1	0
+NATS	input_format_csv_detect_header	0	1	1	0
+NATS	input_format_custom_detect_header	0	1	1	0
+NATS	input_format_tsv_detect_header	0	1	1	0
+RabbitMQ	input_format_csv_detect_header	0	1	1	0
+RabbitMQ	input_format_custom_detect_header	0	1	1	0
+RabbitMQ	input_format_tsv_detect_header	0	1	1	0
+Kafka	kafka_sasl_password	1
+NATS	nats_password	1
+RabbitMQ	rabbitmq_password	1
+0
+0
+0
+0
+1	0
+IcebergS3	10
+PaimonS3	0
