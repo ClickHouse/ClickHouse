@@ -1,0 +1,15 @@
+-- group_left with subquery on right side
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- explain plan verifies join_group filter pushdown with subquery on right side
+1
+-- group_left with offset on right side
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- explain plan verifies join_group filter pushdown with offset on right side
+1
+-- group_left with fixed at modifier on right side
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- explain plan verifies join_group filter pushdown with fixed at modifier on right side
+1
