@@ -9,7 +9,7 @@ struct CreateHandler : IHandler
 {
     CreateHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"create"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"create"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

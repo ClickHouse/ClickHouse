@@ -20,7 +20,7 @@ protected:
     }
 
 public:
-    virtual std::string getFunctionName() const = 0;
+    [[nodiscard]] virtual std::string getFunctionName() const = 0;
 
     ~IMongoFunction() override = default;
 };
@@ -28,7 +28,7 @@ public:
 class MongoIdentityFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return edge_name; }
+    [[nodiscard]] std::string getFunctionName() const override { return edge_name; }
 
     explicit MongoIdentityFunction(
         rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
@@ -49,10 +49,10 @@ public:
     {
     }
 
-    virtual std::string getFunctionAlias() const = 0;
+    [[nodiscard]] virtual std::string getFunctionAlias() const = 0;
 
     /// `$nor` is `$or` with the result negated.
-    virtual bool isNegated() const { return false; }
+    [[nodiscard]] virtual bool isNegated() const { return false; }
 
     bool parseImpl(ASTPtr & node) override;
 };
@@ -60,9 +60,9 @@ public:
 class MongoOrFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$or"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$or"; }
 
-    std::string getFunctionAlias() const override { return "or"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "or"; }
 
     explicit MongoOrFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -73,9 +73,9 @@ public:
 class MongoAndFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$and"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$and"; }
 
-    std::string getFunctionAlias() const override { return "and"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "and"; }
 
     explicit MongoAndFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -89,7 +89,7 @@ public:
 class MongoExprFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return "$expr"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$expr"; }
 
     explicit MongoExprFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
@@ -102,11 +102,11 @@ public:
 class MongoNorFunction : public IMongoLogicalFunction
 {
 public:
-    std::string getFunctionName() const override { return "$nor"; }
+    [[nodiscard]] std::string getFunctionName() const override { return "$nor"; }
 
-    std::string getFunctionAlias() const override { return "or"; }
+    [[nodiscard]] std::string getFunctionAlias() const override { return "or"; }
 
-    bool isNegated() const override { return true; }
+    [[nodiscard]] bool isNegated() const override { return true; }
 
     explicit MongoNorFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)

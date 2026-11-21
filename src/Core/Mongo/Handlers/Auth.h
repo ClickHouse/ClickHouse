@@ -9,7 +9,7 @@ struct AuthHandler : IHandler
 {
     AuthHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"saslStart"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"saslStart"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

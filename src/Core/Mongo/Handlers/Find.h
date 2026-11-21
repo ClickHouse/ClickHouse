@@ -9,7 +9,7 @@ struct FindHandler : IHandler
 {
     FindHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"find"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"find"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

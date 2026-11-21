@@ -9,7 +9,7 @@ struct DistinctHandler : IHandler
 {
     DistinctHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"distinct"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"distinct"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

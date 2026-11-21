@@ -403,7 +403,7 @@ struct WideInteger
     }
 
     /// The integer as an `Int128`, nothing when it is out of its range.
-    std::optional<Int128> toInt128() const
+    [[nodiscard]] std::optional<Int128> toInt128() const
     {
         static const UInt256 max_magnitude = static_cast<UInt256>(std::numeric_limits<Int128>::max());
         if (magnitude_overflow || magnitude > max_magnitude)

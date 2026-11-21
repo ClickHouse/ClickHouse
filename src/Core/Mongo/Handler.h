@@ -87,7 +87,7 @@ struct CollectionRef
     String collection;
 
     /// A quoted `database`.`collection` identifier that is safe to embed into a query.
-    String getQualifiedName() const;
+    [[nodiscard]] String getQualifiedName() const;
 };
 
 /** The namespace of the Mongo dialect text that a handler builds for a command. The text never
@@ -242,7 +242,7 @@ extern const char * const PLACEHOLDER_COLLECTION_COMMENT;
 
 struct IHandler
 {
-    virtual std::vector<String> getIdentifiers() const = 0;
+    [[nodiscard]] virtual std::vector<String> getIdentifiers() const = 0;
     virtual std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) = 0;
 
     virtual ~IHandler() = default;

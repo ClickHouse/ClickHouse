@@ -9,7 +9,7 @@ struct ListDatabasesHandler : IHandler
 {
     ListDatabasesHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"listDatabases"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"listDatabases"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

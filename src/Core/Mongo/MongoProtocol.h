@@ -70,7 +70,7 @@ public:
     virtual void serialize(WriteBuffer & out) const = 0;
 
     /** Size of the message in bytes including message length part (4 bytes) */
-    virtual Int32 size() const = 0;
+    [[nodiscard]] virtual Int32 size() const = 0;
 
     virtual ~ISerializable() = default;
 };
@@ -110,7 +110,7 @@ struct Header : public FrontMessage, BackendMessage
 
     void serialize(WriteBuffer & out) const override;
 
-    Int32 size() const override;
+    [[nodiscard]] Int32 size() const override;
 };
 
 class MessageTransport
@@ -187,16 +187,16 @@ public:
 
     /// The name of the user this connection has authenticated as, or an empty string before a
     /// successful `saslStart`.
-    String getAuthenticatedUserName() const;
+    [[nodiscard]] String getAuthenticatedUserName() const;
 
     /** A fresh query context of this session, whose settings are the ones of the authenticated
       * user and its profile. Every authentication starts a new session (see `authenticate`), and a
       * connection that has not authenticated has no query context at all.
       */
-    ContextPtr getQueryContext() const;
+    [[nodiscard]] ContextPtr getQueryContext() const;
 
 private:
-    ContextMutablePtr makeQueryContext() const;
+    [[nodiscard]] ContextMutablePtr makeQueryContext() const;
 
     std::unique_ptr<Session> & session;
     Poco::Net::SocketAddress address;

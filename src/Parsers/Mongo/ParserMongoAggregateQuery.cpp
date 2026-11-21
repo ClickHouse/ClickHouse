@@ -206,7 +206,7 @@ struct StreamFields
     }
 
     /// The fields under `path`, in their order, which is what a select of `path` as itself keeps.
-    std::optional<std::vector<std::string>> subtree(const std::string & path) const
+    [[nodiscard]] std::optional<std::vector<std::string>> subtree(const std::string & path) const
     {
         if (kind != Kind::Names)
             return std::nullopt;
@@ -258,7 +258,7 @@ public:
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
-    bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
+    [[nodiscard]] bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
 
     void wrap()
     {
@@ -296,7 +296,7 @@ public:
         order = {};
     }
 
-    ASTPtr build() const
+    [[nodiscard]] ASTPtr build() const
     {
         auto select = make_intrusive<ASTSelectQuery>();
 

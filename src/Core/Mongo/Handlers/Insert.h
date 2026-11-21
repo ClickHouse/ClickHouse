@@ -19,7 +19,7 @@ public:
 
     InsertHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"insert"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"insert"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 

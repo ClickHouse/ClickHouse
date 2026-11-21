@@ -13,7 +13,7 @@ public:
 
     void addHandler(const String & handler_name, HandlerPtr handler);
 
-    HandlerPtr getHandler(const String & handler_name) const;
+    [[nodiscard]] HandlerPtr getHandler(const String & handler_name) const;
 
 private:
     std::unordered_map<String, HandlerPtr> hanlers;

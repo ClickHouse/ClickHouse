@@ -9,7 +9,7 @@ struct DropHandler : IHandler
 {
     DropHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"drop"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"drop"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

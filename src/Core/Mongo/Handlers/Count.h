@@ -9,7 +9,7 @@ struct CountHandler : IHandler
 {
     CountHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"count"}; }
+    [[nodiscard]] std::vector<String> getIdentifiers() const override { return {"count"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

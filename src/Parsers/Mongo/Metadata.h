@@ -54,17 +54,17 @@ public:
         std::optional<std::string> order_by_);
 
     /// Empty when the query does not name a database, which means the current one.
-    const std::string & getDatabaseName() const { return database_name; }
+    [[nodiscard]] const std::string & getDatabaseName() const { return database_name; }
 
-    const std::string & getCollectionName() const { return collection_name; }
+    [[nodiscard]] const std::string & getCollectionName() const { return collection_name; }
 
-    QueryType getQueryType() const { return query_type; }
+    [[nodiscard]] QueryType getQueryType() const { return query_type; }
 
-    std::optional<UInt64> getLimit() const { return limit; }
+    [[nodiscard]] std::optional<UInt64> getLimit() const { return limit; }
 
-    std::optional<UInt64> getOffset() const { return offset; }
+    [[nodiscard]] std::optional<UInt64> getOffset() const { return offset; }
 
-    std::optional<std::string> getOrderBy() const { return order_by; }
+    [[nodiscard]] std::optional<std::string> getOrderBy() const { return order_by; }
 
     /// The allocator of every value of the parsed query. It is owned by this object, which
     /// lives at least as long as the parsers referencing those values.
