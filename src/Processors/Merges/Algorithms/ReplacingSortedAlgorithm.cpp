@@ -141,7 +141,7 @@ void ReplacingSortedAlgorithm::insertRowImpl()
             chunk.replace_final_selection = ColumnUInt64::create();
             chunk.replace_final_selection_start = num_selected_rows;
         }
-        chunk.replace_final_selection->insert(selected_row.row_num);
+        assert_cast<ColumnUInt64 &>(*chunk.replace_final_selection).getData().push_back(selected_row.row_num);
         ++num_selected_rows;
 
         /// This is the last row we can select from `selected_row.owned_chunk`, keep it to emit later
@@ -210,10 +210,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        RowRef current_row;
-        setRowRef(current_row, current);
-
-        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
+        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current);
         if (key_differs)
         {
             /// If there are enough rows and the last one is calculated completely
@@ -315,8 +312,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 /// (a non-strict comparison in terms of the version). In the reverse reading order rows within
                 /// one source arrive backwards, so the current row replaces the selected one only when
                 /// it comes from a newer data part.
-                chassert(current_row.source_stream_index >= selected_row.source_stream_index);
-                replace_with_current_row = !read_in_reverse || current_row.source_stream_index > selected_row.source_stream_index;
+                chassert(current->order >= selected_row.source_stream_index);
+                replace_with_current_row = !read_in_reverse || current->order > selected_row.source_stream_index;
             }
         }
 

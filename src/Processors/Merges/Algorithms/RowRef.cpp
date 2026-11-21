@@ -97,16 +97,6 @@ void SharedChunkAllocator::release(SharedChunk * ptr) noexcept
     free_chunks.push_back(ptr->position);
 }
 
-void RowRefWithOwnedChunk::set(SortCursor & cursor, SharedChunkPtr chunk)
-{
-    owned_chunk = std::move(chunk);
-    row_num = cursor.impl->getRow();
-    all_columns = &owned_chunk->all_columns;
-    sort_columns = &owned_chunk->sort_columns;
-    current_cursor = cursor.impl;
-    source_stream_index = cursor.impl->order;
-}
-
 }
 
 }
