@@ -57,7 +57,7 @@ public:
 
         /// The settings of the table that wrote the parts, as far as they are known here: the defaults
         /// with the carried settings applied. Everything that sizes reads by granularity must use these.
-        MergeTreeSettingsPtr buildStorageSettings() const;
+        [[nodiscard]] MergeTreeSettingsPtr buildStorageSettings() const;
     };
 
     StorageMergeTreeParts(
