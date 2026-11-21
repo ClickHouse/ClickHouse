@@ -2154,7 +2154,10 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("serialization_info_version", String(fuzz_rand() % 2 == 0 ? "basic" : "with_types"));
     if (fuzz_rand() % 20 == 0)
-        fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
+    {
+        static constexpr std::array<std::string_view, 3> string_serialization_versions = {"single_stream", "with_size_stream", "with_dictionaries"};
+        fuzz_setting("string_serialization_version", String(string_serialization_versions[fuzz_rand() % string_serialization_versions.size()]));
+    }
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("vertical_merge_algorithm_min_bytes_to_activate", UInt64(1) << (fuzz_rand() % 14));
     if (fuzz_rand() % 20 == 0)
