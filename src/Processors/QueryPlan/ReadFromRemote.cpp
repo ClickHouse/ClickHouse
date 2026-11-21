@@ -3,7 +3,10 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -31,6 +34,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Set.h>
+#include <Storages/StorageMemory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
@@ -74,8 +79,20 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsUInt64 max_temporary_table_memory_usage;
+    extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
@@ -245,6 +262,131 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+template <typename T = FutureSetFromSubquery>
+static std::shared_ptr<T> tryGetSet(const ActionsDAG::Node & node)
+{
+    const auto * column_set = node.column ? typeid_cast<const ColumnSet *>(&node.column->getDataColumn()) : nullptr;
+    return column_set ? std::dynamic_pointer_cast<T>(column_set->getData()) : nullptr;
+}
+
+bool SetsToSend::addTables(Tables & external_tables, const Settings & settings, size_t num_servers) const
+{
+    /// The query did not ask for the transfer: what does not fit into the limits of the remote query must not fail or cut it.
+    auto fits = [](UInt64 value, UInt64 limit) { return !limit || value < limit; };
+
+    UInt64 rows = 0;
+    UInt64 bytes = 0;
+    for (const auto & [_, future_set] : sets)
+    {
+        /// The query can be sent before the set is built, to build another set. The elements are lost if the set spills.
+        const auto set = future_set->get();
+        const auto blocks = set ? set->getElementBlocks() : std::nullopt;
+        if (!blocks || !fits(set->getTotalRowCount(), settings[Setting::max_rows_in_set])
+            || !fits(set->getTotalByteCount(), settings[Setting::max_bytes_in_set]))
+            return false;
+
+        rows += set->getTotalRowCount();
+        for (const auto & block : *blocks)
+            for (const auto & column : block)
+                bytes += column->byteSize();
+    }
+
+    if (!fits(rows, settings[Setting::max_rows_to_transfer]) || !fits(bytes, settings[Setting::max_bytes_to_transfer])
+        || !fits(bytes, settings[Setting::max_temporary_table_memory_usage]))
+        return false;
+
+    /// The rest of the query needs a part of these limits too.
+    if (!fits(2 * rows, settings[Setting::max_rows_to_read_leaf]) || !fits(2 * bytes, settings[Setting::max_bytes_to_read_leaf])
+        || !fits(2 * rows * num_servers, settings[Setting::max_rows_to_read])
+        || !fits(2 * bytes * num_servers, settings[Setting::max_bytes_to_read])
+        || !fits(2 * bytes * num_servers, settings[Setting::max_network_bytes]))
+        return false;
+
+    for (const auto & [name, future_set] : sets)
+        external_tables.emplace(name, future_set->fillTableOfElements());
+    return true;
+}
+
+/// The left side of `IN` is converted to the type of the set, and another server would take another time zone for the same type name.
+static DataTypePtr makeTimeZoneExplicit(const DataTypePtr & type, const DataTypePtr &)
+{
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()); date_time && !date_time->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime>(getDateLUTTimeZone(date_time->getTimeZone()));
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime64 *>(type.get()); date_time && !date_time->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime64>(date_time->getScale(), getDateLUTTimeZone(date_time->getTimeZone()));
+    return type;
+}
+
+/// What to write instead of the subquery, if there is a name. A table that is sent anyway has no set.
+struct TableForSet
+{
+    String name = {};
+    FutureSetFromSubqueryPtr set = nullptr;
+    bool has_set_engine = false;
+};
+
+static TableForSet getTableForSet(const FutureSetFromSubqueryPtr & set, const Tables & external_tables, const ContextPtr & context)
+{
+    DataTypes types;
+    for (const auto & type : set->getTypes())
+    {
+        types.push_back(replaceNestedTypesInPair(type, type, makeTimeZoneExplicit));
+        /// A value is converted to a `Variant` by the name of its type.
+        if (!types.back() || (types.back() != type && type->getName().contains("Variant")))
+            return {};
+    }
+
+    /// See `RemoteQueryExecutor::sendExternalTables`.
+    const auto * identifier = typeid_cast<const ASTTableIdentifier *>(set->getSourceAST().get());
+    if (identifier && types == set->getTypes())
+        if (auto it = external_tables.find(identifier->name()); it != external_tables.end() && it->second->as<StorageMemory>())
+            return {it->first};
+
+    return {set->createTableOfElements(types, context), set};
+}
+
+using TablesOfInFunctions = UnorderedMapWithMemoryTracking<const IAST *, TableForSet>;
+
+static bool collectSets(const IAST & ast, const TablesOfInFunctions & tables, SetsToSend & result, bool & has_set_engine)
+{
+    if (auto it = tables.find(&ast); it != tables.end())
+    {
+        has_set_engine |= it->second.has_set_engine;
+        if (it->second.set)
+            result.sets.emplace(it->second.name, it->second.set);
+        else if (it->second.name.empty() && !it->second.has_set_engine)
+            return false;
+    }
+    return std::ranges::all_of(ast.children, [&](const auto & child) { return collectSets(*child, tables, result, has_set_engine); });
+}
+
+/** Removes the conjuncts with an `IN` that has no table. It is done on the text, where the chain of `AND`s is followed through
+  * aliases and shared nodes: the other conjuncts must be sent, as `conjunctsLeftOutOfRemoteQuery` has predicted.
+  */
+static ASTPtr leaveOutConjunctsWithoutSets(const ASTPtr & ast, const TablesOfInFunctions & tables, SetsToSend & result)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "and")
+    {
+        ASTs arguments;
+        for (const auto & argument : function->arguments->children)
+            if (auto rest = leaveOutConjunctsWithoutSets(argument, tables, result); rest && !rest->as<ASTLiteral>())
+                arguments.push_back(std::move(rest));
+
+        if (arguments.size() == 1)
+            arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
+        return arguments.empty() ? nullptr : makeASTFunction("and", std::move(arguments));
+    }
+
+    /// A `Set` table is the one of the remote server, do not mix it with the sets of this one.
+    SetsToSend sets_of_conjunct;
+    bool has_set_engine = false;
+    if (!collectSets(*ast, tables, sets_of_conjunct, has_set_engine) || (has_set_engine && !sets_of_conjunct.sets.empty()))
+        return nullptr;
+
+    result.sets.merge(sets_of_conjunct.sets);
+    return ast;
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -253,9 +395,11 @@ ASTPtr tryBuildAdditionalFilterAST(
     const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts,
+    SetsToSend * sets_to_send)
 {
     UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+    TablesOfInFunctions tables_of_in_functions;
 
     /** Dropping a conjunct that cannot be converted weakens an `AND`, which is only sound where the
       * predicate is used with positive polarity. Under a `NOT` the weakened `AND` makes the whole
@@ -449,6 +593,20 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (is_function_and && arguments.size() == 1)
             arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
+        if (auto set = sets_to_send && isNameOfInFunction(func_name) ? tryGetSet(*node->children.at(1)) : nullptr)
+        {
+            TableForSet table;
+            if (sets_to_send->send
+                && set->getSetAndKey()->set->transformNullIn() == context->getSettingsRef()[Setting::transform_null_in])
+                table = getTableForSet(set, *external_tables, context);
+
+            if (!table.name.empty())
+                arguments[1] = make_intrusive<ASTIdentifier>(table.name);
+            res = makeASTFunction(func_name, std::move(arguments));
+            tables_of_in_functions.emplace(res.get(), std::move(table));
+            continue;
+        }
+
         /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
@@ -519,9 +677,15 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
         res = std::move(function);
+
+        if (isNameOfInFunction(func_name) && tryGetSet<FutureSetFromStorage>(*node->children.at(1)))
+            tables_of_in_functions.emplace(res.get(), TableForSet{.has_set_engine = true});
     }
 
-    return node_to_ast[dag.getOutputs().front()];
+    auto predicate = node_to_ast[dag.getOutputs().front()];
+    if (predicate && sets_to_send)
+        return leaveOutConjunctsWithoutSets(predicate, tables_of_in_functions, *sets_to_send);
+    return predicate;
 }
 
 /// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
@@ -535,7 +699,8 @@ static bool addFilters(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters,
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    SetsToSend * sets_to_send = nullptr)
 {
     if (!query_tree || !planner_context)
         return false;
@@ -560,7 +725,8 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts,
+        sets_to_send);
     if (!predicate)
         return false;
 
@@ -626,6 +792,55 @@ static bool addFilters(
     PredicateRewriteVisitor::Data data(rewrite_context, predicates, table_with_columns, optimize_final, optimize_with);
 
     return data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+}
+
+/** `addFilters` for a query that is going to run. `DistributedProductModeRewriteInJoinVisitor` has not seen an `IN` that was pushed
+  * down into a subquery or a view, so the mode is applied here. `query_ast` is replaced with the query without such `IN`s,
+  * and the returned callback brings them back if the sets can be sent.
+  */
+static RemoteQueryExecutor::BeforeSendingQuery addFiltersAndSets(
+    Tables & external_tables,
+    ContextMutablePtr & context,
+    const ContextPtr & rewrite_context,
+    ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ActionsDAG & pushed_down_filters,
+    size_t num_servers,
+    bool is_plan_sent = false)
+{
+    const auto & settings = rewrite_context->getSettingsRef();
+    /// `EXPLAIN` does not build the sets.
+    if (!areInAndJoinMadeGlobal(settings) || query_ast->as<ASTExplainQuery>()
+        || std::ranges::none_of(pushed_down_filters.getNodes(), [](const auto & node) { return tryGetSet(node) != nullptr; }))
+    {
+        addFilters(&external_tables, context, rewrite_context, query_ast, query_tree, planner_context, pushed_down_filters);
+        return {};
+    }
+
+    auto query_with_sets = query_ast->clone();
+    query_ast = query_ast->clone();
+    SetsToSend sets;
+    addFilters(&external_tables, context, rewrite_context, query_ast, query_tree, planner_context, pushed_down_filters, nullptr, &sets);
+
+    /// Replicas would apply a custom key to the sent tables too. Or each of them would read all rows, if it is not allowed to use `IN`.
+    sets.send = !is_plan_sent && !rewrite_context->canUseParallelReplicasCustomKey()
+        && !(rewrite_context->canUseTaskBasedParallelReplicas() && settings[Setting::parallel_replicas_filter_pushdown]
+            && !settings[Setting::parallel_replicas_allow_in_with_subquery]);
+    if (!sets.send
+        || !addFilters(
+            &external_tables, context, rewrite_context, query_with_sets, query_tree, planner_context, pushed_down_filters, nullptr, &sets))
+        return {};
+
+    for (const auto & [_, future_set] : sets.sets)
+        future_set->getSetAndKey()->set->keepElementBlocks(
+            settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer]);
+
+    return [sets, context, num_servers, text = formattedAST(query_with_sets)](String & query, Tables & tables)
+    {
+        if (sets.addTables(tables, context->getSettingsRef(), num_servers))
+            query = text;
+    };
 }
 
 ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
@@ -728,10 +943,13 @@ void ReadFromRemote::addLazyPipe(
     /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
     /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
     ASTPtr remote_query = shard.query;
+    RemoteQueryExecutor::BeforeSendingQuery before_sending_query;
     if (filter_actions_dag)
     {
         remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+        before_sending_query = addFiltersAndSets(
+            external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag, shards.size(),
+            shard.query_plan != nullptr);
     }
 
     auto lazily_create_stream = [
@@ -740,7 +958,7 @@ void ReadFromRemote::addLazyPipe(
             query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
-            my_scalars = scalars, my_external_tables = external_tables,
+            my_scalars = scalars, my_external_tables = external_tables, before_sending_query,
             my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             parallel_marshalling_threads]() mutable
@@ -846,6 +1064,7 @@ void ReadFromRemote::addLazyPipe(
         remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        remote_query_executor->setBeforeSendingQuery(before_sending_query);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
         remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
@@ -955,10 +1174,14 @@ void ReadFromRemote::addPipe(
     }
     else
     {
+        ASTPtr query = shard.query;
+        RemoteQueryExecutor::BeforeSendingQuery before_sending_query;
         if (filter_actions_dag)
-            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            before_sending_query = addFiltersAndSets(
+                external_tables, context, context, query, shard.query_tree, shard.planner_context, *filter_actions_dag, shards.size(),
+                shard.query_plan != nullptr);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -975,6 +1198,7 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
+        remote_query_executor->setBeforeSendingQuery(std::move(before_sending_query));
         remote_query_executor->setUnavailableShardTracker(tracker);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
@@ -1022,6 +1246,17 @@ Pipes ReadFromRemote::addPipes(
     }
 
     return pipes;
+}
+
+void ReadFromRemote::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilterBase::applyFilters(std::move(added_filter_nodes));
+
+    /// A dry run, to keep the elements of the sets if a local read builds them in place.
+    const auto & shard = shards.front();
+    if (auto query = shard.query; filter_actions_dag && !shard.query_plan && areInAndJoinMadeGlobal(context->getSettingsRef()))
+        addFiltersAndSets(
+            external_tables, context, context, query = query->clone(), shard.query_tree, shard.planner_context, *filter_actions_dag, 0);
 }
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1233,10 +1468,13 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// The initiator's copy of the fragment took what this splice carries (see `tryPushDownFilter`), on the
     /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
     /// replica too old to receive it, and a condition read out of it could order that replica's read.
+    RemoteQueryExecutor::BeforeSendingQuery before_sending_query;
     if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
-        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
+        before_sending_query = addFiltersAndSets(
+            external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag,
+            pools_to_use.size());
 
-    Pipes pipes = addPipes(query_ast, output_header);
+    Pipes pipes = addPipes(query_ast, output_header, before_sending_query);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -1246,7 +1484,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     pipeline.init(std::move(pipe));
 }
 
-Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeader & out_header)
+Pipes ReadFromParallelRemoteReplicasStep::addPipes(
+    ASTPtr ast, const SharedHeader & out_header, RemoteQueryExecutor::BeforeSendingQuery before_sending_query)
 {
     Pipes pipes;
 
@@ -1281,7 +1520,8 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
 
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
-        Pipe pipe = createPipeForSingeReplica(pools_to_use[i], ast, replica_info, out_header, parallel_marshalling_threads);
+        Pipe pipe = createPipeForSingeReplica(
+            pools_to_use[i], ast, replica_info, out_header, parallel_marshalling_threads, before_sending_query);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));
     }
@@ -1313,7 +1553,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
 
 Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
-    size_t parallel_marshalling_threads)
+    size_t parallel_marshalling_threads, RemoteQueryExecutor::BeforeSendingQuery before_sending_query)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -1342,6 +1582,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     remote_query_executor->setShardScope({.cluster = cluster->getName(), .replica_num = replica_number});
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
+    remote_query_executor->setBeforeSendingQuery(std::move(before_sending_query));
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe

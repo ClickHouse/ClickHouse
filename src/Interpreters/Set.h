@@ -157,6 +157,12 @@ public:
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
+    /// Call before inserting to get the elements by blocks, which takes less memory than `fillSetElements`.
+    /// They are dropped over the limits (0 is no limit).
+    void keepElementBlocks(size_t max_rows, size_t max_bytes);
+    /// Returns nothing if the built set does not have all its elements in any form.
+    std::optional<VectorWithMemoryTracking<Columns>> getElementBlocks() const;
+
     /// The elements of a single-column set viewed as sorted, non-overlapping ranges, built once and
     /// shared afterwards. Deriving them costs one `Field` per element plus an O(N log N) sort, which is
     /// substantial for a large set, and every consumer of the same set derives exactly the same value —
@@ -232,6 +238,12 @@ private:
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
     MutableColumns set_elements;
+
+    bool keep_element_blocks = false;
+    size_t max_rows_to_keep = 0;
+    size_t max_bytes_to_keep = 0;
+    size_t kept_bytes = 0;
+    VectorWithMemoryTracking<Columns> element_blocks;
 
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;

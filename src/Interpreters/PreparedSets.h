@@ -41,6 +41,7 @@ class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 struct Settings;
+struct TemporaryTableHolder;
 
 /// This is a structure for prepared sets cache.
 /// SetPtr can be taken from cache, so we should pass holder for it.
@@ -243,6 +244,12 @@ public:
     void setExternalTable(StoragePtr external_table_);
     void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
+    /// Creates a table with these types, from which a remote server builds the same set, and returns its name there. The name is
+    /// unique: a server that gets the table can be an initiator too, with a set of the same subquery over other tables.
+    String createTableOfElements(const DataTypes & types, const ContextPtr & context);
+    /// The set must be built and have all its elements.
+    StoragePtr fillTableOfElements();
+
     [[nodiscard]] const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
@@ -260,6 +267,9 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    std::shared_ptr<TemporaryTableHolder> table_of_elements;
+    OnceFlag fill_table_of_elements_once;
 
     /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
     /// The set can never be built once that happened, so `build` rethrows this instead of returning a null

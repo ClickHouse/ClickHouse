@@ -165,7 +165,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     if (common::addOverflow(insert_memory, data->estimatePreparedKeysMemory(rows, key_sizes), insert_memory))
         return true;
 
-    if (fill_set_elements)
+    if (fill_set_elements || keep_element_blocks)
     {
         /// Explicit elements copy the new keys.
         for (const auto * column : key_columns)
@@ -187,6 +187,8 @@ void Set::spillWhileBuilding(std::string_view reason, bool requested)
     /// could possibly work on disk, but this is not implemented yet.
     fill_set_elements = false;
     set_elements.clear();
+    keep_element_blocks = false;
+    element_blocks.clear();
 
     data->callOnMethod([&]<typename Method>(const Method & method)
     {
@@ -477,6 +479,14 @@ void Set::fillSetElements()
         set_elements.emplace_back(type->createColumn());
 }
 
+void Set::keepElementBlocks(size_t max_rows, size_t max_bytes)
+{
+    std::lock_guard lock(rwlock);
+    keep_element_blocks = true;
+    max_rows_to_keep = max_rows;
+    max_bytes_to_keep = max_bytes;
+}
+
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
     Columns cols;
@@ -494,7 +504,7 @@ bool Set::insertFromColumns(const Columns & columns)
 
     SetKeyColumns holder;
     /// Filter to extract distinct values from the block.
-    if (fill_set_elements)
+    if (fill_set_elements || keep_element_blocks)
         holder.filter = ColumnUInt8::create(rows);
 
     bool inserted = insertFromColumnsImpl(columns, holder);
@@ -508,6 +518,28 @@ bool Set::insertFromColumns(const Columns & columns)
         }
         else
             appendSetElements(holder);
+    }
+    else if (const size_t new_rows = inserted && keep_element_blocks ? countBytesInFilter(holder.filter->getData()) : 0)
+    {
+        /// The time to receive a table is quadratic in the number of its blocks. A big block is not extended, it would waste memory.
+        if (element_blocks.empty() || element_blocks.back().front()->size() + new_rows > DEFAULT_BLOCK_SIZE / 4)
+            element_blocks.emplace_back(keys_size);
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            auto filtered = holder.key_columns[i]->filter(holder.filter->getData(), new_rows);
+            kept_bytes += filtered->byteSize();
+            if (auto & last = element_blocks.back()[i])
+                last->assumeMutableRef().insertRangeFrom(*filtered, 0, new_rows);
+            else
+                last = IColumn::mutate(std::move(filtered));
+        }
+
+        if ((max_rows_to_keep && data->getTotalRowCount() > max_rows_to_keep) || (max_bytes_to_keep && kept_bytes > max_bytes_to_keep))
+        {
+            keep_element_blocks = false;
+            element_blocks.clear();
+        }
     }
 
     return inserted;
@@ -634,6 +666,19 @@ Columns Set::getSetElements() const
     for (const auto & col : set_elements)
         result.push_back(col->getPtr());
     return result;
+}
+
+std::optional<VectorWithMemoryTracking<Columns>> Set::getElementBlocks() const
+{
+    auto blocks = hasExplicitSetElements() ? VectorWithMemoryTracking<Columns>{getSetElements()} : element_blocks;
+
+    size_t rows = 0;
+    for (const auto & block : blocks)
+        rows += block.front()->size();
+
+    if (rows != getTotalRowCount())
+        return {};
+    return blocks;
 }
 
 ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const

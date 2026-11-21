@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -376,6 +377,39 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
     }
 
     set_and_key->external_table = std::move(external_table_);
+}
+
+String FutureSetFromSubquery::createTableOfElements(const DataTypes & types, const ContextPtr & context)
+{
+    /// Index analyses can be concurrent.
+    std::lock_guard lock(inplace_build_mutex);
+    if (!table_of_elements)
+    {
+        NamesAndTypesList columns;
+        for (const auto & type : types)
+            columns.emplace_back(fmt::format("c{}", columns.size()), type);
+
+        table_of_elements = std::make_shared<TemporaryTableHolder>(
+            context, ColumnsDescription{columns}, ConstraintsDescription{}, /*query=*/ nullptr, /*create_for_global_subquery=*/ true);
+    }
+
+    return fmt::format("_data_{}", table_of_elements->id);
+}
+
+StoragePtr FutureSetFromSubquery::fillTableOfElements()
+{
+    auto table = table_of_elements->getTable();
+    callOnce(fill_table_of_elements_once, [&]
+    {
+        auto metadata = table->getInMemoryMetadataPtr(nullptr, false);
+        auto pipeline = QueryPipeline(table->write({}, metadata, nullptr, /*async_insert=*/ false));
+        PushingPipelineExecutor executor(pipeline);
+        const auto blocks = get()->getElementBlocks().value();
+        for (const auto & block : blocks)
+            executor.push(Chunk(block, block.front()->size()));
+        executor.finish();
+    });
+    return table;
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const
