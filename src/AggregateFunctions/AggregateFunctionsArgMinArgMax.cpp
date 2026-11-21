@@ -457,9 +457,15 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
                 argument_types, parameters, return_both));
 
         if (canUseFieldForValueData(value_type))
+        {
+            if (singleValueTypeHoldsStrings(value_type))
+                return AggregateFunctionPtr(
+                    new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGenericWithStrings>, isMin>(
+                        argument_types, parameters, return_both));
             return AggregateFunctionPtr(
                 new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(
                     argument_types, parameters, return_both));
+        }
         return AggregateFunctionPtr(
             new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGenericWithColumn>, isMin>(
                 argument_types, parameters, return_both));
