@@ -202,15 +202,86 @@ bool hasGeneralPurposeDefaultCodec(const IMergeTreeDataPart & part)
 /// (`low_cardinality_max_dictionary_size` is 8192), and bounds the reads of the estimation.
 constexpr UInt64 max_dictionary_keys_to_read = 65536;
 
-/// The number of keys of the dictionary of a `LowCardinality` column in a wide part, if it has a single dictionary.
+/// Reads only so many bytes (uncompressed) of the indexes of a `LowCardinality` column in a part, see
+/// `hasAdditionalLowCardinalityKeys`. It is a read of the whole stream, so a part with more gives no number.
+constexpr UInt64 max_indexes_bytes_to_read = 8 * 1024 * 1024;
+
+/// Whether some rows of a `LowCardinality` column in a wide part carry keys that are not in the dictionaries of the
+/// `DictionaryKeys` stream, or `std::nullopt` when it is not known.
+///
+/// Once the dictionary of the part has reached `low_cardinality_max_dictionary_size` keys, the keys that do not fit
+/// are written beside the indexes of their rows, in the `DictionaryIndexes` stream. With
+/// `low_cardinality_use_single_dictionary_for_part` the part still has one dictionary then, and without it as well if
+/// this happens in the last rows that are written. The size of the dictionary the part was written with is not kept,
+/// so a full dictionary cannot be told from its number of keys.
+///
+/// The stream is a sequence of blocks of rows: the type of the indexes with the flags, the additional keys if the
+/// flag says so, the number of rows and the indexes. The granules do not tell where the blocks start (a granule can
+/// be written in parts), so the blocks are read in order, skipping the indexes.
+std::optional<bool> hasAdditionalLowCardinalityKeys(const IMergeTreeDataPart & part, const NameAndTypePair & column)
+{
+    /// See `IndexesSerializationType` in `SerializationLowCardinality.cpp`.
+    static constexpr UInt64 has_additional_keys_bit = 1u << 9u;
+    static constexpr UInt64 flags_mask = 0x700;
+    static constexpr UInt64 max_index_type = 3;
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::DictionaryIndexes);
+    const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, path, ".bin", part.checksums, part.storage.getSettings());
+    if (!stream_name)
+        return std::nullopt;
+
+    const auto checksum = part.checksums.files.find(*stream_name + ".bin");
+    if (checksum == part.checksums.files.end() || !checksum->second.is_compressed
+        || checksum->second.uncompressed_size > max_indexes_bytes_to_read)
+        return std::nullopt;
+
+    CompressedReadBufferFromFile in(part.getDataPartStorage().readFile(*stream_name + ".bin", part.storage.getContext()->getReadSettings(), std::nullopt));
+
+    UInt64 rows = 0;
+    while (!in.eof())
+    {
+        UInt64 index_type = 0;
+        readBinaryLittleEndian(index_type, in);
+        if (index_type & has_additional_keys_bit)
+            return true;
+
+        const UInt64 index_size_degree = index_type & ~flags_mask;
+        if (index_size_degree > max_index_type)
+            return std::nullopt;
+
+        UInt64 block_rows = 0;
+        readBinaryLittleEndian(block_rows, in);
+        if (block_rows > part.rows_count - rows)
+            return std::nullopt;
+        in.ignore(block_rows << index_size_degree);
+        rows += block_rows;
+    }
+    if (rows != part.rows_count)
+        return std::nullopt;
+    return false;
+}
+
+/// The number of keys of the dictionary of a `LowCardinality` column in a wide part, if it has all values of the part.
 /// The `DictionaryKeys` stream of the column holds the version of the serialization and then the dictionaries: one at
 /// the end of writing, or one every time the dictionary of the part reached `low_cardinality_max_dictionary_size`
-/// keys, after which the rows that do not fit carry their own keys. So the first dictionary has all values of the
-/// part when it is the last thing in the stream, otherwise the part has more values than it, and there is no number.
+/// keys. So the first dictionary has all values of the part when it is the last thing in the stream and no rows carry
+/// additional keys (see `hasAdditionalLowCardinalityKeys`), otherwise the part has more values than it, and there is
+/// no number.
 std::optional<UInt64> readLowCardinalityDictionarySize(const IMergeTreeDataPart & part, const NameAndTypePair & column)
 {
+    if (part.getType() != MergeTreeDataPartType::Wide || !part.areChecksumsLoaded())
+        return std::nullopt;
+
+    /// The part keeps the column in the type it was written with, which is another one than the type of the table
+    /// until an `ALTER ... MODIFY COLUMN` is applied to the part: its dictionary is serialized differently, and the
+    /// conversion may merge its values.
+    const auto column_in_part = part.getColumns().tryGetByName(column.name);
+    if (!column_in_part || !column_in_part->type->equals(*column.type))
+        return std::nullopt;
+
     const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get());
-    if (!low_cardinality_type || part.getType() != MergeTreeDataPartType::Wide || !part.areChecksumsLoaded())
+    if (!low_cardinality_type)
         return std::nullopt;
 
     ISerialization::SubstreamPath path;
@@ -235,6 +306,10 @@ std::optional<UInt64> readLowCardinalityDictionarySize(const IMergeTreeDataPart 
     auto keys = keys_type->createColumn();
     keys_type->getDefaultSerialization()->deserializeBinaryBulk(*keys, in, num_keys, 0);
     if (keys->size() != num_keys || !in.eof())
+        return std::nullopt;
+
+    const auto has_additional_keys = hasAdditionalLowCardinalityKeys(part, column);
+    if (!has_additional_keys || *has_additional_keys)
         return std::nullopt;
 
     /// The dictionary of a `Nullable` column has a placeholder for NULL, which is not a distinct value.
