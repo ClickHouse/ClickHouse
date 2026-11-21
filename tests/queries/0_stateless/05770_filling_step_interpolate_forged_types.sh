@@ -6,7 +6,8 @@
 # memory out of bounds. `ActionsDAG::deserialize` now checks the declared types of `ALIAS` and `ARRAY_JOIN`
 # nodes, and `FillingStep::deserialize` refuses `ARRAY_JOIN` in `INTERPOLATE`, which changes the number of
 # rows of the single-row interpolation block (and the analyzer does not allow it anyway). A deserialized
-# lambda body must not contain `ARRAY_JOIN` either, as the planner refuses to capture it.
+# lambda body must not contain `ARRAY_JOIN` either, as the planner refuses to capture it, and its inputs must
+# be the captured columns and the arguments of the lambda with the declared types: they are bound by name.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -125,14 +126,26 @@ forge("array join of not an array",
 forge("array join in interpolate",
       FILL + interpolate([(INPUT, "a", ARR8, ()), (ARRAY_JOIN, "z", U8, (0,))], [1], [("a", "a")]) + vu(0), [HA8], VERSION, HA8)
 X8Z = [("x", U8), ("z", U8)]
+def lambda_node(argument, input_, body_type, body_kind=ALIAS):
+    # `argument -> body`: a lambda that captures nothing, with one argument (name, type), whose body is
+    # a single node over the only input `input_` (name, type). 0x24 is `Function`, the flag 4 is a lambda capture.
+    return (bytes([FUNCTION]) + sb("lambda") + b"\x24" + vu(1) + argument[1] + body_type + vu(0)
+            + b"\x04" + sb("lambda")
+            + sb("r") + body_type + vu(0) + vu(0) + vu(1) + sb(argument[0]) + argument[1]   # return, no captures, argument
+            + dag([(INPUT, input_[0], input_[1], ()), (body_kind, "r", body_type, (0,))], [1]))
+
+def with_lambda(label, node):
+    forge(label, FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,)), node], [1], [("x", "x")]) + vu(0),
+          [X8Z], VERSION, X8Z)
+
 # `ARRAY JOIN` hidden in the body of a lambda that captures nothing: `e -> arrayJoin(e)`, `Array(UInt8) -> UInt8`.
 # The planner refuses to capture such a body, and the check of `FillingStep` does not look into lambdas.
-LAMBDA = (bytes([FUNCTION]) + sb("lambda(tuple(e), arrayJoin(e))") + b"\x24" + vu(1) + ARR8 + U8 + vu(0)
-          + b"\x04" + sb("lambda")                                        # flags: a lambda capture
-          + sb("r") + U8 + vu(0) + vu(0) + vu(1) + sb("e") + ARR8           # return, no captures, argument
-          + dag([(INPUT, "e", ARR8, ()), (ARRAY_JOIN, "r", U8, (0,))], [1]))
-forge("array join in a lambda body",
-      FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,)), LAMBDA], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
+with_lambda("array join in a lambda body", lambda_node(("e", ARR8), ("e", ARR8), U8, ARRAY_JOIN))
+# The lambda declares its argument `e` as `UInt8`, and it is called with such a column, but the body reads
+# its input `e` as `UInt16`: the columns are passed to the body by name, without a check of the type.
+with_lambda("lambda body input type differs from the argument", lambda_node(("e", U8), ("e", U16), U16))
+with_lambda("lambda body input is not an argument", lambda_node(("e", U8), ("q", U8), U8))
+with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))
 forge("well-formed alias",
       FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,))], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
 PYEOF
