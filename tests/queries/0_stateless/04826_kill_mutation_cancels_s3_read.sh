@@ -120,16 +120,73 @@ timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_stop SYNC" >/dev/null 2>&1
 # released blocker leaves the mutation schedulable, so the entry legitimately reappears and the
 # arm above's oracle is unsatisfiable for this shape.
 #
-# Exactly ONE read here. The flaky check runs this test in as many workers as the runner has cores,
-# and they share the server's background mutation slots, so a premise that needs several of this
-# run's own mutations resident at the same instant is not satisfiable in that job.
+# The read goes to a local server that holds its request until the test releases it, so the read
+# cannot look at the blocker while it is stopped: only a cancellation persisted during the window can
+# stop it once the server answers. Exactly ONE read here: the flaky check runs this test in as many
+# workers as the runner has cores, and they share the server's background mutation slots.
+PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
+# Port 0, so parallel runs cannot collide. The first request other than /stats and /release is
+# answered at once with a retryable 503; every later one is held until /release and then answered the
+# same way. Python reports a client that went away on stderr, hence the redirect.
+python3 -u -c "
+import threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+requests = 0
+lock = threading.Lock()
+release = threading.Event()
+
+class Handler(BaseHTTPRequestHandler):
+    def respond(self):
+        global requests
+        if self.path == '/stats':
+            body = str(requests).encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == '/release':
+            release.set()
+            self.send_response(200)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+        else:
+            with lock:
+                requests += 1
+                first = requests == 1
+            if not first:
+                release.wait(300)
+            self.send_error(503)
+
+    def do_GET(self):
+        self.respond()
+
+    def do_HEAD(self):
+        self.respond()
+
+    def log_message(self, *args):
+        pass
+
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+with open('$PORT_FILE', 'w') as f:
+    f.write(str(server.server_address[1]))
+server.serve_forever()
+" 2>/dev/null &
+HTTP_PID=$!
+trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
+for _ in {1..300}; do
+    [[ -s "$PORT_FILE" ]] && break
+    sleep 0.1
+done
+HTTP_PORT=$(cat "$PORT_FILE")
+
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_toggle (id UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = ''"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_toggle SELECT number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_toggle DELETE WHERE id IN (
-        SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
+        SELECT * FROM s3('http://127.0.0.1:${HTTP_PORT}/dummy.parquet', 'NOSIGN', 'One')
     ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
 for _ in {1..150}; do
     started=$($CLICKHOUSE_CLIENT -q "
@@ -138,53 +195,46 @@ for _ in {1..150}; do
     [[ "$started" -ge 1 ]] && break
     sleep 0.2
 done
-echo "toggle: mutation started: $([[ "$started" -ge 1 ]] && echo 1 || echo 0)"
+# A first attempt waits only briefly on a silent server, so the server answers it at once; the retry
+# waits for the full request timeout, so a second request means the read is held.
+held=0
+for _ in {1..300}; do
+    count=$(${CLICKHOUSE_CURL} -sS "http://127.0.0.1:${HTTP_PORT}/stats")
+    if [[ "${count:-0}" -ge 2 ]]; then
+        held=1
+        break
+    fi
+    sleep 0.2
+done
+echo "toggle: mutation started: $([[ "$started" -ge 1 && "$held" -eq 1 ]] && echo 1 || echo 0)"
 
-# An entry in system.merges only means the task is running: the subquery's S3 client is built later,
-# and under a sanitizer that took 16s, so a toggle can be over before the read makes its first
-# attempt and cancel nothing. Each round leaves the mutation schedulable, so it is simply retried.
-# No round is STARTED past the deadline below, which leaves one whole round plus the teardown
-# inside the flaky check's per-test limit of 180s however slow the arms above were.
+# One call, so client startup cannot stretch the window. It must hold the blocker long enough for the
+# interactive-cancel callback to observe it; the read itself cannot, so no failure may exist yet.
+failed=$($CLICKHOUSE_CLIENT -q "
+    SYSTEM STOP MERGES t_toggle;
+    SELECT sleep(0.5) FORMAT Null;
+    SYSTEM START MERGES t_toggle;
+    SELECT count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_toggle' AND latest_fail_reason != ''")
+${CLICKHOUSE_CURL} -sS "http://127.0.0.1:${HTTP_PORT}/release" -o /dev/null
+
+# A released blocker answers every later poll with "not cancelled", so a cancellation reported now can
+# only come from one that was persisted.
 cancelled=0
-toggle_deadline=$((SECONDS + 70))
-[[ "$toggle_deadline" -gt 125 ]] && toggle_deadline=125
-while [[ "$cancelled" -eq 0 && "$SECONDS" -lt "$toggle_deadline" ]]; do
-    # The read tests cancellation once per retry attempt, 5s apart once its backoff has saturated.
-    # The settle both waits for that and is drawn over a whole attempt period: a narrower draw
-    # resonates with it, because the restart after a cancelled attempt re-creates the same phase.
-    settle=$((9000 + RANDOM % 5100))
-    sleep "$(printf '%d.%03d' $((settle / 1000)) $((settle % 1000)))"
-    # One call: the window is a server-side sleep plus two round trips, so client startup cannot
-    # stretch it, and the fail times bracket it. It has to hold the blocker cancelled long enough for
-    # a poller to observe it, and still end well inside the read's own attempt cadence: an attempt
-    # that fell INSIDE the window read the blocker itself, which proves nothing, so that round is
-    # spent on a fresh draw rather than on the poll below.
-    mapfile -t stamps < <($CLICKHOUSE_CLIENT -q "
-        SELECT max(toUnixTimestamp(latest_fail_time)) FROM system.mutations
-        WHERE database = currentDatabase() AND table = 't_toggle';
-        SYSTEM STOP MERGES t_toggle;
-        SELECT sleep(0.5) FORMAT Null;
-        SYSTEM START MERGES t_toggle;
-        SELECT max(toUnixTimestamp(latest_fail_time)) FROM system.mutations
-        WHERE database = currentDatabase() AND table = 't_toggle'")
-    [[ "${#stamps[@]}" -eq 2 && "${stamps[0]}" == "${stamps[1]}" ]] || continue
-    # A released blocker answers every later poll with "not cancelled", so a cancellation recorded
-    # after the release can only come from one that was persisted. An earlier one would only show
-    # the read reading the blocker itself, which the arm above already covers.
-    seen_deadline=$((SECONDS + 10))
+if [[ "$failed" == "0" ]]; then
+    seen_deadline=$((SECONDS + 20))
     while [[ "$SECONDS" -lt "$seen_deadline" ]]; do
         seen=$($CLICKHOUSE_CLIENT -q "
-            SELECT countIf(latest_fail_reason LIKE '%Cancelled mutating parts%'
-                           AND toUnixTimestamp(latest_fail_time) > ${stamps[1]})
+            SELECT countIf(latest_fail_reason LIKE '%Cancelled mutating parts%')
             FROM system.mutations
             WHERE database = currentDatabase() AND table = 't_toggle'")
         if [[ "${seen:-0}" -ge 1 ]]; then
             cancelled=1
             break
         fi
-        sleep 0.5
+        sleep 0.2
     done
-done
+fi
 echo "toggle stop/start cancels the read: $cancelled"
 $CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = currentDatabase() AND table = 't_toggle' FORMAT Null"
 timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_toggle SYNC" >/dev/null 2>&1
