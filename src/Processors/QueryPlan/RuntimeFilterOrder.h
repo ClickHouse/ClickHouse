@@ -43,6 +43,8 @@ namespace DB
 ///
 /// - The key, the probe side of the join condition, is a column, a safe cast of one or a tuple of those, so the lookup can't
 ///   throw. A computed key such as `intDiv(100, d)` could divide by a zero the filter ahead removes.
+/// - Parquet: a file-side cast of the key (a file storing `b` as String read as UInt64) runs on the rows the step sees, so a
+///   moved step can parse a value the filter ahead would have removed. It parses that value with runtime filters off too.
 /// - MergeTree: each step reads exactly its own key columns, and the part stores them as is. So a moved step neither needs a
 ///   column another step reads (a key `a + b`) nor one the reader fills from others (`ALTER ADD COLUMN b DEFAULT a * 2`).
 /// - MergeTree: no reorder with predicate statistics, which are counted per step position.

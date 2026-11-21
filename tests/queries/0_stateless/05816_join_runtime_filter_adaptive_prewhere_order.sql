@@ -176,6 +176,28 @@ SELECT count(), sum(a), sum(b) FROM file(currentDatabase() || '_05816_?.parquet'
 JOIN build_weak AS w ON p.a = w.k JOIN build_strong AS s ON p.b = s.k
 SETTINGS join_runtime_filter_adaptive_prewhere_order = 0, log_comment = 'parquet_off';
 
+-- Files that don't store `b`, or store it as UInt32: the reader fills `b` with the type's default or casts it row by row, so
+-- the filters see in any order what the join sees. `build_div` holds no 0: the filter on `b` rejects every row without `b`.
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_missing_0.parquet', Parquet) SELECT a FROM probe WHERE _part = 'all_1_1_0' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_missing_1.parquet', Parquet) SELECT a FROM probe WHERE _part = 'all_2_2_0' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_missing_2.parquet', Parquet) SELECT a FROM probe WHERE _part = 'all_3_3_0' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_cast_0.parquet', Parquet) SELECT a, toUInt32(b) AS b FROM probe WHERE _part = 'all_1_1_0' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_cast_1.parquet', Parquet) SELECT a, toUInt32(b) AS b FROM probe WHERE _part = 'all_2_2_0' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_cast_2.parquet', Parquet) SELECT a, toUInt32(b) AS b FROM probe WHERE _part = 'all_3_3_0' SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT count(), sum(a), sum(b) FROM file(currentDatabase() || '_05816_missing_?.parquet', Parquet, 'a UInt32, b UInt64') AS p
+JOIN build_weak AS w ON p.a = w.k JOIN build_div AS d ON p.b = d.k
+SETTINGS join_runtime_filter_adaptive_prewhere_order = 1, log_comment = 'parquet_missing_key_on';
+SELECT count(), sum(a), sum(b) FROM file(currentDatabase() || '_05816_missing_?.parquet', Parquet, 'a UInt32, b UInt64') AS p
+JOIN build_weak AS w ON p.a = w.k JOIN build_div AS d ON p.b = d.k
+SETTINGS enable_join_runtime_filters = 0;
+SELECT count(), sum(a), sum(b) FROM file(currentDatabase() || '_05816_cast_?.parquet', Parquet, 'a UInt32, b UInt64') AS p
+JOIN build_weak AS w ON p.a = w.k JOIN build_strong AS s ON p.b = s.k
+SETTINGS join_runtime_filter_adaptive_prewhere_order = 1, log_comment = 'parquet_cast_key_on';
+SELECT count(), sum(a), sum(b) FROM file(currentDatabase() || '_05816_cast_?.parquet', Parquet, 'a UInt32, b UInt64') AS p
+JOIN build_weak AS w ON p.a = w.k JOIN build_strong AS s ON p.b = s.k
+SETTINGS enable_join_runtime_filters = 0;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT 'reordered';
 SELECT log_comment, ProfileEvents['RuntimeFilterPrewhereStepsReordered'] > 0
@@ -184,7 +206,7 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
     ('mt_on', 'mt_off', 'mt_anti_on', 'mt_anti_null_build_on', 'mt_div_on',
      'mt_patch_on', 'mt_default_on', 'mt_readded_on', 'mt_key_read_before_on',
      'mt_shared_input_on', 'mt_shared_step_on',
-     'parquet_on', 'parquet_off')
+     'parquet_on', 'parquet_off', 'parquet_missing_key_on', 'parquet_cast_key_on')
 ORDER BY event_time_microseconds;
 
 DROP TABLE probe;

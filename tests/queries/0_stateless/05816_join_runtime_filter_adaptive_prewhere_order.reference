@@ -18,6 +18,10 @@ MergeTree
 Parquet
 3993	997688	1792300
 3993	997688	1792300
+0	0	0
+0	0	0
+2004	504210	905900
+2004	504210	905900
 reordered
 mt_on	1
 mt_off	0
@@ -32,3 +36,5 @@ mt_key_read_before_on	0
 mt_shared_input_on	0
 parquet_on	1
 parquet_off	0
+parquet_missing_key_on	1
+parquet_cast_key_on	1
