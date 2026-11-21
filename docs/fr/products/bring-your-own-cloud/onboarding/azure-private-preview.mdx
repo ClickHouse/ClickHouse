@@ -1,0 +1,74 @@
+---
+title: 'Préversion privée Azure'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure (Préversion privée)'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure']
+description: "Configurez ClickHouse BYOC sur Azure à l'aide du module Terraform et de l'authentification inter-tenant"
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  BYOC sur Azure est en **préversion privée**. Pour y participer, [contactez l’équipe ClickHouse](https://clickhouse.com/cloud/bring-your-own-cloud).
+</Note>
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+BYOC sur Azure vous permet d’exécuter ClickHouse dans votre propre abonnement Azure. L’onboarding s’appuie sur un module Terraform qui met en place l’authentification inter-tenant requise pour que le provisionneur de ClickHouse Cloud puisse créer et gérer des ressources Azure dans votre tenant et votre abonnement.
+
+Les autres aspects du déploiement — comme l’[architecture](/fr/products/bring-your-own-cloud/overview/architecture), la [sécurité réseau](/fr/products/bring-your-own-cloud/reference/network-security), les [fonctionnalités](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features) et la [connectivité](/fr/products/bring-your-own-cloud/configuration/connect) — sont globalement similaires aux offres BYOC sur AWS et GCP ; consultez ces pages pour plus de détails.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un **abonnement** Azure et un **tenant** dans lesquels vous souhaitez héberger le déploiement BYOC
+* L&#39;**ID d&#39;abonnement** et l&#39;**ID du tenant** à communiquer à l&#39;équipe ClickHouse
+
+<div id="onboarding">
+  ## Onboarding
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Appliquez le module Terraform
+
+    Pour démarrer l’onboarding BYOC sur Azure, appliquez le [module Terraform pour Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) fourni par ClickHouse dans votre **tenant et abonnement cibles**.
+
+    Consultez la documentation du module pour connaître les variables requises et la procédure d’application. Une fois appliqué, le module aura configuré l’identité et les autorisations nécessaires dans votre environnement Azure.
+  </Step>
+
+  <Step>
+    ### 2. Fournissez les ID à ClickHouse
+
+    Partagez les informations suivantes avec l’équipe ClickHouse :
+
+    * **ID de l’abonnement cible** — L’abonnement Azure dans lequel les ressources BYOC seront créées
+    * **ID du tenant cible** — Le tenant Azure AD (Entra) auquel appartient cet abonnement
+    * **Région** — Les régions Azure dans lesquelles vous souhaitez déployer vos services ClickHouse.
+    * **Plage CIDR du VNet** — La plage d’adresses IP que vous souhaitez utiliser pour le VNet BYOC.
+
+    L’équipe ClickHouse les utilisera pour créer l’infrastructure BYOC et finaliser l’onboarding.
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### Comment fonctionne l’authentification inter-tenant
+</div>
+
+Conformément aux [recommandations d’Azure pour l’authentification inter-tenant](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps), le module Terraform :
+
+1. **Crée une application multilocataire** sous forme d’**Enterprise Application** (principal de service) dans votre tenant cible
+2. **Attribue les autorisations requises** à cette application, avec une portée limitée à votre abonnement cible
+
+Cela permet au Control Plane de ClickHouse Cloud de créer et de gérer des ressources Azure (telles que des groupes de ressources, AKS, le stockage et la mise en réseau) dans votre abonnement, sans stocker vos identifiants Azure dans ClickHouse.
+
+Pour plus de détails sur les applications multilocataires et les scénarios inter-tenant dans Azure, consultez :
+
+* [Applications monolocataires et multilocataires dans Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [Autoriser l’accès inter-tenant (exemple Azure SignalR)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

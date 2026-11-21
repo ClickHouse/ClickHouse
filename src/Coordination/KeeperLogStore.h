@@ -14,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, ReadAheadSettings readahead_settings, KeeperContextPtr keeper_context);
+    KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
@@ -32,22 +32,15 @@ public:
     /// Remove all entries starting from index and write entry into index position
     void write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
 
-    /// Return entries between [start, end).
+    /// Return entries between [start, end)
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
 
-    static constexpr int32_t NO_PEER_ID = -1;
-
-    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes.
-    /// peer_id identifies the follower peer; NO_PEER_ID disables read-ahead.
+    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id) override TSA_NO_THREAD_SAFETY_ANALYSIS;
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override;
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
-
-    /// for_commit=true routes through the commit read-ahead reader under a SHARED changelog_lock,
-    /// unlike entry_at which requires the exclusive lock.
-    nuraft::ptr<nuraft::log_entry> entry_at_ext(uint64_t index, bool for_commit) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool is_conf(uint64_t index) override;
 
@@ -88,15 +81,6 @@ public:
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
-
-    /// Test-only: forwards to Changelog::getReaderDecodedBytesForTests.
-    size_t getReaderDecodedBytesForTests(int32_t reader_id) const;
-
-    /// Test-only: forwards to Changelog::hasCommitReaderForTests.
-    bool hasCommitReaderForTests() const;
-
-    /// Test-only: forwards to Changelog::setForceSerialStartupReadForTesting.
-    void setForceSerialStartupReadForTesting(bool value);
 
 private:
     mutable SharedMutex changelog_lock;

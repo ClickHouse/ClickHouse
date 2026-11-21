@@ -9,17 +9,14 @@ PartitionPruner::PartitionPruner(
     const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     bool strict,
-    bool skip_analysis,
-    bool require_ready_sets)
+    bool skip_analysis)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
     , partition_condition(
           filter_dag,
           context,
-          partition_key.column_names,
-          partition_key.expression,
+          partition_key,
           true /* single_point */,
-          skip_analysis,
-          require_ready_sets)
+          skip_analysis)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
@@ -53,8 +50,8 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 
         if (!is_valid)
         {
-            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned",
-                part.partition.serializeToString(part.getMetadataSnapshot()));
+            auto partition_str = part.partition.serializeToString(part.getMetadataSnapshot());
+            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", partition_str);
         }
     }
 

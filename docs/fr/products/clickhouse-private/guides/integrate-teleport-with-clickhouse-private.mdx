@@ -1,0 +1,690 @@
+---
+noindex: true
+title: "Intégrer Teleport à ClickHouse Private"
+sidebarTitle: "Intégrer Teleport"
+description: "Configurez Teleport Enterprise pour sécuriser l'accès aux bases de données des clusters ClickHouse Private dans des environnements gouvernementaux/FIPS."
+---
+
+Configurez Teleport Enterprise pour sécuriser l&#39;accès aux bases de données des clusters ClickHouse Private dans des environnements gouvernementaux/FIPS. Ce guide couvre le déploiement de Teleport sur EKS, la configuration de l&#39;accès aux bases de données, l&#39;authentification SAML et la rotation des certificats.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Le [déploiement FIPS/Government](/fr/products/clickhouse-private/tutorials/deploy-clickhouse-with-fips-compliance-government) a été réalisé avec `SERVER_VERIFICATION_MODE=relaxed` et `KEEPER_VERIFICATION_MODE=relaxed` (nécessaire pour le mTLS de Teleport)
+* Licence Teleport Enterprise
+* Le SAN du certificat serveur doit inclure `DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}` (voir [Générer des certificats conformes à la norme FIPS](/fr/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse))
+
+***
+
+<div id="create-a-node-group-for-teleport">
+  ## Créer un groupe de nœuds pour Teleport
+</div>
+
+Un groupe de nœuds dédié à Teleport est facultatif. Si vous ne disposez pas de nœuds Bottlerocket ARM FIPS, créez un groupe de nœuds avec la configuration suivante dans la console EKS, sous Compute :
+
+* **Nom** : fips-arm64
+* **Rôle IAM du nœud** : créer un nouveau rôle recommandé
+* **Taints Kubernetes** :
+  * **Clé** : `group`, **Valeur** : `fips-arm64`, **Effet** : `NoSchedule`
+* **Type d’AMI** : Bottlerocket ARM FIPS
+* **Types d’instance** : m7g.large
+* **Mise à l’échelle** : cible 2, min. 2, max. 3
+
+***
+
+<div id="install-teleport-cluster-on-eks">
+  ## Installer le cluster Teleport sur EKS
+</div>
+
+<div id="create-namespace-and-license-secret">
+  ### Créer l’espace de noms et le secret de licence
+</div>
+
+```bash
+kubectl create namespace teleport
+kubectl label namespace teleport 'pod-security.kubernetes.io/enforce=baseline'
+
+# Download the Teleport Enterprise license, then:
+kubectl --namespace teleport create secret generic license --from-file=/Downloads/license.pem
+```
+
+<div id="generate-fips-certificates-for-teleport">
+  ### Générer des certificats FIPS pour Teleport
+</div>
+
+Créez le script suivant (`generate_fips_certs_in_container_for_teleport.sh`) :
+
+```bash expandable
+#!/bin/bash
+set -e
+
+CLUSTER_FQDN=${CLUSTER_FQDN:-"teleport.example.com"}
+NAMESPACE=${NAMESPACE:-"teleport"}
+KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN:-"cluster.local"}
+COUNTRY=${COUNTRY:-"US"}
+STATE=${STATE:-"YourState"}
+CITY=${CITY:-"YourCity"}
+ORG=${ORG:-"YourOrganization"}
+ORG_UNIT=${ORG_UNIT:-"YourOrganizationalUnit"}
+CN=${CN:-"YourRootCA"}
+
+# Only run inside a container, prevent accidental execution on host.
+if [ ! -f /.dockerenv ]; then
+    echo "Not running inside Docker"
+    exit 1
+fi
+
+dnf -y install openssl crypto-policies-scripts
+fips-mode-setup --enable
+
+mkdir -p /certs/{ca_teleport,server_teleport}
+
+# Generate CA certificate
+cd /certs/ca_teleport
+openssl genrsa -out ca.key 3072
+
+cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+# Generate server certificate
+cd /certs/server_teleport
+cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${CLUSTER_FQDN}
+DNS.2 = teleport.${NAMESPACE}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+openssl genrsa -out server.key 3072
+openssl req -new -key server.key -out server.csr -config server.cnf
+openssl x509 -req -days 365 -in server.csr -CA /certs/ca_teleport/ca.crt -CAkey /certs/ca_teleport/ca.key \
+    -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+echo 'Verifying FIPS compliance of generated certificates:'
+openssl version
+openssl rsa -in /certs/server_teleport/server.key -text -noout | grep 'Private-Key'
+openssl x509 -in /certs/server_teleport/server.crt -text -noout | grep 'Signature Algorithm'
+echo 'FIPS-compliant certificates have been generated successfully!'
+```
+
+Exécutez ceci (remplacez `<CLUSTER_FQDN>` par le FQDN du service Teleport) :
+
+```bash
+export CLUSTER_FQDN=<CLUSTER_FQDN>
+export NAMESPACE=teleport
+export KUBERNETES_DOMAIN=cluster.local
+export COUNTRY=US
+export STATE=YourState
+export CITY=YourCity
+export ORG=YourOrganization
+export ORG_UNIT=YourOrganizationalUnit
+export CN=YourRootCA
+
+docker run -it --rm \
+    -e CLUSTER_FQDN=${CLUSTER_FQDN} \
+    -e NAMESPACE=${NAMESPACE} \
+    -e KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN} \
+    -e COUNTRY=${COUNTRY} \
+    -e STATE=${STATE} \
+    -e CITY=${CITY} \
+    -e ORG=${ORG} \
+    -e ORG_UNIT=${ORG_UNIT} \
+    -e CN=${CN} \
+    -v $(pwd):/certs \
+    registry.access.redhat.com/ubi8/ubi \
+    /certs/generate_fips_certs_in_container_for_teleport.sh
+```
+
+<div id="create-certificate-secrets">
+  ### Créer les secrets de certificat
+</div>
+
+```bash
+kubectl create secret generic teleport-proxy-cert \
+  --from-file=tls.crt=server_teleport/server.crt \
+  --from-file=tls.key=server_teleport/server.key \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+<div id="create-helm-values">
+  ### Créer les valeurs Helm
+</div>
+
+Créez `eks_teleport_values.yaml`. Remplacez les placeholders :
+
+* `<CLUSTER_NAME>`: le FQDN du cluster
+* `<VPN_SUBNETS>`: sous-réseaux privés du VPN, séparés par des virgules (par exemple, `private-subnet-us-east-2a,private-subnet-us-east-2b,private-subnet-us-east-2c`)
+* `<BUCKET_NAME>`: bucket S3 pour les enregistrements de session Teleport
+* `<NODE_SELECTOR>`: valeur du sélecteur de nœud (par exemple, `fips-arm64`)
+
+```yaml expandable
+chartMode: aws
+clusterName: "<CLUSTER_NAME>"
+
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+authentication:
+  localAuth: false
+
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    service.beta.kubernetes.io/aws-load-balancer-subnets: "<VPN_SUBNETS>"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+proxyListenerMode: multiplex
+aws:
+  region: us-east-2
+  backendTable: teleport-helm-backend
+  auditLogTable: teleport-helm-events
+  auditLogMirrorOnStdout: false
+  sessionRecordingBucket: <BUCKET_NAME>
+  backups: true
+  dynamoAutoScaling: false
+
+highAvailability:
+  replicaCount: 2
+
+nodeSelector:
+  eks.amazonaws.com/nodegroup: <NODE_SELECTOR>
+
+publicAddr: [<CLUSTER_NAME>:443, teleport.teleport.svc.cluster.local:443]
+
+tls:
+  existingSecretName: teleport-proxy-cert
+  existingCASecretName: teleport-proxy-ca
+
+tolerations:
+- key: "group"
+  operator: "Equal"
+  value: "teleport"
+  effect: "NoSchedule"
+
+podSecurityPolicy:
+  enabled: false
+
+log:
+  level: INFO
+  output: stderr
+
+operator:
+  enabled: true
+  installCRDs: dynamic
+
+serviceAccount:
+  create: true
+  name: "teleport"
+
+rbac:
+  create: true
+```
+
+> Cet exemple déploie Teleport avec FIPS sur EKS. Pour les autres fournisseurs de services cloud, consultez la [documentation de Teleport](https://goteleport.com/docs/zero-trust-access/deploy-a-cluster/helm-deployments/).
+
+<div id="deploy-teleport-cluster">
+  ### Déployer le cluster Teleport
+</div>
+
+```bash
+helm repo add teleport https://charts.releases.teleport.dev
+helm repo update
+
+helm upgrade --install teleport teleport/teleport-cluster \
+  --namespace teleport \
+  --values eks_teleport_values.yaml \
+  --version 18.2.2
+```
+
+<div id="get-the-teleport-service-external-ip">
+  ### Récupérer l’adresse IP externe du service Teleport
+</div>
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+Récupérez l’adresse IP externe et créez un enregistrement CNAME dans Route53 ou auprès de votre fournisseur DNS. Si le load balancer n’a pas de nom d’hôte :
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+Créez plutôt un enregistrement de type A.
+
+***
+
+<div id="create-a-teleport-provision-token">
+  ## Créer un jeton de provisionnement pour Teleport
+</div>
+
+Un jeton de provisionnement permet aux agents Teleport de rejoindre le cluster. Créez `teleport_provision_token_for_clickhouse.yaml` :
+
+```yaml
+apiVersion: resources.teleport.dev/v2
+kind: TeleportProvisionToken
+metadata:
+  name: kube-agent-token
+  namespace: teleport
+spec:
+  roles:
+    - Db
+  join_method: kubernetes
+  kubernetes:
+    type: in_cluster
+    allow:
+      - service_account: teleport-agent:teleport-kube-agent
+```
+
+```bash
+kubectl apply -f teleport_provision_token_for_clickhouse.yaml
+```
+
+***
+
+<div id="set-up-the-teleport-agent">
+  ## Configurer l’agent Teleport
+</div>
+
+<div id="create-agent-namespace">
+  ### Créer l’espace de noms de l’agent
+</div>
+
+```bash
+kubectl create namespace teleport-agent
+kubectl label namespace teleport-agent 'pod-security.kubernetes.io/enforce=baseline'
+```
+
+<div id="create-agent-secrets">
+  ### Créer les secrets de l&#39;agent
+</div>
+
+Créez un secret pour l’AC du proxy Teleport dans l’espace de noms de l’agent :
+
+```bash
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+Créez un secret pour l’autorité de certification (AC) de la base de données (concaténez les AC si vous utilisez plusieurs bases de données avec des AC différentes). Créez un fichier nommé `db_cas.pem`, puis :
+
+```bash
+kubectl create secret generic db-ca \
+  --from-file=ca.pem=db_cas.pem \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+<div id="configure-agent-values">
+  ### Configurer les valeurs de l’agent
+</div>
+
+Créez `teleport_agent_values.yaml`. Remplacez :
+
+* `<CLICKHOUSE_CLUSTER_NAME>` : nom du cluster provisionné (par exemple, `default-aa-01`)
+* `<ENV>` : libellé statique pour cette base de données (par exemple, `dev`)
+
+```yaml expandable
+roles: db
+proxyAddr: teleport.teleport.svc.cluster.local:443
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+joinParams:
+  method: kubernetes
+  tokenName: kube-agent-token
+tls:
+  existingCASecretName: teleport-proxy-ca
+databases:
+  - name: <CLICKHOUSE_CLUSTER_NAME>-https
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:8443
+    protocol: clickhouse-https
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+  - name: <CLICKHOUSE_CLUSTER_NAME>-native
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:9440
+    protocol: clickhouse
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/teleport-tls-db/db-ca
+    readOnly: true
+```
+
+> Le fichier YAML crée 2 ressources de base de données pour 1 seule base de données, car ClickHouse prend en charge 2 protocoles (HTTPS sur 8443 et TLS natif sur 9440). Supprimez celle dont vous n’avez pas besoin.
+
+<div id="deploy-the-agent">
+  ### Déployer l’agent
+</div>
+
+```ini
+VERSION="18.2.2"
+helm upgrade --install teleport-kube-agent teleport/teleport-kube-agent \
+  --namespace teleport-agent \
+  --version ${VERSION} \
+  -f teleport_agent_values.yaml
+```
+
+***
+
+<div id="add-teleport-ca-to-clickhouse-trusted-list">
+  ## Ajouter l’AC Teleport à la liste de confiance de ClickHouse
+</div>
+
+Récupérez l’AC racine de Teleport et ajoutez-la au secret du certificat du serveur ClickHouse :
+
+```bash
+kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+cat teleport_ca.crt  # Ensure it is not empty
+
+CLUSTER_NAME="<CLUSTER_NAME>"
+NAMESPACE="ns-${CLUSTER_NAME}"
+
+kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+kubectl create secret generic -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+  --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+  --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+  --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+  --from-file=ca.crt=combined_ca.crt \
+  --namespace=${NAMESPACE} \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+rm teleport_ca.crt current_ca.crt combined_ca.crt
+```
+
+Redémarrez les pods du serveur ClickHouse pour prendre en compte la nouvelle AC.
+
+***
+
+<div id="configure-saml-authentication">
+  ## Configurer l’authentification SAML
+</div>
+
+<div id="create-a-database-access-role">
+  ### Créer un rôle d’accès à la base de données
+</div>
+
+Créez `saml_clickhouse_user_role.yaml`. Remplacez la clé de l’attribut utilisateur par l’attribut de votre fournisseur d’identité (par ex., `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`) :
+
+```yaml
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV8
+metadata:
+  name: saml-clickhouse-user-dev-role
+  namespace: teleport
+spec:
+  allow:
+    db_labels:
+      env: dev
+    db_users:
+      - '{{external["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]}}'
+    db_names:
+    - '*'
+```
+
+```bash
+kubectl apply -f saml_clickhouse_user_role.yaml
+```
+
+Pour plus d’informations sur les rôles, consultez la [documentation de Teleport](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-rolesv8/).
+
+<div id="create-a-saml-connector">
+  ### Créer un connecteur SAML
+</div>
+
+Créez `saml_connector.yaml`. Remplacez `<DOMAIN>` par votre domaine Route53 et `<Entity Descriptor>` par la valeur de votre fournisseur d’identité :
+
+```text
+# Example Auth0 integration -- rename and adjust role mappings as needed
+kind: TeleportSAMLConnector
+apiVersion: resources.teleport.dev/v2
+metadata:
+  name: samlconnector
+  namespace: teleport
+spec:
+  acs: https://teleport.<DOMAIN>/v1/webapi/saml/acs/samlconnector
+  service_provider_issuer: https://teleport.<DOMAIN>
+  display: Auth0
+  attributes_to_roles:
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: clickhouse-dev
+    roles:
+    - saml-clickhouse-user-dev-role
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: admin
+    roles:
+    - access
+    - editor
+  entity_descriptor: <Entity Descriptor>
+```
+
+Pour en savoir plus sur les connecteurs SAML, consultez la [documentation de Teleport](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-samlconnectors/).
+
+```bash
+kubectl apply -f saml_connector.yaml
+```
+
+***
+
+<div id="create-database-users">
+  ## Créer des utilisateurs de base de données
+</div>
+
+Ouvrez un shell dans un pod du serveur ClickHouse :
+
+```bash
+kubectl exec -ti <CLICKHOUSE_SERVER_POD> -n ns-<CLUSTER_NAME> -- /bin/bash
+```
+
+Se connecter à la base de données :
+
+```bash
+cat <<EOF > client-config.xml
+<config>
+    <openSSL>
+        <client>
+            <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        </client>
+    </openSSL>
+</config>
+EOF
+PASSWORD='My super secret p@$$w0rd'
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --config=client-config.xml
+```
+
+Créez un utilisateur authentifié à l’aide du CN du certificat SSL (remplacez `<DB_USER>` par le nom d’utilisateur -- généralement l’adresse e-mail de l’utilisateur fournie par le fournisseur d’identité) :
+
+```sql
+CREATE USER '<DB_USER>' IDENTIFIED WITH ssl_certificate CN '<DB_USER>';
+GRANT SELECT ON default.* TO '<DB_USER>';
+```
+
+***
+
+<div id="connect-via-teleport">
+  ## Se connecter via Teleport
+</div>
+
+Ajoutez l’autorité de certification (AC) de Teleport aux autorités de certification de confiance de votre système, ou utilisez le flag `--insecure` en développement.
+
+```text
+# Log in to Teleport
+tsh login --proxy=teleport.<DOMAIN>:443 --auth=<AUTH_TYPE> --user=<TELEPORT_USER> teleport.<DOMAIN>
+
+# Create a proxy tunnel
+tsh proxy db --tunnel <CLICKHOUSE_CLUSTER_NAME>-native --db-user=<DB_USER> --port 59215 &
+
+# Connect
+clickhouse client --host localhost --port 59215 --user <DB_USER>
+```
+
+Remplacez : - `<DOMAIN>` : votre domaine Route53 - `<AUTH_TYPE>` : type d’authentification (par ex. `samlconnector`) - `<TELEPORT_USER>` : nom d’utilisateur Teleport - `<DB_USER>` : nom d’utilisateur de la base de données - `<CLICKHOUSE_CLUSTER_NAME>` : nom du cluster ClickHouse (par ex. `default-aa-01`)
+
+***
+
+<div id="day-2-certificate-rotation">
+  ## Jour 2 : Rotation des certificats
+</div>
+
+Les certificats Teleport expirent et doivent être remplacés avant leur expiration.
+
+<div id="rotate-teleport-proxy-certificates">
+  ### Renouvellement des certificats du proxy Teleport
+</div>
+
+1. **Générez de nouveaux certificats** à l&#39;aide du script de [Generate FIPS Certificates for Teleport](#generate-fips-certificates-for-teleport). Assurez-vous que `CLUSTER_FQDN` et les autres variables correspondent à votre cluster.
+
+   > Le script doit s&#39;exécuter sur un hôte sur lequel FIPS est activé. Docker monte automatiquement `/proc` ; tant que le conteneur s&#39;exécute sur un hôte avec FIPS activé, les certificats générés seront conformes à FIPS.
+
+2. **Ajoutez la nouvelle AC au bundle existant** dans les deux espaces de noms :
+
+   ```bash
+   kubectl get secret teleport-proxy-ca -n teleport -o jsonpath='{.data.ca\.pem}' | base64 -d > current_teleport_ca.pem
+   cat current_teleport_ca.pem ca_teleport/ca.crt > combined_ca.pem
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+3. **Effectuez un redémarrage progressif de Teleport** :
+
+   ```bash
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+4. **Ajoutez la nouvelle AC de Teleport à la liste de confiance de ClickHouse** :
+
+   ```bash
+   kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+   CLICKHOUSE_CLUSTER_NAME="<CLICKHOUSE_CLUSTER_NAME>"
+   NAMESPACE="ns-${CLICKHOUSE_CLUSTER_NAME}"
+
+   kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+   cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+   kubectl create secret generic -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret \
+     --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+     --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+     --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+     --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+     --from-file=ca.crt=combined_ca.crt \
+     --namespace=${NAMESPACE} \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   rm -f teleport_ca.crt current_ca.crt combined_ca.crt
+
+   kubectl rollout restart statefulset -n ${NAMESPACE}
+   ```
+
+5. **Remplacez le certificat du proxy** :
+
+   ```bash
+   kubectl create secret generic teleport-proxy-cert \
+     --from-file=tls.crt=server_teleport/server.crt \
+     --from-file=tls.key=server_teleport/server.key \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   ```
+
+6. **Supprimez l&#39;ancienne AC** du bundle :
+
+   ```bash
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+7. **Nettoyez** :
+
+   ```bash
+   rm -f current_teleport_ca.pem combined_ca.pem
+   ```
+
+***
+
+<div id="reference">
+  ## Référence
+</div>
+
+* [Documentation de Teleport](https://goteleport.com/docs/)

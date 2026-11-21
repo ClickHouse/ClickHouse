@@ -25,6 +25,10 @@
 150000
 150000
 -- Query F: workaround setting still works as before
+100000
+130000
+150000
+150000
 -- Query G: existing 03023 case - DISTINCT as direct FROM-child (already worked)
 product_0
 product_0

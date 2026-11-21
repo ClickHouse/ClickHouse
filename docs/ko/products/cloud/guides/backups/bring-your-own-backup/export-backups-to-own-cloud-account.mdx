@@ -7,8 +7,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S3, Google Cloud Storage 또는 Azure Blob Storage)으로 백업을 내보내는 기능을 지원합니다.
-&quot;전체&quot; 백업과 &quot;증분&quot; 백업의 차이를 포함해 ClickHouse Cloud 백업의 작동 방식에 관한 자세한 내용은 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups) 문서를 참조하십시오. 한 가지 중요한 차이점은
-자체 클라우드 계정으로 내보내는 백업은 제자리 Cloud 백업과 다르게 동작한다는 점입니다. 즉, 네이티브 복사(아래 참고 참조)를 사용할 수 없습니다.
+&quot;전체&quot; 백업과 &quot;증분&quot; 백업의 차이를 포함해 ClickHouse Cloud 백업의 작동 방식에 관한 자세한 내용은 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups) 문서를 참조하십시오.
 
 이 가이드에서는 AWS, GCP, Azure 객체 스토리지로 전체 및 증분 백업을 수행하는 방법과 해당 백업에서 복원하는 방법에 대한 예시를 보여드립니다.
 
@@ -18,20 +17,9 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
   클라우드 간 백업은 이 페이지에 설명된 백업/복원 명령을 통해서만 지원되며 UI에서는 지원되지 않습니다.
 </Note>
 
-<Warning>
-  **제자리 백업 대비 성능 영향**
-  자체 버킷으로 내보내는 백업은 네이티브(서버 측) 복사를 사용할 수 없습니다. 네이티브 복사를 사용하려면 소스와 대상이 동일한 자격 증명을 공유해야 하지만, 여기서는
-  그렇지 않습니다. 소스는 ClickHouse가 관리하는 버킷이고 대상은 별도의 자격 증명으로 인증되는 자체 버킷입니다.
-
-  네이티브 복사를 사용할 수 없으므로 데이터는 소스에서 다운로드된 후 사용자 버킷으로 다시 업로드됩니다(&quot;copy-through-buffers&quot;). 그 결과, 자체 버킷으로
-  백업을 내보내는 작업은 표준 제자리 Cloud 백업보다 더 느리고 더 많은 리소스를 사용합니다.
-</Warning>
-
 <div id="requirements">
   ## 요구 사항
 </div>
-
-`BACKUP` 명령을 실행하기 전에 ClickHouse 사용자에게 `BACKUP` privilege가 있는지 확인하십시오. ClickHouse Cloud의 `default_role`에는 이 privilege가 포함되어 있지 않습니다. 백업을 내보내기 전에 이 privilege가 필요하면 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하십시오.
 
 백업을 사용자의 CSP 스토리지 버킷으로 내보내거나 해당 버킷에서 복원하려면 다음 정보가 필요합니다.
 

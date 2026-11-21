@@ -1,10 +1,11 @@
-SET enable_analyzer = 1;
-
 -- Checks the per-phase query pre-execution ProfileEvents:
 --   QueryParseMicroseconds, QueryAnalysisMicroseconds,
 --   QueryPlanBuildMicroseconds, QueryPipelineBuildMicroseconds.
 -- Parsing is measured on every code path; the other three are only emitted on
--- the analyzer path.
+-- the analyzer path. The test runs under both interpreters (the suite executes
+-- it once with the analyzer and once without), so the analyzer-only events are
+-- non-zero in 04408_query_phase_profile_events.reference and zero in
+-- 04408_query_phase_profile_events.oldanalyzer.reference.
 
 -- A non-trivial query so every phase does measurable work.
 SELECT number, number * 2 AS x, toString(number) AS s

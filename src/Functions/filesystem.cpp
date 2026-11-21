@@ -52,9 +52,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 1)
@@ -112,7 +109,7 @@ REGISTER_FUNCTION(Filesystem)
 {
     FunctionDocumentation::Description description_filesystemAvailable = R"(
 Returns the amount of free space in the filesystem hosting the database persistence.
-The returned value is always smaller than the total free space ([`filesystemUnreserved`](/reference/functions/regular-functions/other-functions#filesystemUnreserved)) because some space is reserved for the operating system.
+The returned value is always smaller than the total free space ([`filesystemUnreserved`](../../sql-reference/functions/other-functions.md#filesystemUnreserved)) because some space is reserved for the operating system.
     )";
     FunctionDocumentation::Syntax syntax_filesystemAvailable = "filesystemAvailable([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemAvailable = {
@@ -140,7 +137,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 
     FunctionDocumentation::Description description_filesystemCapacity = R"(
 Returns the capacity of the filesystem in bytes.
-Needs the [path](/reference/settings/server-settings/settings/other#path) to the data directory to be configured.
+Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
 )";
     FunctionDocumentation::Syntax syntax_filesystemCapacity = "filesystemCapacity([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemCapacity = {

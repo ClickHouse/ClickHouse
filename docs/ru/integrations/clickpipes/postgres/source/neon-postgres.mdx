@@ -59,7 +59,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` определяет набор таблиц, события изменений в которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать каждую таблицу, поскольку включение ненужных таблиц увеличивает WAL-трафик из Postgres в ClickPipes и снижает общую эффективность репликации.
+Публикация `clickpipes` будет содержать набор событий изменений из указанных таблиц и позднее будет использоваться для приёма потока репликации.
 
 <div id="enable-logical-replication">
   ## Включите логическую репликацию
@@ -77,16 +77,16 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Проверим указанные ниже настройки в вашем экземпляре Neon Postgres:
 
 ```sql
-SHOW wal_level; -- should be logical
-SHOW max_wal_senders; -- should be 10
-SHOW max_replication_slots; -- should be 10
+SHOW wal_level; -- должно быть logical
+SHOW max_wal_senders; -- должно быть 10
+SHOW max_replication_slots; -- должно быть 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">
   ## Добавление IP-адресов в список разрешённых (для плана Neon Enterprise)
 </div>
 
-Если у вас план Neon Enterprise, вы можете добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в список разрешённых, чтобы разрешить репликацию из ClickPipes в ваш экземпляр Neon Postgres.
+Если у вас план Neon Enterprise, вы можете добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в список разрешённых, чтобы разрешить репликацию из ClickPipes в ваш экземпляр Neon Postgres.
 Для этого откройте вкладку **Settings** и перейдите в раздел **IP Allow**.
 
 <Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="Экран IP Allow" border />

@@ -1,6 +1,6 @@
 ---
 description: 'Página de resumen de las funciones de ventana'
-sidebarTitle: 'Resumen'
+sidebarTitle: 'Funciones de ventana'
 slug: /sql-reference/window-functions/
 title: 'Funciones de ventana'
 doc_type: 'reference'
@@ -24,13 +24,13 @@ La tabla siguiente muestra qué funcionalidades se admiten actualmente:
 | Marco `ROWS`                                                                            | ✅            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Marco `RANGE`                                                                           | ✅            | Se usa de forma predeterminada cuando no se especifica explícitamente un marco (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                           |
 | Sintaxis `INTERVAL` para el marco `DateTime` `RANGE OFFSET`                             | ❌            | En su lugar, especifique el número de segundos (`RANGE` funciona con cualquier tipo numérico).                                                                                                                                                                                                                                                                                                                  |
-| Marco `GROUPS`                                                                          | ✅            | Los límites del marco cuentan grupos completos de pares (filas iguales según la clave `ORDER BY`); `N PRECEDING` y `N FOLLOWING` cuentan `N` grupos de pares antes y después del grupo de pares de la fila actual.                                                                                                                                                                                              |
+| Marco `GROUPS`                                                                          | ❌            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Cálculo de funciones de agregación sobre un marco (`sum(value) OVER (ORDER BY time)`)   | ✅            | Se admiten todas las funciones de agregación.                                                                                                                                                                                                                                                                                                                                                                   |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                                  | ✅            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `percent_rank()`/`percentRank()`                                                        | ✅            | Calcula de forma eficiente la posición relativa de un valor dentro de una partición. Sustituye el cálculo manual en SQL, más detallado y computacionalmente más costoso, expresado como `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                             |
 | `cume_dist()`                                                                           | ✅            | Calcula la distribución acumulada de un valor dentro de un grupo de valores. Devuelve el porcentaje de filas con valores menores o iguales que el valor de la fila actual.                                                                                                                                                                                                                                      |
 | `lag/lead(value, offset)`                                                               | ✅            | También puede usar una de las siguientes alternativas:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, o `FOLLOWING` en lugar de `PRECEDING` para `lead` <br /> 2) `lagInFrame/leadInFrame`, que son análogas pero respetan el marco de ventana. Para obtener un comportamiento idéntico a `lag/lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
-| [`ntile(buckets)`](/es/reference/functions/window-functions/ntile)                         | ✅            | Especifique la ventana como, por ejemplo, `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                               |
+| `ntile(buckets)`                                                                        | ✅            | Especifique la ventana como, por ejemplo, `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                               |
 
 <div id="syntax">
   ## Sintaxis
@@ -39,18 +39,18 @@ La tabla siguiente muestra qué funcionalidades se admiten actualmente:
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
+  [ROWS or RANGE expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - define cómo dividir un conjunto de resultados en grupos.
 * `ORDER BY` - define cómo ordenar las filas dentro del grupo durante el cálculo de aggregate&#95;function.
-* `ROWS`, `RANGE` o `GROUPS` - define los límites del marco; aggregate&#95;function se calcula dentro de ese marco. `ROWS` cuenta filas físicas, `RANGE` cuenta valores de `ORDER BY` y `GROUPS` cuenta grupos de pares (filas iguales en la clave `ORDER BY`).
+* `ROWS or RANGE` - define los límites del marco; aggregate&#95;function se calcula dentro de ese marco.
 * `WINDOW` - permite que varias expresiones usen la misma definición de ventana.
 
 ```text
@@ -84,13 +84,8 @@ Las siguientes funciones solo pueden usarse como funciones de ventana. La mayor�
 | [`nth_value(x, offset)`](/es/reference/functions/window-functions/nth_value)                                                                   | Devuelve el primer valor distinto de `NULL` evaluado en la n.ª fila (`offset`) de su marco ordenado.                                              |
 | [`rank()`](/es/reference/functions/window-functions/rank)                                                                                      | Asigna un rango a la fila actual dentro de su partición, con huecos.                                                                              |
 | [`dense_rank()`](/es/reference/functions/window-functions/dense_rank)                                                                          | Asigna un rango a la fila actual dentro de su partición, sin huecos.                                                                              |
-| [`percent_rank()`](/es/reference/functions/window-functions/percent_rank)                                                                      | Calcula el rango relativo de la fila actual dentro de su partición, como un valor entre 0 y 1.                                                    |
-| [`cume_dist()`](/es/reference/functions/window-functions/cume_dist)                                                                            | Calcula la distribución acumulada de un valor dentro de un grupo de valores.                                                                      |
-| [`lag(x, offset)`](/es/reference/functions/window-functions/lag)                                                                               | Devuelve el valor evaluado en la fila situada `offset` filas antes de la fila actual dentro de la partición.                                      |
-| [`lead(x, offset)`](/es/reference/functions/window-functions/lead)                                                                             | Devuelve el valor evaluado en la fila situada `offset` filas después de la fila actual dentro de la partición.                                    |
 | [`lagInFrame(x)`](/es/reference/functions/window-functions/lagInFrame)                                                                         | Devuelve el valor evaluado en la fila que se encuentra un número especificado de filas físicas antes de la fila actual dentro del marco ordenado. |
 | [`leadInFrame(x)`](/es/reference/functions/window-functions/leadInFrame)                                                                       | Devuelve el valor evaluado en la fila que se encuentra un número especificado de filas después de la fila actual dentro del marco ordenado.       |
-| [`ntile(buckets)`](/es/reference/functions/window-functions/ntile)                                                                             | Divide las filas ordenadas dentro de una partición en el número indicado de buckets y devuelve el número de bucket de la fila actual.             |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/es/reference/functions/window-functions/nonNegativeDerivative) | Calcula la derivada no negativa de `metric_column` con respecto a `timestamp_column`. Es específica de ClickHouse.                                |
 
 <div id="examples">
@@ -526,44 +521,6 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
-
-<div id="groups-frame">
-  ### Marco GROUPS
-</div>
-
-Un marco `GROUPS` cuenta *grupos de pares* completos —conjuntos de filas iguales según la clave `ORDER BY`—, en lugar de filas físicas (`ROWS`) o valores de `ORDER BY` (`RANGE`). `N PRECEDING` y `N FOLLOWING` cuentan `N` grupos de pares antes y después del grupo de pares de la fila actual, y cada grupo de pares incluido siempre aporta todas sus filas.
-
-La siguiente consulta aplica los mismos límites `1 PRECEDING AND 1 FOLLOWING` a marcos `ROWS`, `RANGE` y `GROUPS`. La columna `order` contiene valores duplicados y no consecutivos, por lo que los tres modos abarcan filas distintas:
-
-```sql
-CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
-INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
-
-SELECT
-    order,
-    value,
-    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
-    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
-    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
-FROM wf_frame_groups
-ORDER BY order, value;
-```
-
-```response
-┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
-│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
-│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
-│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
-│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
-│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
-└───────┴───────┴────────────┴─────────────┴──────────────┘
-```
-
-Cada modo interpreta los límites de forma diferente:
-
-* `ROWS` cuenta filas físicas, por lo que el marco incluye como máximo tres filas adyacentes: la fila actual y una a cada lado.
-* `RANGE` cuenta valores de `order`, por lo que `1 PRECEDING` y `1 FOLLOWING` abarcan las filas cuyo `order` difiere en como máximo 1 del de la fila actual. Con huecos de 10, ninguna fila vecina cumple esta condición, por lo que el marco contiene solo las filas que comparten el `order` actual.
-* `GROUPS` cuenta grupos de pares, por lo que `1 PRECEDING` y `1 FOLLOWING` siempre incluyen por completo los grupos adyacentes, independientemente de los huecos entre los valores de `order`.
 
 <div id="real-world-examples">
   ## Ejemplos reales

@@ -10,7 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -34,39 +34,14 @@ namespace MergeTreeSetting
 extern const MergeTreeSettingsBool fsync_part_directory;
 }
 
-VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, PartDirIntent intent)
-    : VersionMetadata(merge_tree_data_part_->name, &merge_tree_data_part_->storage)
-    , merge_tree_data_part(merge_tree_data_part_)
+VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_)
+    : VersionMetadata(merge_tree_data_part_)
     , can_write_metadata(merge_tree_data_part->storage.supportsTransactions() && !merge_tree_data_part->getDataPartStorage().isReadonly())
 {
     log = ::getLogger("VersionMetadataOnDisk");
-    /// A `CreateFresh` directory is clean, so it reads nothing and keeps the member default (true).
-    if (intent == PartDirIntent::OpenExisting)
-        is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
+    is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
     LOG_TEST(
         log, "Object {}, can_write_metadata {}, is_persist_deferrable {}", getObjectName(), can_write_metadata, is_persist_deferrable);
-}
-
-bool VersionMetadataOnDisk::hasValidMetadata()
-{
-    auto current_info = getInfo();
-    try
-    {
-        return validateAgainstPersistedMetadata(current_info);
-    }
-    catch (const Exception & e)
-    {
-        /// Part dir removed externally (e.g. between DETACH/ATTACH) — nothing
-        /// to validate. https://github.com/ClickHouse/ClickHouse/pull/99399
-        if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && !merge_tree_data_part->getDataPartStorage().exists())
-            return true;
-        throw;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Object {}, current_info: {}", getObjectName(), current_info.toString(/*one_line=*/true)));
-        return false;
-    }
 }
 
 VersionInfo VersionMetadataOnDisk::loadMetadata()
@@ -91,7 +66,7 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
 
     LOG_TEST(log, "Object {}, no metadata", getObjectName());
 
-    /// Possible cases (metadata file missing):
+    /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
     /// 2. Version metadata file was not renamed from *.tmp on part creation.
     /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
@@ -107,44 +82,28 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         return new_info;
     }
 
-    /// We have no version metadata or transaction history for old parts, so treat them as
-    /// created before transactions existed and committed with `NonTransactionalCSN`.
+    /// We do not have version metadata and transactions history for old parts,
+    /// so let's consider that such parts were created by some ancient transaction
+    /// and were committed with some NonTransactionalCSN.
     VersionInfo new_info;
     new_info.creation_tid = Tx::NonTransactionalTID;
     new_info.creation_csn = Tx::NonTransactionalCSN;
     return new_info;
 }
 
-void VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID(LockKind kind, const TransactionInfoContext & transaction_context)
+void VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context)
 {
     if (getInfo().isRemoved())
     {
         LOG_INFO(log, "Object {} is already removed", getObjectName());
         return;
     }
-    bool is_locked = false;
-    /// Release via `unlockRemovalTID` so `UNLOCK_PART` pairs with the acquire's `LOCK_PART`.
-    SCOPE_EXIT({
-        if (is_locked)
-            unlockRemovalTID(Tx::NonTransactionalTID, transaction_context, {});
-    });
-
-    /// Disk-backed parts never vanish while locking, so this always returns true.
-    lockRemovalTID(Tx::NonTransactionalTID, kind, transaction_context);
-    is_locked = true;
-
-    finalizeNonTransactionalRemoval(Tx::NonTransactionalTID, kind, {});
+    lockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+    SCOPE_EXIT({ unlockRemovalTID(Tx::NonTransactionalTID, transaction_context); });
+    setAndStoreRemovalTID(Tx::NonTransactionalTID);
 }
 
-void VersionMetadataOnDisk::finalizeNonTransactionalRemoval(
-    const TransactionID & tid, LockKind /*kind*/, LockFingerprint /*acquired_fp*/)
-{
-    /// Only writes the removal TID; the caller releases the lock.
-    setAndStoreRemovalTID(tid);
-}
-
-bool VersionMetadataOnDisk::tryLockRemovalTID(
-    const TransactionID & tid, LockKind /*kind*/, const TransactionInfoContext & context, TIDHash * locked_by_id, LockFingerprint * /*acquired*/)
+bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
     LOG_TEST(
         log,
@@ -165,8 +124,7 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(
     bool locked = removal_tid_lock_hash.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
     if (!locked)
     {
-        /// Same TID re-locking: a transactional re-lock is a logic error. The non-transactional
-        /// case is excluded here (its same-TID lock-ownership handling is a separate follow-up).
+        /// Non-transactional TIDs are the same, we need to exclude them from this check.
         if (!tid.isNonTransactional() && expected_removal_lock_value == removal_lock_value)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to lock part {} for removal second time by {}", context.part_name, tid);
 
@@ -179,8 +137,7 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(
     return true;
 }
 
-void VersionMetadataOnDisk::unlockRemovalTID(
-    const TransactionID & tid, const TransactionInfoContext & context, LockFingerprint /*expected*/)
+void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     LOG_TEST(
         log,
@@ -197,7 +154,7 @@ void VersionMetadataOnDisk::unlockRemovalTID(
     if (!unlocked)
     {
         // `tid_hash` is now the hash of `removal_tid_lock_hash`
-        auto locked_by_txn = TransactionManager::instance().tryGetRunningTransaction(tid_hash);
+        auto locked_by_txn = TransactionLog::instance().tryGetRunningTransaction(tid_hash);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot unlock removal_tid, it's a bug. Current: {} {}, actual: {} {}",
@@ -379,7 +336,7 @@ void VersionMetadataOnDisk::removeTmpMetadataFile()
 }
 
 void VersionMetadataOnDisk::storeInfoToDataPartStorage(
-    const MergeTreeData & mt_data, IDataPartStorage & data_part_storage, const VersionInfo & new_info)
+    const MergeTreeData & storage, IDataPartStorage & data_part_storage, const VersionInfo & new_info)
 {
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = TMP_TXN_VERSION_METADATA_FILE_NAME;
@@ -391,7 +348,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.
             data_part_storage.createFile(tmp_filename);
-            auto write_settings = mt_data.getContext()->getWriteSettings();
+            auto write_settings = storage.getContext()->getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             new_info.writeToBuffer(*buf, /*one_line=*/false);
             buf->finalize();
@@ -399,7 +356,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         }
 
         SyncGuardPtr sync_guard;
-        if ((*mt_data.getSettings())[MergeTreeSetting::fsync_part_directory])
+        if ((*storage.getSettings())[MergeTreeSetting::fsync_part_directory])
             sync_guard = data_part_storage.getDirectorySyncGuard();
         data_part_storage.replaceFile(tmp_filename, filename);
     }

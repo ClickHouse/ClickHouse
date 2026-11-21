@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "Preflight 점검 실행"
+sidebarTitle: "Preflight 점검 실행"
+description: "환경의 준비 상태를 확인하거나 업그레이드 전 검증을 수행할 수 있도록 Preflight 점검을 제공합니다."
+---
+
+환경의 준비 상태를 확인하거나 업그레이드 전 검증을 수행할 수 있도록 Preflight 점검을 제공합니다. Preflight 점검은 클러스터 진단을 위한 Kubernetes 플러그인인 [Troubleshoot](https://troubleshoot.sh/)를 활용합니다. 이 과정에서 데이터가 외부로 전송되지는 않습니다.
+
+다음 How-To 가이드에서는 Preflight 점검을 실행하는 방법을 설명합니다.
+
+<div id="install-the-plugin">
+  ## 플러그인 설치
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+또는 다른 설치 옵션은 [Troubleshoot 문서](https://troubleshoot.sh/docs/)를 참고하십시오.
+
+<div id="copy-the-preflight-helm-chart">
+  ## Preflight Helm 차트 복사
+</div>
+
+ECR 복사 단계에 Preflight 차트를 추가하세요:
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## 점검 실행
+</div>
+
+`helm template`를 사용하여 Preflight 사양을 렌더링한 다음, 출력을 `kubectl preflight`로 전달합니다:
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+이 작업은 노드 레이블, StorageClass 구성, 기타 요구 사항을 검증합니다. 또한 기존 ClickHouse 클러스터의 업그레이드 준비 상태를 확인하고, 지원 중단 예정 기능 플래그나 새로운 요구 사항을 보고합니다.
+
+출력에는 각 검사와 해당 상태가 표시됩니다. 검사가 실패하면 문제를 해결하는 방법에 대한 권장 사항도 함께 제공됩니다.
+
+사용자 지정 StorageClass를 대상으로 검증하려면:
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### 필수 권한
+</div>
+
+`kubectl preflight`를 실행하는 사용자 또는 서비스 계정에는 다음 리소스에 대한 읽기 권한이 필요합니다.
+
+| 범위                                             | 리소스                                                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 클러스터 전체                                        | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| operator 네임스페이스 (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| 클러스터 네임스페이스 (`ns-<cluster-name>`)              | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+기본 제공 `view` 클러스터 역할과 관련 네임스페이스에 대한 `view` 권한이 있는 주체면 충분합니다.

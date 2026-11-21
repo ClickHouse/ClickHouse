@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: '통합 문서 작성'
 title: 'ClickHouse 통합 문서 작성하기'
-description: '필수 섹션과 복사해 붙여넣을 수 있는 골격을 포함하여 이 리포지토리에 통합 페이지를 기여하는 방법을 설명합니다.'
+description: '필수 섹션과 복사해 붙여넣을 수 있는 골격을 포함하여 clickhouse-docs에 통합 페이지를 기여하는 방법을 설명합니다.'
 keywords: ['파트너', '통합', '문서', '기여', 'pull request', '통합 문서']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ doc_type: 'guide'
   ## 문서가 있는 위치
 </div>
 
-* **리포지토리:** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (이 트리의 `docs/`)
-* **형식:** MDX, [Mintlify](https://www.mintlify.com/)로 빌드
-* **위치:** `docs/integrations/<category>/<your-integration>/`, 여기서 `<category>`는 제품이 수행하는 역할을 반영합니다 (`data-visualization`, `data-ingestion`, `language-clients` 등)
-* **절차:** `master` 브랜치를 대상으로 pull request를 생성하십시오. ClickHouse 통합 팀이 검토합니다. 처음 기여하는 경우 PR에서 봇이 안내하면 Contributor License Agreement에 서명합니다. 로컬 미리 보기(`docs/`에서 `mint dev`)는 [문서 기여 가이드](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme)를 참조하십시오
+* **리포지토리:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **형식:** Markdown, Docusaurus로 빌드
+* **위치:** `/docs/integrations/<category>/<your-integration>/`, 여기서 `<category>`는 제품이 수행하는 역할을 반영합니다 (`data-visualization`, `data-ingestion`, `language-clients` 등)
+* **절차:** `main` 브랜치를 대상으로 pull request를 생성하십시오. ClickHouse 통합 팀이 검토합니다. 처음 기여하는 경우 PR에서 봇이 안내하면 Contributor License Agreement에 서명합니다
 
 이 리포지토리의 통합 페이지는 최종 사용자를 위한 주요 참고 자료입니다. 제품별 세부 정보는 통합 페이지에서 사이트의 보조 문서로 링크할 수 있습니다.
 
@@ -49,7 +49,7 @@ doc_type: 'guide'
 </div>
 
 * **Cloud와 자체 호스팅을 모두 포함하세요.** Cloud는 일반적으로 포트 `8443`에서 HTTPS를, `9440`에서 네이티브 TCP를 사용합니다. 자체 호스팅의 기본 포트는 `8123`과 `9000`입니다
-* **굵은 문단 대신 Mintlify 콜아웃** (`<Note>`, `<Warning>`, `<Tip>`)을 사용하세요
+* **굵은 문단 대신 Docusaurus admonitions** (`:::note`, `:::warning`, `:::tip`)를 **콜아웃에 사용하세요**
 * **자세한 내용은 링크로 안내하세요.** 데이터 타입, 포맷, JDBC, ClickPipes 같은 주제는 다시 설명하지 말고 기존 문서로 연결하세요
 * **마케팅성 내용은 제외하세요.** 여기의 통합 페이지는 기술 참고 문서입니다. 홍보성 콘텐츠는 별도 사이트에 두고, 파트너 디렉터리에서 해당 콘텐츠로 링크할 수 있습니다
 
@@ -57,17 +57,10 @@ doc_type: 'guide'
   ## 복사해 붙여넣는 템플릿
 </div>
 
-대괄호로 표시된 부분을 채우고 `docs/integrations/<category>/<your-integration>/index.mdx`로 저장한 다음 PR을 여십시오.
+대괄호로 표시된 부분을 채우고 `/docs/integrations/<category>/<your-integration>/index.md`로 저장한 다음 PR을 여십시오.
 
-```mdx
----
-title: '[Your product] and ClickHouse'
-sidebarTitle: '[Your product]'
-slug: /integrations/[your-product]
-description: '[One sentence: what the integration does.]'
-doc_type: 'guide'
-keywords: ['[your product]', 'integration']
----
+```markdown
+# [Your product] and ClickHouse
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]
@@ -97,7 +90,7 @@ ClickHouse user would want it.]
 1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
 2. In [your product], [steps to configure the connection].
 
-## Authentication
+## 인증
 
 [List supported auth modes — username/password over TLS, mTLS, etc. — and how
 to configure each.]

@@ -51,12 +51,4 @@ private:
     mutable std::mutex previous_profile_events_mutex;
 };
 
-/// Fills a metric log element: per-interval increments of profile events, current metric values
-/// and histogram snapshots. Shared by MetricLog and BucketedMetricLog.
-void collectMetricLogElement(
-    MetricLogElement & elem,
-    std::chrono::system_clock::time_point current_time,
-    std::vector<ProfileEvents::Count> & previous_profile_events,
-    bool show_zero_values_in_histograms);
-
 }

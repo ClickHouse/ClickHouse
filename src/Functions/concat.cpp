@@ -259,7 +259,7 @@ REGISTER_FUNCTION(Concat)
     FunctionDocumentation::Description description = R"(
 Concatenates the given arguments.
 
-Arguments which are not of types [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) are converted to strings using their default serialization.
+Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
 As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 )";
     FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
@@ -311,17 +311,13 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation::Examples examples_injective = {
     {
         "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
         R"(
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
-        )",
-        R"(
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
         )"
     }
     };

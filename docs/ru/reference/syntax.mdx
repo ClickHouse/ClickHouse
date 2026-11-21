@@ -32,7 +32,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 <Accordion title="Включение полного парсера">
   Вы также можете включить для данных полный парсер
-  с помощью настройки [`input_format_values_interpret_expressions`](/ru/reference/settings/formats/input-format#input_format_values_interpret_expressions).
+  с помощью настройки [`input_format_values_interpret_expressions`](/ru/reference/settings/formats#input_format_values_interpret_expressions).
 
   Когда указанная выше настройка имеет значение `1`,
   ClickHouse сначала пытается разобрать значения быстрым потоковым парсером.
@@ -40,7 +40,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 </Accordion>
 
 Данные могут быть в любом формате.
-При получении запроса сервер держит в оперативной памяти не более [max&#95;query&#95;size](/ru/reference/settings/session-settings/max#max_query_size) байт запроса
+При получении запроса сервер держит в оперативной памяти не более [max&#95;query&#95;size](/ru/reference/settings/session-settings#max_query_size) байт запроса
 (по умолчанию 1 МБ), а остальная часть разбирается потоково.
 Это позволяет избежать проблем с большими запросами `INSERT`, которые являются рекомендуемым способом вставки данных в ClickHouse.
 
@@ -525,7 +525,7 @@ SELECT
     sum(b) AS b
 FROM t;
 
-Received exception from server (version 18.14.17):
+Получено исключение от сервера (версия 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
@@ -536,7 +536,7 @@ ClickHouse подставил в выражение `argMax(a, b)` выраже�
 Эта подстановка привела к Исключению.
 
 <Note>
-  Это поведение по умолчанию можно изменить, установив [prefer&#95;column&#95;name&#95;to&#95;alias](/ru/reference/settings/session-settings/prefer#prefer_column_name_to_alias) в `1`.
+  Это поведение по умолчанию можно изменить, установив [prefer&#95;column&#95;name&#95;to&#95;alias](/ru/reference/settings/session-settings#prefer_column_name_to_alias) в `1`.
 </Note>
 
 <div id="asterisk">

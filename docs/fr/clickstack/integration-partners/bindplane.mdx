@@ -9,17 +9,17 @@ keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestion des coll
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
 <Info>
   **En bref**
 
-  Ce guide vous montre comment acheminer la télémétrie vers ClickStack à l’aide de la destination ClickStack native de Bindplane. Vous apprendrez à :
+  Ce guide vous montre comment router la télémétrie vers ClickStack à l’aide de la destination ClickStack native de Bindplane. Vous apprendrez à :
 
   * Configurer ClickStack comme destination dans Bindplane
-  * Créer une configuration pour traiter et acheminer la télémétrie
+  * Créer une configuration pour traiter et router la télémétrie
   * Déployer à distance des configurations sur des OTel collecteurs et commencer à collecter des données
   * Consulter la télémétrie dans ClickStack
 
@@ -71,7 +71,9 @@ Bindplane répond à ce besoin en offrant :
 </div>
 
 <Steps>
-  <Step title="Configurer ClickStack comme destination" id="configure-destination">
+  <Step>
+    #### Configurer ClickStack comme destination
+
     1. Connectez-vous à votre compte Bindplane
     2. Accédez à **Library**
     3. Cliquez sur **Add Destination**
@@ -91,7 +93,9 @@ Bindplane répond à ce besoin en offrant :
     </Tip>
   </Step>
 
-  <Step title="Créer une configuration" id="create-configuration">
+  <Step>
+    #### Créer une configuration
+
     Une fois votre destination ClickStack configurée, créez une configuration pour traiter et acheminer la télémétrie :
 
     1. Accédez à **Configurations** → **Create Configuration**
@@ -113,7 +117,9 @@ Bindplane répond à ce besoin en offrant :
     </Tip>
   </Step>
 
-  <Step title="Ajouter des processeurs (facultatif)" id="add-processors">
+  <Step>
+    #### Ajouter des processeurs (facultatif)
+
     Bindplane fournit des fonctionnalités de pipeline intelligence ainsi que des recommandations de processeurs. Vous pouvez ajouter des processeurs pour :
 
     * **Filter** : réduire le volume de données en excluant la télémétrie inutile
@@ -125,7 +131,9 @@ Bindplane répond à ce besoin en offrant :
     Ces processeurs sont appliqués de manière cohérente à l’ensemble de votre flotte de collecteurs avant que les données n’atteignent ClickStack.
   </Step>
 
-  <Step title="Déployer les collecteurs et lancer le déploiement progressif sécurisé" id="deploy-collectors">
+  <Step>
+    #### Déployer les collecteurs et lancer le déploiement progressif sécurisé
+
     1. Ajoutez un collecteur (BDOT Collector) à votre configuration :
        * Accédez à **Agents** dans Bindplane
        * Installez le collecteur Bindplane sur vos systèmes cibles [en suivant les instructions d’installation de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
@@ -149,7 +157,9 @@ Bindplane répond à ce besoin en offrant :
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
   </Step>
 
-  <Step title="Vérifier la télémétrie dans ClickStack" id="verify-telemetry">
+  <Step>
+    #### Vérifier la télémétrie dans ClickStack
+
     Une fois la configuration déployée, la télémétrie commence à affluer vers ClickStack depuis votre flotte de collecteurs gérés :
 
     1. Connectez-vous à votre instance ClickStack (HyperDX UI)

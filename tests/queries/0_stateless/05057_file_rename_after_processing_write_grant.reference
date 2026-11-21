@@ -48,11 +48,6 @@ renamed
 --- and they still share it when one of them also changed an unrelated setting of its own
 1	1
 renamed
---- a URL database over file:// is gated the same way
-WRITE ON FILE
-intact
-7
-renamed
 --- with WRITE ON FILE granted, the rename happens
 7
 renamed

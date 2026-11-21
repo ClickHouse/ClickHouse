@@ -17,11 +17,6 @@ struct AreaCalculator
         return static_cast<Float64>(boost::geometry::area(object));
     }
 
-    Float64 operator()(const MultiPoint<Point> & object)
-    {
-        return static_cast<Float64>(boost::geometry::area(object));
-    }
-
     Float64 operator()(const LineString<Point> & object)
     {
         return static_cast<Float64>(boost::geometry::area(object));

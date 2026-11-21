@@ -3,33 +3,31 @@ alias: []
 description: 'وثائق تنسيق HiveText'
 input_format: true
 keywords: ['HiveText']
-output_format: true
+output_format: false
 slug: /interfaces/formats/HiveText
 title: 'HiveText'
 doc_type: 'reference'
 ---
 
-{/*تم إنشاؤه تلقائيًا*/}
-
 | إدخال | إخراج | اسم مستعار |
 | ----- | ----- | ---------- |
-| ✔     | ✔     |            |
+| ✔     | ✗     |            |
 
 <div id="description">
   ## الوصف
 </div>
 
-يقرأ `HiveText` ويكتب تنسيق التسلسل النصي المستخدم في جداول
+يقرأ `HiveText` تنسيق التسلسل النصي المستخدم في جداول
 [Apache Hive](https://hive.apache.org/) (وهو التنسيق الذي ينتجه `LazySimpleSerDe`
 في Hive). وهو تنسيق نصي مفصول بمحددات، يشبه [`CSV`](/ar/reference/formats/CSV/CSV)،
 وتُفصل فيه الحقول باستخدام محدد Hive الافتراضي `\x01` (Ctrl-A). ويمكن
 تهيئة محدد الحقول عبر [`input_format_hive_text_fields_delimiter`](#format-settings).
 
-عند استخدامه كتنسيق إدخال، لا تحتوي البيانات على صف ترويسة: إذ تُسنَد
+يُعد `HiveText` تنسيقًا للإدخال فقط. ولا تحتوي البيانات على صف ترويسة: إذ تُسنَد
 القيم موضعيًا إلى أعمدة الجدول الوجهة، لذلك تُؤخذ أسماء الأعمدة وأنواعها من
 الجدول (أو من البنية المقدَّمة صراحةً) بدلًا من استنتاجها من البيانات. وأثناء
 القراءة، يعالج ClickHouse التواريخ والأوقات في وضع أفضل جهد (راجع
-[`date_time_input_format`](/ar/reference/settings/formats/date-time#date_time_input_format))،
+[`date_time_input_format`](/ar/reference/settings/formats#date_time_input_format))،
 ويملأ الحقول اللاحقة المحذوفة بالقيم الافتراضية للأعمدة، ويتجاوز الحقول التي لا
 يتعرف عليها.
 
@@ -40,12 +38,11 @@ doc_type: 'reference'
 Hive وهو `\x02`.
 
 <Info>
-  **إعدادات المحددات المتداخلة ليس لها أي تأثير على الإدخال**
+  **إعدادات المحددات المتداخلة ليس لها أي تأثير**
 
   يتم قبول الإعدادين [`input_format_hive_text_collection_items_delimiter`](#format-settings) و
   [`input_format_hive_text_map_keys_delimiter`](#format-settings) لأغراض التوافق،
-  لكن لا يُستخدمان حاليًا أثناء التحليل. ومع ذلك، يُستخدمان عند كتابة القيم
-  المتداخلة في جانب الإخراج.
+  لكن لا يُستخدمان حاليًا أثناء التحليل.
 </Info>
 
 بشكل افتراضي، يُسمح بأن تحتوي الصفوف على عدد متغير من الحقول (راجع
@@ -129,120 +126,13 @@ SELECT * FROM test_extras ORDER BY a;
 إلى فرض عدد صارم من الحقول، ويؤدي وجود صف بعدد حقول أقل من عدد حقول الجدول إلى حدوث
 استثناء أثناء التحليل.
 
-<div id="output">
-  ## الإخراج
-</div>
-
-عند استخدامه كتنسيق إخراج، يكتب `HiveText` كل صف دون أي علامات اقتباس:
-تُفصل الحقول ذات المستوى الأعلى بمحدد الحقول (افتراضيًا `\x01`)، وتُفصل
-الصفوف بمحدد الصفوف (افتراضيًا `\n`، ويمكن ضبطه عبر
-[`format_hive_text_rows_delimiter`](#format-settings)). تُكتب قيم الأنواع المتداخلة
-([`Array`](/ar/reference/data-types/array)، [`Map`](/ar/reference/data-types/map)
-و[`Tuple`](/ar/reference/data-types/tuple)) دون أقواس، وتُفصل بفاصل Hive الخاص
-بمستوى تداخلها، بالطريقة نفسها التي يستخدمها `LazySimpleSerDe` في Hive.
-الفواصل الثلاثة الأولى هي محدد الحقول القابل للضبط،
-[`input_format_hive_text_collection_items_delimiter`](#format-settings)
-(افتراضيًا `\x02`، ويُستخدم لعناصر المصفوفات وإدخالات الخرائط وعناصر الصفوف)
-و[`input_format_hive_text_map_keys_delimiter`](#format-settings) (افتراضيًا `\x03`،
-ويُستخدم بين مفتاح الخريطة وقيمته)؛ أما المستويات الأعمق فتستخدم افتراضيًا أحرف تحكم
-متتالية (`\x04`، `\x05`، وهكذا، حتى ثمانية مستويات). تُرفض شجرة أنواع متداخلة
-بعمق يتطلب فاصلًا يتجاوز تلك المستويات الثمانية مع استثناء
-`NOT_IMPLEMENTED`، إذ لا يوفّر `LazySimpleSerDe` في Hive فاصلًا لها
-أيضًا. أنواع البيانات التي لا تمتلك تمثيلًا نصيًا طبيعيًا في
-Hive غير مدعومة للإخراج وتُطلق استثناء
-`NOT_IMPLEMENTED`. يشمل ذلك `AggregateFunction` و`Dynamic`
-و`Variant` و`LowCardinality` و`Object`، بالإضافة إلى الأنواع
-المدعومة عدديًا `Enum` و`Time` و`Time64` و`Interval` — لا يملك Hive نوعًا مطابقًا
-لهذه الأنواع، لذا تُرفض بدلًا من كتابتها كأرقامها الأساسية
-الخام. تُرفض الأنواع الرقمية العريضة `Int128` و`UInt128` و`Int256` و`UInt256`
-للسبب نفسه: أوسع عدد صحيح في Hive هو `BIGINT` (64 بت)،
-وحتى `DECIMAL` في Hive، بدقته القصوى البالغة 38، لا يمكنه استيعاب نطاق
-قيمها. وبالمثل، تتجاوز قيم `Decimal` ذات دقة أعلى من 38 (أي
-`Decimal256`) الدقة القصوى لـ `DECIMAL` في Hive، ولذلك تُرفض.
-وبالمثل، يجب أن تكون مفاتيح `Map` من نوع بدائي: يعرّف Hive الخرائط
-على أنها `MAP<primitive_type, data_type>`، لذا فإن `Map` الذي يكون نوع مفتاحه `Array`
-أو `Map` أو `Tuple` (وهو ما يسمح به ClickHouse) يُرفض مع
-استثناء `NOT_IMPLEMENTED`، إذ لا يمكن لأي مخطط Hive قراءة هذه القيم
-مرة أخرى. تُرفض القيمة الحرفية للخريطة الفارغة `map()` للسبب نفسه: فنوعها
-هو `Map(Nothing, Nothing)`، و`Nothing` ليس نوعًا يمكن لتصريح Hive
-`MAP<key_type, data_type>` تسميته. تُطبّق جميع هذه الفحوصات مسبقًا على أنواع الأعمدة المعلنة، قبل
-كتابة أي صف: يُرفض الاستعلام الذي يحتوي رأسه على نوع غير مدعوم في أي موضع
-من شجرة أنواعه، حتى عندما لا تصل القيم الفعلية مطلقًا إلى
-التسلسل غير المدعوم (على سبيل المثال، `Nullable` لنوع غير مدعوم
-لا يحتوي إلا على قيم `NULL`، أو `Array`/`Map` فارغة بعنصر من نوع غير مدعوم)،
-لأن مخطط الملف المعلن لا يمكن أن ينتمي إلى أي جدول Hive.
-
-تُكتب `Date` و`Date32` و`DateTime` و`DateTime64` دائمًا بتنسيق
-النص العادي لتاريخ وطابع زمني Hive (`yyyy-MM-dd` و`yyyy-MM-dd HH:mm:ss[.fffffffff]`)،
-بغض النظر عن إعداد
-[`date_time_output_format`](/ar/reference/settings/formats/date-time#date_time_output_format)،
-بحيث يبقى الإخراج قابلاً للقراءة بواسطة Hive حتى عندما يكون هذا الإعداد
-`unix_timestamp` أو `iso`.
-
-للسبب نفسه، تُكتب قيم `Bool` دائمًا على هيئة `true`/`false`،
-بغض النظر عن إعدادَي [`bool_true_representation`](/ar/reference/settings/formats/bool#bool_true_representation)
-و[`bool_false_representation`](/ar/reference/settings/formats/bool#bool_false_representation)،
-وتُكتب قيم `NULL` دائمًا كتسلسل القيمة الخالية الافتراضي في Hive،
-`\N`، بغض النظر عن إعداد
-[`format_csv_null_representation`](/ar/reference/settings/formats/format-csv#format_csv_null_representation).
-ويضمن ذلك أن يبقى الإخراج قابلاً للقراءة بواسطة `LazySimpleSerDe` في Hive بغض النظر عن
-هذه الإعدادات النصية العامة. وبالمثل، يقرأ تنسيق الإدخال `HiveText` دائمًا
-`\N` باعتبارها `NULL`، بغض النظر أيضًا عن إعداد
-[`format_csv_null_representation`](/ar/reference/settings/formats/format-csv#format_csv_null_representation)،
-لذا لا تعتمد عملية الذهاب والإياب للقيم القياسية ذات المستوى الأعلى عليه.
-
-تُكتب قيم `Float32` و`Float64` غير المنتهية باستخدام صيغ Java التي يستخدمها Hive، وهي
-`NaN` و`Infinity` و`-Infinity`، بدلاً من الرموز المعتادة في ClickHouse، وهي `nan`/`inf`/`-inf`،
-كي يعيد محلّل `FLOAT`/`DOUBLE` في Hive قراءتها بالقيم نفسها
-بدلاً من `NULL`.
-
-<Info>
-  **مخرجات متوافقة مع Hive، وليست دعماً كاملاً للذهاب والإياب عبر تنسيق الإدخال**
-
-  يستهدف جانب الإخراج `LazySimpleSerDe` الافتراضي في Hive، ولا يتماثل مع
-  إدخال `HiveText` الخاص بـ ClickHouse:
-
-  * تُكتب قيم [`Array`](/ar/reference/data-types/array) و[`Map`](/ar/reference/data-types/map)
-    و[`Tuple`](/ar/reference/data-types/tuple) المتداخلة باستخدام الفواصل المتداخلة في Hive
-    (من دون أقواس)، لكن تنسيق الإدخال يحلّل كل حقل وفق قواعد
-    `CSV`/الأقواس ويتجاهل
-    [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
-    [`input_format_hive_text_map_keys_delimiter`](#format-settings). لذلك، لا يمكن قراءة مخرجات متداخلة مثل
-    `SELECT [1, 2] FORMAT HiveText` مجدداً باستخدام
-    `INSERT ... FORMAT HiveText` — فالحقول القياسية في المستوى الأعلى وحدها تدعم الذهاب والإياب، وفقط مع
-    محدد الصفوف الافتراضي `\n` (انظر النقطة التالية).
-  * يتطلب الذهاب والإياب أيضاً محدد الصفوف الافتراضي `\n`. عند تغيير
-    [`format_hive_text_rows_delimiter`](#format-settings)، تفصل المخرجات
-    الصفوف بالبايت المُعدّ، لكن جانب الإدخال يظل `CSVRowInputFormat` المستند إلى السطر الجديد،
-    ولا يوجد `input_format_hive_text_rows_delimiter` مطابق. لذلك، فإن
-    مخرجات القيم القياسية متعددة الصفوف مثل
-    `SELECT number FROM numbers(3) FORMAT HiveText SETTINGS format_hive_text_rows_delimiter=';'`
-    (التي تنتج `0;1;2;`) **لا** تُقرأ مجدداً باستخدام `INSERT ... FORMAT HiveText` كثلاثة صفوف.
-  * لا يُنفَّذ إلا الجزء الافتراضي غير المُفلَت من `LazySimpleSerDe`. تُكتب الحقول
-    من دون إفلات (لا يوجد ما يعادل خيار Hive `ROW FORMAT DELIMITED ...
-    ESCAPED BY`)، وتُكتب `NULL` دائماً بالشكل `\N` (لا يوجد ما يعادل
-    `NULL DEFINED AS`). لذلك، تُكتب قيمة `String` التي تحتوي على فاصل حقل أو صف أو فاصل متداخل
-    نشط كما هي، وستُفسَّر بشكل خاطئ عند قراءتها مجدداً — وهذا
-    يطابق سلوك Hive نفسه مع serde لا يستخدم الإفلات. وللسبب نفسه، فإن
-    `String` التي تكون قيمتها حرفياً `\N` (مثلاً
-    `SELECT '\\N'::String FORMAT HiveText`) تُكتب بالبايتين نفسيهما اللذين تُمثَّل بهما
-    قيمة `NULL` حقيقية، ولذلك لا يمكن التمييز بينهما من جانب Hive.
-</Info>
-
-```sql title="Query"
-SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
-```
-
 <div id="format-settings">
   ## إعدادات التنسيق
 </div>
 
-| الإعداد                                                   | الوصف                                                                                                                                                     | الافتراضي |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `input_format_hive_text_fields_delimiter`                 | المحدد بين الحقول في Hive Text File                                                                                                                       | `\x01`    |
-| `input_format_hive_text_collection_items_delimiter`       | المحدد بين عناصر المجموعة (array أو map) في Hive Text File. يُستخدم بواسطة تنسيق الإخراج؛ ويُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء تحليل الإدخال. | `\x02`    |
-| `input_format_hive_text_map_keys_delimiter`               | المحدد بين كل زوج مفتاح/قيمة في map في Hive Text File. يُستخدم بواسطة تنسيق الإخراج؛ ويُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء تحليل الإدخال.      | `\x03`    |
-| `input_format_hive_text_allow_variable_number_of_columns` | تجاهل الأعمدة الإضافية في مُدخل Hive Text (إذا كان الملف يحتوي على أعمدة أكثر من المتوقع)، واعتبار الحقول المفقودة قيماً افتراضية                         | `1`       |
-| `format_hive_text_rows_delimiter`                         | المحدد في نهاية كل صف في مخرجات Hive Text                                                                                                                 | `\n`      |
-
-{/*AUTOGENERATED_END*/}
+| الإعداد                                                   | الوصف                                                                                                                             | الافتراضي |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `input_format_hive_text_fields_delimiter`                 | المحدد بين الحقول في Hive Text File                                                                                               | `\x01`    |
+| `input_format_hive_text_collection_items_delimiter`       | المحدد بين عناصر المجموعة (array أو map) في Hive Text File. يُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء التحليل.              | `\x02`    |
+| `input_format_hive_text_map_keys_delimiter`               | المحدد بين كل زوج مفتاح/قيمة في map في Hive Text File. يُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء التحليل.                   | `\x03`    |
+| `input_format_hive_text_allow_variable_number_of_columns` | تجاهل الأعمدة الإضافية في مُدخل Hive Text (إذا كان الملف يحتوي على أعمدة أكثر من المتوقع)، واعتبار الحقول المفقودة قيماً افتراضية | `1`       |

@@ -14,7 +14,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   ## 描述
 </div>
 
-仅当指定了 [part&#95;log](/zh/reference/settings/server-settings/settings/other#part_log) 服务器设置时，才会创建 `system.part_log` 表。
+仅当指定了 [part&#95;log](/zh/reference/settings/server-settings/settings#part_log) 服务器设置时，才会创建 `system.part_log` 表。
 
 此表包含 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族表中与 [数据分区片段](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 相关的事件信息，例如添加数据或合并数据。
 
@@ -29,7 +29,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `hostname` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行该查询的服务器主机名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 创建此数据分区片段的 INSERT 查询标识符。
 * `event_type` ([Enum8(&#39;NewPart&#39; = 1, &#39;MergeParts&#39; = 2, &#39;DownloadPart&#39; = 3, &#39;RemovePart&#39; = 4, &#39;MutatePart&#39; = 5, &#39;MovePart&#39; = 6, &#39;MergePartsStart&#39; = 7, &#39;MutatePartStart&#39; = 8)](/zh/reference/data-types/enum)) — 发生在数据分区片段上的事件类型。可能具有以下值之一：NewPart — 插入新的数据分区片段，MergePartsStart — 数据分区片段的合并已开始，MergeParts — 数据分区片段的合并已完成，DownloadPart — 下载数据分区片段，RemovePart — 使用 [DETACH PARTITION](/zh/reference/statements/alter/partition#detach-partitionpart) 删除或分离数据分区片段。MutatePartStart — 数据分区片段的变更已开始，MutatePart — 数据分区片段的变更已完成，MovePart — 将数据分区片段从一个磁盘移动到另一个磁盘。
-* `merge_reason` ([Enum8(&#39;NotAMerge&#39; = 1, &#39;RegularMerge&#39; = 2, &#39;TTLDeleteMerge&#39; = 3, &#39;TTLRecompressMerge&#39; = 4, &#39;TTLDropMerge&#39; = 5)](/zh/reference/data-types/enum)) — 类型为 MERGE&#95;PARTS 的事件发生的原因。可能具有以下值之一：NotAMerge — 当前事件的类型不是 MERGE&#95;PARTS，RegularMerge — 常规合并，TTLDeleteMerge、TTLDropMerge — 清理过期数据。TTLRecompressMerge — 重新压缩数据分区片段。
+* `merge_reason` ([Enum8(&#39;NotAMerge&#39; = 1, &#39;RegularMerge&#39; = 2, &#39;TTLDeleteMerge&#39; = 3, &#39;TTLRecompressMerge&#39; = 4, &#39;TTLDropMerge&#39; = 5)](/zh/reference/data-types/enum)) — `MERGE_PARTS` 类型事件发生的原因。可能具有以下值之一：NotAMerge — 当前事件的类型不是 `MERGE_PARTS`；RegularMerge — 常规合并；TTLDeleteMerge、TTLDropMerge — 清理过期数据；TTLRecompressMerge — 重新压缩数据分区片段。
 * `merge_algorithm` ([Enum8(&#39;Undecided&#39; = 0, &#39;Vertical&#39; = 1, &#39;Horizontal&#39; = 2)](/zh/reference/data-types/enum)) — 类型为 MERGE&#95;PARTS 的事件所使用的合并算法。可取以下值之一：Undecided、Horizontal、Vertical
 * `event_date` ([Date](/zh/reference/data-types/date)) — 事件日期。
 * `event_time` ([DateTime](/zh/reference/data-types/datetime)) — 事件发生时间。
@@ -42,7 +42,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `partition_id` ([String](/zh/reference/data-types/string)) — 数据分区片段被插入到的分区 ID。若按 `tuple()` 进行分区，则该列的值为 `all`。
 * `partition` ([String](/zh/reference/data-types/string)) — 分区名称。
 * `part_type` ([String](/zh/reference/data-types/string)) — 分片类型。可选值：Wide 和 Compact。
-* `part_storage_type` ([String](/zh/reference/data-types/string)) — `DataPartStorage` 的类型。可能的值：`Packed` - 大多数分片文件存储在单个归档中 (投影和少数服务文件 (如 `txn_version.txt`) 会单独写入) ，`Full` - 每个文件单独存储。
+* `part_storage_type` ([String](/zh/reference/data-types/string)) — DataPartStorage 的类型。可能的值：Packed - 所有文件都存储在同一个 blob 中，Full - 每个文件对应一个 blob。
 * `disk_name` ([String](/zh/reference/data-types/string)) — 数据分区片段所在磁盘的名称。
 * `path_on_disk` ([String](/zh/reference/data-types/string)) — 存放数据分区片段文件的文件夹的绝对路径。
 * `rows` ([UInt64](/zh/reference/data-types/int-uint)) — 数据分区片段中的行数。
@@ -96,16 +96,15 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
-rows:                    3285726 -- 3.29 million
-size_in_bytes:           438968542 -- 438.97 million
+rows:                    3285726 -- 329 万
+size_in_bytes:           438968542 -- 4.3897 亿
 merged_from:             ['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0']
-bytes_uncompressed:      1373137767 -- 1.37 billion
-read_rows:               3285726 -- 3.29 million
-read_bytes:              1429206946 -- 1.43 billion
-peak_memory_usage:       303611887 -- 303.61 million
+bytes_uncompressed:      1373137767 -- 13.7 亿
+read_rows:               3285726 -- 329 万
+read_bytes:              1429206946 -- 14.3 亿
+peak_memory_usage:       303611887 -- 3.0361 亿
 error:                   0
 exception:
 mutation_ids:

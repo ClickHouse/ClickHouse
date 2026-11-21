@@ -79,30 +79,30 @@ clickhousectl cloud service delete <service-id>
 Crie e gerencie serviços [ClickHouse Cloud Postgres](/pt-BR/products/managed-postgres/overview).
 
 ```bash
-# List Postgres services
+# Listar serviços Postgres
 clickhousectl cloud postgres list
 
-# Create a Postgres service
+# Criar um serviço Postgres
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
-  --size m6gd.xlarge \
+  --size c6gd.xlarge \
   --pg-version 18
 
-# Get service details
+# Obter detalhes do serviço
 clickhousectl cloud postgres get <pg-id>
 
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
+# Atualizar um serviço
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
 
-# Reset the password
+# Redefinir a senha
 clickhousectl cloud postgres reset-password <pg-id> --generate
 
-# Read replicas and point-in-time restore
+# Réplicas de leitura e restauração point-in-time
 clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 
-# Delete a service
+# Excluir um serviço
 clickhousectl cloud postgres delete <pg-id>
 ```
 

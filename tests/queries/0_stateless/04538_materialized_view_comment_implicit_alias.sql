@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS src_04538;
 DROP TABLE IF EXISTS dst_04538;
 DROP TABLE IF EXISTS mv_04538;
@@ -55,6 +53,26 @@ CREATE MATERIALIZED VIEW mv_04538_dup (x UInt8) ENGINE = Memory COMMENT 'pre-as 
 -- for COMMENT is scoped only to that context.
 SELECT 1 comment;
 SELECT number FROM numbers(1) comment;
+
+-- Regression test: same duplicate-comment check must also apply to
+-- ParserCreateWindowViewQuery (window views use a separate parser from
+-- regular views), giving a clear SYNTAX_ERROR instead of a generic one
+-- (bot-flagged scenario).
+SET allow_experimental_window_view = 1;
+SET allow_experimental_analyzer = 0;
+
+DROP TABLE IF EXISTS src_wv_04538;
+CREATE TABLE src_wv_04538 (x UInt8, ts DateTime) ENGINE = Memory;
+
+CREATE WINDOW VIEW wv_04538_dup (x UInt8, w_start DateTime) ENGINE = Memory COMMENT 'pre-as comment' AS SELECT x, tumbleStart(w_id) AS w_start FROM src_wv_04538 GROUP BY x, tumble(ts, toIntervalSecond(5)) AS w_id COMMENT 'post-select comment'; -- { clientError SYNTAX_ERROR }
+
+-- Single comment (before AS SELECT) on a window view should still work.
+CREATE WINDOW VIEW wv_04538_single (x UInt8, w_start DateTime) ENGINE = Memory COMMENT 'single wv comment' AS SELECT x, tumbleStart(w_id) AS w_start FROM src_wv_04538 GROUP BY x, tumble(ts, toIntervalSecond(5)) AS w_id;
+
+SELECT comment FROM system.tables WHERE name = 'wv_04538_single' AND database = currentDatabase();
+
+DROP TABLE wv_04538_single;
+DROP TABLE src_wv_04538;
 
 -- Regression test: a heredoc-style comment literal ($tag$...$tag$) must also be
 -- recognized by the trailing-comment lookahead, not just ordinary quoted string

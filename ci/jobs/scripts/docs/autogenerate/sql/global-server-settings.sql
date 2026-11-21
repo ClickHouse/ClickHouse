@@ -48,7 +48,7 @@ WITH
             '## {}{}{}{}\n\n',
             name,
             lcase(' {#'|| name ||'} \n\n'),
-            if(type != '',
+            if(type != '' AND default != '',
                 format('<SettingsInfoBlock type="{}" default_value="{}"{} />',
                     type,
                     default,

@@ -1,0 +1,472 @@
+---
+noindex: true
+title: "مرجع المقاييس والتنبيهات"
+sidebarTitle: "المقاييس والتنبيهات"
+description: "المقاييس الرئيسية وقواعد التنبيه الموصى بها لمكوّنات ClickHouse Private."
+---
+
+المقاييس الرئيسية وقواعد التنبيه الموصى بها لمكوّنات ClickHouse Private. هذه القائمة ليست شاملة — فقد تتضمن بيئتك مقاييس إضافية تبعًا للإعدادات.
+
+***
+
+<div id="operator-metrics">
+  ## مقاييس المشغّل
+</div>
+
+| المقياس                                     | النوع      | الوصف                                                                                                                                                            |
+| ------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `last_cluster_reconcile`                    | مقياس لحظي | الطابع الزمني لآخر عملية تسوية لعنقود معيّن ضمن مورد مخصّص (CR) (موسوم بـ `app`، مثل `c-default-xx-01`). يُستخدم لتحديد ما إذا كانت عمليات التسوية تحدث بانتظام. |
+| `controller_runtime_reconcile_errors_total` | عداد       | العدد الإجمالي لأخطاء التسوية لكل متحكّم. يُستخدم مع `controller_runtime_reconcile_total` لحساب معدل أخطاء التسوية.                                              |
+| `controller_runtime_reconcile_total`        | عداد       | العدد الإجمالي لمحاولات التسوية لكل متحكّم.                                                                                                                      |
+
+***
+
+<div id="clickhouse-server-metrics">
+  ## مقاييس خادم ClickHouse
+</div>
+
+تُعرَض مقاييس الخادم عبر نقطة نهاية Prometheus ‏`:8123/metrics` على كل جراب خادم. تتطلب نقطة النهاية هذه **المصادقة**، ويجب استخدام مستخدم مخصص يتمتع بامتيازات للقراءة فقط.
+
+**ملاحظة:** تعرض annotations ‏`prometheus.io/*` على جرابات الخادم بعض المقاييس، لكنها **لا** تتضمن مقاييس `ClickHouse_CustomMetrics_*` المدرجة أدناه. أعدّ PodMonitor أو هدف كشط مكافئًا لـ `:8123/metrics`.
+
+| المقياس                                                 | النوع   | الوصف                                                                                                            |
+| ------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`   | Gauge   | عدد الأجزاء المنفصلة المعطوبة.                                                                                   |
+| `ClickHouse_CustomMetric_LostPartCount`                 | Gauge   | عدد الأجزاء المفقودة، مما يشير إلى فقدان البيانات. **قد تحدث نتائج إيجابية كاذبة.**                              |
+| `ClickHouseErrorMetric_CANNOT_WRITE_TO_FILE_DESCRIPTOR` | Counter | عدد أخطاء CANNOT&#95;WRITE&#95;TO&#95;FILE&#95;DESCRIPTOR. يشير ذلك غالبًا إلى امتلاء قرص التخزين المؤقت.        |
+| `ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH`           | Counter | عدد أخطاء عدم تطابق checksum. قد يشير ذلك إلى خلل بعد الترقية.                                                   |
+| `ClickHouseErrorMetric_CORRUPTED_DATA`                  | Counter | عدد أخطاء البيانات التالفة. قد يشير ذلك إلى خلل بعد الترقية.                                                     |
+| `ClickHouseErrorMetric_LOGICAL_ERROR`                   | Counter | عدد الأخطاء المنطقية. وغالبًا ما يكون ذلك خللًا في قاعدة الشفرة البرمجية.                                        |
+| `ClickHouseErrorMetric_NOT_ENOUGH_SPACE`                | Counter | عدد أخطاء NOT&#95;ENOUGH&#95;SPACE. قد يشير ذلك إلى امتلاء PVC، أو خطأ في الإعداد، أو حجز كبير للبيانات المؤقتة. |
+| `ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART`    | Counter | عدد أخطاء data part التي يُحتمل أن تكون معطوبة. يشير ذلك إلى فقدان البيانات عند SELECT.                          |
+| `ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS`          | Counter | عدد أخطاء وجود replica مسبقًا. ويكون ذلك عادةً خللًا في محرّك قاعدة البيانات Replicated.                         |
+| `ClickHouseMetrics_IsServerShuttingDown`                | Gauge   | تكون القيمة `1` إذا كان خادم ClickHouse بصدد إيقاف التشغيل.                                                      |
+| `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds`  | Gauge   | المدة بالثواني التي كان فيها الجدول في وضع READONLY.                                                             |
+
+***
+
+<div id="clickhouse-keeper-metrics">
+  ## مقاييس ClickHouse Keeper
+</div>
+
+تتوفّر مقاييس Keeper عبر `:8001/metrics`. يجب إنشاء `PodMonitor` لجرابات Keeper لالتقاط هذه المقاييس.
+
+> **ملاحظة:** لا تزال التعريفات المحددة لمقاييس Keeper بانتظار التوثيق (TODO في المصدر). نقطة نهاية المقاييس متاحة، لكن أوصاف المقاييس الفردية لم تُوثَّق بعد.
+
+***
+
+<div id="alert-rule-definitions">
+  ## تعريفات قواعد التنبيه
+</div>
+
+<div id="operator-alerts">
+  ### تنبيهات المشغِّل
+</div>
+
+<div id="clickhouseoperatornotreconciling">
+  #### ClickhouseOperatorNotReconciling
+</div>
+
+```yaml
+alert: ClickhouseOperatorNotReconciling
+expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+for: 120m
+```
+
+**الغرض:** تنبيه إذا لم يُجرِ المشغّل عملية التوفيق خلال ساعتين.
+
+**الإجراء الموصى به:** 1. تحقّق من أن جراب المشغّل قيد التشغيل وبحالة سليمة. 2. افحص سجلات المشغّل لمعرفة ما الذي يمنع عملية التوفيق. 3. تحقّق من عدم وجود تعليق توضيحي `clickhouse.com/skip-reconcile` على الـ CR.
+
+***
+
+<div id="clickhouseoperatorreconcileerrors">
+  #### ClickhouseOperatorReconcileErrors
+</div>
+
+```yaml
+alert: ClickhouseOperatorReconcileErrors
+expr: |
+  (
+    sum(rate(controller_runtime_reconcile_errors_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+    /
+    sum(rate(controller_runtime_reconcile_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+  ) > 0.05
+for: 15m
+```
+
+**الغرض:** يُصدر تنبيهًا عندما تتجاوز أخطاء التسوية 5% من إجمالي محاولات التسوية.
+
+**الإجراء الموصى به:** تحقّق من سجلات المشغّل بحثًا عن رسائل الخطأ لتحديد السبب الجذري.
+
+***
+
+<div id="clickhouse-server-alerts">
+  ### تنبيهات خادم ClickHouse
+</div>
+
+<div id="clickhousebrokendetachedparts">
+  #### ClickHouseBrokenDetachedParts
+</div>
+
+```yaml
+alert: ClickHouseBrokenDetachedParts
+expr: ClickHouse_CustomMetric_NumberOfBrokenDetachedParts > 100
+for: 60m
+```
+
+**الغرض:** يُفعَّل عند تجاوز عدد الأجزاء المنفصلة التالفة 100 لمدة لا تقل عن 60 دقيقة.
+
+**الإجراء الموصى به:** - انتظر لترى ما إذا كان `ClickHouseDataLoss` سيُفعَّل أيضًا. - بالنسبة إلى جداول SMT/RMT: إذا انطلق أيضًا تنبيه فقدان البيانات، فتحقّق من فقدان البيانات وخفّف أثره أولًا. - بالنسبة إلى جداول البيانات الوصفية المحلية (`s3disk` أو `s3diskWithCache`): قد لا يشير وجود عدد قليل من الأجزاء المنفصلة التالفة **إلى حادثة** (إذ قد تُنشأ الملفات من دون أن تُكتب إليها بيانات أثناء إعادة التشغيل القسري). - تواصل مع دعم ClickHouse إذا استمرت المشكلة.
+
+***
+
+<div id="clickhousedataloss">
+  #### ClickHouseDataLoss
+</div>
+
+```yaml
+alert: ClickHouseDataLoss
+expr: ClickHouse_CustomMetric_LostPartCount > 0
+```
+
+**الغرض:** يشير إلى احتمال فقدان البيانات. يُطلِق التنبيه فورًا عند اكتشاف الأجزاء المفقودة.
+
+**الإجراء الموصى به:** تواصل مع دعم ClickHouse. خطوات التحقيق الأولية:
+
+1. استعلم عن الأجزاء المفقودة:
+
+   ```sql
+   SELECT database, table, lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+2. ابحث في السجلات عن الأجزاء المفقودة:
+
+   ```sql
+   SELECT hostName(), event_time, logger_name, message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+3. تحقّق من سجلّات جزء مفقود محدد:
+
+   ```sql
+   SELECT event_time, message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%'
+     AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+4. تحقّق من وجود نتائج إيجابية كاذبة:
+
+5. تحقّق مما إذا كان الجدول يتضمن TTL وما إذا كان ينبغي حذف الجزء المفقود بواسطة TTL.
+
+6. تحقّق من `system.query_log` بحثًا عن استعلامات TRUNCATE أو DROP PARTITION.
+
+***
+
+<div id="clickhousecannotwritetofiledescriptor">
+  #### تعذّر على ClickHouse الكتابة إلى واصف الملف
+</div>
+
+```yaml
+alert: ClickHouseCannotWriteToFileDescriptor
+expr: |
+    increase(ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**ملاحظة:** يتحقق تعبير التنبيه من `CANNOT_READ_FROM_FILE_DESCRIPTOR` وليس `CANNOT_WRITE`. وهذا مقصود في تعريف التنبيه في المصدر الأصلي — إذ يُطلِق مقياس القراءة التنبيه في سيناريو الفشل نفسه (امتلاء قرص التخزين المؤقت بالكامل).
+
+**الغرض:** يشير غالبًا إلى امتلاء قرص التخزين المؤقت بالكامل (&quot;لا توجد مساحة متبقية على الجهاز&quot;).
+
+**الإجراء الموصى به:** - إذا تغيّر حجم العقدة أو نوعها مؤخرًا، فقد يكون ذلك مرتبطًا بسوء الإعداد. - مشكلة معروفة: قد لا يكون تتبّع استخدام قرص التخزين المؤقت دقيقًا عند استخدام `join_algorithm = 'partial_merge'`. - خطوات التشخيص: 1. استخدم `kubectl exec` للدخول إلى الجراب وتشغيل `df -h` للتحقق من حجم قرص التخزين المؤقت. 2. شغّل `SELECT path, max_size FROM system.filesystem_cache_settings` للتحقق من حجم التخزين المؤقت المطلوب. 3. إذا كان القرص الفعلي أصغر من الحجم المُعدّ، فالمشكلة ناتجة عن سوء الإعداد. - تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhousechecksumsmismatch">
+  #### ClickHouseChecksumsMismatch
+</div>
+
+```yaml
+alert: ClickHouseChecksumsMismatch
+expr: |
+    increase(ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**السبب:** لا تتطابق المجاميع الاختبارية لأجزاء البيانات. وقد يشير ذلك إلى وجود خلل برمجي بعد الترقية.
+
+**الإجراء الموصى به:** تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhousecorrupteddata">
+  #### بيانات ClickHouse المعطوبة
+</div>
+
+```yaml
+alert: ClickHouseCorruptedData
+expr: |
+    increase(ClickHouseErrorMetric_CORRUPTED_DATA[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CORRUPTED_DATA > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**الغرض:** أجزاء البيانات معطوبة. قد يشير ذلك إلى وجود خلل بعد الترقية.
+
+**الإجراء الموصى به:** تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhouselogicalerrors">
+  #### ClickHouseLogicalErrors
+</div>
+
+```yaml
+alert: ClickHouseLogicalErrors
+expr: |
+    increase(ClickHouseErrorMetric_LOGICAL_ERROR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_LOGICAL_ERROR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**الغرض:** حدثت أخطاء منطقية. وغالبًا ما يكون ذلك ناتجًا عن خلل في الشيفرة المصدرية.
+
+**الإجراء الموصى به:** تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhousenotenoughspaceerrors">
+  #### ClickHouseNotEnoughSpaceErrors
+</div>
+
+```yaml
+alert: ClickHouseNotEnoughSpaceErrors
+expr: |
+    increase(ClickHouseErrorMetric_NOT_ENOUGH_SPACE[30s]) > 0
+    or (
+        ClickHouseErrorMetric_NOT_ENOUGH_SPACE > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**الغرض:** تم رصد أخطاء NOT&#95;ENOUGH&#95;SPACE. قد يشير ذلك إلى امتلاء PVC، أو إلى سوء الإعداد، أو إلى حجز كبير للبيانات المؤقتة.
+
+**الإجراء الموصى به:** تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhousebrokenpartdetectedonselect">
+  #### ClickHouseBrokenPartDetectedOnSelect
+</div>
+
+```yaml
+alert: ClickHouseBrokenPartDetectedOnSelect
+expr: |
+    increase(ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART[30s]) > 0
+    or (
+        ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**الغرض:** فشل `SELECT` بسبب الخطأ POTENTIALLY&#95;BROKEN&#95;DATA&#95;PART، ما يشير إلى فقدان في البيانات.
+
+**الإجراء الموصى به:** راجع إجراء ClickHouseDataLoss. افحص السجلات بحثًا عن الاستثناء `POTENTIALLY_BROKEN_DATA_PART`. تحقّق من `system.errors` إذا لم تعثر عليه في السجلات. تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhousereplicaalreadyexists">
+  #### توجد نسخة متماثلة في ClickHouse بالفعل
+</div>
+
+```yaml
+alert: ClickHouseReplicaAlreadyExists
+expr: |
+    increase(ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS[30s]) > 0
+    or (
+        ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**الغرض:** فشل إنشاء النسخة المتماثلة لأن هناك نسخة متماثلة موجودة بالفعل على هذا المسار. وعادةً ما يكون ذلك خللًا في محرك قاعدة البيانات Replicated أو Shared Catalog.
+
+**الإجراء الموصى به:** من غير المرجح أن يكون هذا ناتجًا عن خطأ من المستخدم. تواصل مع دعم ClickHouse.
+
+***
+
+<div id="clickhouseservershutdownstuck">
+  #### تعليق عملية إيقاف تشغيل خادم ClickHouse
+</div>
+
+```yaml
+alert: ClickHouseServerShutdownStuck
+expr: ClickHouseMetrics_IsServerShuttingDown == 1
+for: 70m
+```
+
+**الغرض:** يستغرق إيقاف تشغيل خادم ClickHouse أكثر من ساعة.
+
+**الإجراء الموصى به:** تحقّق من الخيوط عبر `system.stack_trace` أو GDB.
+
+***
+
+<div id="clickhousetablereplicasreadonly">
+  #### ClickHouseTableReplicasReadOnly
+</div>
+
+```yaml
+alert: ClickHouseTableReplicasReadOnly
+expr: ClickHouse_CustomMetric_TableReadOnlyDurationSeconds > 3600
+```
+
+**الغرض:** كان أحد الجداول في وضع READONLY لأكثر من ساعة.
+
+**الإجراء الموصى به:** 1. تحقّق من سجلات الخادم بعد تصفيتها حسب اسم الجدول أو الجداول المتأثرة. 2. تحقّق من سجلات Keeper بحثًا عن مشكلات محتملة. 3. نفّذ استعلامًا لعرض الجداول الحالية للقراءة فقط:
+
+```sql
+SELECT dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds, database, table, hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+`SYSTEM RESTART REPLICA`
+
+***
+
+<div id="diagnostic-sql-queries">
+  ## استعلامات SQL التشخيصية
+</div>
+
+<div id="replication-queue-size-per-table">
+  ### حجم قائمة انتظار النسخ المتماثل لكل جدول
+</div>
+
+**المحفّز:** أصدِر تنبيهًا إذا تجاوز العدد 100 في أي جدول.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+بديل:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table">
+  ### أقدم إدخال في قائمة انتظار النسخ المتماثل لكل جدول
+</div>
+
+**المُشغِّل:** أرسل تنبيهًا إذا كان عمر أقدم إدخال أكثر من يوم واحد.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+<div id="read-only-tables">
+  ### الجداول المتاحة للقراءة فقط
+</div>
+
+```sql
+SELECT
+    dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+    database,
+    table,
+    hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+<div id="lost-parts-by-table">
+  ### الأجزاء المفقودة بحسب الجدول
+</div>
+
+```sql
+SELECT database, table, lost_part_count AS value
+FROM system.replicas
+WHERE value > 0
+```
+
+<div id="lost-parts-log-search">
+  ### البحث في سجل الأجزاء المفقودة
+</div>
+
+```sql
+SELECT hostName(), event_time, logger_name, message
+FROM clusterAllReplicas(default, system.text_log)
+WHERE message_format_string = 'Part {} is lost forever.'
+ORDER BY hostName(), event_time
+```
+
+<div id="part-history-investigation">
+  ### فحص سجل الأجزاء
+</div>
+
+```sql
+SELECT event_time, message
+FROM system.text_log
+WHERE message LIKE '%<part name>%'
+  AND hostName() = '<host>'
+ORDER BY event_time ASC
+```
+
+<div id="cache-disk-configuration-check">
+  ### فحص تهيئة قرص التخزين المؤقت
+</div>
+
+```sql
+SELECT path, max_size
+FROM system.filesystem_cache_settings
+```
+
+***
+
+<div id="general-alerting-recommendations">
+  ## توصيات عامة بشأن التنبيهات
+</div>
+
+يجب تكوين تنبيهات البنية التحتية القياسية لما يلي:
+
+* الكبسولات التي تدخل في حالة crashlooping
+* الكبسولات التي يتعذر جدولتها
+* حالات إنهاء الكبسولات بسبب نفاد الذاكرة (OOM)
+* سعة PVC
+* سلامة العقد
+
+تعتمد هذه على البيئة الخاصة بكم، ولا تشملها التنبيهات الخاصة بـ ClickHouse المذكورة أعلاه.
+
+يوفر [Grafana ClickHouse mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) لوحة معلومات مُعدّة مسبقًا للعديد من مقاييس ClickHouse.

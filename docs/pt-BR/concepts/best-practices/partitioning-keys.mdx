@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (pelo[ menos](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor exclusivo de chave de partição entre as linhas inseridas:
+Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (pelo[ menos](/pt-BR/reference/settings/session-settings#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor exclusivo de chave de partição entre as linhas inseridas:
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="Partições" />
 
@@ -62,7 +62,7 @@ Em resumo, os usuários devem pensar principalmente no particionamento como uma 
   ## Escolha uma chave de particionamento de baixa cardinalidade
 </div>
 
-É importante destacar que um número maior de partes afeta negativamente o desempenho das consultas. Por isso, o ClickHouse retornará um erro [“too many parts”](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) para inserções se o número de partes ultrapassar os limites especificados, seja no [total](/pt-BR/reference/settings/merge-tree-settings/max-parts#max_parts_in_total) ou [por partição](/pt-BR/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
+É importante destacar que um número maior de partes afeta negativamente o desempenho das consultas. Por isso, o ClickHouse retornará um erro [“too many parts”](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) para inserções se o número de partes ultrapassar os limites especificados, seja no [total](/pt-BR/reference/settings/merge-tree-settings#max_parts_in_total) ou [por partição](/pt-BR/reference/settings/merge-tree-settings#parts_to_throw_insert).
 
 Escolher a **cardinalidade** certa para a chave de particionamento é fundamental. Uma chave de particionamento de alta cardinalidade — em que o número de valores de partição distintos é grande — pode levar à proliferação de partes de dados. Como o ClickHouse não mescla partes entre partições, um número excessivo de partições resultará em muitas partes não mescladas e, com o tempo, acionará o erro “Too many parts”. [As mesclagens são essenciais](/pt-BR/concepts/core-concepts/merges) para reduzir a fragmentação do armazenamento e otimizar a velocidade das consultas, mas, com partições de alta cardinalidade, esse potencial de mesclagem se perde.
 

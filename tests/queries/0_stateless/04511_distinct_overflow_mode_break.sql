@@ -25,11 +25,11 @@ INSERT INTO t_distinct_break SELECT number % 10, number FROM numbers(1000);
 
 SET optimize_distinct_in_order = 1;
 
-SELECT '-- the final distinct over a globally sorted stream is a second DistinctSortedStreamTransform (after the pre-distinct one)';
-SELECT count() > 1 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM (SELECT a, b FROM t_distinct_break ORDER BY a) SETTINGS query_plan_remove_redundant_sorting = 0) WHERE explain LIKE '%DistinctSortedStreamTransform%';
+SELECT '-- DistinctSortedTransform is used for distinct over a globally sorted stream';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM (SELECT a, b FROM t_distinct_break ORDER BY a) SETTINGS query_plan_remove_redundant_sorting = 0) WHERE explain LIKE '%DistinctSortedTransform%';
 
-SELECT '-- final sorted distinct (globally sorted stream): the chunk that crosses the limit is returned, not dropped';
--- query_plan_remove_redundant_sorting would drop the inner ORDER BY under count() and the plan would not use the final sorted distinct
+SELECT '-- DistinctSortedTransform (distinct over globally sorted stream): the chunk that crosses the limit is returned, not dropped';
+-- query_plan_remove_redundant_sorting would drop the inner ORDER BY under count() and the plan would not use DistinctSortedTransform
 SELECT count() FROM (SELECT DISTINCT a, b FROM (SELECT a, b FROM t_distinct_break ORDER BY a)) SETTINGS query_plan_remove_redundant_sorting = 0;
 
 SELECT '-- DistinctSortedStreamTransform (in-order pre-distinct): partial result on limit trip';

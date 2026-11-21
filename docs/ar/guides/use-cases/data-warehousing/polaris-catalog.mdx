@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -29,17 +29,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 للاتصال بكتالوج Polaris، ستحتاج إلى:
 
-* Snowflake Open كتالوج ‏(Polaris المُدار) أو Polaris Catalog مستضاف ذاتيًا
+* Snowflake Open Catalog ‏(Polaris المُدار) أو Polaris Catalog مستضاف ذاتيًا
 * URI الخاص بكتالوج Polaris (على سبيل المثال، `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` أو `http://polaris:8181/api/catalog/v1/oauth/tokens`)
 * بيانات اعتماد الكتالوج (client ID وclient secret)
 * URI الخاص برموز OAuth المميزة لمثيل Polaris لديك
 * نقطة نهاية التخزين لمخزن الكائنات الذي توجد فيه بيانات Iceberg الخاصة بك (على سبيل المثال، S3)
 * إصدار ClickHouse 26.1+
 
-بالنسبة إلى Open كتالوج، وهو عرض Polaris المُدار من Snowflake، سيتضمن URI لديك `/polaris`، بينما في حالة الاستضافة الذاتية، قد لا يتضمنه.
+بالنسبة إلى Open Catalog، وهو عرض Polaris المُدار من Snowflake، سيتضمن URI لديك `/polaris`، بينما في حالة الاستضافة الذاتية، قد لا يتضمنه.
 
 <Steps>
-  <Step title="إنشاء اتصال بين Polaris وClickHouse" id="connecting">
+  <Step>
+    ## إنشاء اتصال بين Polaris وClickHouse
+
     أنشئ قاعدة بيانات تربط ClickHouse بكتالوج Polaris لديك:
 
     ```sql
@@ -55,7 +57,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     ```
   </Step>
 
-  <Step title="الاستعلام عن كتالوج Polaris باستخدام ClickHouse" id="query-polaris-catalog">
+  <Step>
+    ## الاستعلام عن كتالوج Polaris باستخدام ClickHouse
+
     بمجرد إنشاء الاتصال، يمكنك الاستعلام عن Polaris:
 
     ```sql title="استعلام"
@@ -80,7 +84,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     ```
   </Step>
 
-  <Step title="تحميل البيانات من Polaris إلى ClickHouse" id="loading-data-into-clickhouse">
+  <Step>
+    ## تحميل البيانات من Polaris إلى ClickHouse
+
     لتحميل البيانات من Polaris إلى جدول ClickHouse، أنشئ الجدول الهدف بالمخطط المطلوب، ثم نفّذ insert من جدول Polaris:
 
     ```sql title="استعلام"

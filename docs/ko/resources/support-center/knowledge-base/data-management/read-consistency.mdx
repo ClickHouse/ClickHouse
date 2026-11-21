@@ -49,6 +49,6 @@ SETTINGS select_sequential_consistency = 1
 
 ClickHouse Cloud와 기본 [SharedMergeTree](/ko/products/cloud/features/infrastructure/shared-merge-tree) 테이블 엔진을 사용할 때는 `insert_quorum_parallel`을 사용할 필요가 없습니다. SharedMergeTree에 대한 모든 삽입은 quorum 삽입으로 처리되도록 설계되어 있습니다.
 
-[`SYSTEM SYNC REPLICAS`](/ko/reference/statements/system#sync-replica) 또는 [`select_sequential_consistency`](/ko/reference/settings/session-settings/other#select_sequential_consistency)를 사용하면 ClickHouse Keeper의 부하가 증가하며, 서비스 부하에 따라 성능이 저하될 수 있습니다.
+[`SYSTEM SYNC REPLICAS`](/ko/reference/statements/system#sync-replica) 또는 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 사용하면 ClickHouse Keeper의 부하가 증가하며, 서비스 부하에 따라 성능이 저하될 수 있습니다.
 
 권장되는 방법은 동일한 세션이나 네이티브 프로토콜(sticky connection)을 사용해 쓰기와 읽기를 수행하는 것입니다.

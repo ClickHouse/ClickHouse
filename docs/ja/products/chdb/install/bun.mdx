@@ -1,0 +1,137 @@
+---
+title: 'chDB for Bun'
+sidebarTitle: 'Bun'
+slug: /chdb/install/bun
+description: 'BunランタイムでchDBをインストールして使用する方法'
+keywords: ['chdb', 'bun', 'javascript', 'typescript', '埋め込み', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-bun は、chDB 向けの実験的な FFI (Foreign Function Interface) バインディングを提供しており、外部依存関係なしで、Bun アプリケーションから ClickHouse クエリを直接実行できます。
+
+<div id="installation">
+  ## インストール
+</div>
+
+<div id="install-system-dependencies">
+  ### ステップ 1: システムの依存関係をインストールする
+</div>
+
+まず、必要なシステムの依存関係をインストールします。
+
+<div id="install-libchdb">
+  #### libchdb をインストールする
+</div>
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="install-build-tools">
+  #### ビルドツールをインストールする
+</div>
+
+システムに `gcc` または `clang` のいずれかがインストールされている必要があります：
+
+<div id="install-chdb-bun">
+  ### ステップ 2: chDB-bun をインストールする
+</div>
+
+```bash
+# GitHubリポジトリからインストール
+bun add github:chdb-io/chdb-bun
+
+# またはローカルにクローンしてビルドする
+git clone https://github.com/chdb-io/chdb-bun.git
+cd chdb-bun
+bun install
+bun run build
+```
+
+<div id="usage">
+  ## 使用方法
+</div>
+
+chDB-bun は 2 つのクエリモードをサポートしています。1 つは一回限りの操作向けの一時クエリ、もう 1 つはデータベースの状態を保持するための永続セッションです。
+
+<div id="ephemeral-queries">
+  ### 一時クエリ
+</div>
+
+永続的な状態を必要としない、シンプルな単発クエリの場合:
+
+```typescript
+import { query } from 'chdb-bun';
+
+// 基本的なクエリ
+const result = query("SELECT version()", "CSV");
+console.log(result); // "23.10.1.1"
+
+// 異なる出力フォーマットでのクエリ
+const jsonResult = query("SELECT 1 as id, 'Hello' as message", "JSON");
+console.log(jsonResult);
+
+// 計算を含むクエリ
+const mathResult = query("SELECT 2 + 2 as sum, pi() as pi_value", "Pretty");
+console.log(mathResult);
+
+// システム情報のクエリ
+const systemInfo = query("SELECT * FROM system.functions LIMIT 5", "CSV");
+console.log(systemInfo);
+```
+
+<div id="persistent-sessions">
+  ### 永続セッション
+</div>
+
+クエリをまたいで状態を維持する必要がある複雑な操作では、
+
+```typescript
+import { Session } from 'chdb-bun';
+
+// 永続ストレージでセッションを作成する
+const sess = new Session('./chdb-bun-tmp');
+
+try {
+    // データベースとテーブルを作成する
+    sess.query(`
+        CREATE DATABASE IF NOT EXISTS mydb;
+        CREATE TABLE IF NOT EXISTS mydb.users (
+            id UInt32,
+            name String,
+            email String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "CSV");
+
+    // データを挿入する
+    sess.query(`
+        INSERT INTO mydb.users VALUES 
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    `, "CSV");
+
+    // データをクエリする
+    const users = sess.query("SELECT * FROM mydb.users ORDER BY id", "JSON");
+    console.log("Users:", users);
+
+    // カスタム関数を作成して使用する
+    sess.query("CREATE FUNCTION IF NOT EXISTS hello AS () -> 'Hello chDB'", "CSV");
+    const greeting = sess.query("SELECT hello() as message", "Pretty");
+    console.log(greeting);
+
+    // 集計クエリ
+    const stats = sess.query(`
+        SELECT 
+            COUNT(*) as total_users,
+            MAX(id) as max_id,
+            MIN(id) as min_id
+        FROM mydb.users
+    `, "JSON");
+    console.log("Statistics:", stats);
+
+} finally {
+    // リソースを解放するために必ずセッションをクリーンアップする
+    sess.cleanup(); // データベースファイルを削除する
+}
+```

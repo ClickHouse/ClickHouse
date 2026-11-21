@@ -36,7 +36,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 * 使用するマシンに Docker がインストールされていること
 
 <Steps>
-  <Step title="ディレクトリ構造とテスト環境のセットアップ" id="set-up">
+  <Step>
+    ## ディレクトリ構造とテスト環境のセットアップ
+
     <ExampleFiles />
 
     このチュートリアルでは、[Docker compose](https://docs.docker.com/compose/) を使用して ClickHouse クラスターをセットアップします。このセットアップは、個別のローカルマシン、仮想マシン、またはクラウドインスタンスに合わせて変更することも可能です。
@@ -47,12 +49,12 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # Create clickhouse-keeper directories
+    # clickhouse-keeperディレクトリを作成する
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Create clickhouse-server directories
+    # clickhouse-serverディレクトリを作成する
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -136,7 +138,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step title="ClickHouseノードの設定" id="configure-clickhouse-servers">
+  <Step>
+    ## ClickHouseノードの設定
+
     ### サーバーのセットアップ
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` にある空の設定ファイル `config.xml` をそれぞれ編集します。以下でハイライトされている行は、各ノード固有の値に変更してください。
@@ -238,11 +242,11 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-        <!-- cluster name (should not contain dots) -->
+        <!-- クラスター名（ドットを含めないこと） -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+                <!-- 省略可。データをいずれか1つのレプリカにのみ書き込むかどうか。デフォルト: false（すべてのレプリカにデータを書き込む）。 -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -361,7 +365,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step title="ClickHouse Keeperの設定" id="configure-clickhouse-keeper-nodes">
+  <Step>
+    ## ClickHouse Keeperの設定
+
     ### Keeperのセットアップ
 
     <KeeperConfig />
@@ -377,7 +383,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step title="セットアップをテストする" id="test-the-setup">
+  <Step>
+    ## セットアップをテストする
+
     お使いのマシンで Docker が実行中であることを確認してください。
     `cluster_1S_2R` ディレクトリのルートで `docker-compose up` コマンドを実行し、クラスターを起動します。
 
@@ -401,7 +409,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     クラスターが稼働していることを確認するには、`clickhouse-01` または `clickhouse-02` のいずれかに接続し、次のクエリを実行します。以下は、最初のノードに接続するコマンドです：
 
     ```bash
-    # Connect to any node
+    # 任意のノードに接続する
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -411,8 +419,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     cluster_1S_2R node 1 :)
     ```
 
-    どのホストにどのクラスターのトポロジーが定義されているかを確認するには、次の
-    クエリを実行します。
+    どのホストにどのクラスターのトポロジーが定義されているかを確認するには、次のクエリを実行します。
 
     ```sql title="Query"
     SELECT 
@@ -455,7 +462,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     次のステップでは、このクラスターにテーブルを作成します。
   </Step>
 
-  <Step title="データベースを作成する" id="creating-a-database">
+  <Step>
+    ## データベースを作成する
+
     クラスターが正しくセットアップされ、稼働していることを確認できたので、
     [UK property prices](/ja/get-started/sample-datasets/uk-price-paid)
     サンプルデータセットのチュートリアルで使用したものと同じテーブルを再作成します。これは、1995年以降の
@@ -493,7 +502,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
 
     各ホストのクライアントから先ほどと同じクエリをもう一度実行し、
-    クエリを実行したのが `clickhouse-01` のみであっても、データベースがクラスター全体に作成されていることを確認できます:
+    `clickhouse-01` でしかクエリを実行していないにもかかわらず、データベースがクラスター全体に作成されていることを確認できます:
 
     ```sql
     SHOW DATABASES;
@@ -510,7 +519,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="クラスター上にテーブルを作成する" id="creating-a-table">
+  <Step>
+    ## クラスター上にテーブルを作成する
+
     データベースを作成したら、クラスター上にテーブルを作成します。
     以下のクエリを任意のホストクライアントから実行します。
 
@@ -562,10 +573,12 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="データの挿入" id="inserting-data">
+  <Step>
+    ## データの挿入
+
     データセットは大きく、完全に取り込むには数分かかるため、まずは少量のサブセットのみを挿入します。
 
-    以下のクエリを使用して、`clickhouse-01` からデータの小さなサブセットを挿入してください：
+    以下のクエリを使用して、`clickhouse-01` からデータの小さなサブセットをinsertしてください：
 
     ```sql
     INSERT INTO uk.uk_price_paid_local
@@ -607,7 +620,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     SETTINGS max_http_get_redirects=10;
     ```
 
-    データが各ホストに完全にレプリケートされていることに注目してください：
+    データが各ホストに完全にレプリカされていることに注目してください：
 
     ```sql
     -- clickhouse-01
@@ -674,7 +687,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌─id─┬─name───────────────┐
+    ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -693,7 +706,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌─id─┬─name───────────────┐
+    ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -748,8 +761,8 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 million
+    ┌──count()─┐
+    1. │ 30212555 │ -- 3021万
        └──────────┘
     ```
   </Step>

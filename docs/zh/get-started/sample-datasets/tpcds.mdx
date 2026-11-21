@@ -1,13 +1,15 @@
 ---
-title: "TPC-DS（2012）"
-description: "TPC-DS 基准测试数据集和查询。"
-sidebarTitle: "TPC-DS"
-slug: "/getting-started/example-datasets/tpcds"
-doc_type: "guide"
-keywords: ["示例数据集", "tpcds", "基准测试", "样本数据", "性能测试"]
+description: 'TPC-DS 基准测试数据集和查询。'
+sidebarTitle: 'TPC-DS'
+slug: /getting-started/example-datasets/tpcds
+title: 'TPC-DS（2012）'
+doc_type: 'guide'
+keywords: ['示例数据集', 'tpcds', '基准测试', '样本数据', '性能测试']
 ---
 
-与 [Star Schema Benchmark (SSB)](/zh/get-started/sample-datasets/star-schema) 类似，TPC-DS 基于 [TPC-H](/zh/get-started/sample-datasets/tpch)，但它走了一条相反的路线，即通过将数据存储在复杂的雪花 schema 中，增加了所需的 JOIN 数量 (24 张表，而不是 8 张表) 。数据分布存在偏斜 (例如正态分布和泊松分布) 。它包含 99 个报表查询和即席查询，并带有随机替换。
+与 [Star Schema Benchmark (SSB)](/zh/get-started/sample-datasets/star-schema) 类似，TPC-DS 基于 [TPC-H](/zh/get-started/sample-datasets/tpch)，但它走了一条相反的路线，即通过将数据存储在复杂的雪花 schema 中，增加了所需的 JOIN 数量 (24 张表，而不是 8 张表) 。
+数据分布存在偏斜 (例如正态分布和泊松分布) 。
+它包含 99 个报表查询和即席查询，并带有随机替换。
 
 **参考资料**
 
@@ -70,14 +72,9 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_site FORMA
 
 这 99 条 TPC-DS 查询可在 ClickHouse 软件源的[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries)找到。
 
-要获得符合 SQL 标准的行为和预期结果，请应用 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json) 中的设置。有关已知问题以及特定查询的说明，请参阅 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md)。
+要获得符合 SQL 标准的行为和预期结果，请应用 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json) 中的设置。
+有关已知问题以及特定查询的说明，请参阅 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md)。
 
 **正确性**
 
 除非另有说明，这些查询的结果与官方结果一致。可能会存在细微的精度差异，这也是 TPC-DS 规范所允许的。
-
-<div id="performance-benchmark">
-  ## 性能基准测试
-</div>
-
-ClickHouse 会跟踪每个已发布版本的 TPC-DS 查询性能。您可以在 [ClickHouse 版本基准测试](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ps\&metric=hot\&queries=-) 页面查看全部 99 个 TPC-DS 查询 (规模因子为 32) 的运行时间，了解性能随时间的演进情况。

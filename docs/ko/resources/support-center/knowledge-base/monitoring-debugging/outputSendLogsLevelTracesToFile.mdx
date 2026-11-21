@@ -6,6 +6,10 @@ tags: ['데이터 내보내기']
 keywords: ['send_logs_level 추적 로그', 'clickhouse-client']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="question">
   ## 질문
 </div>
@@ -58,4 +62,5 @@ cat send_logs_level_example.sql | ./clickhouse client -n -m --host abc123.us-wes
 [c-azure-gk-72-server-tojnalg-0] 2024.08.13 21:31:28.510663 [ 1247 ] {3406aa56-20e8-44e0-b5de-8cb7715861f3} <Debug> TCPHandler: Processed in 0.002984367 sec.
 ```
 
-[참고 링크](/ko/reference/settings/session-settings/send-logs#send_logs_level)
+참고 링크:
+https://clickhouse.com/docs/operations/settings/settings#send&#95;logs&#95;level

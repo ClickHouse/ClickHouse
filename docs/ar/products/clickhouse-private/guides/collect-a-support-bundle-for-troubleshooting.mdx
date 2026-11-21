@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "اجمع حزمة دعم لاستكشاف الأخطاء وإصلاحها"
+sidebarTitle: "اجمع حزمة دعم"
+description: "استخدم مخطط Helm الخاص بـ support-bundle لجمع بيانات تشخيصية من عنقود ClickHouse Private."
+---
+
+استخدم مخطط Helm الخاص بـ `support-bundle` لجمع بيانات تشخيصية من عنقود ClickHouse Private. ويمكن مشاركة الأرشيف الناتج مع فريق دعم ClickHouse لتسريع معالجة الحوادث.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+يعتمد مخطط Helm هذا على [Troubleshoot](https://troubleshoot.sh/)، وهي إضافة لـ kubectl لتشخيص العناقيد. ثبّتها عبر [Krew](https://krew.sigs.k8s.io/):
+
+```bash
+kubectl krew install support-bundle
+```
+
+أو راجع [وثائق Troubleshoot](https://troubleshoot.sh/docs/) للاطلاع على طرق تثبيت أخرى.
+
+<div id="generating-and-running-the-bundle">
+  ## إنشاء الحزمة وتشغيلها
+</div>
+
+لا يثبّت مخطط Helm أي موارد في الـ عنقود. بل يعرض بدلًا من ذلك ملف manifest من نوع `SupportBundle` تستهلكه إضافة ‏`kubectl support-bundle`.
+
+إذا كان لديك عنقود ClickHouse باسم `default-xx-01`، فاعرض المخطط محليًا ثم شغّل الحزمة:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+تجمع الإضافة البيانات وتُنشئ أرشيف `tar.gz` في الدليل الحالي.
+
+<div id="what-is-collected">
+  ## ما يتم جمعه
+</div>
+
+تجمع الحزمة البيانات من مصدرين: مساحة اسم ClickHouse Operator ومساحة اسم العنقود (المشتقة بصيغة `ns-<cluster-name>`).
+
+**ClickHouse Operator** (يمكن تفعيله أو تعطيله عبر `supportBundle.collectors.operator.enabled`):
+
+* سجلات الحاويات من كائن النشر الخاص بالمشغّل
+* موارد Kubernetes في مساحة اسم المشغّل (الجرابات، والخدمات، وConfigMaps، والأحداث، وغيرها)
+* قيم إصدار Helm للمخططات المثبتة في مساحة اسم المشغّل
+
+**ClickHouse Cluster** (يمكن تفعيله أو تعطيله عبر `supportBundle.collectors.clickhouseCluster.enabled`):
+
+* سجلات حاوية ClickHouse server
+* سجلات حاوية ClickHouse Keeper
+* موارد Kubernetes في مساحة اسم العنقود
+* قيم إصدار Helm للمخططات المثبتة في مساحة اسم العنقود
+* ناتج `SELECT version()` من أول جراب لـ ClickHouse server
+* ناتج أمر `mntr` الخاص بـ Keeper من أول جراب لـ Keeper
+
+تُحجب البيانات الحساسة — كلمات المرور، وبيانات اعتماد S3، وأسرار العنقود، وتجزئات كلمات المرور — تلقائيًا.
+
+<div id="customizing-collection">
+  ## تخصيص عملية الجمع
+</div>
+
+ضُبطت الإعدادات الافتراضية لتناسب معظم السيناريوهات، لكن يمكن تعديلها. على سبيل المثال، لجمع السجلات لآخر 24 ساعة فقط وتخطّي بيانات المشغّل:
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+قم بالتصيير باستخدام ملف values المخصّص:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+إذا كان مشغّل ClickHouse مُثبّتًا في مساحة اسم غير افتراضية، فاضبط `supportBundle.collectors.operator.namespace` بما يتوافق مع ذلك.

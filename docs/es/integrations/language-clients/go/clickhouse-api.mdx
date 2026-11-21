@@ -244,10 +244,10 @@ Al igual que en la inserción, el método Scan requiere que las variables de des
 Por último, tenga en cuenta la posibilidad de pasar un `Context` a los métodos `Query` y `QueryRow`. Esto puede usarse para configuraciones a nivel de consulta; consulte [Using Context](#using-context) para obtener más detalles.
 
 <div id="async-insert">
-  ## Inserción asíncrona
+  ## Insert asíncrono
 </div>
 
-Las inserciones asíncronas son compatibles mediante el método Async. Esto permite al usuario especificar si el cliente debe esperar a que el servidor complete la inserción o si debe responder una vez recibidos los datos. Esto controla de forma efectiva el parámetro [wait&#95;for&#95;async&#95;insert](/es/reference/settings/session-settings/wait-for#wait_for_async_insert).
+Las inserciones asíncronas son compatibles mediante el método Async. Esto permite al usuario especificar si el cliente debe esperar a que el servidor complete la inserción o si debe responder una vez recibidos los datos. Esto controla de forma efectiva el parámetro [wait&#95;for&#95;async&#95;insert](/es/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

@@ -11,7 +11,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -80,8 +79,7 @@ bool KafkaSource::checkTimeLimit() const
     {
         auto elapsed_ns = total_stopwatch.elapsed();
 
-        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
-        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
             return false;
     }
 
@@ -92,7 +90,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)
@@ -280,7 +278,7 @@ Chunk KafkaSource::generateImpl()
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element = DeadLetterQueueElement{
+                    dead_letter_queue->add(DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
                             .event_time_microseconds = timeInMicroseconds(time_now),
@@ -292,7 +290,7 @@ Chunk KafkaSource::generateImpl()
                                 .topic_name = consumer->currentTopic(),
                                 .partition = consumer->currentPartition(),
                                 .offset = consumer->currentOffset(),
-                                .key = consumer->currentKey()}}; });
+                                .key = consumer->currentKey()}});
             }
 
             total_rows = total_rows + new_rows;

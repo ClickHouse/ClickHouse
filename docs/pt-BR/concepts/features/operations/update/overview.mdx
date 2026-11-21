@@ -308,9 +308,7 @@ A desvantagem é que as consultas `SELECT` têm uma sobrecarga ao aplicar patche
 
 Leia mais: [Lightweight UPDATE](/pt-BR/reference/statements/update)
 
-<div id="on-the-fly-mutations-summary">
-  ### Mutações on-the-fly
-</div>
+### Mutações on-the-fly
 
 As mutações on-the-fly oferecem um mecanismo para atualizar linhas, de modo que consultas `SELECT` subsequentes retornem automaticamente os valores alterados sem precisar aguardar o processamento em segundo plano. Isso resolve, na prática, a limitação de atomicidade das mutações normais.
 
@@ -327,10 +325,10 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
 ```sql
--- Increment the count
+-- Incrementa o contador
 ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
 
--- The updated value is immediately visible
+-- O valor atualizado é imediatamente visível
 SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 

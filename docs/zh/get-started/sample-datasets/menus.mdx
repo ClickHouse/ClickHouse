@@ -10,7 +10,7 @@ keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
 
 该数据集由纽约公共图书馆创建，包含酒店、餐馆和咖啡馆菜单的历史数据，以及其中菜品及其价格。
 
-来源：https://www.nypl.org/research/support/whats-on-the-menu
+来源：http://menus.nypl.org/data
 这些数据属于公有领域。
 
 这些数据来自图书馆档案，因此可能并不完整，也不太适合用于统计分析。尽管如此，它也“很美味”。
@@ -24,12 +24,12 @@ keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
 
 ```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
-# Option: Validate the checksum
+# 可选：验证校验和
 md5sum 2021_08_01_07_01_17_data.tgz
-# Checksum should be equal to: db6126724de939a5481e3160a2d67d15
+# 校验和应为：db6126724de939a5481e3160a2d67d15
 ```
 
-如有需要，请将该链接替换为 https://www.nypl.org/research/support/whats-on-the-menu 中的最新链接。
+如有需要，请将该链接替换为 http://menus.nypl.org/data 中的最新链接。
 下载大小约为 35 MB。
 
 <div id="unpack-dataset">
@@ -135,9 +135,9 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 我们禁用 `format_csv_allow_single_quotes`，因为数据字段只使用双引号，而单引号可以出现在值中，不应让 CSV parser 产生误判。
 
-我们禁用 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats/input-format#input_format_null_as_default)，因为我们的数据中没有 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default)。否则 ClickHouse 会尝试解析 `\N` 序列，从而可能与数据中的 `\` 混淆。
+我们禁用 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats#input_format_null_as_default)，因为我们的数据中没有 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。否则 ClickHouse 会尝试解析 `\N` 序列，从而可能与数据中的 `\` 混淆。
 
-设置 [date&#95;time&#95;input&#95;format best&#95;effort](/zh/reference/settings/formats/date-time#date_time_input_format) 允许以多种格式解析 [DateTime](/zh/reference/data-types/datetime) 字段。例如，不带秒的 ISO-8601 格式 (如 &#39;2000-01-01 01:02&#39;) 也能被识别。如果不启用此设置，则只允许固定的 DateTime 格式。
+设置 [date&#95;time&#95;input&#95;format best&#95;effort](/zh/reference/settings/formats#date_time_input_format) 允许以多种格式解析 [DateTime](/zh/reference/data-types/datetime) 字段。例如，不带秒的 ISO-8601 格式 (如 &#39;2000-01-01 01:02&#39;) 也能被识别。如果不启用此设置，则只允许固定的 DateTime 格式。
 
 <div id="denormalize-data">
   ## 对数据进行反规范化

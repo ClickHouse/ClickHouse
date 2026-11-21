@@ -6,7 +6,7 @@ tags: ['성능 및 최적화']
 keywords: ['고비용 쿼리', '메모리 사용량']
 ---
 
-<div id="using-the-systemquery-log-table">
+<div id="using-the-systemquery_log-table">
   ## `system.query_log` 테이블 사용하기
 </div>
 
@@ -29,7 +29,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,16 +50,10 @@ ORDER BY
 ```
 
 <Note>
-  `system.query_log` 테이블이 없다면 쿌리 로깅이 활성화되어 있지 않을 가능성이 높습니다. 활성화 방법에 대한 자세한 내용은 [`query_log` 설정](/ko/reference/settings/server-settings/settings/query#query_log)을 참조하십시오.
+  `system.query_log` 테이블이 없다면 쿼리 로깅이 활성화되어 있지 않을 가능성이 높습니다. 활성화 방법에 대한 자세한 내용은 [`query_log` 설정](/ko/reference/settings/server-settings/settings#server_configuration_parameters-query-log)을 참조하십시오.
 </Note>
 
-<Note>
-  **`query_log`에는 제출한 쿼리 외의 항목도 포함됩니다**
-
-  제출한 하나의 쿼리가 여러 개의 행으로 나타날 수 있습니다. 즉, 원본 쿼리(`is_initial_query = 1`)와 함께, 분산 실행을 위한 보조 쿼리나 뷰를 평가하는 데 사용되는 내부 쿼리 같은 파생 또는 내부 단계(`is_initial_query = 0`)도 포함됩니다. 이러한 내부 행은 각자 고유한 `query_id` 값을 가지며, 이 값은 ClickHouse가 할당합니다. 경우에 따라 `queryView...`와 같은 레이블이 포함될 수도 있으므로, 모든 `query_id`가 클라이언트가 보고한 값과 일치한다고 가정하지 마십시오. 실제로 실행한 쿼리 기준으로 사용량을 집계하려면 `is_initial_query = 1`로 필터링하거나 `query_id = initial_query_id`에 맞춰 확인하십시오. 자세한 내용은 [가장 비용이 큰 쿼리를 식별하는 방법](/ko/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id)과 [`query_log` 참고](/ko/reference/system-tables/query_log)를 참조하십시오.
-</Note>
-
-클러스터가 없다면 단일 `system.query_log` 테이블에 직접 쿼리할 수 있습니다:
+클러스터가 없다면 `system.query_log` 테이블 하나에 직접 쿼리하면 됩니다:
 
 ```sql
 SELECT
@@ -73,7 +66,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

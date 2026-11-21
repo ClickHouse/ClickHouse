@@ -1,0 +1,472 @@
+---
+noindex: true
+title: "指标和告警参考"
+sidebarTitle: "指标和告警"
+description: "ClickHouse 私网组件的关键指标和推荐告警规则。"
+---
+
+ClickHouse 私网组件的关键指标和推荐告警规则。本文并非面面俱到；根据具体配置，您的环境可能还会暴露其他指标。
+
+***
+
+<div id="operator-metrics">
+  ## Operator 指标
+</div>
+
+| 指标                                          | 类型      | 描述                                                                    |
+| ------------------------------------------- | ------- | --------------------------------------------------------------------- |
+| `last_cluster_reconcile`                    | Gauge   | 给定 CR 的最近一次协调时间戳 (按 `app` 标签区分，例如 `c-default-xx-01`) 。可用于判断协调是否在定期进行。 |
+| `controller_runtime_reconcile_errors_total` | Counter | 每个控制器的协调错误总数。可结合 `controller_runtime_reconcile_total` 计算协调错误率。        |
+| `controller_runtime_reconcile_total`        | Counter | 每个控制器的协调尝试总数。                                                         |
+
+***
+
+<div id="clickhouse-server-metrics">
+  ## ClickHouse 服务器指标
+</div>
+
+服务器指标通过每个服务器 pod (容器组) 上的 `:8123/metrics` Prometheus 端点暴露。此端点**需要身份验证**，应使用具有只读权限的专用用户。
+
+**注意：** 服务器 pod (容器组) 上的 `prometheus.io/*` 注解会暴露部分指标，但**不**包含下方列出的 `ClickHouse_CustomMetrics_*` 指标。请为 `:8123/metrics` 配置 PodMonitor 或等效的抓取目标。
+
+| 指标                                                      | 类型      | 描述                                                   |
+| ------------------------------------------------------- | ------- | ---------------------------------------------------- |
+| `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`   | Gauge   | 已损坏的 detached parts 数量。                              |
+| `ClickHouse_CustomMetric_LostPartCount`                 | Gauge   | 丢失的 parts 数量，表示存在数据丢失。**可能会出现误报。**                   |
+| `ClickHouseErrorMetric_CANNOT_WRITE_TO_FILE_DESCRIPTOR` | Counter | `CANNOT_WRITE_TO_FILE_DESCRIPTOR` 错误的计数。通常表示缓存磁盘已满。  |
+| `ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH`           | Counter | checksum 不匹配错误的计数。可能表示升级后出现了 bug。                    |
+| `ClickHouseErrorMetric_CORRUPTED_DATA`                  | Counter | 数据损坏错误的计数。可能表示升级后出现了 bug。                            |
+| `ClickHouseErrorMetric_LOGICAL_ERROR`                   | Counter | logical error 的计数。通常是代码库中的 bug。                      |
+| `ClickHouseErrorMetric_NOT_ENOUGH_SPACE`                | Counter | `NOT_ENOUGH_SPACE` 错误的计数。可能表示 PVC 已满、配置错误，或临时数据预留过大。 |
+| `ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART`    | Counter | 潜在损坏的数据分区片段错误的计数。表示在 SELECT 时发生了数据丢失。                |
+| `ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS`          | Counter | 副本已存在错误的计数。通常是 Replicated 数据库引擎中的 bug。               |
+| `ClickHouseMetrics_IsServerShuttingDown`                | Gauge   | 如果 ClickHouse server 正在关闭过程中，则为 `1`。                 |
+| `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds`  | Gauge   | 表处于 READONLY 模式的耗时 (秒) 。                             |
+
+***
+
+<div id="clickhouse-keeper-metrics">
+  ## ClickHouse Keeper 指标
+</div>
+
+Keeper 指标通过 `:8001/metrics` 端点暴露。应为 keeper pod (容器组) 创建一个 PodMonitor，以采集这些指标。
+
+> **注意：** 具体的 keeper 指标定义尚待补充文档说明 (源文件中为 TODO) 。指标端点已可用，但各项指标的具体说明尚未整理归档。
+
+***
+
+<div id="alert-rule-definitions">
+  ## 告警规则定义
+</div>
+
+<div id="operator-alerts">
+  ### Operator 相关告警
+</div>
+
+<div id="clickhouseoperatornotreconciling">
+  #### ClickhouseOperatorNotReconciling
+</div>
+
+```yaml
+alert: ClickhouseOperatorNotReconciling
+expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+for: 120m
+```
+
+**用途：** 当 operator 在 2 小时内未进行协调时触发告警。
+
+**建议操作：** 1. 检查 operator 的 pod (容器组) 是否正在运行且状态正常。2. 检查 operator 日志，查看是什么导致无法协调。3. 验证 CR 上不存在 `clickhouse.com/skip-reconcile` 注解。
+
+***
+
+<div id="clickhouseoperatorreconcileerrors">
+  #### ClickhouseOperatorReconcileErrors
+</div>
+
+```yaml
+alert: ClickhouseOperatorReconcileErrors
+expr: |
+  (
+    sum(rate(controller_runtime_reconcile_errors_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+    /
+    sum(rate(controller_runtime_reconcile_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+  ) > 0.05
+for: 15m
+```
+
+**目的：** 当协调错误占协调总尝试次数的比例超过 5% 时触发告警。
+
+**建议操作：** 检查 Operator 日志中的错误信息，以找出根本原因。
+
+***
+
+<div id="clickhouse-server-alerts">
+  ### ClickHouse 服务器告警
+</div>
+
+<div id="clickhousebrokendetachedparts">
+  #### ClickHouseBrokenDetachedParts
+</div>
+
+```yaml
+alert: ClickHouseBrokenDetachedParts
+expr: ClickHouse_CustomMetric_NumberOfBrokenDetachedParts > 100
+for: 60m
+```
+
+**用途：** 当损坏的 detached parts 数量持续至少 60 分钟超过 100 个时触发。
+
+**建议操作：** - 先观察 `ClickHouseDataLoss` 是否也会触发。 - 对于 SMT/RMT 表：如果数据丢失告警也触发了，请先排查并缓解数据丢失问题。 - 对于本地 metadata 表 (`s3disk` 或 `s3diskWithCache`) ：少量损坏的 detached parts **未必表示发生了故障** (在硬重启期间，文件可能已创建但尚未写入) 。 - 如果问题持续存在，请联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousedataloss">
+  #### ClickHouseDataLoss
+</div>
+
+```yaml
+alert: ClickHouseDataLoss
+expr: ClickHouse_CustomMetric_LostPartCount > 0
+```
+
+**用途：** 表示可能存在数据丢失风险。检测到丢失的 parts 时会立即触发。
+
+**建议操作：** 联系 ClickHouse 支持团队。初步调查步骤：
+
+1. 查询丢失的 parts：
+
+   ```sql
+   SELECT database, table, lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+2. 在日志中搜索丢失的 parts：
+
+   ```sql
+   SELECT hostName(), event_time, logger_name, message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+3. 调查特定丢失 part 的历史记录：
+
+   ```sql
+   SELECT event_time, message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%'
+     AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+4. 检查是否存在误报：
+
+5. 检查该表是否配置了生存时间 (TTL)，以及该丢失 part 是否本应由 TTL 删除。
+
+6. 检查 `system.query_log` 中是否存在 TRUNCATE 或 DROP PARTITION 查询。
+
+***
+
+<div id="clickhousecannotwritetofiledescriptor">
+  #### ClickHouseCannotWriteToFileDescriptor
+</div>
+
+```yaml
+alert: ClickHouseCannotWriteToFileDescriptor
+expr: |
+    increase(ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**注：** 该告警表达式检查的是 `CANNOT_READ_FROM_FILE_DESCRIPTOR`，而不是 `CANNOT_WRITE`。这是上游告警定义中的有意设计——在相同的故障场景下 (缓存磁盘已满) 读取指标也会触发。
+
+**目的：** 通常表示缓存磁盘已满 (&quot;设备上没有剩余空间&quot;) 。
+
+**建议操作：** - 如果最近更改了节点大小或类型，可能与配置错误有关。 - 已知问题：使用 `join_algorithm = 'partial_merge'` 时，缓存磁盘使用量跟踪可能不准确。 - 诊断步骤：1. 使用 `kubectl exec` 进入 pod (容器组) ，并运行 `df -h` 检查缓存磁盘大小。2. 运行 `SELECT path, max_size FROM system.filesystem_cache_settings` 检查所需的缓存大小。3. 如果实际磁盘小于配置值，则问题出在配置错误。 - 联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousechecksumsmismatch">
+  #### ClickHouse 校验和不一致
+</div>
+
+```yaml
+alert: ClickHouseChecksumsMismatch
+expr: |
+    increase(ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**说明：** 数据分区片段的校验和不一致。这可能表明升级后出现了缺陷。
+
+**建议操作：** 联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousecorrupteddata">
+  #### ClickHouse 数据损坏
+</div>
+
+```yaml
+alert: ClickHouseCorruptedData
+expr: |
+    increase(ClickHouseErrorMetric_CORRUPTED_DATA[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CORRUPTED_DATA > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**含义：** 数据分区片段已损坏。可能表明升级后存在 bug。
+
+**建议操作：** 联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhouselogicalerrors">
+  #### ClickHouseLogicalErrors
+</div>
+
+```yaml
+alert: ClickHouseLogicalErrors
+expr: |
+    increase(ClickHouseErrorMetric_LOGICAL_ERROR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_LOGICAL_ERROR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Purpose:** 发生了逻辑错误，通常是代码中的缺陷所致。
+
+**Recommended action:** 联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousenotenoughspaceerrors">
+  #### ClickHouseNotEnoughSpaceErrors
+</div>
+
+```yaml
+alert: ClickHouseNotEnoughSpaceErrors
+expr: |
+    increase(ClickHouseErrorMetric_NOT_ENOUGH_SPACE[30s]) > 0
+    or (
+        ClickHouseErrorMetric_NOT_ENOUGH_SPACE > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**用途：** 已触发 NOT&#95;ENOUGH&#95;SPACE 错误。这可能表明 PVC 已满、配置有误，或预留了大量临时数据。
+
+**建议操作：** 联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousebrokenpartdetectedonselect">
+  #### ClickHouseBrokenPartDetectedOnSelect
+</div>
+
+```yaml
+alert: ClickHouseBrokenPartDetectedOnSelect
+expr: |
+    increase(ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART[30s]) > 0
+    or (
+        ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**用途：** 由于 POTENTIALLY&#95;BROKEN&#95;DATA&#95;PART 错误导致 SELECT 失败，这表明发生了数据丢失。
+
+**建议操作：** 请参阅 ClickHouseDataLoss 操作。检查日志中是否有 `POTENTIALLY_BROKEN_DATA_PART` 异常；如果日志中未找到，请检查 `system.errors`。联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhousereplicaalreadyexists">
+  #### ClickHouseReplicaAlreadyExists
+</div>
+
+```yaml
+alert: ClickHouseReplicaAlreadyExists
+expr: |
+    increase(ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS[30s]) > 0
+    or (
+        ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**原因：** 由于该路径下已存在副本，副本创建失败。通常这是 Replicated 数据库引擎或 Shared Catalog 的 bug。
+
+**建议操作：** 这通常不是用户操作导致的。请联系 ClickHouse 支持团队。
+
+***
+
+<div id="clickhouseservershutdownstuck">
+  #### ClickHouseServerShutdownStuck
+</div>
+
+```yaml
+alert: ClickHouseServerShutdownStuck
+expr: ClickHouseMetrics_IsServerShuttingDown == 1
+for: 70m
+```
+
+**目的：** ClickHouse 服务器 的关闭过程已持续超过一小时。
+
+**建议操作：** 通过 `system.stack_trace` 或 GDB 检查线程。
+
+***
+
+<div id="clickhousetablereplicasreadonly">
+  #### ClickHouseTableReplicasReadOnly
+</div>
+
+```yaml
+alert: ClickHouseTableReplicasReadOnly
+expr: ClickHouse_CustomMetric_TableReadOnlyDurationSeconds > 3600
+```
+
+**目的：** 某个表处于 READONLY 模式已超过一小时。
+
+**建议操作：** 1. 检查按受影响表名筛选的服务端日志。2. 检查 Keeper 日志，排查潜在问题。3. 查询当前处于只读状态的表：
+
+```sql
+SELECT dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds, database, table, hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+`SYSTEM RESTART REPLICA`
+
+***
+
+<div id="diagnostic-sql-queries">
+  ## 用于诊断的 SQL 查询
+</div>
+
+<div id="replication-queue-size-per-table">
+  ### 每个表的复制队列大小
+</div>
+
+**触发条件：**如果任意表的计数超过 100，则发出告警。
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+另一种方式：
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table">
+  ### 每个表的复制队列中最旧条目
+</div>
+
+**触发条件：** 如果最旧条目已超过 1 天，则告警。
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+<div id="read-only-tables">
+  ### 只读表
+</div>
+
+```sql
+SELECT
+    dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+    database,
+    table,
+    hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+<div id="lost-parts-by-table">
+  ### 各表丢失的 parts
+</div>
+
+```sql
+SELECT database, table, lost_part_count AS value
+FROM system.replicas
+WHERE value > 0
+```
+
+<div id="lost-parts-log-search">
+  ### 丢失 parts 日志查询
+</div>
+
+```sql
+SELECT hostName(), event_time, logger_name, message
+FROM clusterAllReplicas(default, system.text_log)
+WHERE message_format_string = 'Part {} is lost forever.'
+ORDER BY hostName(), event_time
+```
+
+<div id="part-history-investigation">
+  ### Part 历史记录调查
+</div>
+
+```sql
+SELECT event_time, message
+FROM system.text_log
+WHERE message LIKE '%<part name>%'
+  AND hostName() = '<host>'
+ORDER BY event_time ASC
+```
+
+<div id="cache-disk-configuration-check">
+  ### 缓存磁盘配置检查
+</div>
+
+```sql
+SELECT path, max_size
+FROM system.filesystem_cache_settings
+```
+
+***
+
+<div id="general-alerting-recommendations">
+  ## 通用告警建议
+</div>
+
+应针对以下内容配置标准的基础设施告警：
+
+* 处于崩溃循环状态的 Pod (容器组) 
+* 不可调度的 Pod (容器组) 
+* 因 OOM 被终止的 Pod (容器组) 
+* PVC 容量
+* 节点健康状态
+
+这些告警取决于具体环境，因此不包含在上述 ClickHouse 特有告警中。
+
+[Grafana ClickHouse mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) 为许多 ClickHouse 指标提供了预置仪表板。

@@ -483,7 +483,7 @@ ORDER BY user_id ASC
   ## 使用查询脱敏规则处理日志数据
 </div>
 
-对于希望专门对日志数据进行脱敏的 ClickHouse OSS 用户，可以使用[查询脱敏规则](/zh/reference/settings/server-settings/settings/query#query_masking_rules) (日志脱敏) 来屏蔽数据。
+对于希望专门对日志数据进行脱敏的 ClickHouse OSS 用户，可以使用[查询脱敏规则](/zh/reference/settings/server-settings/settings#query_masking_rules) (日志脱敏) 来屏蔽数据。
 
 为此，你可以在服务器配置中定义基于正则表达式的脱敏规则。
 这些规则会在查询和所有日志消息写入服务器日志或系统表 (例如 `system.query_log`、`system.text_log` 和 `system.processes`) 之前生效。

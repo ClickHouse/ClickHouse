@@ -34,7 +34,7 @@ std::atomic<bool> TraceSender::shutdown{false};
 std::atomic<int> TraceSender::in_flight{0};
 
 static thread_local bool inside_send = false;
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
 {
     /** The method shouldn't be called recursively or throw exceptions.
       * There are several reasons:

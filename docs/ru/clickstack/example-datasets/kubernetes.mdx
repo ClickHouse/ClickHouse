@@ -41,11 +41,13 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 Чтобы имитировать трафик приложения, при желании можно развернуть форк приложения [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo), подготовленный ClickStack. Это позволяет генерировать телеметрические данные, включая журналы, метрики и трассировки. Если в вашем кластере уже запущены рабочие нагрузки, этот шаг можно пропустить и отслеживать существующие поды, узлы и контейнеры.
 
 <Steps>
-  <Step title="Установите cert-manager (необязательно)" id="install-cert-manager">
+  <Step>
+    ### Установите cert-manager (необязательно)
+
     Если в вашей конфигурации нужны TLS-сертификаты, установите [cert-manager](https://cert-manager.io/) с помощью Helm:
 
     ```shell
-    # Add Cert manager repo 
+    # Добавить репозиторий Cert Manager 
 
     helm repo add jetstack https://charts.jetstack.io 
 
@@ -53,7 +55,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     ```
   </Step>
 
-  <Step title="Разверните OpenTelemetry Demo (необязательно)" id="deploy-otel-demo">
+  <Step>
+    ### Разверните OpenTelemetry Demo (необязательно)
+
     Этот **шаг необязателен и предназначен для случаев, когда у вас нет существующих подов для мониторинга**. Пользователи, у которых в среде Kubernetes уже развернуты сервисы, могут пропустить его, однако это демо включает инструментированные микросервисы, которые генерируют данные трассировок и воспроизведения сеанса, что позволяет изучить все возможности ClickStack.
 
     Ниже разворачивается форк ClickStack стека приложений OpenTelemetry Demo в кластере Kubernetes, адаптированный для тестирования обсервабилити и демонстрации инструментирования. Он включает бэкенд-микросервисы, генераторы нагрузки, конвейеры телеметрии, вспомогательную инфраструктуру (например, Kafka и Redis), а также интеграции SDK с ClickStack.
@@ -65,9 +69,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     * [Пересылка тегов ресурсов](/ru/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) для корреляции журналов, метрик и трассировок через переменную среды `OTEL_RESOURCE_ATTRIBUTES`.
 
     ```shell
-    ## download demo Kubernetes manifest file
+    ## скачать демонстрационный манифест-файл Kubernetes
     curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
-    # wget alternative
+    # альтернатива wget
     # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
     kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
     ```
@@ -103,7 +107,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     <DemoArchitecture />
   </Step>
 
-  <Step title="Добавьте репозиторий Helm-чарта ClickStack" id="add-helm-clickstack">
+  <Step>
+    ### Добавьте репозиторий Helm-чарта ClickStack
+
     Для развертывания ClickStack мы используем [официальный Helm-чарт](/ru/clickstack/deployment/helm).
 
     Для этого необходимо добавить Helm-репозиторий HyperDX:
@@ -114,7 +120,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     ```
   </Step>
 
-  <Step title="Развертывание ClickStack" id="deploy-clickstack">
+  <Step>
+    ### Развертывание ClickStack
+
     После установки Helm-чарта вы можете развернуть ClickStack в своем кластере. Можно либо запустить все компоненты, включая ClickHouse и HyperDX, в своей среде Kubernetes, либо развернуть только collector и использовать Управляемый ClickStack для ClickHouse и интерфейса HyperDX.
 
     <br />
@@ -180,12 +188,14 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     ```
   </Step>
 
-  <Step title="Откройте интерфейс HyperDX" id="access-the-hyperdx-ui">
+  <Step>
+    ### Откройте интерфейс HyperDX
+
     <Note>
       Даже при использовании Управляемого ClickStack локальный экземпляр HyperDX, развернутый в кластере Kubernetes, всё равно необходим. Он предоставляет ключ ингестии, которым управляет сервер OpAMP, входящий в состав HyperDX, и обеспечивает защищённую ингестию через развернутый OTel collector — эта возможность в настоящее время недоступна в Управляемом ClickStack.
     </Note>
 
-    В целях безопасности сервис использует `ClusterIP` и по умолчанию недоступен извне.
+    В целях безопасности сервис использует `ClusterIP` и по умолчанию не доступен извне.
 
     Чтобы открыть интерфейс HyperDX, настройте проброс порта с 3000 на локальный порт 8080.
 
@@ -203,7 +213,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Интерфейс HyperDX" size="lg" />
   </Step>
 
-  <Step title="Получение ключа API для приёма данных" id="retrieve-ingestion-api-key">
+  <Step>
+    ### Получение ключа API для приёма данных
+
     Приём данных в OTel collector, развёрнутом коллектором ClickStack, защищён ключом API для приёма данных.
 
     Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API обеспечивает безопасную ингестию данных через OpenTelemetry Collector.
@@ -211,16 +223,18 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Копирование ключа API" size="lg" />
   </Step>
 
-  <Step title="Создание секрета Kubernetes с ключом API" id="create-api-key-kubernetes-secret">
+  <Step>
+    ### Создание секрета Kubernetes с ключом API
+
     Создайте новый секрет Kubernetes с ключом API для приёма данных и ConfigMap, содержащий адрес OTel collector, развернутого с помощью Helm-чарта ClickStack. Позднее другие компоненты будут использовать эти ресурсы, чтобы отправлять данные в OTel collector, развернутый с помощью Helm-чарта ClickStack:
 
     ```shell
-    # create secret with the ingestion API key
+    # создать секрет с ключом API для приёма данных
     kubectl create secret generic hyperdx-secret \
     --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
     -n otel-demo
 
-    # create a ConfigMap pointing to the ClickStack OTel collector deployed above
+    # создать ConfigMap, указывающий на развёрнутый выше OTel collector ClickStack
     kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
     ```
 
@@ -235,18 +249,22 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Данные HyperDX в Kubernetes" size="lg" />
   </Step>
 
-  <Step title="Добавьте Helm-репозиторий OpenTelemetry" id="add-otel-helm-repo">
+  <Step>
+    ### Добавьте Helm-репозиторий OpenTelemetry
+
     Чтобы собирать метрики Kubernetes, мы развернём стандартный OTel collector и настроим его на безопасную отправку данных в наш коллектор ClickStack с помощью указанного выше ключа API для приёма данных.
 
     Для этого нужно установить Helm-репозиторий OpenTelemetry:
 
     ```shell
-    # Add Otel Helm repo
+    # Добавить репозиторий OTel Helm
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
     ```
   </Step>
 
-  <Step title="Развёртывание компонентов коллектора Kubernetes" id="deploy-kubernetes-collector-components">
+  <Step>
+    ### Развёртывание компонентов коллектора Kubernetes
+
     Для сбора журналов и метрик как с самого кластера, так и с каждого узла потребуется развернуть два отдельных коллектора OpenTelemetry, каждый со своим манифестом. Два предоставленных манифеста — `k8s_deployment.yaml` и `k8s_daemonset.yaml` — работают совместно и обеспечивают полный сбор телеметрических данных из вашего кластера Kubernetes.
 
     * `k8s_deployment.yaml` разворачивает **единственный экземпляр OpenTelemetry Collector**, отвечающий за сбор **событий и метаданных всего кластера**. Он собирает события Kubernetes, метрики кластера и обогащает телеметрические данные метками и аннотациями подов. Этот коллектор работает как автономное Развертывание с одной репликой, чтобы избежать дублирования данных.
@@ -258,9 +276,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     Сначала установите коллектор в виде развертывания:
 
     ```shell
-    # download manifest file
+    # скачать файл манифеста
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
-    # install the helm chart
+    # установить Helm-чарт
     helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
     ```
 
@@ -273,26 +291,26 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
        
-      # We only want one of these collectors - any more and we'd produce duplicate data
+      # Нужен только один такой коллектор — большее количество приведёт к дублированию данных
       replicaCount: 1
        
       presets:
         kubernetesAttributes:
           enabled: true
-          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
-          # The label's exact name will be the key.
+          # При включении процессор извлечёт все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться в качестве ключа.
           extractAllPodLabels: true
-          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
-          # The annotation's exact name will be the key.
+          # При включении процессор извлечёт все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться в качестве ключа.
           extractAllPodAnnotations: true
-        # Configures the collector to collect Kubernetes events.
-        # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
-        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        # Настраивает коллектор для сбора событий Kubernetes.
+        # Добавляет k8sobject receiver в конвейер журналов и по умолчанию собирает события Kubernetes.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
         kubernetesEvents:
           enabled: true
-        # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
-        # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusteRole.
-        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        # Настраивает k8s_cluster receiver для сбора метрик уровня кластера.
+        # Добавляет k8s_cluster receiver в конвейер метрик и добавляет необходимые правила в ClusterRole.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
         clusterMetrics:
           enabled: true
 
@@ -330,9 +348,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     Затем разверните collector в виде ДемонСета для сбора метрик и журналов на уровне узлов и подов:
 
     ```shell
-    # download manifest file
+    # скачать файл манифеста
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
-    # install the helm chart
+    # установить Helm-чарт
     helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
     ```
 
@@ -345,7 +363,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
          
-      # Required to use the kubeletstats cpu/memory utilization metrics
+      # Требуется для использования метрик утилизации cpu/memory в kubeletstats
       clusterRole:
         create: true
         rules:
@@ -361,20 +379,20 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
           enabled: true
         hostMetrics:
           enabled: true
-        # Configures the Kubernetes Processor to add Kubernetes metadata.
-        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
-        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        # Настраивает Kubernetes Processor для добавления метаданных Kubernetes.
+        # Добавляет процессор k8sattributes во все конвейеры и добавляет необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
         kubernetesAttributes:
           enabled: true
-          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
-          # The label's exact name will be the key.
+          # При включении процессор извлечёт все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться в качестве ключа.
           extractAllPodLabels: true
-          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
-          # The annotation's exact name will be the key.
+          # При включении процессор извлечёт все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться в качестве ключа.
           extractAllPodAnnotations: true
-        # Configures the collector to collect node, pod, and container metrics from the API server on a kubelet..
-        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
-        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        # Настраивает коллектор для сбора метрик узла, пода и контейнера с API-сервера Кубелета.
+        # Добавляет приёмник kubeletstats в конвейер метрик и добавляет необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
         kubeletMetrics:
           enabled: true
 
@@ -393,7 +411,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
       config:
         receivers:
-          # Configures additional kubelet metrics
+          # Настраивает дополнительные метрики Кубелета
           kubeletstats:
             collection_interval: 20s
             auth_type: 'serviceAccount'
@@ -442,7 +460,9 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     </Accordion>
   </Step>
 
-  <Step title="Просмотр данных Kubernetes в HyperDX" id="explore-kubernetes-data-hyperdx">
+  <Step>
+    ### Просмотр данных Kubernetes в HyperDX
+
     Перейдите в интерфейс HyperDX — либо в экземпляр, развернутый в Kubernetes, либо через Управляемый ClickStack.
 
     <p />

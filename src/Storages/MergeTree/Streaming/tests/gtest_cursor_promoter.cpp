@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 
 #include <gtest/gtest.h>
 

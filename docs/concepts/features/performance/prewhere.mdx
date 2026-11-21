@@ -85,7 +85,7 @@ Note that ClickHouse processes the same number of rows in both the PREWHERE and 
 
 ## PREWHERE optimization is automatically applied {#prewhere-optimization-is-automatically-applied}
 
-The PREWHERE clause can be added manually, as shown in the example above. However, you don't need to write PREWHERE manually. When the setting [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) is enabled (true by default), ClickHouse automatically moves filter conditions from WHERE to PREWHERE, prioritizing those that will reduce read volume the most.
+The PREWHERE clause can be added manually, as shown in the example above. However, you don't need to write PREWHERE manually. When the setting [`optimize_move_to_prewhere`](/reference/settings/session-settings#optimize_move_to_prewhere) is enabled (true by default), ClickHouse automatically moves filter conditions from WHERE to PREWHERE, prioritizing those that will reduce read volume the most.
 
 The idea is that smaller columns are faster to scan, and by the time larger columns are processed, most granules have already been filtered out. Since all columns have the same number of rows, a column's size is primarily determined by its data type, for example, a `UInt8` column is generally much smaller than a `String` column.
 

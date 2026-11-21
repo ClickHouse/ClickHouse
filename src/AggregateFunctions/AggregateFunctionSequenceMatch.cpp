@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
@@ -276,12 +275,8 @@ private:
 
                     UInt64 duration = 0;
                     const auto * prev_pos = pos;
-                    ReadBufferFromMemory duration_buf(pos, end - pos);
-                    /// Both checks are load-bearing: a lone sign is consumed and then rejected,
-                    /// while a leading non-digit is rejected without consuming anything.
-                    const bool parsed_duration = tryReadIntText(duration, duration_buf);
-                    pos += duration_buf.count();
-                    if (pos == prev_pos || !parsed_duration)
+                    pos = tryReadIntText(duration, pos, end);
+                    if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -300,7 +295,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number == 0 || event_number > arg_count - 1)
+                    if (event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
@@ -412,10 +407,10 @@ protected:
         VectorWithMemoryTracking<T> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
-        /// Records the match only. Adding a backtrack point here would let this traversal skip ahead
-        /// and accept chains the pattern does not authorise, and that the verdict traversal rejects.
         const auto do_push_event = [&]
         {
+            back_stack.emplace(action_it, events_it, base_it);
+
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
             if (best_matched_events->size() < current_matched_events.size())
@@ -426,7 +421,7 @@ protected:
 
         const auto do_revert_event_if_needed = [&]
         {
-            while (!current_matched_actions.empty() && current_matched_actions.back() >= action_it)
+            if (current_matched_actions.size() > 0 && current_matched_actions.back() >= action_it)
             {
                 current_matched_events.pop_back();
                 current_matched_actions.pop_back();

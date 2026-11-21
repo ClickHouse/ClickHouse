@@ -11,8 +11,6 @@
 namespace DB
 {
 
-UUID ServerUUID::server_uuid = UUIDHelpers::Nil;
-
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_FILE;
@@ -25,11 +23,6 @@ UUID ServerUUID::get()
         (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER ||
          Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::KEEPER))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
-    return server_uuid;
-}
-
-UUID ServerUUID::tryGet()
-{
     return server_uuid;
 }
 

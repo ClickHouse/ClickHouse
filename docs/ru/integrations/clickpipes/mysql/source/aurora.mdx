@@ -11,41 +11,42 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 Это пошаговое руководство показывает, как настроить Amazon Aurora MySQL для репликации данных в ClickHouse Cloud с помощью [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index). Ответы на часто задаваемые вопросы о CDC в MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
 
 <div id="enable-binlog-retention-aurora">
-  ## Включение хранения бинарного лога
+  ## Включение хранения бинарных логов
 </div>
 
-Бинарный лог — это набор файлов журналов, содержащих сведения об изменениях данных, внесенных в экземпляр сервера MySQL, и файлы бинарного лога необходимы для репликации. Чтобы настроить хранение бинарного лога в Aurora MySQL, необходимо [включить бинарное логирование](#enable-binlog-logging) и [увеличить интервал хранения binlog](#binlog-retention-interval).
+Бинарный лог — это набор файлов журналов, содержащих информацию об изменениях данных, внесённых в экземпляр сервера MySQL, а файлы бинарного лога необходимы для репликации. Чтобы настроить хранение бинарных логов в Aurora MySQL, необходимо [включить бинарное логирование](#enable-binlog-logging) и [увеличить интервал хранения binlog](#binlog-retention-interval).
 
-<Steps>
-  <Step title="Включение бинарного логирования через автоматическое резервное копирование" id="enable-binlog-logging">
-    Функция автоматического резервного копирования определяет, включено ли бинарное логирование для MySQL. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console, перейдя в **Modify** &gt; **Additional configuration** &gt; **Backup** и установив флажок **Enable automated backups** (если он еще не установлен).
+<div id="enable-binlog-logging">
+  ### 1. Включите бинарное логирование через автоматические резервные копии
+</div>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в Aurora" size="lg" border />
+Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console: перейдите в **Modify** &gt; **Additional configuration** &gt; **Backup** и установите флажок **Enable automated backups** (если он ещё не установлен).
 
-    Мы рекомендуем установить для **Backup retention period** достаточно большое значение в зависимости от сценария использования репликации.
-  </Step>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в Aurora" size="lg" border />
 
-  <Step title="Увеличьте интервал хранения binlog" id="binlog-retention-interval">
-    <Warning>
-      Если ClickPipes попытается возобновить репликацию, а нужные файлы binlog уже будут удалены из-за настроенного периода хранения binlog, ClickPipe перейдет в состояние ошибки, и потребуется повторная синхронизация.
-    </Warning>
+Мы рекомендуем установить для **Backup retention period** достаточно длительный срок в зависимости от сценария репликации.
 
-    По умолчанию Aurora MySQL удаляет бинарный лог при первой возможности (то есть использует *lazy purging*). Мы рекомендуем увеличить интервал хранения binlog как минимум до **72 часов**, чтобы файлы бинарного лога оставались доступными для репликации в случае сбоев. Чтобы задать интервал хранения бинарного лога ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), используйте процедуру [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+<div id="binlog-retention-interval">
+  ### 2. Увеличьте интервал хранения binlog
+</div>
 
-    [//]: # "ПРИМЕЧАНИЕ: Большинство провайдеров CDC рекомендуют максимальный период хранения для Aurora RDS (7 дней/168 часов). Поскольку это влияет на использование дискового пространства, мы рекомендуем минимальное значение 3 дня/72 часа."
+<Warning>
+  Если ClickPipes попытается возобновить репликацию, а нужные файлы binlog уже будут удалены из-за настроенного периода хранения binlog, ClickPipe перейдет в состояние ошибки, и потребуется повторная синхронизация.
+</Warning>
 
-    ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-    ```
+По умолчанию Aurora MySQL удаляет бинарный лог при первой возможности (то есть использует *lazy purging*). Мы рекомендуем увеличить интервал хранения binlog как минимум до **72 часов**, чтобы файлы бинарного лога оставались доступными для репликации в случае сбоев. Чтобы задать интервал хранения бинарного лога ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), используйте процедуру [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
 
-    Если этот параметр не задан или для него установлен слишком малый интервал, это может привести к пропускам в бинарных логах и нарушить способность ClickPipes возобновлять репликацию.
-  </Step>
-</Steps>
+[//]: # "ПРИМЕЧАНИЕ: Большинство провайдеров CDC рекомендуют максимальный период хранения для Aurora RDS (7 дней/168 часов). Поскольку это влияет на использование дискового пространства, мы рекомендуем минимальное значение 3 дня/72 часа."
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+```
+
+Если этот параметр не задан или для него установлен слишком малый интервал, это может привести к пропускам в бинарных логах и нарушить способность ClickPipes возобновлять репликацию.
 
 <div id="binlog-settings">
   ## Настройка параметров binlog
@@ -133,12 +134,6 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="iam-authentication">
-  ### Использование аутентификации IAM (необязательно)
-</div>
-
-<IAMAuthentication engine="mysql" service="aurora" />
-
 <div id="configure-network-access">
   ## Настройте сетевой доступ
 </div>
@@ -147,7 +142,7 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   ### Управление доступом по IP
 </div>
 
-Чтобы ограничить трафик к вашему экземпляру Aurora MySQL, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в **Inbound rules** вашей группы безопасности Aurora.
+Чтобы ограничить трафик к вашему экземпляру Aurora MySQL, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в **Inbound rules** вашей группы безопасности Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в Aurora MySQL?" size="lg" border />
 
@@ -163,4 +158,4 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   ## Что дальше?
 </div>
 
-Теперь, когда ваш экземпляр Amazon Aurora MySQL настроен для репликации через binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы по MySQL CDC см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
+Теперь, когда ваш экземпляр Amazon Aurora MySQL настроен для репликации binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о CDC в MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).

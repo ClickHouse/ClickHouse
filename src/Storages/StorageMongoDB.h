@@ -34,9 +34,11 @@ public:
     MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
     void operator=(MongoDBInstanceHolder const &) = delete;
 
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static MongoDBInstanceHolder & instance();
+    static MongoDBInstanceHolder & instance()
+    {
+        static MongoDBInstanceHolder instance;
+        return instance;
+    }
 
     ~MongoDBInstanceHolder()
     {

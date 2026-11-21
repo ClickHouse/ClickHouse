@@ -49,13 +49,13 @@ BigQuery は、Google のオブジェクト ストレージ (GCS) へのデー�
 
 1. 7 つのテーブルを GCS にエクスポートします。そのためのコマンドは[こちら](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==)で確認できます。
 
-2. データを ClickHouse Cloud にインポートします。これには [gcs table function](/ja/reference/functions/table-functions/gcs) を使用できます。DDL とインポート用クエリは[こちら](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)で確認できます。なお、ClickHouse Cloud のインスタンスは複数のコンピュートノードで構成されるため、`gcs` table function ではなく、[s3Cluster table function](/ja/reference/functions/table-functions/s3Cluster) を使用しています。この関数は GCS バケットでも動作し、[ClickHouse Cloud service のすべてのノードを活用して](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)データを並列にロードします。
+2. データを ClickHouse Cloud にインポートします。これには [gcs table function](/ja/reference/functions/table-functions/gcs) を使用できます。DDL とインポート用クエリは[こちら](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)で確認できます。なお、ClickHouse Cloud のインスタンスは複数のコンピュートノードで構成されるため、`gcs` table function ではなく、[s3Cluster table function](/ja/reference/functions/table-functions/s3Cluster) を使用しています。この関数は GCS バケットでも動作し、[ClickHouse Cloud service の全ノードを活用して](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)データを並列にロードします。
 
 <Image img="/images/migrations/bigquery-4.webp" size="md" alt="一括ロード" />
 
 このアプローチには、いくつかの利点があります。
 
-* BigQuery のエクスポート機能は、データの一部をエクスポートするためのフィルターをサポートしています。
+* BigQuery のエクスポート機能は、データの一部のみをエクスポートするためのフィルターをサポートしています。
 * BigQuery は [Parquet、Avro、JSON、CSV](https://cloud.google.com/bigquery/docs/exporting-data) フォーマットと複数の[圧縮タイプ](https://cloud.google.com/bigquery/docs/exporting-data)へのエクスポートをサポートしており、これらはすべて ClickHouse でサポートされています。
 * GCS は [object life cycle management](https://cloud.google.com/storage/docs/lifecycle) をサポートしているため、ClickHouse へのエクスポートとインポートが完了したデータを、指定した期間の経過後に削除できます。
 * [Google では 1 日あたり最大 50TB まで無料で GCS にエクスポートできます](https://cloud.google.com/bigquery/quotas#export_jobs)。ユーザーが支払うのは GCS ストレージの料金のみです。
@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouseの主キーは何が違うのか？
 </div>
 
-[こちら](/ja/get-started/migrate/bigquery/overview)で説明しているように、BigQueryと同様、ClickHouseはテーブルの主キーカラム値の一意性を強制しません。
+[こちら](/ja/get-started/migrate/bigquery/index)で説明しているように、BigQueryと同様、ClickHouseはテーブルの主キーカラム値の一意性を強制しません。
 
 また、BigQueryのクラスタリングと同様に、ClickHouseテーブルのデータは主キーカラム順に並べられた状態でディスクに保存されます。このソート順はクエリオプティマイザによって利用され、再ソートを回避し、JOIN時のメモリ使用量を抑え、limit句の短絡評価を可能にします。
 一方、BigQueryとは異なり、ClickHouseは主キーカラム値に基づいて[ (スパース) プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を自動的に作成します。この索引は、主キーカラムに対するフィルターを含むすべてのクエリを高速化するために使われます。具体的には次のとおりです。
@@ -267,7 +267,7 @@ Ok.
 
 重要: パーティション化キー式のカーディナリティが高くなりすぎないようにしてください。つまり、100 を超えるパーティションを作成するのは避けるべきです。たとえば、クライアント識別子や名前のような高カーディナリティのカラムでデータをパーティション化しないでください。代わりに、クライアント識別子や名前は `ORDER BY` 式の先頭カラムにしてください。
 
-> 内部的には、ClickHouse は挿入されたデータに対して[パーツを作成します](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。データの挿入が増えるにつれて、パーツ数も増加します。パーツ数が過度に増えるのを防ぐため (読み込むファイル数が増え、クエリ性能が低下するため) 、パーツはバックグラウンドで非同期にマージされます。パーツ数が[事前設定された上限](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)を超えると、ClickHouse は INSERT 時に[&quot;パーツが多すぎる&quot; エラー](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)として例外をスローします。これは通常の運用では発生しないはずで、ClickHouse の設定が不適切であるか、たとえば小さな insert を大量に行うなど、誤った使い方をした場合にのみ発生します。パーツは各パーティションごとに独立して作成されるため、パーティション数が増えるとパーツ数も増加します。つまり、パーツ数はパーティション数に応じて増えます。したがって、高カーディナリティのパーティション化キーはこのエラーの原因になり得るため、避けるべきです。
+> 内部的には、ClickHouse は挿入されたデータに対して[パーツを作成します](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。データの挿入が増えるにつれて、パーツ数も増加します。パーツ数が過度に増えるのを防ぐため (読み込むファイル数が増え、クエリ性能が低下するため) 、パーツはバックグラウンドで非同期にマージされます。パーツ数が[事前設定された上限](/ja/reference/settings/merge-tree-settings#parts_to_throw_insert)を超えると、ClickHouse は INSERT 時に[&quot;パーツが多すぎる&quot; エラー](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)として例外をスローします。これは通常の運用では発生しないはずで、ClickHouse の設定が不適切であるか、たとえば小さな insert を大量に行うなど、誤った使い方をした場合にのみ発生します。パーツは各パーティションごとに独立して作成されるため、パーティション数が増えるとパーツ数も増加します。つまり、パーツ数はパーティション数に応じて増えます。したがって、高カーディナリティのパーティション化キーはこのエラーの原因になり得るため、避けるべきです。
 
 <div id="materialized-views-vs-projections">
   ## materialized view と プロジェクション の比較
@@ -422,7 +422,7 @@ WHERE UserId = 8592047
 
 次のような場合にプロジェクションの使用を推奨します。
 
-* データを完全に並べ替える必要がある場合。理論上、プロジェクション内の式では `GROUP BY,` も使用できますが、集計を維持する用途では materialized view のほうが効果的です。また、クエリオプティマイザ は、単純な並べ替え、つまり `SELECT * ORDER BY x` を使用するプロジェクションのほうを利用しやすい傾向があります。この式では、保存領域を減らすためにカラムの一部だけを選択することもできます。
+* データを完全に並べ替える必要がある場合。理論上、プロジェクション内の式では `GROUP BY,` も使用できますが、集計を維持する用途では materialized view のほうが効果的です。また、クエリオプティマイザは、単純な並べ替え、つまり `SELECT * ORDER BY x` を使用するプロジェクションのほうを利用しやすい傾向があります。この式では、保存領域を減らすためにカラムの一部だけを選択することもできます。
 * 保存領域の増加と、データを 2 回書き込むオーバーヘッドをユーザーが許容できる場合。挿入速度への影響をテストし、[ストレージオーバーヘッドを評価](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)してください。
 
 <div id="rewriting-bigquery-queries-in-clickhouse">

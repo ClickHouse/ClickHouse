@@ -86,7 +86,20 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### パブリック IP を持たない、またはプライベートネットワーク内にある Postgres データベースに接続できますか？
 </div>
 
-はい。パブリックインターネットに公開されていないデータソースに ClickPipes が接続する方法については、[ClickPipes ネットワーキング](/ja/integrations/clickpipes/networking)をご覧ください。
+はい。ClickPipes for Postgres では、プライベートネットワーク内のデータベースに接続するための方法を 2 つ用意しています。
+
+1. **SSH トンネリング**
+   * ほとんどのユースケースに適しています
+   * セットアップ手順は[こちら](/ja/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)をご覧ください
+   * すべてのリージョンで利用できます
+
+2. **AWS PrivateLink**
+   * 次の 3 つの AWS リージョンで利用できます。
+     * us-east-1
+     * us-east-2
+     * eu-central-1
+   * 詳しいセットアップ手順については、[PrivateLink ドキュメント](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)をご覧ください
+   * PrivateLink を利用できないリージョンでは、SSH トンネリングを使用してください
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### UPDATE と DELETE はどのように処理されますか？
@@ -186,15 +199,10 @@ ClickPipes for Postgresでは、Postgresのデータ型をClickHouse側で可能
 現時点では、パイプの一部としてカスタムの型マッピングを定義することはサポートしていません。ただし、ClickPipes で使用されるデフォルトの型マッピングは、各システムのネイティブ型に非常に忠実である点に注意してください。Postgres のほとんどのカラム型は、ClickHouse 上の対応するネイティブ型にできるだけ近い形でレプリケートされます。たとえば、Postgres の整数の Array 型は、ClickHouse でも整数の Array 型としてレプリケートされます。
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### Postgres の `json` および `jsonb` カラムはどのようにレプリケートされますか？
+  ### Postgres の JSON および JSONB カラムはどのようにレプリケートされますか？
 </div>
 
-`json` および `jsonb` カラムは、[native JSON type](/ja/reference/data-types/newjson) との互換性がないため、ClickHouse では String 型としてレプリケートされます。たとえば、次のような理由があります。
-
-* PostgreSQL では、トップレベルに任意の有効な JSON 値 (文字列、数値、配列など) を置けますが、ClickHouse の JSON type はオブジェクトしかサポートしていません。
-* ドットを含むキー (例: &quot;app.kubernetes.io/name&quot;) は、ClickHouse の JSON type ではネストされたパスとしても解釈されるため、データ構造が変わってしまう可能性があります。
-
-Postgres CDC (変更データキャプチャ) ClickPipe の後段で JSON string を扱う場合は、カラムに対して [JSON functions](/ja/reference/functions/regular-functions/json-functions) を直接使用して、データの抽出や処理を行えます。クエリパフォーマンスを高めるには、materialized view を使用して特定のフィールドを型付きカラムに抽出したり、カラムを native JSON type に CAST したりすることもできます (ただし、プラットフォーム間の型の互換性の問題に当たると CAST が失敗する可能性がある点に注意してください) 。
+JSON および JSONB カラムは、ClickHouse では String type としてレプリケートされます。ClickHouse はネイティブの [JSON type](/ja/reference/data-types/newjson) をサポートしているため、必要に応じて、ClickPipes のテーブル上に materialized view を作成して変換できます。あるいは、String カラムに対して直接 [JSON functions](/ja/reference/functions/regular-functions/json-functions) を使用することもできます。現在、JSON および JSONB カラムを ClickHouse の JSON type に直接レプリケートする機能を鋭意開発中です。この機能は数か月以内に利用可能になる見込みです。
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### ミラーが一時停止されると、insert はどうなりますか？
@@ -213,7 +221,7 @@ Postgres CDC (変更データキャプチャ) ClickPipe の後段で JSON string
   ### ClickPipe の作成は自動化できますか？また、API や CLI から実行できますか？
 </div>
 
-Postgres ClickPipe は、[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) のエンドポイントを介して作成および管理することもできます。この機能はベータで、API リファレンスは[こちら](/ja/products/cloud/api-reference/clickpipes/list-clickpipes)にあります。現在、Postgres ClickPipes を作成するための Terraform サポートも積極的に進めています。
+Postgres ClickPipe は、[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) のエンドポイントを介して作成および管理することもできます。この機能はベータで、API リファレンスは[こちら](/ja/api-reference/organization/get-list-of-available-organizations#tag/beta)にあります。現在、Postgres ClickPipes を作成するための Terraform サポートも積極的に進めています。
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### 初期ロードを高速化するにはどうすればよいですか？
@@ -431,11 +439,11 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
   ### フェイルオーバーを有効にしたレプリケーションスロットを ClickPipe に作成させることはできますか？
 </div>
 
-はい。レプリケーションモードが CDC (変更データキャプチャ) または Snapshot + CDC (変更データキャプチャ) の Postgres ClickPipe では、ClickPipe の作成時に `Advanced Settings` セクションで以下のスイッチを有効にすることで、ClickPipes にフェイルオーバー対応のレプリケーションスロットを作成させることができます。なお、この機能を使用するには Postgres 17 以降が必要です。
+はい。レプリケーションモードが CDC (変更データキャプチャ)  または Snapshot + CDC (変更データキャプチャ)  の Postgres ClickPipe では、ClickPipe の作成時に `Advanced Settings` セクションで以下のスイッチを有効にすることで、ClickPipes にフェイルオーバー対応のレプリケーションスロットを作成させることができます。なお、この機能を使用するには Postgres 17 以降が必要です。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 
-ソース側が適切に設定されていれば、Postgres の読み取りレプリカへのフェイルオーバー後もスロットは保持され、データレプリケーションを継続できます。詳細は[こちら](https://www.postgresql.org/docs/current/logical-replication-failover.html)をご覧ください。
+ソース側が適切に設定されていれば、Postgres のリードレプリカへのフェイルオーバー後もスロットは保持され、データレプリケーションを継続できます。詳細は[こちら](https://www.postgresql.org/docs/current/logical-replication-failover.html)をご覧ください。
 
 <div id="transient-logical-decoding-errors">
   ### `Internal error encountered during logical decoding of aborted sub-transaction` のようなエラーが表示される

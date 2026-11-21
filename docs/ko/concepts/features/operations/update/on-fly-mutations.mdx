@@ -1,0 +1,103 @@
+---
+slug: /guides/developer/on-the-fly-mutations
+sidebarTitle: '온더플라이 뮤테이션'
+title: '온더플라이 뮤테이션'
+keywords: ['온더플라이 뮤테이션']
+description: '온더플라이 뮤테이션에 대해 설명합니다'
+doc_type: 'guide'
+---
+
+<div id="on-the-fly-mutations">
+  ## 온더플라이 뮤테이션
+</div>
+
+온더플라이 뮤테이션이 활성화되면 업데이트된 행은 즉시 업데이트된 것으로 표시되며, 이후 `SELECT` 쿼리는 변경된 값을 자동으로 반환합니다. 온더플라이 뮤테이션이 활성화되지 않은 경우에는 변경된 값을 확인하려면 백그라운드 프로세스를 통해 뮤테이션이 적용될 때까지 기다려야 할 수 있습니다.
+
+온더플라이 뮤테이션은 쿼리 수준 설정 `apply_mutations_on_fly`를 활성화하면 `MergeTree` 계열 테이블에서 사용할 수 있습니다.
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<div id="example">
+  ## 예시
+</div>
+
+테이블을 생성한 다음 몇 가지 뮤테이션을 실행해 보겠습니다:
+
+```sql
+CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+ENGINE = MergeTree ORDER BY id;
+
+-- 온더플라이 뮤테이션이 활성화되지 않은 경우의 기본 동작을 보여주기 위해
+-- 뮤테이션의 백그라운드 머티리얼라이즈를 비활성화합니다
+SYSTEM STOP MERGES test_on_fly_mutations;
+SET mutations_sync = 0;
+
+-- 새 테이블에 행을 삽입합니다
+INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- 행의 값을 업데이트합니다
+ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+```
+
+`SELECT` 쿼리로 업데이트 결과를 확인해 보겠습니다:
+
+```sql
+-- 온더플라이 뮤테이션을 명시적으로 비활성화
+SET apply_mutations_on_fly = 0;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+새 테이블을 쿼리할 때는 행 값이 아직 업데이트되지 않았다는 점에 유의하십시오:
+
+```response
+┌─id─┬─v─┐
+│  1 │ a │
+│  2 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+이제 온더플라이 뮤테이션을 활성화하면 어떤 일이 일어나는지 살펴보겠습니다:
+
+```sql
+-- 온더플라이 뮤테이션 활성화
+SET apply_mutations_on_fly = 1;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+`SELECT` 쿼리는 이제 뮤테이션이 적용될 때까지 기다릴 필요 없이 올바른 결과를 즉시 반환합니다:
+
+```response
+┌─id─┬─v─┐
+│  3 │ c │
+└────┴───┘
+```
+
+<div id="performance-impact">
+  ## 성능 영향
+</div>
+
+온더플라이 뮤테이션이 활성화되면 뮤테이션은 즉시 구체화되지 않고 `SELECT` 쿼리 시에만 적용됩니다. 다만 뮤테이션은 여전히 백그라운드에서 비동기적으로 구체화되며, 이 과정은 리소스 부담이 큰 작업이라는 점에 유의하십시오.
+
+일정 인터벌 동안 제출되는 뮤테이션 수가 백그라운드에서 처리되는 뮤테이션 수를 지속적으로 초과하면, 적용 대기 중인 미구체화 뮤테이션 큐가 계속 증가하게 됩니다. 그 결과 시간이 지날수록 `SELECT` 쿼리 성능이 저하됩니다.
+
+미구체화 뮤테이션이 무한정 증가하는 것을 제한하려면 `apply_mutations_on_fly` 설정을 `number_of_mutations_to_throw`, `number_of_mutations_to_delay`와 같은 다른 `MergeTree` 수준 설정과 함께 활성화하는 것이 좋습니다.
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ## 서브쿼리 및 비결정적 함수 지원
+</div>
+
+온더플라이 뮤테이션은 서브쿼리와 비결정적 함수에 대해 제한적으로 지원됩니다. 결과 크기가 적절한 스칼라 서브쿼리만 지원되며(설정 `mutations_max_literal_size_to_replace`로 제어됨), 상수 비결정적 함수만 지원됩니다(예: `now()` 함수).
+
+이러한 동작은 다음 설정으로 제어됩니다:
+
+* `mutations_execute_nondeterministic_on_initiator` - true이면 비결정적 함수가 initiator 레플리카에서 실행되고 `UPDATE` 및 `DELETE` 쿼리에서는 리터럴로 대체됩니다. 기본값: `false`.
+* `mutations_execute_subqueries_on_initiator` - true이면 스칼라 서브쿼리가 initiator 레플리카에서 실행되고 `UPDATE` 및 `DELETE` 쿼리에서는 리터럴로 대체됩니다. 기본값: `false`.
+* `mutations_max_literal_size_to_replace` - `UPDATE` 및 `DELETE` 쿼리에서 대체할 직렬화된 리터럴의 최대 크기(바이트)입니다. 기본값: `16384` (16 KiB).

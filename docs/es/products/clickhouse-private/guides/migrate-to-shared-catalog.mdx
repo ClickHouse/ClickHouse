@@ -1,0 +1,193 @@
+---
+noindex: true
+title: "Migrar a Shared Catalog"
+description: "Shared Catalog es el nuevo enfoque para gestionar metadatos en las instancias ClickHouse Private."
+---
+
+Shared Catalog es el nuevo enfoque para gestionar metadatos en las instancias ClickHouse Private. En lugar de las bases de datos que usan el motor [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated), que utiliza una cola DDL en ClickHouse Keeper para garantizar que las sentencias DDL se apliquen en todas las réplicas, el motor de base de datos [Shared](https://clickhouse.com/docs/engines/database-engines/shared) almacena todos los metadatos en Keeper, lo que elimina la necesidad de sincronizar las sentencias DDL entre réplicas.
+
+Shared Catalog ofrece varias ventajas:
+
+* Estado coherente en todas las réplicas
+* Carácter sin estado de los nodos de cómputo (permite nodos de servidor sin estado)
+* `CREATE TABLE ... AS SELECT` atómico
+* Compatibilidad con `UNDROP`
+* `RENAME`/mover `TABLE` entre bases de datos
+* Inicialización rápida y fiable de réplicas (reduce los tiempos de reactivación, arranque y aprovisionamiento)
+
+Sin embargo, requiere una migración si su instancia no se configuró con Shared Catalog durante el primer despliegue. Le recomendamos probar primero la migración en un entorno de prueba antes de migrar instancias de producción.
+
+<div id="migration-requirements">
+  ## Requisitos de la migración
+</div>
+
+Antes de iniciar la migración, verifique los siguientes requisitos previos:
+
+<Steps>
+  <Step>
+    ### 1. Al menos 2 réplicas del servidor
+
+    El Operator realiza una actualización progresiva para migrar las bases de datos al nuevo motor de base de datos Shared. Establezca el valor de helm `server.replicas` en 2 o más.
+  </Step>
+
+  <Step>
+    ### 2. Todas las bases de datos usan el motor Replicated
+
+    Todas las bases de datos (excepto `system`) deben usar el motor de base de datos Replicated. Verifíquelo con:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    La consulta no debe devolver ninguna fila.
+  </Step>
+
+  <Step>
+    ### 3. Todas las tablas usan motores de tabla no replicados
+
+    Ninguna tabla (excepto las de `system`) debe usar motores de tabla replicados o heredados. Verifíquelo con:
+
+    ```sql
+    SELECT
+        name,
+        engine,
+        database
+    FROM system.tables
+    WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+      AND (database != 'system')
+    ```
+
+    La consulta no debe devolver ninguna fila.
+  </Step>
+
+  <Step>
+    ### 4. No existen tablas en estado detached
+
+    ```sql
+    SELECT * FROM system.detached_tables
+    ```
+
+    La consulta no debe devolver ninguna fila.
+
+    Una vez cumplidos todos los requisitos, se puede iniciar la migración. Si alguno no se cumple, póngase en contacto con el soporte de ClickHouse para obtener ayuda.
+  </Step>
+</Steps>
+
+<div id="performing-the-migration">
+  ## Realizar la migración
+</div>
+
+<Warning>
+  Para las instancias de Hydra, migre primero la instancia principal antes de migrar las instancias secundarias. Repita los pasos que se indican a continuación para cada instancia secundaria una vez migrada la principal.
+</Warning>
+
+<Steps>
+  <Step>
+    ### 1. Habilitar la configuración de Shared Catalog
+
+    Establezca `featureFlags.enableSharedCatalog` en `true` en sus valores de Helm. Esto habilita la configuración, pero no inicia la migración de las bases de datos. Si despliega un ClickHouse Cluster con este indicador establecido en `true` sin migrar las bases de datos replicadas existentes, el ClickHouse Cluster no podrá iniciarse.
+  </Step>
+
+  <Step>
+    ### 2. Añadir los marcadores de migración
+
+    Establezca `featureFlags.migrateToSharedCatalog` en `true` en sus valores de Helm. Esto:
+
+    * Añade la configuración `shared_database_catalog.migration_from_database_replicated` a ClickHouse, indicándole que debe esperar bases de datos `Replicated` existentes mientras se ejecuta en modo Shared Catalog
+    * Añade la anotación `clickhouse.com/start-shared-catalog-migration: "true"` al recurso de Kubernetes ClickHouseCluster, notificando al Operator que migre este cluster
+
+    Una vez desplegado, el Operator activará una actualización progresiva de los nodos del servidor. Esto también cambiará el tipo de todas las bases de datos a `Shared`.
+  </Step>
+
+  <Step>
+    ### 3. Espere a que el estado sea Ready
+
+    ```bash
+    kubectl get ClickHouseCluster <instance-name>
+    ```
+  </Step>
+
+  <Step>
+    ### 4. Eliminar los marcadores de migración
+
+    Una vez que el estado sea Ready, establezca `featureFlags.migrateToSharedCatalog` en `false` en sus valores de Helm. Como todas las bases de datos ya se han migrado al tipo `Shared` en lugar de `Replicated`, la configuración de migración deja de ser relevante.
+  </Step>
+
+  <Step>
+    ### 5. Verifique que todas las bases de datos se hayan migrado
+
+    Confirme que todas las bases de datos que no pertenecen al sistema usen el motor Shared:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Shared')
+    ```
+
+    La consulta no debería devolver ninguna fila. En este punto, la instancia ya se ha migrado a Shared Catalog.
+  </Step>
+</Steps>
+
+<div id="rollback">
+  ## Reversión
+</div>
+
+Si se produce algún problema con Shared Catalog, puede volver al estado anterior:
+
+<Steps>
+  <Step>
+    ### 1. Eliminar los marcadores de migración
+
+    Establezca `featureFlags.migrateToSharedCatalog` en `false` en los valores de Helm.
+  </Step>
+
+  <Step>
+    ### 2. Eliminar la configuración de Shared Catalog
+
+    Establezca `featureFlags.enableSharedCatalog` en `false` en los valores de Helm. Esto hará que el Operator revierta los cambios.
+  </Step>
+
+  <Step>
+    ### 3. Eliminar el catálogo en Keeper
+
+    Realice un reenvío de puertos a Keeper e inicie una sesión de keeper-client (con `clickhouse keeper-client`).
+
+    Una vez iniciada la sesión, ejecute los siguientes comandos:
+
+    ```text
+    ls '/clickhouse/catalog'
+    # Salida: migration_from_database_replicated_completed names references replicas uuids
+
+    rmr '/clickhouse/catalog'
+    # Va a eliminar de forma recursiva la ruta /clickhouse/catalog. ¿Desea continuar?
+    # [y/n] y
+    ```
+
+    Esto limpiará todo el estado de Shared Catalog en Keeper.
+  </Step>
+
+  <Step>
+    ### 4. Verificar la reversión
+
+    Confirme que todas las bases de datos que no pertenecen al sistema vuelven a usar el motor Replicated:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    La consulta no debería devolver ninguna fila.
+  </Step>
+</Steps>

@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "إعداد Cert Manager لشهادات ClickHouse"
+sidebarTitle: "إعداد Cert Manager"
+description: "أنشئ شهادات TLS لخادم ClickHouse وKeeper باستخدام Cert Manager."
+---
+
+أنشئ شهادات TLS لخادم ClickHouse وKeeper باستخدام Cert Manager.
+
+> للتعرّف على المفاهيم الأساسية وراء هذا الدليل — الغرض من كل شهادة، وكيف تعمل أوضاع التحقّق، وكيف تتم عملية تدوير الشهادات — راجع [PKI and mTLS in ClickHouse Private](/ar/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* تثبيت [Cert Manager](https://cert-manager.io/) في العنقود
+* اختيار اسم للعنقود (يستخدم هذا الدليل `default-xx-01` كمثال)
+
+<div id="steps">
+  ## الخطوات
+</div>
+
+<Steps>
+  <Step>
+    ### 1. إنشاء مُصدِر شهادة
+
+    أنشئ `Issuer` موقَّعًا ذاتيًا ليعمل كجهة مصدِّقة للشهادات:
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: selfsigned-issuer
+      namespace: ns-default-xx-01
+    spec:
+      selfSigned: {}
+    ```
+
+    > **ملاحظة:** يكون `Issuer` محصورًا ضمن مساحة الاسم، ويجب أن يوجد في مساحة الاسم نفسها التي توجد فيها موارد `Certificate` التي تشير إليه. ويُعد `Issuer` الموقَّع ذاتيًا مناسبًا للاختبار. أما في بيئات الإنتاج، فراجِع [قائمة خيارات الـ مُصدِر](https://cert-manager.io/docs/configuration/issuers/).
+  </Step>
+
+  <Step>
+    ### 2. إنشاء موارد الشهادة
+
+    أنشئ مورد `Certificate` لخادم ClickHouse:
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server-tls
+      namespace: ns-default-xx-01
+    spec:
+      secretName: default-xx-01-server-cert-secret
+      dnsNames:
+        - "*.c-default-xx-01-server-headless.ns-default-xx-01.svc.cluster.local"
+      issuerRef:
+        name: selfsigned-issuer
+        kind: Issuer
+    ```
+
+    يؤدي ذلك إلى إنشاء Kubernetes secret باسم `default-xx-01-server-cert-secret` يحتوي على المفاتيح `ca.crt` و`tls.crt` و`tls.key`.
+
+    كرّر ذلك مع `dnsNames` و`secretName` المناسبين لـ Keeper عند الحاجة.
+  </Step>
+
+  <Step>
+    ### 3. إعداد قيم Helm لاستخدام مفاتيح Secret الخاصة بـ cert-manager
+
+    افتراضيًا، يتوقع مخطط Helm ‏`onprem-clickhouse-cluster` مفاتيح secret بالأسماء `ca.crt` و`server.crt` و`server.key`. وينتج Cert Manager المفاتيح `ca.crt` و`tls.crt` و`tls.key`. استبدل أسماء المفاتيح في قيم Helm لديك:
+
+    ```yaml
+    server:
+      openSSL:
+        enabled: true
+        secret:
+          caKey: ca.crt
+          certKey: tls.crt
+          keyKey: tls.key
+    ```
+
+    تُركَّب الشهادات في `/etc/clickhouse-server/certs/` للخادم، وفي `/etc/clickhouse-keeper/certs/` لـ Keeper. ويُنشئ مخطط Helm إعداد OpenSSL الصحيح تلقائيًا.
+  </Step>
+</Steps>
+
+<div id="notes-on-cacrt-availability">
+  ## ملاحظات حول توفر `ca.crt`
+</div>
+
+لا يُضاف المفتاح `ca.crt` إلى الـ secret إلا إذا كان متاحًا من المُصدِر. على سبيل المثال، لا تتضمن المُصدِرات من نوع ACME ‏`ca.crt`. في هذه الحالة، أضِف شهادة CA الجذرية العامة يدويًا إلى المفتاح `ca.crt`، أو استخدم [trust-manager](https://cert-manager.io/docs/trust/trust-manager/) لإنشاء حزمة CA واستهداف الـ secret الصحيح.

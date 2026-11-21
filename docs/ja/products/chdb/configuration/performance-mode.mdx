@@ -1,0 +1,331 @@
+---
+title: 'パフォーマンスモード (compat_mode)'
+sidebarTitle: 'パフォーマンスモード'
+slug: /chdb/configuration/performance-mode
+description: '最大スループットを実現するために pandas 互換性のオーバーヘッドを無効化する、SQL 優先のパフォーマンスモード'
+keywords: ['chdb', 'datastore', 'パフォーマンス', 'モード', '互換', 'sql-first', '最適化']
+doc_type: 'guide'
+---
+
+DataStore には 2 つの互換性モードがあり、出力を pandas 互換の形式にするか、生の SQL のパフォーマンス向けに最適化するかを制御できます。
+
+<div id="overview">
+  ## 概要
+</div>
+
+| モード                | `compat_mode` value | 説明                                                                                                      |
+| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Pandas** (デフォルト) | `"pandas"`          | pandas の動作との完全な互換性。行の順序を保持し、MultiIndex、set&#95;index、dtype の補正、安定ソート時のタイブレーカー、`-If`/`isNaN` ラッパーに対応します。 |
+| **Performance**    | `"performance"`     | SQL 優先で実行します。pandas 互換性のためのオーバーヘッドをすべて排除します。スループットは最大化されますが、結果の構造が pandas と異なる場合があります。                  |
+
+<div id="what-it-disables">
+  ### パフォーマンスモード で無効化されるもの
+</div>
+
+| オーバーヘッド                            | Pandas モードの挙動                                                    | パフォーマンスモード の挙動                                 |
+| ---------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| **行順序の保持**                         | `_row_id` の挿入、`rowNumberInAllBlocks()`、`__orig_row_num__` のサブクエリ | 無効 — 行順序は保証されません                                     |
+| **安定ソートのタイブレーク**                   | `ORDER BY` に `rowNumberInAllBlocks() ASC` を追加                    | 無効 — 同順の場合の並び順は任意になることがあります                          |
+| **Parquet の preserve&#95;order**   | `input_format_parquet_preserve_order=1`                          | 無効 — Parquet の並列読み取りが可能になります                         |
+| **GroupBy の自動 ORDER BY**           | `ORDER BY group_key` を追加 (pandas の既定値 `sort=True`)               | 無効 — グループは任意の順序で返されます                                |
+| **GroupBy の dropna WHERE**         | `WHERE key IS NOT NULL` を追加 (pandas の既定値 `dropna=True`)          | 無効 — NULL グループも含まれます                                 |
+| **GroupBy の set&#95;index**        | グループキーをインデックスとして設定                                               | 無効 — グループキーはカラムのままです                                 |
+| **MultiIndex カラム**                 | `agg({'col': ['sum','mean']})` は MultiIndex カラムを返す               | 無効 — フラットなカラム名 (`col_sum`, `col_mean`)               |
+| **`-If`/`isNaN` ラッパー**             | skipna のための `sumIf(col, NOT isNaN(col))`                         | 無効 — 単純な `sum(col)` (ClickHouse はネイティブで NULL をスキップ)  |
+| **count に対する `toInt64`**           | pandas の int64 に合わせるための `toInt64(count())`                       | 無効 — ネイティブの SQL データ型が返されます                           |
+| **すべて NaN の sum に対する `fillna(0)`** | すべて NaN の sum は 0 を返す (pandas の挙動)                               | 無効 — NULL を返します                                      |
+| **dtype の補正**                      | `abs()` の unsigned→signed など                                     | 無効 — ネイティブの SQL データ型                                 |
+| **インデックスの保持**                      | SQL 実行後に元のインデックスを復元                                              | 無効                                                   |
+| **`first()`/`last()`**             | `argMin/argMax(col, rowNumberInAllBlocks())`                     | `any(col)` / `anyLast(col)` — 高速ですが決定論的ではありません       |
+| **単一 SQL 集約**                      | ColumnExpr の groupby は中間 DataFrame を実体化                          | 遅延演算チェーンに `LazyGroupByAgg` を挿入 — 単一の SQL クエリ         |
+
+***
+
+<div id="enabling">
+  ## パフォーマンスモードを有効にする
+</div>
+
+<div id="using-config">
+  ### config オブジェクトを使う
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# パフォーマンスモードを有効にする
+config.use_performance_mode()
+
+# pandas互換モードに戻す
+config.use_pandas_compat()
+
+# 現在のモードを確認する
+print(config.compat_mode)  # 'pandas' または 'performance'
+```
+
+<div id="using-functions">
+  ### モジュールレベルの関数を使う
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# パフォーマンスモードを有効化
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# 確認
+print(is_performance_mode())  # True
+
+# デフォルトに戻す
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### 便利なインポートを使う
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... 高パフォーマンスな操作 ...
+use_pandas_compat()
+```
+
+<Note>
+  パフォーマンスモードを有効にすると、実行エンジンは自動的に `chdb` に設定されます。`config.use_chdb()` を別途呼び出す必要はありません。
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## パフォーマンスモードを使用する場面
+</div>
+
+**次のような場合はパフォーマンスモードを使用してください。**
+
+* 大規模なデータセット (数十万〜数百万行) を処理する場合
+* 集計中心のワークロード (groupby、sum、mean、count) を実行する場合
+* 行の順序が重要でない場合 (例: 集計結果、レポート、ダッシュボード)
+* SQL のスループットを最大化し、オーバーヘッドを最小限に抑えたい場合
+* メモリ使用量が懸念事項である場合 (Parquet の並列読み取り、中間 DataFrame なし)
+
+**次のような場合は pandas モードのままにしてください。**
+
+* pandas の正確な挙動 (行の順序、MultiIndex、dtypes) が必要な場合
+* `first()`/`last()` が真の最初/最後の行を返すことを前提としている場合
+* 行の順序に依存する `shift()`、`diff()`、`cumsum()` を使用する場合
+* DataStore の出力を pandas と比較するテストを作成している場合
+
+***
+
+<div id="behavior-differences">
+  ## 挙動の違い
+</div>
+
+<div id="row-order">
+  ### 行の順序
+</div>
+
+パフォーマンスモードでは、どの操作でも行の順序は**保証されません**。これには以下が含まれます。
+
+* フィルター結果
+* GroupBy の集計結果
+* `sort_values()` を明示的に指定しない `head()` / `tail()`
+* `first()` / `last()` 集計
+
+結果を順序どおりにしたい場合は、`sort_values()` を明示的に追加してください。
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# 順序なし（高速）
+result = ds.groupby("region")["revenue"].sum()
+
+# 順序あり（高速のまま、ORDER BY が追加されるだけ）
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### GroupBy の結果
+</div>
+
+| 項目                 | Pandas mode                   | Performance mode             |
+| ------------------ | ----------------------------- | ---------------------------- |
+| グループキーの位置          | インデックス (`set_index` による)      | 通常のカラム                       |
+| グループの順序            | キー順にソート (デフォルト)               | 任意の順序                        |
+| NULL グループ          | 除外される (デフォルトは `dropna=True`)  | 含まれる                         |
+| カラムのフォーマット         | 複数集約時は MultiIndex             | フラットな名前 (`col_func`)         |
+| `first()`/`last()` | 決定論的 (行順)                     | 非決定論的 (`any()`/`anyLast()`)  |
+
+<div id="aggregation">
+  ### 集計
+</div>
+
+```python
+config.use_performance_mode()
+
+# 全要素がNaNのグループのSumはNULLを返す（0ではなく）
+# CountはネイティブのUint64を返す（Int64への強制変換なし）
+# -Ifラッパー不要: sumIf()の代わりにsum()を使用
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### 単一 SQL 実行
+</div>
+
+パフォーマンスモードでは、`ColumnExpr` の groupby 集約 (例: `ds[condition].groupby('col')['val'].sum()`) は、pandas モードで用いられる2段階の処理ではなく、**1つのSQLクエリ**として実行されます。
+
+```python
+config.use_performance_mode()
+
+# Pandasモード: SQLクエリ2回 (フィルター → マテリアライズ → グループ化)
+# パフォーマンスモード: SQLクエリ1回 (WHERE + GROUP BY を同一クエリ内で実行)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# 生成された SQL (単一クエリ):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+これにより、中間DataFrameの実体化が不要になり、メモリ使用量と実行時間を大幅に削減できます。
+
+***
+
+<div id="vs-execution-engine">
+  ## 実行エンジンとの比較
+</div>
+
+パフォーマンスモード (`compat_mode`) と実行エンジン (`execution_engine`) は、**互いに独立した設定項目**です。
+
+| 設定                 | 制御内容                        | 値                        |
+| ------------------ | --------------------------- | ------------------------ |
+| `execution_engine` | **どのエンジン**で計算を実行するか         | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | pandas 互換性のために出力形式を調整するかどうか | `pandas`, `performance`  |
+
+`compat_mode='performance'` を設定すると、`execution_engine='chdb'` が自動的に設定されます。これは、パフォーマンスモードが SQL の実行を前提として設計されているためです。
+
+```python
+from chdb.datastore.config import config
+
+# これらは独立している
+config.use_chdb()              # chDBエンジンを強制し、pandas互換性を維持する
+config.use_performance_mode()  # chDBを強制し、pandasのオーバーヘッドを排除する
+```
+
+***
+
+<div id="testing">
+  ## パフォーマンスモード でのテスト
+</div>
+
+パフォーマンスモード のテストを記述する際、結果は行の順序やデータ構造の形式が pandas と異なる場合があります。次の方法を使用してください:
+
+<div id="sort-then-compare">
+  ### ソート後に比較 (集計、フィルター)
+</div>
+
+```python
+# 比較前に同じカラムで両側をソートする
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### 値範囲の確認 (先頭/末尾)
+</div>
+
+```python
+# first() と any() を組み合わせると、グループから任意の要素が返される
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### スキーマと件数 (ORDER BY を伴わない LIMIT)
+</div>
+
+```python
+# head() without sort_values: 行セットは決定論的ではない
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="enable-early">
+  ### 1. スクリプトの冒頭で有効にする
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# 以降のすべての操作に効果が適用される
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. 順序が重要な場合は、明示的にソートする
+</div>
+
+```python
+# 順序を必要とする表示や後続処理のために
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. バッチ/ETLワークロードに使用する
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETLパイプライン — 順序より処理速度が重要
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. セッション内でモードを切り替える
+</div>
+
+```python
+# 重い計算処理向けのパフォーマンスモード
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# 完全一致比較のためにpandasモードに戻す
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## 関連ドキュメント
+</div>
+
+* [実行エンジン](/ja/products/chdb/configuration/execution-engine) — エンジンの選択 (auto/chdb/pandas)
+* [パフォーマンスガイド](/ja/products/chdb/guides/pandas-performance) — 一般的な最適化のヒント
+* [pandas との主な違い](/ja/products/chdb/guides/pandas-differences) — 動作の違い

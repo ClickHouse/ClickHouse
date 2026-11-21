@@ -196,13 +196,12 @@ private:
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
-    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
+    bool streamToViews(UInt64 cycle_epoch);
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

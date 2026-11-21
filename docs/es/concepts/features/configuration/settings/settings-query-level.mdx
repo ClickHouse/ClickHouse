@@ -84,18 +84,18 @@ La configuración ha vuelto a su valor predeterminado:
 ```
 
 <div id="custom_settings">
-  ## SETTINGS personalizados
+  ## Ajustes personalizados
 </div>
 
-Además de los [SETTINGS](/es/reference/settings/session-settings) comunes, los usuarios pueden definir SETTINGS personalizados.
-Los SETTINGS personalizados permiten pasar **parámetros específicos de la sesión** que pueden usarse en consultas, políticas o funciones. Esto resulta útil cuando necesita:
+Además de los [ajustes](/es/reference/settings/session-settings) comunes, los usuarios pueden definir ajustes personalizados.
+Los ajustes personalizados permiten pasar **parámetros específicos de la sesión** que pueden usarse en consultas, políticas o funciones. Esto resulta útil cuando necesita:
 
 * Filtrar datos según la identidad del usuario o la organización
 * Aplicar una lógica de negocio distinta según el contexto
 * Mantener información con estado entre consultas dentro de una sesión
 
-El nombre de un SETTING personalizado debe comenzar con uno de varios prefijos predefinidos de una lista que usted define.
-La lista de prefijos puede especificarse mediante el SETTING del servidor [`custom_settings_prefixes`](/es/reference/settings/server-settings/settings/custom#custom_settings_prefixes), definido en el archivo de configuración del servidor.
+El nombre de un ajuste personalizado debe comenzar con uno de varios prefijos predefinidos de una lista que usted define.
+La lista de prefijos puede especificarse mediante el ajuste del servidor [`custom_settings_prefixes`](/es/reference/settings/server-settings/settings#custom_settings_prefixes), definido en el archivo de configuración del servidor.
 
 En el ejemplo siguiente, se elige `SQL_` como prefijo personalizado:
 
@@ -105,16 +105,16 @@ En el ejemplo siguiente, se elige `SQL_` como prefijo personalizado:
 
 <Note>
   En ClickHouse Cloud no es posible especificar un prefijo personalizado.
-  Todos los SETTINGS de usuario personalizados comienzan con el prefijo `SQL_`.
+  Todos los ajustes de usuario personalizados comienzan con el prefijo `SQL_`.
 </Note>
 
-Para definir un SETTING personalizado, use el comando `SET`:
+Para definir un ajuste personalizado, use el comando `SET`:
 
 ```sql
 SET SQL_a = 123;
 ```
 
-Para obtener el valor actual de una SETTING personalizada, utilice la función `getSetting()`:
+Para obtener el valor actual de una configuración personalizada, utilice la función `getSetting()`:
 
 ```sql
 SELECT getSetting('SQL_a');

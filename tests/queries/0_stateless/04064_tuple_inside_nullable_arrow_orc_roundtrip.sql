@@ -23,6 +23,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064.arrowstream', 'ArrowStream', 'c
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_basic;
 SELECT c0 FROM file(currentDatabase() || '_04064.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))');
 
+-- ORC legacy (Arrow-based) reader
+SELECT c0 FROM file(currentDatabase() || '_04064.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_basic;
 
 -- Nullable empty tuple
@@ -41,6 +44,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_empty.arrowstream', 'ArrowStrea
 -- ORC empty
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_empty.orc', 'ORC', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_tuple_empty;
 SELECT c0 FROM file(currentDatabase() || '_04064_empty.orc', 'ORC', 'c0 Nullable(Tuple())');
+
+-- ORC legacy empty
+SELECT c0 FROM file(currentDatabase() || '_04064_empty.orc', 'ORC', 'c0 Nullable(Tuple())') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_empty;
 
@@ -61,6 +67,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_both.arrowstream', 'ArrowStream
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_both.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_both;
 SELECT c0 FROM file(currentDatabase() || '_04064_both.orc', 'ORC', 'c0 Nullable(Tuple(Nullable(UInt32), String))');
 
+-- ORC legacy both nullable
+SELECT c0 FROM file(currentDatabase() || '_04064_both.orc', 'ORC', 'c0 Nullable(Tuple(Nullable(UInt32), String))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_both;
 
 -- Non-nullable struct with nullable elements (should be unchanged)
@@ -75,6 +84,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_elem.arrow', 'Arrow', 'c0 Tuple
 -- ORC nullable elements
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_elem.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_elem;
 SELECT c0 FROM file(currentDatabase() || '_04064_elem.orc', 'ORC', 'c0 Tuple(Nullable(UInt32), String)');
+
+-- ORC legacy nullable elements
+SELECT c0 FROM file(currentDatabase() || '_04064_elem.orc', 'ORC', 'c0 Tuple(Nullable(UInt32), String)') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_elem;
 
@@ -91,6 +103,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_plain.arrow', 'Arrow', 'c0 Tupl
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_plain.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_plain;
 SELECT c0 FROM file(currentDatabase() || '_04064_plain.orc', 'ORC', 'c0 Tuple(UInt32, String)');
 
+-- ORC legacy plain
+SELECT c0 FROM file(currentDatabase() || '_04064_plain.orc', 'ORC', 'c0 Tuple(UInt32, String)') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_plain;
 
 -- Nested tuple inside nullable struct
@@ -105,6 +120,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_nested.arrow', 'Arrow', 'c0 Nul
 -- ORC nested
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_nested.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_nested;
 SELECT c0 FROM file(currentDatabase() || '_04064_nested.orc', 'ORC', 'c0 Nullable(Tuple(Tuple(UInt32, String), UInt64))');
+
+-- ORC legacy nested
+SELECT c0 FROM file(currentDatabase() || '_04064_nested.orc', 'ORC', 'c0 Nullable(Tuple(Tuple(UInt32, String), UInt64))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_nested;
 
@@ -121,6 +139,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_infer.arrow', 'Arrow');
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_infer.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_infer;
 SELECT c0 FROM file(currentDatabase() || '_04064_infer.orc', 'ORC');
 
+-- ORC legacy infer
+SELECT c0 FROM file(currentDatabase() || '_04064_infer.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_infer;
 
 -- Named tuple
@@ -135,6 +156,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_named.arrow', 'Arrow', 'c0 Null
 -- ORC named
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_named.orc', 'ORC', 'c0 Nullable(Tuple(a UInt32, b String))') SELECT c0 FROM test_nullable_tuple_named;
 SELECT c0 FROM file(currentDatabase() || '_04064_named.orc', 'ORC', 'c0 Nullable(Tuple(a UInt32, b String))');
+
+-- ORC legacy named
+SELECT c0 FROM file(currentDatabase() || '_04064_named.orc', 'ORC', 'c0 Nullable(Tuple(a UInt32, b String))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_named;
 
@@ -151,6 +175,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_allnull.arrow', 'Arrow', 'c0 Nu
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_allnull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_allnull;
 SELECT c0 FROM file(currentDatabase() || '_04064_allnull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))');
 
+-- ORC legacy all null
+SELECT c0 FROM file(currentDatabase() || '_04064_allnull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_allnull;
 
 -- No-NULL column (nullable type, zero actual NULLs)
@@ -165,6 +192,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_nonull.arrow', 'Arrow', 'c0 Nul
 -- ORC no null
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_nonull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_nonull;
 SELECT c0 FROM file(currentDatabase() || '_04064_nonull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))');
+
+-- ORC legacy no null
+SELECT c0 FROM file(currentDatabase() || '_04064_nonull.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_nonull;
 
@@ -181,6 +211,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_single.arrow', 'Arrow', 'c0 Nul
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_single.orc', 'ORC', 'c0 Nullable(Tuple(UInt32))') SELECT c0 FROM test_nullable_tuple_single;
 SELECT c0 FROM file(currentDatabase() || '_04064_single.orc', 'ORC', 'c0 Nullable(Tuple(UInt32))');
 
+-- ORC legacy single
+SELECT c0 FROM file(currentDatabase() || '_04064_single.orc', 'ORC', 'c0 Nullable(Tuple(UInt32))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_single;
 
 -- Deeply nested: nullable tuple inside nullable tuple
@@ -195,6 +228,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_deep.arrow', 'Arrow', 'c0 Nulla
 -- ORC deep nested
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_deep.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_deep;
 SELECT c0 FROM file(currentDatabase() || '_04064_deep.orc', 'ORC', 'c0 Nullable(Tuple(Nullable(Tuple(UInt32, String)), UInt64))');
+
+-- ORC legacy deep nested
+SELECT c0 FROM file(currentDatabase() || '_04064_deep.orc', 'ORC', 'c0 Nullable(Tuple(Nullable(Tuple(UInt32, String)), UInt64))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_deep;
 
@@ -211,6 +247,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_arr.arrow', 'Arrow', 'c0 Nullab
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_arr.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_arr;
 SELECT c0 FROM file(currentDatabase() || '_04064_arr.orc', 'ORC', 'c0 Nullable(Tuple(Array(UInt32), String))');
 
+-- ORC legacy array elem
+SELECT c0 FROM file(currentDatabase() || '_04064_arr.orc', 'ORC', 'c0 Nullable(Tuple(Array(UInt32), String))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_arr;
 
 -- Multiple nullable tuple columns
@@ -225,6 +264,9 @@ SELECT c0, c1 FROM file(currentDatabase() || '_04064_multi.arrow', 'Arrow', 'c0 
 -- ORC multi col
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_multi.orc', 'ORC') SELECT c0, c1 FROM test_nullable_tuple_multi;
 SELECT c0, c1 FROM file(currentDatabase() || '_04064_multi.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String)), c1 Nullable(Tuple(Float64))');
+
+-- ORC legacy multi col
+SELECT c0, c1 FROM file(currentDatabase() || '_04064_multi.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String)), c1 Nullable(Tuple(Float64))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_multi;
 
@@ -242,6 +284,9 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch1.arrow
 -- ORC: read nullable file as non-nullable
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch1.orc', 'ORC', 'c0 Tuple(UInt32, String)');
 
+-- ORC legacy: read nullable file as non-nullable
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch1.orc', 'ORC', 'c0 Tuple(UInt32, String)') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_mismatch1;
 
 -- Type hint mismatch: file has Tuple(...), read as Nullable(Tuple(...)) (add nullable wrapper)
@@ -257,6 +302,9 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch2.arrow
 
 -- ORC: read non-nullable file as nullable
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch2.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))');
+
+-- ORC legacy: read non-nullable file as nullable
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_mismatch2.orc', 'ORC', 'c0 Nullable(Tuple(UInt32, String))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_mismatch2;
 
@@ -289,6 +337,9 @@ SELECT * FROM file(currentDatabase() || '_04064_import_nested.arrow', 'Arrow', '
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_import_nested.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_import_nested;
 SELECT * FROM file(currentDatabase() || '_04064_import_nested.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))') SETTINGS input_format_orc_import_nested = 1;
 
+-- ORC legacy import_nested
+SELECT * FROM file(currentDatabase() || '_04064_import_nested.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))') SETTINGS input_format_orc_import_nested = 1, input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_import_nested;
 
 -- Array(Nullable(Tuple)) without named elements: round-trip as a single column, no flattening
@@ -303,6 +354,9 @@ SELECT c0 FROM file(currentDatabase() || '_04064_arr_unnamed.arrow', 'Arrow', 'c
 -- ORC unnamed
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_arr_unnamed.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_arr_unnamed;
 SELECT c0 FROM file(currentDatabase() || '_04064_arr_unnamed.orc', 'ORC', 'c0 Array(Nullable(Tuple(UInt32, String)))');
+
+-- ORC legacy unnamed
+SELECT c0 FROM file(currentDatabase() || '_04064_arr_unnamed.orc', 'ORC', 'c0 Array(Nullable(Tuple(UInt32, String)))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_arr_unnamed;
 
@@ -320,6 +374,9 @@ SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.arrow', 'Arrow',
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_arr_nested_elem;
 SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))') SETTINGS input_format_orc_import_nested = 1;
 
+-- ORC legacy import_nested
+SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))') SETTINGS input_format_orc_import_nested = 1, input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_arr_nested_elem;
 
 -- LowCardinality(Nullable(String)) hint with no physical nulls in the file: the ORC reader must still wrap the column as nullable
@@ -336,6 +393,9 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.arrow', 
 -- ORC: no physical nulls, LowCardinality(Nullable(String)) hint
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'ORC', 'c0 LowCardinality(Nullable(String))');
 
+-- ORC legacy: no physical nulls, LowCardinality(Nullable(String)) hint
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'ORC', 'c0 LowCardinality(Nullable(String))') SETTINGS input_format_orc_use_fast_decoder = 0;
+
 DROP TABLE test_nullable_tuple_lc_string;
 
 -- LowCardinality(Nullable(String)) hint WITH physical nulls: Arrow nulls must be preserved, not turned into empty strings
@@ -344,3 +404,4 @@ SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.arrow', 'Arrow', 
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.orc', 'ORC') SELECT arrayJoin(['x', NULL]::Array(Nullable(String))) AS x;
 SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'x LowCardinality(Nullable(String))') ORDER BY x;
+SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'x LowCardinality(Nullable(String))') ORDER BY x SETTINGS input_format_orc_use_fast_decoder = 0;

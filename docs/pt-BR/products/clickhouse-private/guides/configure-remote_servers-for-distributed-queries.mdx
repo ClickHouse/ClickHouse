@@ -1,0 +1,88 @@
+---
+noindex: true
+title: "Configurar remote_servers para consultas distribuídas"
+sidebarTitle: "Configurar remote_servers"
+description: "Configure com segurança o `remote_servers` do ClickHouse para distribuir dados em shards entre vários clusters ClickHouse Private usando Secrets do Kubernetes e a diretiva `@from_env`."
+---
+
+Configure com segurança o `remote_servers` do ClickHouse para distribuir dados em shards entre vários clusters ClickHouse Private usando Secrets do Kubernetes e a diretiva `@from_env`.
+
+<div id="when-to-use-remote_servers">
+  ## Quando usar remote_servers
+</div>
+
+[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) define uma topologia de cluster nomeada que o ClickHouse usa ao executar consultas distribuídas por meio de [tabelas Distributed](https://clickhouse.com/docs/engines/table-engines/special/distributed) ou da função de tabela [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
+
+Em um único cluster ClickHouse Private, as réplicas já se coordenam por meio do ClickHouse Keeper e do [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) -- a mesma arquitetura usada no ClickHouse Cloud -- portanto, `remote_servers` não é necessário para fins de replicação. Essa configuração cobre a grande maioria dos casos de uso.
+
+Fazer sharding dos dados em vários clusters ClickHouse Private adiciona uma complexidade operacional significativa e deve ser considerado um último recurso. Se você acredita que sua carga de trabalho exige isso, recomendamos fortemente conversar conosco primeiro para que possamos avaliar se essa é realmente a abordagem certa.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* `onprem-clickhouse-cluster` Chart do Helm versão **1.1.151 ou superior**
+* Dois clusters ClickHouse Private implantados (este guia usa `default-xx-01` e `default-xx-02`)
+* [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) do Kubernetes chamados `default-xx-01-password` e `default-xx-02-password`, contendo as senhas dos clusters
+
+<div id="the-pattern">
+  ## O padrão
+</div>
+
+1. Secrets do Kubernetes armazenam os valores sensíveis (senhas do cluster).
+2. `secretKeyRef` injeta os valores como variáveis de ambiente no contêiner do ClickHouse.
+3. A configuração do ClickHouse lê os valores em tempo de execução usando a diretiva [`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk).
+
+Isso mantém os dados sensíveis fora dos manifests gerados.
+
+> Se você integrar com armazenamentos externos de secrets (por exemplo, HashiCorp Vault, AWS Secrets Manager), use o [Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) para montar secrets e [carregá-los como variáveis de ambiente](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var). O padrão `@from_env` funciona da mesma forma, independentemente de como a variável de ambiente é definida.
+
+<div id="helm-values-example">
+  ## Exemplo de values do Helm
+</div>
+
+Cada shard é acessado por meio do serviço `-any` do seu cluster -- um serviço do Kubernetes que encaminha para qualquer réplica disponível nesse cluster. Isso é mais robusto do que usar nomes DNS individuais de pods do Kubernetes, que podem mudar com o tempo.
+
+```yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+<div id="service-hostname-format">
+  ## Formato do hostname do serviço
+</div>
+
+O hostname do serviço `-any` segue o padrão:
+
+```text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+Esse padrão garante que dados sensíveis não sejam inseridos diretamente em manifests por meio de templates. O campo `additionalEnvVars` define variáveis de ambiente a partir de Secrets do Kubernetes usando `secretKeyRef`, e a diretiva `@from_env` na configuração do ClickHouse carrega esses valores em tempo de execução.

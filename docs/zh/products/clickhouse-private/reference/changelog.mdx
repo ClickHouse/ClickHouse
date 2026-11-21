@@ -1,0 +1,239 @@
+---
+noindex: true
+title: "更新日志"
+---
+
+***
+
+<div id="airgap-2026-06-09">
+  ## airgap-2026-06-09
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.311        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+* feat(airgap): 公开 plainRewritableDiskForSystemTables 标志 (#35033)
+* feat(operator): 添加 arm64 构建 (#34389)
+* feat(preflight): 添加缓存比例检查 [AIR-127] (#34709)
+* feat(airgap): 添加 Shared Catalog 迁移预检 (#34708)
+* feat(onprem): 添加 ResourceQuota，强制每个命名空间只能有一个 ClickHouseCluster (#34615)
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* fix(airgap): 安装集群前先等待 CRD 完成建立 (#34834)
+* fix(onprem): 允许 Hydra 子节点的 Keeper 副本数为 0 (#34693)
+* fix(operator): 推送的 fips 构建缺少正确的构建参数 (#34600)
+* fix(onprem-clickhouse-cluster): 将已弃用的功能开关固定为 operator 预期的默认值 (#34417)
+
+***
+
+<div id="airgap-2026-05-28">
+  ## airgap-2026-05-28
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+***
+
+<div id="airgap-2026-05-27">
+  ## airgap-2026-05-27
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.302        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+* feat(airgap): 将 Git SHA 添加到私有文档中 (#34183)
+* feat(airgap): 在 Helm 图表中支持 BackupConfiguration (#33746)
+* feat(airgap): 在预检中加入已弃用的功能开关 (#33545)
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* fix(docs): 修复 airgap 单页文档的渲染问题 (#34288)
+* fix(airgap): 修复私有文档中的锚点链接问题 (#34122)
+
+***
+
+<div id="airgap-2026-05-21">
+  ## airgap-2026-05-21
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+* feat(clickhouse-operator): FIPS 合规构建标志及运行时支持 (#29677)
+* feat(onprem-clickhouse-cluster): 在 onprem Helm 图表中增加对 gcp 基础配置的支持 (#33501)
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复(onprem-clickhouse-cluster)：禁用 enableDynamicSSDCacheConfiguration (#33700)
+* 修复(onprem-clickhouse-cluster)：移除未使用的 `openssl.fips` 设置 (#33881))
+* 修复(onprem-clickhouse-cluster)：在需要 TLS 时，从 extraConfig 中移除 cloud.port (#33548)
+* 修复(clickhouse-operator)：将 SsdCacheConfiguration.IsOnEmptyDir 标记为可选项 (#33570)
+
+***
+
+<div id="airgap-2026-04-23">
+  ## airgap-2026-04-23
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18231.1 |
+| helm/clickhouse-operator-helm  | 1.18231.1      |
+| helm/onprem-clickhouse-cluster | 1.1.260        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* fix(onprem-helm-chart): 允许配置 storageClass 参数和 allowedTopologies (#32776)
+
+***
+
+<div id="airgap-2026-04-15">
+  ## airgap-2026-04-15
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.245        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+* feat(airgap)：默认启用 Shared Catalog 和无状态服务器 (#32481) ——请参阅[不兼容变更](/zh/products/clickhouse-private/reference/breaking-changes)和[迁移到 Shared Catalog](/zh/products/clickhouse-private/guides/migrate-to-shared-catalog)
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复(airgap-management)：使用源集群的 S3 连接执行备份恢复 (#32612)
+
+***
+
+<div id="airgap-2026-04-14">
+  ## airgap-2026-04-14
+</div>
+
+<div id="component-versions">
+  ### 组件版本
+</div>
+
+| 组件                             | 版本             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.234        |
+| airgap-management              | 1.83.1         |
+| helm/airgap-management         | 1.83.1         |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新功能
+</div>
+
+* feat(airgap): 为 onprem-clickhouse-cluster Helm 图表提供 Shared Catalog 支持 (#31779)
+* feat(airgap): 为 onprem-clickhouse-cluster Helm 图表添加无状态服务器支持 (#32202)
+* feat(airgap): 添加 support-bundle Helm 图表 (#32271)
+* feat(airgap): 使 airgap API 满足 FIPS 合规要求 (#31811)

@@ -281,18 +281,16 @@ while IFS='|' read -r id concl stat created; do
             cls="ok"; n_ok=$((n_ok+1)) ;;
         failure)
             # GUARD == the version-bump-PR guard specifically: the traceback must
-            # show the guard's frame `in _assert_no_open_version_bump_prs`
-            # (ci/jobs/auto_release_job.py) AND a `raise RuntimeError` source
-            # line. Match that combination, NOT a line number (which drifts) and
-            # NOT bare `raise RuntimeError` — other failures raise AssertionError
-            # and must classify as OTHER.
-            # `_prepare` is the legacy frame, still inside the DAYS lookback.
+            # show both the `_prepare` frame AND a `raise RuntimeError` source line.
+            # Match the combination, NOT a line number (which drifts) and NOT bare
+            # `raise RuntimeError` — other `_prepare` failures (e.g. the `assert refs`
+            # candidate check) raise AssertionError and must classify as OTHER.
             if flog="$(fetch_failed_log "$id")"; then
                 # Use here-strings, NOT `printf "$flog" | grep -q`: grep -q exits on
                 # first match and SIGPIPEs the producer (rc 141), which `set -o pipefail`
                 # propagates, short-circuiting the && to the OTHER branch — silently
                 # misclassifying a real GUARD failure on a multi-MB log.
-                if grep -qE 'in (_assert_no_open_version_bump_prs|_prepare)' <<<"$flog" \
+                if grep -q 'in _prepare' <<<"$flog" \
                    && grep -q 'raise RuntimeError' <<<"$flog"; then
                     cls="GUARD"; n_guard=$((n_guard+1))
                 else
@@ -366,14 +364,10 @@ for r in runs:
 echo
 
 # ============================================================================
-# 4. Live guard re-check — exactly the query the AutoReleases job runs
+# 4. Live guard re-check — exactly the query auto_release.py runs
 # ============================================================================
-# `_assert_no_open_version_bump_prs` in ci/jobs/auto_release_job.py scopes the
-# search with `in:title`, so a PR that merely mentions "Update version_date.tsv"
-# in its body no longer trips the guard. Match that here, otherwise section 4
-# reports body-only mentions as live blockers that the job would actually ignore.
-echo "== 4. Guard query NOW (open PRs with \"Update version_date.tsv\" in:title) =="
-GUARD_JSON="$(GH pr list --repo "$REPO" --state open --search "Update version_date.tsv in:title" \
+echo "== 4. Guard query NOW (open PRs matching \"Update version_date.tsv\") =="
+GUARD_JSON="$(GH pr list --repo "$REPO" --state open --search "Update version_date.tsv" \
     --json number,title,author,headRefName 2>/dev/null)" \
     || { echo "ERROR: failed to run guard query (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
 need_json "$GUARD_JSON" "guard PR query" || exit 3

@@ -212,7 +212,7 @@ ClickPipes for Kafka 现已支持为使用 SASL 和公共 SSL/TLS 的 Kafka 消�
 
 <br />
 
-*Kafka 和 Kinesis 的扩缩容控制 (私有 Beta)*
+*Kafka 和 Kinesis 的扩缩容控制 (私有 Beta)&#x20;*
 
 高吞吐量场景可能需要更多资源，才能满足数据量和延迟方面的需求。我们正在为 ClickPipes 推出横向扩缩容功能，可直接通过 Cloud Console 使用。该功能目前处于私有 Beta 阶段，使您能够根据实际需求更高效地调整资源规模。如需加入 Beta，请联系 [support](https://clickhouse.com/support/program)。
 
@@ -316,7 +316,7 @@ ClickHouse 提供了诸如 [`DESCRIBE`](/zh/reference/statements/describe-table)
   ### 查询日志洞察
 </div>
 
-我们在 Cloud 控制台中推出的全新 Query Insights UI，让 ClickHouse 内置的查询日志更易于使用。ClickHouse 的 `system.query_log` 表是查询优化、调试以及监控整体集群健康状况和性能的关键信息来源。唯一需要注意的是：它包含 70 多个字段，而且每个查询会生成多条记录，因此理解查询日志有较高的学习门槛。这个 Query Insights 的初始版本为后续进一步简化查询调试和优化模式提供了蓝图。随着我们持续迭代这一功能，我们非常希望听到你的反馈，欢迎随时联系我们——非常感谢你的意见。
+我们在 Cloud 控制台中推出的全新 Query Insights UI，让 ClickHouse 内置的查询日志更易于使用。ClickHouse 的 `system.query_log` 表是查询优化、调试以及监控整体集群健康状况和性能的关键信息来源。唯一需要注意的是：它包含 70 多个字段，而且每个查询会生成多条记录，因此理解查询日志有较高的学习门槛。这个 Query Insights 的初始版本为后续工作提供了方向，帮助进一步简化查询调试和优化。随着我们持续迭代这一功能，我们非常希望听到你的反馈，欢迎随时联系我们——非常感谢你的意见。
 
 <Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="显示查询性能指标和分析的 ClickHouse Cloud Query Insights UI" border />
 
@@ -326,7 +326,7 @@ ClickHouse 提供了诸如 [`DESCRIBE`](/zh/reference/statements/describe-table)
 
 这可能是呼声最高的功能之一：您现在可以将 ClickHouse Cloud 中的 [Prometheus](https://prometheus.io/) 指标导出到 [Grafana](https://grafana.com/) 和 [Datadog](https://www.datadoghq.com/) 进行可视化。Prometheus 提供了一种开源方案，可用于监控 ClickHouse 并设置自定义告警。您可以通过 [ClickHouse Cloud API](/zh/products/cloud/features/monitoring/prometheus) 访问您的 ClickHouse Cloud 服务的 Prometheus 指标。该功能目前处于私有预览阶段。如需为您的组织启用此功能，请联系[支持团队](https://clickhouse.com/support/program)。
 
-<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="显示来自 ClickHouse Cloud 的 Prometheus 指标的 Grafana 仪表板" border />
+<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="Grafana 仪表板显示来自 ClickHouse Cloud 的 Prometheus 指标" border />
 
 <div id="other-features">
   ### 其他功能
@@ -446,9 +446,9 @@ ClickHouse Develop 培训课程包含 12 个免费培训模块。在此之前，
   ### 使用 ClickPipes 从 S3 和 GCS 加载数据
 </div>
 
-你可能已经注意到，在我们新近发布的 Cloud 控制台中，新增了一个名为“数据源”的部分。“数据源”页面由 ClickPipes 提供支持，这是 ClickHouse Cloud 的一项原生功能，可让你轻松地将来自多种来源的数据导入 ClickHouse Cloud。
+你可能已经注意到，在我们新近发布的云控制台中，新增了一个名为“数据源”的部分。“数据源”页面由 ClickPipes 提供支持，这是 ClickHouse Cloud 的一项原生功能，可让你轻松地将来自多种来源的数据导入 ClickHouse Cloud。
 
-在最近一次 ClickPipes 更新中，我们新增了可直接从亚马逊 S3 和 Google Cloud Storage 上传数据的功能。虽然你仍然可以使用我们内置的表函数，但 ClickPipes 是一项通过 UI 提供的全托管服务，只需点击几下，即可从 S3 和 GCS 摄取数据。该功能目前仍处于私有预览阶段，不过你现在就可以通过 Cloud 控制台试用。
+在最近一次 ClickPipes 更新中，我们新增了可直接从 Amazon S3 和 Google Cloud Storage 上传数据的功能。虽然你仍然可以使用我们内置的表函数，但 ClickPipes 是一项通过 UI 提供的全托管服务，只需点击几下，即可从 S3 和 GCS 摄取数据。该功能目前仍处于私有预览阶段，不过你现在就可以通过Cloud 控制台试用。
 
 <Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="显示从 S3 和 GCS 存储桶加载数据配置选项的 ClickPipes 界面" border />
 
@@ -739,4 +739,4 @@ ClickHouse 可以快速查询您的所有大型数据集，但前提是这些数
   ### 可靠性变更
 </div>
 
-* 面向用户的向后不兼容变更：此前，在某些条件下，两个功能 ([is&#95;deleted](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) 和 `OPTIMIZE CLEANUP`) 可能导致 ClickHouse 中的数据损坏。为了保护用户数据的完整性，同时保留该功能的核心能力，我们调整了这一功能的工作方式。具体来说，MergeTree 设置 `clean_deleted_rows` 现已弃用，且不再生效。默认情况下不允许使用 `CLEANUP` 关键字 (如需使用，必须启用 `allow_experimental_replacing_merge_with_cleanup`) 。如果你决定使用 `CLEANUP`，则需要确保它始终与 `FINAL` 一起使用，并且必须保证在运行 `OPTIMIZE FINAL CLEANUP` 之后，不会再插入旧版本的行。
+* 面向用户的向后不兼容变更：此前，在特定条件下，两个功能 ([is&#95;deleted](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) 和 `OPTIMIZE CLEANUP`) 可能会导致 ClickHouse 中的数据损坏。为了保护用户数据的完整性，同时保留该功能的核心能力，我们调整了这一功能的工作机制。具体来说，MergeTree 设置 `clean_deleted_rows` 已弃用，且不再生效。默认情况下不允许使用 `CLEANUP` 关键字 (如需使用，必须启用 `allow_experimental_replacing_merge_with_cleanup`) 。如果你决定使用 `CLEANUP`，则需要确保它始终与 `FINAL` 一同使用，并且必须保证在运行 &#96;&#96;OPTIMIZE FINAL CLEANUP&#96;&#96;&#96; 之后，不会再插入旧版本的行。

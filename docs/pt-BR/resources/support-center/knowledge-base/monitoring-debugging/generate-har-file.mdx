@@ -6,19 +6,9 @@ keywords: ['arquivo HAR', 'HTTP Archive']
 description: 'Um arquivo HAR (HTTP Archive) registra a atividade de rede no seu navegador. Ele pode ajudar nossa equipe de suporte a diagnosticar lentidão no carregamento de páginas, falhas em solicitações ou outros problemas de rede.'
 ---
 
-<Warning>
-  Os arquivos HAR podem conter cookies de sessão ou outros dados sensíveis.
-  Compartilhe-os apenas com pessoal de suporte autorizado.
-</Warning>
+{frontMatter.description}
 
-<Note title="Capturando tentativas de login e outros fluxos de várias etapas">
-  Alguns problemas abrangem mais de um carregamento de página, como um login que redireciona para o seu provedor de identidade e depois de volta. Por padrão, seu navegador limpa o log de rede a cada navegação, então o arquivo HAR resultante pode acabar ficando quase vazio. Ao reproduzir um problema como esse, ative a opção do seu navegador para preservar os logs entre carregamentos de página antes de começar:
-
-  * Chrome / Edge / Safari: ative &quot;Preserve log&quot;
-  * Firefox: ative &quot;Persist Logs&quot;
-
-  Se desejar, é seguro desmarcar essa opção novamente depois que o arquivo HAR tiver sido gerado.
-</Note>
+{/* truncate */}
 
 <div id="from-google-chrome">
   ## No Google Chrome
@@ -66,3 +56,8 @@ description: 'Um arquivo HAR (HTTP Archive) registra a atividade de rede no seu 
 1. Renomeie o arquivo com um nome curto e descritivo (por exemplo, login-issue.har).
 2. Compacte o arquivo (opcional, mas recomendado).
 3. Anexe-o ao seu chamado de suporte ou envie-o por e-mail para o contato de suporte responsável pelo seu caso.
+
+<Note>
+  Arquivos HAR podem conter cookies de sessão ou outros dados sensíveis.
+  Compartilhe-os apenas com a equipe de suporte autorizada.
+</Note>

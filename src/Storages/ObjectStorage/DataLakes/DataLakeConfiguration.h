@@ -21,7 +21,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatFactory.h>
 #include <optional>
 #include <memory>
 #include <mutex>
@@ -39,6 +38,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -90,17 +90,6 @@ public:
     {
 #if USE_AVRO
         return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
-    }
-
-    /// Only DeltaLake can onboard an existing table from a columnless CREATE (schema read from the
-    /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
-    bool supportsCreateFromExistingTableInCatalog() const override
-    {
-#if USE_PARQUET
-        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
 #else
         return false;
 #endif
@@ -235,10 +224,7 @@ public:
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
-        {
-            validateLakeSchemaColumnNames(schema, DataLakeMetadata::name);
             return ColumnsDescription(std::move(schema));
-        }
         return std::nullopt;
     }
 
@@ -287,11 +273,8 @@ public:
     {
         auto metadata = getMetadata()->buildStorageMetadataFromState(state, context);
         if (metadata)
-        {
-            validateLakeSchemaColumnNames(metadata->getColumns().getAll(), DataLakeMetadata::name);
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
                 metadata->getColumns().toString(/* include_comments */false));
-        }
         return metadata;
     }
 
@@ -366,17 +349,12 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        /// When the storage carries no format settings (table functions pass none),
-        /// derive them from the context. Substituting FormatSettings{} here (struct
-        /// defaults, e.g. `output_string_as_string = false`) made table-function
-        /// writes produce parquet without the `String` annotation, unreadable for
-        /// external Iceberg readers such as Spark.
         return getMetadata()->write(
             sample_block,
             table_id,
             object_storage,
             shared_from_this(),
-            format_settings.has_value() ? *format_settings : getFormatSettings(context),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
             context,
             catalog);
     }
@@ -417,16 +395,11 @@ public:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
-        this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
-        /// The table works through a private copy of the disk's object storage: the decorators
-        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
-        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
-        /// corrupt the disk's own storage.
-        ready_object_storage = disk->getObjectStorage()->clone();
+        ready_object_storage = disk->getObjectStorage();
     }
 
     bool supportsPrewhere() const override
@@ -436,18 +409,6 @@ public:
 #else
         return false;
 #endif
-    }
-
-    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
-    {
-        return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
-    }
-
-    /// Data lakes never overwrite an existing data file in place: a new snapshot references new
-    /// files. This makes the lazy-materialization reread race-free regardless of the backend.
-    bool dataFilesAreImmutable() const override
-    {
-        return true;
     }
 
 private:

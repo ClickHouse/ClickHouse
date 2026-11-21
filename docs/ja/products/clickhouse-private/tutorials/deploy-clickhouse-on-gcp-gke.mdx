@@ -1,0 +1,1455 @@
+---
+noindex: true
+title: "GCP GKE に ClickHouse をデプロイする"
+sidebarTitle: "GCP へのデプロイ"
+description: "このチュートリアルでは、Google Kubernetes Engine（GKE）を使用して Google Cloud Platform に ClickHouse Private をデプロイする方法を説明します。"
+---
+
+このチュートリアルでは、Google Kubernetes Engine (GKE) を使用して Google Cloud Platform に ClickHouse Private をデプロイする手順を説明します。標準デプロイと FIPS 140-2 準拠デプロイの両方を扱います。FIPS 固有の手順には、本文全体を通して **(FIPS)** の印が付いています。FIPS モードを有効にするには、`00-env.sh` で `ENABLE_FIPS=true` を設定してください。
+
+このチュートリアルは、番号付きスクリプト (`00-env.sh` から `19-verify`) を順番に実行する構成になっています。各スクリプトは自己完結型で、環境ファイルを読み込みます。
+
+インフラストラクチャの詳細な仕様については、[reference/infrastructure-requirements.md](/ja/products/clickhouse-private/reference/infrastructure-requirements-reference) を参照してください。
+
+***
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 課金が有効化された GCP プロジェクト
+* `gcloud` CLI がインストールされ、認証済みであること
+* `kubectl` がインストールされていること
+* `helm` v3.x がインストールされていること
+* `skopeo` がインストールされていること (コンテナーイメージのコピー用)
+* ClickHouse ECR への閲覧アクセス権を持つ AWS認証情報 (イメージのコピー用)
+* プライベートクラスターにアクセスするための、VPC 内の **踏み台サーバー**
+* 適切な権限を持つ **デプロイ用サービスアカウント** (以下を参照)
+* **(FIPS)** Red Hat UBI8 コンテナーイメージへのアクセス
+
+***
+
+<Steps>
+  <Step stepNumber={0}>
+    ## ステップ 0: サービスアカウントのセットアップ
+
+    ユーザーの直接認証が制限される FedRAMP 環境では、権限借用用のサービスアカウントを作成します。
+
+    ### オプション 1: GCP コンソールから
+
+    1. **IAM &amp; Admin** &gt; **Service Accounts** に移動します
+    2. **+ CREATE SERVICE ACCOUNT** をクリックします
+    3. 名前に `clickhouse-deployer`、ID に `clickhouse-deployer` を入力します
+    4. 次のロールを追加します:
+
+    | ロール                                     | 用途                                |
+    | --------------------------------------- | --------------------------------- |
+    | `roles/compute.networkAdmin`            | VPC、サブネット、NAT、ルーターの作成と管理          |
+    | `roles/container.admin`                 | GKE クラスターとノードプールの作成と管理            |
+    | `roles/storage.admin`                   | GCS バケットの作成と管理                    |
+    | `roles/iam.serviceAccountAdmin`         | サービスアカウントの作成と管理                   |
+    | `roles/iam.serviceAccountUser`          | Workload Identity でサービスアカウントを使用する |
+    | `roles/iam.workloadIdentityUser`        | Workload Identity バインディングを設定する    |
+    | `roles/artifactregistry.admin`          | Artifact Registry リポジトリの作成と管理     |
+    | `roles/resourcemanager.projectIamAdmin` | プロジェクトの IAM ポリシーの管理               |
+
+    1. 踏み台サーバーの Compute Engine サービスアカウントに Token Creator 権限を付与します。
+
+    ### オプション 2: CLI から
+
+    ```ini
+    PROJECT_ID=your-project-id
+    SA_EMAIL=clickhouse-deployer@${PROJECT_ID}.iam.gserviceaccount.com
+    COMPUTE_SA=<COMPUTE_PROJECT_NUMBER>-compute@developer.gserviceaccount.com
+
+    # Create service account
+    gcloud iam service-accounts create clickhouse-deployer \
+      --display-name="ClickHouse Deployer" \
+      --project=${PROJECT_ID}
+
+    # Grant roles
+    for role in \
+      roles/compute.networkAdmin \
+      roles/container.admin \
+      roles/storage.admin \
+      roles/iam.serviceAccountAdmin \
+      roles/iam.serviceAccountUser \
+      roles/iam.workloadIdentityUser \
+      roles/artifactregistry.admin \
+      roles/resourcemanager.projectIamAdmin
+    do
+      gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+        --member="serviceAccount:${SA_EMAIL}" \
+        --role="${role}"
+    done
+
+    # Allow compute SA to impersonate it
+    gcloud iam service-accounts add-iam-policy-binding ${SA_EMAIL} \
+      --member="serviceAccount:${COMPUTE_SA}" \
+      --role="roles/iam.serviceAccountTokenCreator" \
+      --project=${PROJECT_ID}
+    ```
+
+    ### 踏み台サーバーで権限借用を設定する
+
+    ```text
+    # Set impersonation for deployer service account
+    gcloud config set auth/impersonate_service_account clickhouse-deployer@${GCP_PROJECT}.iam.gserviceaccount.com
+
+    # Verify it works
+    gcloud compute networks list --project=${GCP_PROJECT}
+    ```
+
+    後で権限借用を解除するには:
+
+    ```bash
+    gcloud config unset auth/impersonate_service_account
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={1}>
+    ## ステップ1: 環境変数の設定 (`00-env.sh`)
+
+    このファイルを作成し、他のスクリプトを実行する前に読み込んでください。各値はご使用の環境に合わせて更新してください。
+
+    ```bash expandable
+    #!/bin/bash
+    # ============================================
+    # ClickHouse Private GCP - Environment Setup
+    # ============================================
+    # Update these values for your environment
+
+    # GCP Project and Region
+    export GCP_PROJECT=your-project-id
+    export GCP_REGION=us-central1
+    export GCP_ZONES="us-central1-a,us-central1-b,us-central1-c"
+
+    # GKE Cluster
+    export GKE_CLUSTER_NAME=clickhouse-cluster
+
+    # ClickHouse Cluster (can have multiple per GKE cluster)
+    export CLUSTER_NAME=default-xx-01
+    export NAMESPACE=ns-${CLUSTER_NAME}
+
+    # Networking - Use existing VPC where bastion resides
+    export VPC_NAME=clickhouse-vpc
+    export SUBNET_NAME=gke-subnet
+    export SUBNET_RANGE=10.1.0.0/24
+    export POD_RANGE=10.244.0.0/14         # Must be on /14 boundary (3rd octet divisible by 4)
+    export SERVICE_RANGE=10.252.0.0/20     # Must be on /20 boundary
+    export MASTER_IPV4_CIDR=172.16.0.0/28  # For private cluster control plane
+    export BASTION_SUBNET_RANGE=10.0.0.0/24  # Bastion subnet (for master-authorized-networks)
+
+    # Storage
+    export BUCKET_NAME=clickhouse-data-${GCP_PROJECT}
+    export S3_KEY_PREFIX=ch-s3-$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+    # Service Accounts
+    export GSA_NAME=clickhouse
+    export GSA_EMAIL=${GSA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com
+    export KSA_NAME=clickhouse
+
+    # Artifact Registry
+    export GAR_REPO_NAME=clickhouse
+    export GAR_HOST=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPO_NAME}
+
+    # FIPS Configuration (set to true for FIPS 140-2 compliance)
+    export ENABLE_FIPS=false
+
+    # Image Versions - FIPS mode uses FIPS-compliant builds
+    if [ "$ENABLE_FIPS" = "true" ]; then
+      export CLICKHOUSE_SERVER_VERSION=25.8.1.9104-fips
+      export CLICKHOUSE_KEEPER_VERSION=26.1.1.1493
+    else
+      export CLICKHOUSE_SERVER_VERSION=25.8.1.9104
+      export CLICKHOUSE_KEEPER_VERSION=25.10.1.6624
+    fi
+    export CLICKHOUSE_OPERATOR_VERSION=main-1.16067.1
+    export OPERATOR_HELM_VERSION=1.16067.1
+    export CLUSTER_HELM_VERSION=1.1.155
+
+    # AWS ECR Source (for copying images)
+    export SOURCE_ECR_REGION=us-east-1
+    export SOURCE_ECR_REPO=349290138304.dkr.ecr.${SOURCE_ECR_REGION}.amazonaws.com
+    export AWS_PROFILE=clickhouse-ecr
+
+    # Node Pool Configuration
+    export KEEPER_MACHINE_TYPE=n2-standard-4      # n2-standard-8 recommended for production
+    export SERVER_MACHINE_TYPE=n2-standard-8      # n2-standard-64 recommended for production
+    export DEFAULT_MACHINE_TYPE=n2-standard-4
+
+    # Resource Limits (adjust based on instance sizes)
+    export SERVER_CPU=4                           # Match to machine type
+    export SERVER_MEMORY=16Gi                     # Match to machine type
+    export KEEPER_CPU=2
+    export KEEPER_MEMORY=8Gi
+
+    # Cache Configuration
+    export CACHE_BYTES_PER_GI_RAM=11Gi
+
+    # FIPS Certificate Configuration (only used when ENABLE_FIPS=true)
+    if [ "$ENABLE_FIPS" = "true" ]; then
+      export KUBERNETES_DOMAIN=cluster.local
+      export CERT_DIR=./certs
+    fi
+
+    # ClickHouse Password
+    # For production/FIPS: use Secret Manager instead:
+    #   export CLICKHOUSE_PASSWORD=$(gcloud secrets versions access latest --secret=clickhouse-password --project=${GCP_PROJECT})
+    export CLICKHOUSE_PASSWORD='change-me-not-for-production'
+
+    echo "=========================================="
+    echo "Environment Variables Set"
+    echo "=========================================="
+    echo "GCP Project:     ${GCP_PROJECT}"
+    echo "GCP Region:      ${GCP_REGION}"
+    echo "GKE Cluster:     ${GKE_CLUSTER_NAME}"
+    echo "CH Cluster:      ${CLUSTER_NAME}"
+    echo "Namespace:       ${NAMESPACE}"
+    echo "VPC:             ${VPC_NAME}"
+    echo "Subnet:          ${SUBNET_NAME}"
+    echo "Bucket:          ${BUCKET_NAME}"
+    echo "GAR Host:        ${GAR_HOST}"
+    echo "FIPS Mode:       ${ENABLE_FIPS}"
+    echo "=========================================="
+    ```
+
+    **重要:** 他のスクリプトを実行する前に、このファイルをsourceコマンドで読み込んでください：
+
+    ```bash
+    source ./00-env.sh
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={2}>
+    ## ステップ 2: Artifact Registry を作成する (`01-artifact-registry.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "01. Creating Artifact Registry"
+    echo "=========================================="
+
+    # Create repository
+    echo "Creating repository: ${GAR_REPO_NAME}..."
+    if gcloud artifacts repositories describe ${GAR_REPO_NAME} \
+      --location=${GCP_REGION} \
+      --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Repository already exists"
+    else
+      gcloud artifacts repositories create ${GAR_REPO_NAME} \
+        --repository-format=docker \
+        --location=${GCP_REGION} \
+        --description="ClickHouse container images" \
+        --project=${GCP_PROJECT}
+      echo "   Repository created"
+    fi
+
+    # Configure Docker authentication
+    echo ""
+    echo "Configuring Docker authentication..."
+    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+    echo "   Docker authentication configured"
+
+    echo ""
+    echo "=========================================="
+    echo "Artifact Registry Setup Complete!"
+    echo "=========================================="
+    echo ""
+    echo "Repository URL: ${GAR_HOST}"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={3}>
+    ## ステップ 3: コンテナーイメージをコピー (`02-copy-images.sh`)
+
+    すべてのアーキテクチャを保持するには、[skopeo](https://github.com/containers/skopeo) が必要です。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "02. Copying ClickHouse Images"
+    echo "=========================================="
+
+    # Verify AWS profile exists
+    if ! aws configure list --profile ${AWS_PROFILE} &>/dev/null; then
+      echo "ERROR: AWS profile '${AWS_PROFILE}' not found"
+      echo "To create the profile, run: aws configure --profile ${AWS_PROFILE}"
+      exit 1
+    fi
+
+    # Authenticate to source ECR
+    echo "Authenticating to AWS ECR..."
+    aws ecr get-login-password --region ${SOURCE_ECR_REGION} --profile ${AWS_PROFILE} | \
+      skopeo login --username AWS --password-stdin ${SOURCE_ECR_REPO}
+    echo "ECR authentication successful"
+
+    # Authenticate to GCP Artifact Registry
+    echo "Authenticating to GCP Artifact Registry..."
+    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+    echo "GAR authentication successful"
+
+    echo ""
+    echo "Copying images..."
+
+    echo "1/5 Copying ClickHouse Server ${CLICKHOUSE_SERVER_VERSION}..."
+    skopeo copy --all \
+      docker://${SOURCE_ECR_REPO}/clickhouse-server:${CLICKHOUSE_SERVER_VERSION} \
+      docker://${GAR_HOST}/clickhouse-server:${CLICKHOUSE_SERVER_VERSION}
+    echo "Server copied"
+
+    echo "2/5 Copying ClickHouse Keeper ${CLICKHOUSE_KEEPER_VERSION}..."
+    skopeo copy --all \
+      docker://${SOURCE_ECR_REPO}/clickhouse-keeper:${CLICKHOUSE_KEEPER_VERSION} \
+      docker://${GAR_HOST}/clickhouse-keeper:${CLICKHOUSE_KEEPER_VERSION}
+    echo "Keeper copied"
+
+    echo "3/5 Copying ClickHouse Operator ${CLICKHOUSE_OPERATOR_VERSION}..."
+    skopeo copy --all \
+      docker://${SOURCE_ECR_REPO}/clickhouse-operator:${CLICKHOUSE_OPERATOR_VERSION} \
+      docker://${GAR_HOST}/clickhouse-operator:${CLICKHOUSE_OPERATOR_VERSION}
+    echo "Operator copied"
+
+    echo "4/5 Copying Operator Helm Chart ${OPERATOR_HELM_VERSION}..."
+    skopeo copy --all \
+      docker://${SOURCE_ECR_REPO}/helm/clickhouse-operator-helm:${OPERATOR_HELM_VERSION} \
+      docker://${GAR_HOST}/helm/clickhouse-operator-helm:${OPERATOR_HELM_VERSION}
+    echo "Operator Helm chart copied"
+
+    echo "5/5 Copying Cluster Helm Chart ${CLUSTER_HELM_VERSION}..."
+    skopeo copy --all \
+      docker://${SOURCE_ECR_REPO}/helm/onprem-clickhouse-cluster:${CLUSTER_HELM_VERSION} \
+      docker://${GAR_HOST}/helm/onprem-clickhouse-cluster:${CLUSTER_HELM_VERSION}
+    echo "Cluster Helm chart copied"
+
+    echo ""
+    echo "=========================================="
+    echo "All images copied successfully!"
+    echo "=========================================="
+
+    # Verify
+    echo ""
+    echo "Verifying images in Artifact Registry..."
+    gcloud artifacts docker images list ${GAR_HOST} --format="table(package,version)"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={4}>
+    ## ステップ 4: VPC とサブネットを設定する (`03-vpc-subnet.sh`)
+
+    このスクリプトは、既存の VPC と踏み台サーバーがあることを前提としています。必要なセカンダリ範囲を持つ GKE サブネットを作成または更新します。
+
+    **重要: CIDR 境界の要件** - `/14` ブロック: 第 3 オクテットは 4 の倍数である必要があります (例: `10.244.0.0`、`10.245.0.0` は不可)  - `/20` ブロック: 第 4 オクテットは 0 である必要があり、第 3 オクテットは 16 の境界である必要があります (例: `10.252.0.0`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "03. Configuring VPC and GKE Subnet"
+    echo "=========================================="
+
+    # Check if VPC exists
+    echo "Checking VPC: ${VPC_NAME}..."
+    if gcloud compute networks describe ${VPC_NAME} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   VPC exists"
+    else
+      echo "   Creating VPC..."
+      gcloud compute networks create ${VPC_NAME} \
+        --subnet-mode=custom \
+        --project=${GCP_PROJECT}
+      echo "   VPC created"
+    fi
+
+    # Check if GKE subnet exists
+    echo ""
+    echo "Checking GKE subnet: ${SUBNET_NAME}..."
+    if gcloud compute networks subnets describe ${SUBNET_NAME} --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      # Subnet exists - check for secondary ranges
+      EXISTING_SECONDARY=$(gcloud compute networks subnets describe ${SUBNET_NAME} \
+        --region=${GCP_REGION} \
+        --project=${GCP_PROJECT} \
+        --format="value(secondaryIpRanges.rangeName)" 2>/dev/null | grep -E "^pods$" || true)
+
+      if [ -z "$EXISTING_SECONDARY" ]; then
+        echo "   Subnet exists but missing secondary ranges"
+        echo "   Adding secondary ranges for pods and services..."
+        gcloud compute networks subnets update ${SUBNET_NAME} \
+          --region=${GCP_REGION} \
+          --add-secondary-ranges=pods=${POD_RANGE},services=${SERVICE_RANGE} \
+          --project=${GCP_PROJECT}
+        echo "   Secondary ranges added"
+      else
+        echo "   Subnet exists with secondary ranges"
+      fi
+    else
+      echo "   Creating GKE subnet..."
+      gcloud compute networks subnets create ${SUBNET_NAME} \
+        --network=${VPC_NAME} \
+        --region=${GCP_REGION} \
+        --range=${SUBNET_RANGE} \
+        --secondary-range=pods=${POD_RANGE},services=${SERVICE_RANGE} \
+        --enable-private-ip-google-access \
+        --project=${GCP_PROJECT}
+      echo "   Subnet created"
+    fi
+
+    # Enable Private Google Access
+    echo ""
+    echo "Ensuring Private Google Access is enabled..."
+    gcloud compute networks subnets update ${SUBNET_NAME} \
+      --region=${GCP_REGION} \
+      --enable-private-ip-google-access \
+      --project=${GCP_PROJECT} 2>/dev/null || true
+    echo "   Private Google Access enabled"
+
+    echo ""
+    echo "=========================================="
+    echo "VPC/Subnet Configuration Complete!"
+    echo "=========================================="
+    echo ""
+    echo "VPC:          ${VPC_NAME}"
+    echo "GKE Subnet:   ${SUBNET_NAME} (${SUBNET_RANGE})"
+    echo "Pods:         ${POD_RANGE}"
+    echo "Services:     ${SERVICE_RANGE}"
+    echo "Bastion:      ${BASTION_SUBNET_RANGE}"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={5}>
+    ## ステップ 5: Cloud NAT を作成する (`04-cloud-nat.sh`)
+
+    プライベート GKE ノードが外部のインターネットにアクセスするには、Cloud NAT が必要です。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "04. Creating Cloud NAT for Private Nodes"
+    echo "=========================================="
+
+    # Create Cloud Router
+    echo "Creating Cloud Router..."
+    if gcloud compute routers describe clickhouse-router --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Router already exists"
+    else
+      gcloud compute routers create clickhouse-router \
+        --network=${VPC_NAME} \
+        --region=${GCP_REGION} \
+        --project=${GCP_PROJECT}
+      echo "   Router created"
+    fi
+
+    # Create Cloud NAT
+    echo ""
+    echo "Creating Cloud NAT..."
+    if gcloud compute routers nats describe clickhouse-nat --router=clickhouse-router --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   NAT already exists"
+    else
+      gcloud compute routers nats create clickhouse-nat \
+        --router=clickhouse-router \
+        --region=${GCP_REGION} \
+        --nat-all-subnet-ip-ranges \
+        --auto-allocate-nat-external-ips \
+        --enable-logging \
+        --log-filter=ERRORS_ONLY \
+        --project=${GCP_PROJECT}
+      echo "   NAT created"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo "Cloud NAT Setup Complete!"
+    echo "=========================================="
+    echo ""
+    echo "Router: clickhouse-router"
+    echo "NAT:    clickhouse-nat"
+    echo "Region: ${GCP_REGION}"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={6}>
+    ## ステップ6: GCPサービスアカウントを作成する (`05-service-account.sh`)
+
+    ```bash
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "05. Creating GCP Service Account"
+    echo "=========================================="
+
+    echo "Creating service account: ${GSA_NAME}..."
+    if gcloud iam service-accounts describe ${GSA_EMAIL} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Service account already exists"
+    else
+      gcloud iam service-accounts create ${GSA_NAME} \
+        --project=${GCP_PROJECT} \
+        --display-name="ClickHouse Workload Identity Service Account"
+      echo "   Service account created"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo "Service Account Created!"
+    echo "=========================================="
+    echo ""
+    echo "Service Account: ${GSA_EMAIL}"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={7}>
+    ## ステップ 7: GCS バケットの作成 (`06-gcs-bucket.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "06. Creating GCS Bucket"
+    echo "=========================================="
+
+    # Create bucket
+    echo "Creating GCS bucket: ${BUCKET_NAME}..."
+    if gcloud storage ls gs://${BUCKET_NAME}/ --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Bucket already exists"
+    else
+      gcloud storage buckets create gs://${BUCKET_NAME} \
+        --project=${GCP_PROJECT} \
+        --default-storage-class=STANDARD \
+        --location=${GCP_REGION} \
+        --uniform-bucket-level-access
+      echo "   Bucket created"
+    fi
+
+    # Enable uniform bucket-level access
+    echo ""
+    echo "Enabling uniform bucket-level access..."
+    gcloud storage buckets update gs://${BUCKET_NAME} --uniform-bucket-level-access
+    echo "   Uniform access enabled"
+
+    # Grant permissions to service account
+    echo ""
+    echo "Granting permissions to service account..."
+    gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} --member=serviceAccount:${GSA_EMAIL} --role=roles/storage.objectAdmin
+    gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} --member=serviceAccount:${GSA_EMAIL} --role=roles/storage.legacyBucketReader
+    echo "   Permissions granted"
+
+    echo ""
+    echo "=========================================="
+    echo "GCS Bucket Setup Complete!"
+    echo "=========================================="
+    echo ""
+    echo "Bucket:   ${BUCKET_NAME}"
+    echo "Region:   ${GCP_REGION}"
+    echo "Endpoint: https://storage.googleapis.com"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={8}>
+    ## ステップ 8: GKE クラスターを作成 (`07-gke-cluster.sh`)
+
+    **完全にプライベートな GKE クラスター**を作成します。worker ノードは内部 IP のみを持ち、コントロールプレーンにはパブリック エンドポイントがなく、すべてのアクセスは踏み台サーバー経由で VPC 内から行う必要があります。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "07. Creating Private GKE Cluster"
+    echo "=========================================="
+
+    echo "Creating cluster: ${GKE_CLUSTER_NAME}..."
+    if gcloud container clusters describe ${GKE_CLUSTER_NAME} --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Cluster already exists"
+    else
+      gcloud container clusters create ${GKE_CLUSTER_NAME} \
+        --region=${GCP_REGION} \
+        --node-locations=${GCP_ZONES} \
+        --network=${VPC_NAME} \
+        --subnetwork=${SUBNET_NAME} \
+        --cluster-secondary-range-name=pods \
+        --services-secondary-range-name=services \
+        --enable-ip-alias \
+        --enable-private-nodes \
+        --enable-private-endpoint \
+        --master-ipv4-cidr=${MASTER_IPV4_CIDR} \
+        --enable-master-authorized-networks \
+        --master-authorized-networks=${SUBNET_RANGE},${BASTION_SUBNET_RANGE} \
+        --workload-pool=${GCP_PROJECT}.svc.id.goog \
+        --num-nodes=1 \
+        --machine-type=${DEFAULT_MACHINE_TYPE} \
+        --disk-type=pd-standard \
+        --disk-size=50 \
+        --project=${GCP_PROJECT}
+      echo "   Cluster created"
+    fi
+
+    # Get credentials (must be run from within VPC / bastion)
+    echo ""
+    echo "Getting cluster credentials..."
+    gcloud container clusters get-credentials ${GKE_CLUSTER_NAME} \
+      --region=${GCP_REGION} \
+      --internal-ip \
+      --project=${GCP_PROJECT}
+    echo "   Credentials configured"
+
+    # Verify access
+    echo ""
+    echo "Verifying cluster access..."
+    kubectl get nodes
+
+    echo ""
+    echo "=========================================="
+    echo "Private GKE Cluster Ready!"
+    echo "=========================================="
+    echo ""
+    echo "Cluster:     ${GKE_CLUSTER_NAME}"
+    echo "Region:      ${GCP_REGION}"
+    echo "Master CIDR: ${MASTER_IPV4_CIDR}"
+    echo ""
+    echo "Private cluster settings:"
+    echo "  - Nodes have internal IPs only"
+    echo "  - Control plane has NO public endpoint"
+    echo "  - kubectl requires bastion access"
+    ```
+
+    **プライベートクラスターの設定:**
+
+    | 設定                                    | 値                   | 用途                              |
+    | ------------------------------------- | ------------------- | ------------------------------- |
+    | `--enable-private-nodes`              | 必須                  | ノードには内部IPのみが割り当てられる             |
+    | `--enable-private-endpoint`           | 必須                  | コントロールプレーンにパブリックIPがない (FedRAMP) |
+    | `--master-ipv4-cidr`                  | `172.16.0.0/28`     | コントロールプレーンのIP範囲                 |
+    | `--enable-master-authorized-networks` | 必須                  | ネットワーク制限を有効にする                  |
+    | `--master-authorized-networks`        | GKE + 踏み台サーバーのサブネット | コントロールプレーンへのアクセスを許可するCIDR       |
+
+    ***
+  </Step>
+
+  <Step stepNumber={9}>
+    ## ステップ 9: Node Pool を作成 (`08-node-pools.sh`)
+
+    | Node Pool | マシンタイプ                                      | ディスク                       | ラベル                      | テイント                                        |
+    | --------- | ------------------------------------------- | -------------------------- | ------------------------ | ------------------------------------------- |
+    | Keeper    | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
+    | Server    | n2-standard-8 (dev) / n2-standard-64 (prod) | 20GB pd-standard + ローカルSSD | `clickhouseGroup=server` | `clickhouse.com/do-not-schedule:NoSchedule` |
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "08. Creating Node Pools"
+    echo "=========================================="
+
+    # Keeper Node Pool
+    echo "Creating Keeper node pool..."
+    if gcloud container node-pools describe keeper-pool --cluster=${GKE_CLUSTER_NAME} --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Keeper pool already exists"
+    else
+      gcloud container node-pools create keeper-pool \
+        --cluster=${GKE_CLUSTER_NAME} \
+        --region=${GCP_REGION} \
+        --node-locations=${GCP_ZONES} \
+        --machine-type=${KEEPER_MACHINE_TYPE} \
+        --disk-type=pd-ssd \
+        --disk-size=20 \
+        --num-nodes=1 \
+        --enable-autoscaling \
+        --min-nodes=1 \
+        --max-nodes=3 \
+        --workload-metadata=GKE_METADATA \
+        --node-labels=clickhouseGroup=keeper \
+        --node-taints=clickhouse.com/do-not-schedule=true:NoSchedule \
+        --project=${GCP_PROJECT}
+      echo "   Keeper pool created"
+    fi
+
+    # Server Node Pool (with Local SSD)
+    # NOTE: GKE does not allow --metadata-from-file=startup-script on node pools
+    # (reserved key). Local SSD formatting/mounting is handled by the DaemonSet in Step 10.
+    echo ""
+    echo "Creating Server node pool..."
+    if gcloud container node-pools describe server-pool --cluster=${GKE_CLUSTER_NAME} --region=${GCP_REGION} --project=${GCP_PROJECT} &>/dev/null; then
+      echo "   Server pool already exists"
+    else
+      gcloud container node-pools create server-pool \
+        --cluster=${GKE_CLUSTER_NAME} \
+        --region=${GCP_REGION} \
+        --node-locations=${GCP_ZONES} \
+        --machine-type=${SERVER_MACHINE_TYPE} \
+        --local-ssd-count=1 \
+        --disk-type=pd-standard \
+        --disk-size=20 \
+        --num-nodes=1 \
+        --enable-autoscaling \
+        --min-nodes=1 \
+        --max-nodes=10 \
+        --workload-metadata=GKE_METADATA \
+        --node-labels=clickhouseGroup=server \
+        --node-taints=clickhouse.com/do-not-schedule=true:NoSchedule \
+        --project=${GCP_PROJECT}
+      echo "   Server pool created"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo "Node Pools Created!"
+    echo "=========================================="
+    kubectl get nodes -L clickhouseGroup
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={10}>
+    ## ステップ10: ローカルSSDデーモンセットをデプロイ (`09-local-ssd-daemonset.sh`)
+
+    GKE Container-Optimized OS のルートファイルシステムが読み取り専用のため、`/nvme` は作成できません。このデーモンセットは、ローカルSSDをフォーマットし、`/mnt/disks/ssd0` にマウントします。
+
+    **重要:** レースコンディションを避けるため、ClickHouse クラスターより**前に**これをデプロイしてください。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "09. Deploying Local SSD DaemonSet"
+    echo "=========================================="
+
+    kubectl apply -f - <<'EOF'
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: local-ssd-setup
+      namespace: kube-system
+    spec:
+      selector:
+        matchLabels:
+          app: local-ssd-setup
+      template:
+        metadata:
+          labels:
+            app: local-ssd-setup
+        spec:
+          hostPID: true
+          nodeSelector:
+            clickhouseGroup: server
+          tolerations:
+          - key: "clickhouse.com/do-not-schedule"
+            operator: "Exists"
+            effect: "NoSchedule"
+          initContainers:
+          - name: setup-ssd
+            image: busybox:1.36
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              # Use nsenter to run commands on the host
+              nsenter -t 1 -m -- /bin/sh -c '
+                # Find local SSD device
+                if [ -b /dev/disk/by-id/google-local-nvme-ssd-0 ]; then
+                  DEV=/dev/disk/by-id/google-local-nvme-ssd-0
+                elif [ -b /dev/disk/by-id/google-local-ssd-0 ]; then
+                  DEV=/dev/disk/by-id/google-local-ssd-0
+                else
+                  echo "No local SSD found"
+                  exit 0
+                fi
+
+                mkdir -p /mnt/disks/ssd0
+
+                # Format if needed
+                if ! blkid $DEV 2>/dev/null | grep -q ext4; then
+                  echo "Formatting $DEV..."
+                  mkfs.ext4 -F $DEV
+                fi
+
+                # Mount if needed
+                if ! mountpoint -q /mnt/disks/ssd0; then
+                  echo "Mounting $DEV to /mnt/disks/ssd0..."
+                  mount $DEV /mnt/disks/ssd0
+                fi
+                chmod 755 /mnt/disks/ssd0
+
+                echo "Local SSD ready at /mnt/disks/ssd0"
+                df -h /mnt/disks/ssd0
+              '
+            securityContext:
+              privileged: true
+          containers:
+          - name: pause
+            image: gcr.io/google-containers/pause:3.2
+    EOF
+
+    echo ""
+    echo "Waiting for DaemonSet to be ready..."
+    sleep 15
+    kubectl get ds -n kube-system local-ssd-setup
+    kubectl get pods -n kube-system -l app=local-ssd-setup
+    kubectl logs -n kube-system -l app=local-ssd-setup -c setup-ssd
+
+    echo ""
+    echo "Local SSD DaemonSet Deployed!"
+    echo ""
+    echo "IMPORTANT: The SSD is mounted at /mnt/disks/ssd0"
+    echo "You must configure ClickHouse to use this path"
+    echo "instead of /nvme/disk (GKE COS has read-only root)"
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={11}>
+    ## ステップ11: トポロジーラベルを追加する (`10-topology-labels.sh`)
+
+    ```bash
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "10. Adding Topology Labels to Nodes"
+    echo "=========================================="
+
+    # Label keeper nodes
+    echo "Labeling keeper nodes..."
+    for node in $(kubectl get nodes -l clickhouseGroup=keeper -o name); do
+      kubectl label $node topologyZone=c-${CLUSTER_NAME}-keeper --overwrite
+      echo "   Labeled: $node"
+    done
+
+    # Label server nodes
+    echo ""
+    echo "Labeling server nodes..."
+    for node in $(kubectl get nodes -l clickhouseGroup=server -o name); do
+      kubectl label $node topologyZone=c-${CLUSTER_NAME}-server --overwrite
+      echo "   Labeled: $node"
+    done
+
+    echo ""
+    echo "=========================================="
+    echo "Topology Labels Applied!"
+    echo "=========================================="
+    kubectl get nodes -L clickhouseGroup,topologyZone
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={12}>
+    ## ステップ12: Kubernetesの前提条件をインストールする
+
+    ### VolumeSnapshot CRDs のインストール (`11-volumesnapshot-crds.sh`)
+
+    ```bash
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "11. Installing VolumeSnapshot CRDs"
+    echo "=========================================="
+
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+
+    echo ""
+    echo "=========================================="
+    echo "VolumeSnapshot CRDs Installed!"
+    echo "=========================================="
+    ```
+
+    ### Workload Identityのセットアップ (`12-workload-identity.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "12. Setting Up Workload Identity"
+    echo "=========================================="
+
+    # Create namespace
+    echo "Creating namespace: ${NAMESPACE}..."
+    kubectl create namespace ${NAMESPACE} 2>/dev/null || echo "   Namespace exists"
+
+    # Create Kubernetes Service Account
+    echo ""
+    echo "Creating Kubernetes Service Account..."
+    kubectl create serviceaccount ${KSA_NAME} -n ${NAMESPACE} 2>/dev/null || echo "   KSA exists"
+
+    # Annotate KSA with GSA email
+    kubectl annotate serviceaccount ${KSA_NAME} \
+      -n ${NAMESPACE} \
+      iam.gke.io/gcp-service-account=${GSA_EMAIL} \
+      --overwrite
+    echo "   KSA annotated"
+
+    # Bind Workload Identity
+    echo ""
+    echo "Binding Workload Identity..."
+    gcloud iam service-accounts add-iam-policy-binding ${GSA_EMAIL} \
+      --project=${GCP_PROJECT} \
+      --role=roles/iam.workloadIdentityUser \
+      --member="serviceAccount:${GCP_PROJECT}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]" \
+      --quiet
+    echo "   Workload Identity bound for ${KSA_NAME}"
+
+    # Also bind the 'default' ServiceAccount
+    echo ""
+    echo "Binding 'default' ServiceAccount..."
+    kubectl annotate serviceaccount default \
+      -n ${NAMESPACE} \
+      iam.gke.io/gcp-service-account=${GSA_EMAIL} \
+      --overwrite
+
+    gcloud iam service-accounts add-iam-policy-binding ${GSA_EMAIL} \
+      --project=${GCP_PROJECT} \
+      --role=roles/iam.workloadIdentityUser \
+      --member="serviceAccount:${GCP_PROJECT}.svc.id.goog[${NAMESPACE}/default]" \
+      --quiet
+    echo "   Workload Identity bound for default"
+
+    # Grant Artifact Registry read access
+    echo ""
+    echo "Granting Artifact Registry access..."
+    gcloud artifacts repositories add-iam-policy-binding ${GAR_REPO_NAME} \
+      --location=${GCP_REGION} \
+      --member="serviceAccount:${GSA_EMAIL}" \
+      --role="roles/artifactregistry.reader" \
+      --project=${GCP_PROJECT} --quiet
+    echo "   Artifact Registry access granted"
+
+    echo ""
+    echo "=========================================="
+    echo "Workload Identity Setup Complete!"
+    echo "=========================================="
+    echo ""
+    echo "GCP SA:       ${GSA_EMAIL}"
+    echo "K8s SA:       ${KSA_NAME}"
+    echo "Namespace:    ${NAMESPACE}"
+    ```
+
+    **Workload Identityの整合:**
+
+    | 項目                            | 値                                                        |
+    | ----------------------------- | -------------------------------------------------------- |
+    | GCP サービスアカウント                 | `clickhouse@$PROJECT.iam.gserviceaccount.com`            |
+    | K8s ServiceAccount (手動作成)     | ネームスペース `ns-$CLUSTER_NAME` 内の `clickhouse`               |
+    | K8s ServiceAccount (helm で作成) | `ch-$CLUSTER_NAME-sa` (ネームスペース `ns-$CLUSTER_NAME` 内)     |
+    | K8s SA のアノテーション               | `iam.gke.io/gcp-service-account=<GSA_EMAIL>`             |
+    | IAM バインディングのメンバー              | `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]` |
+
+    ### StorageClass のインストール (`13-storageclass.sh`) -- オプション
+
+    **注意:** GKEでは `topology.kubernetes.io/zone` の代わりに `topology.gke.io/zone` を使用します。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "13. Installing StorageClass"
+    echo "=========================================="
+
+    # Authenticate to Helm registry (no https:// prefix)
+    gcloud auth print-access-token | helm registry login \
+      -u oauth2accesstoken \
+      --password-stdin \
+      ${GCP_REGION}-docker.pkg.dev
+
+    # The Helm chart's StorageClass template is designed for AWS EBS.
+    # For GCP, create the StorageClass directly via kubectl.
+    ZONES_ARRAY=$(echo ${GCP_ZONES} | tr ',' '\n' | sed 's/.*/"&"/' | tr '\n' ',' | sed 's/,$//')
+
+    cat <<EOF | kubectl apply -f -
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: premium-rwo
+    parameters:
+      type: pd-ssd
+    provisioner: pd.csi.storage.gke.io
+    allowVolumeExpansion: true
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowedTopologies:
+    - matchLabelExpressions:
+      - key: topology.gke.io/zone
+        values: [${ZONES_ARRAY}]
+    EOF
+
+    echo ""
+    echo "=========================================="
+    echo "StorageClass Installed!"
+    echo "=========================================="
+    kubectl get storageclass
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={13}>
+    ## ステップ13: FIPS 向けの手順 (条件付き)
+
+    `ENABLE_FIPS=false` の場合は、このセクションをスキップしてください。
+
+    ### FIPS 準拠証明書を作成する (`14-create-fips-certs.sh`)
+
+    FIPS 準拠証明書は、FIPS で承認されたアルゴリズム (RSA 3072 ビット以上、SHA-256 以上) を使用し、FIPS が有効な環境で生成する必要があります。このスクリプトは、FIPS 暗号ポリシーを有効にした Red Hat UBI8 ポッドを GKE クラスター上で実行します。
+
+    **必要な証明書の種類:**
+
+    | 証明書    | ファイル                                     | 必要な SAN                                                                           |
+    | ------ | ---------------------------------------- | --------------------------------------------------------------------------------- |
+    | CA     | `ca/ca.crt`, `ca/ca.key`                 | 該当なし                                                                              |
+    | サーバー   | `server/server.crt`, `server/server.key` | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}` |
+    | クライアント | `client/client.crt`, `client/client.key` | 不要                                                                                |
+    | Keeper | `keeper/keeper.crt`, `keeper/keeper.key` | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}` |
+
+    証明書生成手順の詳細については、[how-to/configure-fips-certificates.md](/ja/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) を参照してください。
+
+    ### 証明書 Secret を作成する (`15-create-cert-secrets.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "15. Creating Certificate Secrets"
+    echo "=========================================="
+
+    # Create namespace if it doesn't exist
+    kubectl create namespace ${NAMESPACE} 2>/dev/null || echo "   Namespace exists"
+
+    # Create server certificate secret
+    echo ""
+    echo "Creating server certificate secret..."
+    kubectl create secret generic -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret \
+      --from-file=ca.crt="${CERT_DIR}/ca/ca.crt" \
+      --from-file=server.crt="${CERT_DIR}/server/server.crt" \
+      --from-file=server.key="${CERT_DIR}/server/server.key" \
+      --from-file=client.crt="${CERT_DIR}/client/client.crt" \
+      --from-file=client.key="${CERT_DIR}/client/client.key" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "   Server certificate secret created"
+
+    # Create keeper certificate secret
+    echo ""
+    echo "Creating keeper certificate secret..."
+    kubectl create secret generic -n ${NAMESPACE} ${CLUSTER_NAME}-keeper-cert-secret \
+      --from-file=ca.crt="${CERT_DIR}/ca/ca.crt" \
+      --from-file=keeper.crt="${CERT_DIR}/keeper/keeper.crt" \
+      --from-file=keeper.key="${CERT_DIR}/keeper/keeper.key" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "   Keeper certificate secret created"
+
+    echo ""
+    echo "=========================================="
+    echo "Certificate Secrets Created!"
+    echo "=========================================="
+    ```
+
+    **シークレットの構成:**
+
+    | Secret Name                          | キー                                                               | 目的                          |
+    | ------------------------------------ | ---------------------------------------------------------------- | --------------------------- |
+    | `${CLUSTER_NAME}-server-cert-secret` | `ca.crt`, `server.crt`, `server.key`, `client.crt`, `client.key` | サーバー TLS およびアウトバウンドクライアント接続 |
+    | `${CLUSTER_NAME}-keeper-cert-secret` | `ca.crt`, `keeper.crt`, `keeper.key`                             | Keeper TLS                  |
+
+    ***
+  </Step>
+
+  <Step stepNumber={14}>
+    ## ステップ14: Operator をインストールする (`16-install-operator.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "16. Installing ClickHouse Operator"
+    echo "=========================================="
+
+    # Authenticate to Helm registry (no https:// prefix)
+    gcloud auth print-access-token | helm registry login \
+      -u oauth2accesstoken \
+      --password-stdin \
+      ${GCP_REGION}-docker.pkg.dev
+
+    # Convert zones to JSON array
+    ZONES_ARRAY=$(echo ${GCP_ZONES} | tr ',' '\n' | sed 's/.*/"&"/' | tr '\n' ',' | sed 's/,$//')
+
+    helm install clickhouse-operator \
+       oci://${GAR_HOST}/helm/clickhouse-operator-helm \
+       --version=${OPERATOR_HELM_VERSION} \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set-json="image.repository=\"${GAR_HOST}/clickhouse-operator\"" \
+       --set-json="image.tag=\"${CLICKHOUSE_OPERATOR_VERSION}\"" \
+       --set-json='cilium.enabled=false' \
+       --set-json='idleScalerEnabled=false' \
+       --set-json='webhooks.enabled=false' \
+       --set-json='operator.debug=true' \
+       --set-json='operator.metricsScraper.enabled=false' \
+       --set-json="operator.availabilityZones=[${ZONES_ARRAY}]" \
+       --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+       --set-json='operator.featureFlags.serverCMEKEnabled=true' \
+       --set-json='storageClass.create=false'
+
+    echo ""
+    echo "Waiting for operator to be ready..."
+    kubectl wait --for=condition=ready pod \
+      -l app=clickhouse-operator \
+      -n clickhouse-operator-system \
+      --timeout=300s
+
+    echo ""
+    echo "=========================================="
+    echo "Operator Installation Complete!"
+    echo "=========================================="
+    kubectl get pods -n clickhouse-operator-system
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={15}>
+    ## ステップ15: ClickHouseクラスターのデプロイ (`17-install-cluster.sh`)
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "17. Installing ClickHouse Cluster"
+    echo "=========================================="
+
+    # Generate password hash
+    if command -v sha256sum &> /dev/null; then
+      HASHED_PASSWORD=$(echo -n "${CLICKHOUSE_PASSWORD}" | sha256sum | awk '{printf $1}' | base64 | tr -d '\n')
+    else
+      HASHED_PASSWORD=$(echo -n "${CLICKHOUSE_PASSWORD}" | shasum -a 256 | awk '{printf $1}' | base64 | tr -d '\n')
+    fi
+
+    echo "Cluster Configuration:"
+    echo "  Name:      ${CLUSTER_NAME}"
+    echo "  Namespace: ${NAMESPACE}"
+    echo "  Bucket:    gs://${BUCKET_NAME}"
+    echo "  Prefix:    ${S3_KEY_PREFIX}"
+    echo ""
+
+    # Build FIPS flags if enabled
+    FIPS_FLAGS=()
+    if [ "$ENABLE_FIPS" = "true" ]; then
+      FIPS_FLAGS=(
+        --set-json='server.openSSL.enabled=true'
+        --set-json='server.openSSL.required=true'
+        --set-json='keeper.openSSL.enabled=true'
+        --set-json='keeper.openSSL.required=true'
+      )
+      echo "FIPS OpenSSL flags: ${#FIPS_FLAGS[@]} flags added"
+    fi
+
+    # Authenticate to Helm registry (no https:// prefix)
+    gcloud auth print-access-token | helm registry login \
+      -u oauth2accesstoken \
+      --password-stdin \
+      ${GCP_REGION}-docker.pkg.dev
+
+    helm install ${CLUSTER_NAME} \
+        oci://${GAR_HOST}/helm/onprem-clickhouse-cluster \
+        --version=${CLUSTER_HELM_VERSION} \
+        -n ${NAMESPACE} \
+        --create-namespace \
+        --set-json="storageClass.create=false" \
+        --set-json="storageClass.name=\"premium-rwo\"" \
+        --set-json="account.hashedPassword=\"${HASHED_PASSWORD}\"" \
+        \
+        --set-json="server.image.repository=\"${GAR_HOST}/clickhouse-server\"" \
+        --set-json="server.image.tag=\"${CLICKHOUSE_SERVER_VERSION}\"" \
+        --set-json="server.storage.s3.endpoint=\"https://storage.googleapis.com\"" \
+        --set-json="server.storage.s3.bucketName=\"${BUCKET_NAME}\"" \
+        --set-json="server.storage.s3.keyPrefix=\"${S3_KEY_PREFIX}\"" \
+        --set-json="server.storage.s3.region=\"auto\"" \
+        --set-json="server.storage.storageClassName=\"premium-rwo\"" \
+        \
+        --set-json="server.config.storage_configuration.disks.diskPlainRewritableForSystemTables.http_client=\"gcp_oauth\"" \
+        --set-json="server.config.storage_configuration.disks.s3WithKeeperSystemDisk.http_client=\"gcp_oauth\"" \
+        --set-json="server.config.storage_configuration.disks.s3WithKeeperSystemDisk.path=\"/var/lib/clickhouse/disks/s3_with_keeper_system/\"" \
+        --set-json="server.config.storage_configuration.disks.s3disk.http_client=\"gcp_oauth\"" \
+        --set-json="server.config.storage_configuration.disks.s3WithKeeperDisk.http_client=\"gcp_oauth\"" \
+        \
+        "${FIPS_FLAGS[@]}" \
+        \
+        --set-json="server.ssdCacheConfiguration.bytesPerGiRAM=\"${CACHE_BYTES_PER_GI_RAM}\"" \
+        --set-json="server.ssdCacheConfiguration.hostPathBaseDirectory=\"/mnt/disks/ssd0/\"" \
+        \
+        --set-json="server.podPolicy.nodeSelector.clickhouseGroup=\"server\"" \
+        --set-json="server.podPolicy.resources.limits.cpu=\"${SERVER_CPU}\"" \
+        --set-json="server.podPolicy.resources.limits.memory=\"${SERVER_MEMORY}\"" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"${SERVER_CPU}\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"${SERVER_MEMORY}\"" \
+        --set-json='server.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        \
+        --set-json="keeper.image.repository=\"${GAR_HOST}/clickhouse-keeper\"" \
+        --set-json="keeper.image.tag=\"${CLICKHOUSE_KEEPER_VERSION}\"" \
+        --set-json="keeper.storage.storageClassName=\"premium-rwo\"" \
+        \
+        --set-json="keeper.config.storage_configuration.disks.s3_keeper_log_disk.http_client=\"gcp_oauth\"" \
+        --set-json="keeper.config.storage_configuration.disks.s3_keeper_snapshot_disk.http_client=\"gcp_oauth\"" \
+        \
+        --set-json="keeper.podPolicy.nodeSelector.clickhouseGroup=\"keeper\"" \
+        --set-json="keeper.podPolicy.resources.limits.cpu=\"${KEEPER_CPU}\"" \
+        --set-json="keeper.podPolicy.resources.limits.memory=\"${KEEPER_MEMORY}\"" \
+        --set-json="keeper.podPolicy.resources.requests.cpu=\"${KEEPER_CPU}\"" \
+        --set-json="keeper.podPolicy.resources.requests.memory=\"${KEEPER_MEMORY}\"" \
+        --set-json='keeper.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]'
+
+    echo ""
+    echo "=========================================="
+    echo "ClickHouse Cluster Deployment Complete!"
+    echo "=========================================="
+    echo ""
+    echo "Next step: Run ./18-bind-helm-workload-identity.sh"
+    echo "Pods will fail to access GCS until Workload Identity is bound."
+    echo ""
+    echo "Monitor pods:"
+    echo "  kubectl get pods -n ${NAMESPACE} -w"
+    ```
+
+    **GCP固有の重要な設定:**
+
+    * `storageClass.create=false` -- AWS StorageClass を作成しない
+    * `storageClass.name="premium-rwo"` -- GCP に標準で用意されている SSD StorageClass を使用
+    * `server.storage.s3.endpoint` -- GCS の S3-compatible API では `https://storage.googleapis.com` を使用
+    * `server.storage.s3.useEnvironmentCredentials=true` -- Workload Identity に必須
+    * `keeper.storage.s3.useEnvironmentCredentials=true` -- **keeper に対しても必ず設定**
+
+    ***
+  </Step>
+
+  <Step stepNumber={16}>
+    ## ステップ 16: Workload Identity をバインドする (`18-bind-helm-workload-identity.sh`)
+
+    Helm チャートは独自のサービスアカウント (`ch-${CLUSTER_NAME}-sa`) を作成します。GCS にアクセスするには、この SA に Workload Identity をバインドする必要があります。
+
+    **重要:** ステップ 15 で作成される Keeper と server のポッドは、このバインドが行われる前に起動するため、GCS 403 エラーで失敗します。このスクリプトは、バインド後にポッドを再起動します。
+
+    ```bash expandable
+    #!/bin/bash
+    set -e
+    source ./00-env.sh
+
+    echo "=========================================="
+    echo "18. Binding Workload Identity to Helm SA"
+    echo "=========================================="
+
+    # Wait for Helm SA to be created
+    echo "Waiting for Helm service account to be created..."
+    timeout=300
+    elapsed=0
+    while ! kubectl get serviceaccount ch-${CLUSTER_NAME}-sa -n ${NAMESPACE} &>/dev/null; do
+      if [ $elapsed -ge $timeout ]; then
+        echo "ERROR: Timeout waiting for Helm service account"
+        exit 1
+      fi
+      sleep 5
+      elapsed=$((elapsed + 5))
+      echo "  Waiting... (${elapsed}s)"
+    done
+    echo "   Helm service account found"
+
+    # Annotate the helm-created SA
+    echo ""
+    echo "Annotating Helm service account..."
+    kubectl annotate serviceaccount ch-${CLUSTER_NAME}-sa \
+      -n ${NAMESPACE} \
+      iam.gke.io/gcp-service-account=${GSA_EMAIL} \
+      --overwrite
+    echo "   Service account annotated"
+
+    # Bind Workload Identity
+    echo ""
+    echo "Binding Workload Identity..."
+    gcloud iam service-accounts add-iam-policy-binding ${GSA_EMAIL} \
+      --project=${GCP_PROJECT} \
+      --role=roles/iam.workloadIdentityUser \
+      --member="serviceAccount:${GCP_PROJECT}.svc.id.goog[${NAMESPACE}/ch-${CLUSTER_NAME}-sa]" \
+      --quiet
+    echo "   Workload Identity bound"
+
+    echo ""
+    echo "Verifying annotation..."
+    kubectl get sa ch-${CLUSTER_NAME}-sa -n ${NAMESPACE} -o yaml | grep -A3 annotations
+
+    # Restart pods so they pick up the new Workload Identity credentials.
+    echo ""
+    echo "Restarting keeper and server pods to pick up Workload Identity..."
+    kubectl delete pods -n ${NAMESPACE} -l clickhouseGroup=keeper --wait=false 2>/dev/null || true
+    kubectl delete pods -n ${NAMESPACE} -l clickhouseGroup=server --wait=false 2>/dev/null || true
+    echo "   Pods restarting"
+
+    echo ""
+    echo "Waiting for keeper pods to be ready..."
+    kubectl wait --for=condition=ready pod \
+      -l clickhouseGroup=keeper \
+      -n ${NAMESPACE} \
+      --timeout=600s
+    echo "   Keeper pods ready"
+
+    echo ""
+    echo "Waiting for server pods to be created..."
+    echo "   (The operator creates servers after keepers are healthy)"
+    timeout=600
+    elapsed=0
+    while ! kubectl get pods -n ${NAMESPACE} -l clickhouseGroup=server -o name 2>/dev/null | grep -q .; do
+      if [ $elapsed -ge $timeout ]; then
+        echo "ERROR: Timeout waiting for server pods to be created"
+        echo "  kubectl get pods -n ${NAMESPACE}"
+        exit 1
+      fi
+      sleep 10
+      elapsed=$((elapsed + 10))
+      echo "  Waiting for server pods... (${elapsed}s)"
+    done
+
+    echo "Waiting for server pods to be ready..."
+    kubectl wait --for=condition=ready pod \
+      -l clickhouseGroup=server \
+      -n ${NAMESPACE} \
+      --timeout=600s
+    echo "   Server pods ready"
+
+    echo ""
+    echo "=========================================="
+    echo "Workload Identity bound to Helm SA!"
+    echo "=========================================="
+    echo ""
+    kubectl get pods -n ${NAMESPACE}
+    ```
+
+    ***
+  </Step>
+
+  <Step stepNumber={17}>
+    ## ステップ 17: インストールを確認
+
+    ### 標準モード (TLS なし)
+
+    ```text
+    # Port-forward the ClickHouse native port
+    kubectl port-forward svc/c-${CLUSTER_NAME}-server-any 9000:9000 -n ${NAMESPACE} &
+
+    # Connect with clickhouse-client
+    clickhouse client --host localhost --port 9000 --password "${CLICKHOUSE_PASSWORD}"
+    ```
+
+    ### FIPS TLS モード
+
+    `openSSL.required=true` を指定すると、ClickHouse はセキュアなポートでの接続のみを受け付けます。ポート **9440** (ネイティブ TLS) を使用します。
+
+    ```text
+    # Port-forward the ClickHouse secure native port
+    kubectl port-forward svc/c-${CLUSTER_NAME}-server-any 9440:9440 -n ${NAMESPACE} &
+
+    # Connect with self-signed certs
+    clickhouse client --host localhost --port 9440 \
+      --password "${CLICKHOUSE_PASSWORD}" \
+      --secure \
+      --accept-invalid-certificate
+    ```
+
+    CA によって署名された証明書を使用する本番環境の場合:
+
+    ```bash
+    clickhouse client --host localhost --port 9440 \
+      --password "${CLICKHOUSE_PASSWORD}" \
+      --secure \
+      --config-file <(cat <<'EOF'
+    <config>
+        <openSSL>
+            <client>
+                <caConfig>./certs/ca/ca.crt</caConfig>
+            </client>
+        </openSSL>
+    </config>
+    EOF
+    )
+    ```
+
+    ### テストクエリを実行する
+
+    ```sql
+    SELECT 1;
+    ```
+
+    想定される出力:
+
+    ```text
+       ┌─1─┐
+    1. │ 1 │
+       └───┘
+    1 row in set. Elapsed: 0.001 sec.
+    ```
+
+    **重要 (FIPS) :** `openSSL.required=true` の場合、ポート 9000 (平文のネイティブプロトコル) および 8123 (平文 HTTP) への接続は拒否されます。代わりに、ポート 9440 (ネイティブ TLS) または 8443 (HTTPS) を使用してください。
+
+    ***
+  </Step>
+</Steps>
+
+<div id="appendix-aws-to-gcp-component-mapping">
+  ## 付録: AWS と GCP のコンポーネント対応表
+</div>
+
+| AWS コンポーネント     | GCP での対応先         | 主な違い                                               |
+| --------------- | ----------------- | -------------------------------------------------- |
+| ECR             | Artifact Registry | `gcloud auth configure-docker` を使用                 |
+| S3              | S3 API 対応の GCS    | エンドポイント: `https://storage.googleapis.com`          |
+| IAM Role (IRSA) | Workload Identity | KSA に `iam.gke.io/gcp-service-account` のアノテーションを追加 |
+| HMAC Keys       | Workload Identity | `useEnvironmentCredentials=true` を使用               |
+| EBS CSI Driver  | GCE PD CSI Driver | 標準でインストール済み、provisioner: `pd.csi.storage.gke.io`   |
+| アベイラビリティゾーン     | GKE Zones         | トポロジーキー: `topology.gke.io/zone`                    |
+| NLB             | GCP Load Balancer | `type: LoadBalancer` アノテーションを使用                    |

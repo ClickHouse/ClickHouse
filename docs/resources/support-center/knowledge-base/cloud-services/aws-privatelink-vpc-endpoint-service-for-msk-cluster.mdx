@@ -6,11 +6,14 @@ tags: ['Security and Authentication', 'Managing Cloud']
 keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## Overview {#overview}
 
 This guide explains how to expose an Amazon MSK cluster to ClickPipes with [AWS PrivateLink VPC endpoint services](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
-Use this approach when [MSK multi-VPC connectivity](/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) is not available or not sufficient, for example:
+Use this approach when [MSK multi-VPC connectivity](/integrations/clickpipes/aws-privatelink#msk-multi-vpc) is not available or not sufficient, for example:
 
 - Cross-region connectivity from ClickPipes to MSK.
 - MSK Express clusters.
@@ -126,7 +129,7 @@ In the ClickHouse Cloud console, create one reverse private endpoint for each br
 Repeat the process until every broker hostname has a matching RPE.
 
 For custom private DNS behavior, naming rules, and API/Terraform options, see
-[Custom private DNS](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
+[Custom private DNS](/integrations/clickpipes/aws-privatelink#custom-private-dns).
 
 You can also create the reverse private endpoints with [OpenAPI](/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) or Terraform.
 
@@ -149,7 +152,7 @@ For Terraform, use [`clickhouse_clickpipes_reverse_private_endpoint`](https://re
 
 ## Create the Kafka ClickPipe {#create-the-kafka-clickpipe}
 
-Follow the [ClickPipes AWS PrivateLink guide](/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
+Follow the [ClickPipes AWS PrivateLink guide](/integrations/clickpipes/aws-privatelink#creating-clickpipe)
 to create the ClickPipe with reverse private endpoints.
 
 When creating the Kafka ClickPipe:

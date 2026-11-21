@@ -3,3 +3,5 @@
 -- correctness: result is the same regardless of ordering
 0
 0
+-- legacy InterpreterSelectQuery path: cheap filter first
+1

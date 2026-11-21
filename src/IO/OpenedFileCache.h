@@ -107,9 +107,11 @@ public:
         impls[bucket].remove(path, flags);
     }
 
-    /// Defined in `OpenedFileCache.cpp`: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static OpenedFileCache & instance();
+    static OpenedFileCache & instance()
+    {
+        static OpenedFileCache res;
+        return res;
+    }
 };
 
 using OpenedFileCachePtr = std::shared_ptr<OpenedFileCache>;

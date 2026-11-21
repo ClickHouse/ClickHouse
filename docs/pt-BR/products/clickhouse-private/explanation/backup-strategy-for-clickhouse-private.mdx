@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "Estratégia de backup para ClickHouse Private"
+sidebarTitle: "Estratégia de backup"
+description: "Este documento explica o comportamento dos backups e as limitações específicas do ClickHouse Private."
+---
+
+Este documento explica o comportamento dos backups e as limitações específicas do ClickHouse Private. Para conceitos gerais de backup no ClickHouse (completo vs. incremental, cadeias de backup, sintaxe SQL), consulte a [documentação principal de backup do ClickHouse](https://clickhouse.com/docs/operations/backup/overview). Para procedimentos passo a passo, consulte [Fazer backup e restaurar (manual)](/pt-BR/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) ou [Gerenciar backups via API](/pt-BR/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="backup-location">
+  ## Local do backup
+</div>
+
+Os backups são armazenados no **Amazon S3**. Os backups de cada cluster são organizados no prefixo da chave S3 do cluster (encontrado no CR em `spec.s3.keyPrefix`), o que garante que os backups de clusters diferentes permaneçam isolados, mesmo ao compartilhar o mesmo bucket do S3.
+
+<div id="manual-vs-api-driven-backups">
+  ## Backups manuais vs. via API
+</div>
+
+O ClickHouse Private oferece duas abordagens de backup:
+
+* **Manual (SQL)** -- Execute instruções `BACKUP`/`RESTORE` diretamente em um pod do Kubernetes do servidor. Controle total sobre o escopo e os caminhos no S3. Consulte [Fazer backup e restaurar (manual)](/pt-BR/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+* **Via API** -- Use o endpoint REST da API do ClickHouse Private, que cria recursos personalizados `Backup` gerenciados pelo operador. Consulte [Gerenciar backups via API](/pt-BR/products/clickhouse-private/guides/manage-backups-via-the-private-api) e a [referência da API](/pt-BR/products/clickhouse-private/reference/clickhouse-private-api-reference).
+
+<div id="backup-pod-designation">
+  ## Designação do pod de backup
+</div>
+
+Na arquitetura MultiSTS, exatamente uma réplica é designada como o **pod de backup** (`isBackupPod: true` no ReplicaStateMap). As operações de backup são sempre executadas nesse pod. O operador evita marcar o pod de backup como Condemned durante o scale-in para não interromper as operações de backup.
+
+<div id="restore-limitation">
+  ## Limitação de restauração
+</div>
+
+A API do ClickHouse Private **não permite restaurar um backup no mesmo cluster** do qual ele foi gerado (`instance_id == target_instance_id`). Isso evita adicionar carga extra a um cluster de produção em execução e reduz o risco de sobrescrita de dados. A abordagem recomendada é provisionar um novo cluster e restaurar o backup nele.
+
+Se você precisar restaurar no mesmo cluster (por exemplo, para recuperar uma tabela específica), use comandos SQL manuais diretamente em um pod do Kubernetes do servidor.
+
+<div id="incremental-backup-chain-integrity">
+  ## Integridade da cadeia de backups incrementais
+</div>
+
+Ao usar políticas de ciclo de vida do S3 com backups incrementais, garanta que as regras de expiração não excluam um backup completo enquanto ainda existirem backups incrementais que dependam dele. Se um backup completo for excluído, todos os backups incrementais dessa cadeia se tornarão irrecuperáveis.

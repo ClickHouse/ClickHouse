@@ -29,6 +29,7 @@ INSERT INTO t_02156_mt2 SELECT number, toString(number) FROM numbers(10000);
 INSERT INTO t_02156_log SELECT number, toString(number) FROM numbers(10000);
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=1, allow_reorder_prewhere_conditions=1; -- CI may inject False; prewhere conditions not reordered → order changes
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=0, allow_reorder_prewhere_conditions=1; -- CI may inject False; prewhere conditions not reordered → order changes
 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v);
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge2 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';

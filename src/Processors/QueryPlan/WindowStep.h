@@ -53,17 +53,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
     const WindowDescription & getWindowDescription() const;
-
-    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
-
-    /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
-    bool hasStreamsFanOut() const { return streams_fan_out; }
 
     QueryPlanStepPtr clone() const override;
 

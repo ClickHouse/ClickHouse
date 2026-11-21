@@ -46,14 +46,12 @@ namespace
             return ObjectStorageQueueMode::ORDERED;
         if (mode == "unordered")
             return ObjectStorageQueueMode::UNORDERED;
-        if (mode == "exclusive")
-            return ObjectStorageQueueMode::EXCLUSIVE;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 
     void validateMode(const std::string & mode)
     {
-        if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
+        if (mode != "ordered" && mode != "unordered")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 }

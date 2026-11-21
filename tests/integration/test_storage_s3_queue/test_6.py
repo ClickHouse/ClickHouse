@@ -352,7 +352,6 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
             partition_regex=partition_regex,
             partition_component=partition_component,
         )
-
         create_mv(node, table_name, dst_table_name)
 
     # Wait for tables to be created and queryable on all instances
@@ -723,31 +722,6 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
             partition_regex=partition_regex,
             partition_component=partition_component,
         )
-
-        reported_settings = dict(
-            line.split("\t", 1)
-            for line in node.query(
-                f"""
-                SELECT name, value
-                FROM system.s3_queue_settings
-                WHERE table = '{table_name}'
-                    AND name IN (
-                        'bucketing_mode',
-                        'partitioning_mode',
-                        'partition_regex',
-                        'partition_component'
-                    )
-                FORMAT TabSeparatedRaw
-                """
-            ).strip().splitlines()
-        )
-        assert reported_settings == {
-            "bucketing_mode": bucketing_mode,
-            "partitioning_mode": "regex",
-            "partition_regex": partition_regex,
-            "partition_component": partition_component,
-        }
-
         create_mv(node, table_name, dst_table_name)
 
     # Wait for tables to be created

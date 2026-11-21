@@ -94,7 +94,7 @@ public:
             /// Since RapidJSON uses '\0' as end-of-stream char in its stream abstraction,
             /// we have to default to this check to prevent silent truncation of the input
             /// unescaped '\0' is not valid in JSON strings anyway
-            if (str_view.contains('\0'))
+            if (str_view.find('\0') != std::string_view::npos)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid JSON string in function {}: embedded NULL byte",
@@ -145,14 +145,19 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
             "Simple object",
             R"(SELECT prettyPrintJSON('{"a":1,"b":"hello"}');)",
             R"(
-{\n    "a": 1,\n    "b": "hello"\n}
+{
+    "a": 1,
+    "b": "hello"
+}
             )"
         },
         {
             "Custom indent",
             R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
-{\n        "a": 1\n}
+{
+        "a": 1
+}
             )"
         }
     };

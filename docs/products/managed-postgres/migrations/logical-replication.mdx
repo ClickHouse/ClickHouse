@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/logical-replication
 sidebarTitle: 'Logical replication'
-title: 'Migrate to ClickHouse Managed Postgres using logical replication'
+title: 'Migrate to Managed Postgres using logical replication'
 description: 'Learn how to migrate your PostgreSQL data to ClickHouse Managed Postgres using logical replication'
 keywords: ['postgres', 'postgresql', 'logical replication', 'migration', 'data transfer', 'managed postgres']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 This guide provides step-by-step instructions on how to migrate your PostgreSQL database to ClickHouse Managed Postgres using Postgres native logical replication.
@@ -17,7 +17,7 @@ This guide provides step-by-step instructions on how to migrate your PostgreSQL 
 ## Prerequisites {#migration-logical-replication-prerequisites}
 - Access to your source PostgreSQL database.
 - `psql`,`pg_dump` and `pg_restore` installed on your local machine. This is for creating empty tables in your target database. These are typically included with PostgreSQL installations. If not, you can download them from the [PostgreSQL official website](https://www.postgresql.org/download/).
-- Your source database must be reachable from ClickHouse Managed Postgres. Ensure that any necessary firewall rules or security group settings allow for this connectivity. You can get the egress IP of your ClickHouse Managed Postgres instance by doing:
+- Your source database must be reachable from ClickHouse Managed Postgres. Ensure that any necessary firewall rules or security group settings allow for this connectivity. You can get the egress IP of your Managed Postgres instance by doing:
 ```shell
 dig +short <your-managed-postgres-hostname>
 ```
@@ -63,8 +63,8 @@ Here:
 In our case, we have two tables - `events` and `users`. `events` has a million rows, and `users` has a thousand rows.
 <Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Source PostgreSQL Tables Setup" size="xl" border />
 
-### Create a ClickHouse Managed Postgres instance {#migration-pgdump-pg-restore-create-pg}
-First, ensure you have a ClickHouse Managed Postgres instance set up, preferably in the same region as the source. You can follow the quick guide [here](/products/managed-postgres/quickstart#create-postgres-database). Here's what we're going to spin up for this guide:
+### Create a Managed Postgres instance {#migration-pgdump-pg-restore-create-pg}
+First, ensure you have a Managed Postgres instance set up, preferably in the same region as the source. You can follow the quick guide [here](/products/managed-postgres/quickstart#create-postgres-database). Here's what we're going to spin up for this guide:
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Create ClickHouse Managed Postgres Instance" size="md" border />
 
 ## Restore the schema to ClickHouse Managed Postgres {#migration-logical-replication-restore-schema}
@@ -117,5 +117,5 @@ New rows inserted into the source database will now be replicated to the target 
 - Depending on your use case, you might want to set up monitoring and alerting for the replication process.
 
 ## Next steps {#migration-pgdump-pg-restore-next-steps}
-Congratulations! You have successfully migrated your PostgreSQL database to ClickHouse Managed Postgres using pg_dump and pg_restore. You're now all set to explore ClickHouse Managed Postgres features and its integration with ClickHouse. Here's a 10 minute quickstart to get you going:
-- [ClickHouse Managed Postgres Quickstart Guide](/products/managed-postgres/quickstart)
+Congratulations! You have successfully migrated your PostgreSQL database to ClickHouse Managed Postgres using pg_dump and pg_restore. You're now all set to explore Managed Postgres features and its integration with ClickHouse. Here's a 10 minute quickstart to get you going:
+- [Managed Postgres Quickstart Guide](/products/managed-postgres/quickstart)

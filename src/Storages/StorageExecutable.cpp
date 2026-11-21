@@ -23,6 +23,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -36,7 +37,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_executable_tables;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds max_execution_time;
 }
@@ -58,7 +58,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -91,8 +90,7 @@ namespace
                 }
             }
 
-            auto source = std::make_shared<SourceFromSingleChunk>(
-                std::make_shared<const Block>(std::move(result_block)), /*enable_auto_progress=*/false);
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block)));
             inputs[i] = Pipe(std::move(source));
         }
     }
@@ -165,12 +163,6 @@ void StorageExecutable::readImpl(
     size_t max_block_size,
     size_t /*threads*/)
 {
-    if (!context->getSettingsRef()[Setting::allow_executable_tables])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "The `executable` table function and the `Executable` and `ExecutablePool` table "
-            "engines are disabled. Set `allow_executable_tables` setting to enable them");
-
     auto & script_name = settings->script_name;
 
     auto user_scripts_path = context->getUserScriptsPath();
@@ -200,7 +192,11 @@ void StorageExecutable::readImpl(
 
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        QueryPipelineBuilder builder;
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        else
+            builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
@@ -393,7 +389,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/engines/table-engines/mergetree-family/textindexes/#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (
@@ -619,7 +615,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/engines/table-engines/mergetree-family/textindexes/#hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (

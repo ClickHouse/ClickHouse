@@ -1,27 +1,27 @@
 ---
 slug: /cloud/managed-postgres/migrations/overview
 sidebarTitle: 'Aperçu'
-title: 'Migration de données ClickHouse Managed Postgres'
+title: 'Migration de données Managed Postgres'
 description: 'Comparez les quatre options de migration vers ClickHouse Managed Postgres et choisissez celle qui correspond à votre base de données source et à vos contraintes de temps d’arrêt.'
 keywords: ['Managed Postgres', 'migration', 'migration Postgres', 'ClickPipes', 'PeerDB', 'pg_dump', 'pg_restore', 'réplication logique']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
 
-Vous pouvez migrer vers ClickHouse Managed Postgres selon quatre approches différentes. Le choix
+Vous pouvez migrer vers Managed Postgres selon quatre approches différentes. Le choix
 dépend de votre besoin de réplication continue, de la source à partir de laquelle vous
 migrez et du temps d&#39;indisponibilité que votre application peut tolérer pendant la
 bascule.
 
-| Méthode                                                                                    | Réplication continue (CDC) | Où il s’exécute          | Idéal pour                                                                                                  |
-| ------------------------------------------------------------------------------------------ | -------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [ClickPipes](/fr/products/managed-postgres/migrations/clickpipes)                             | Oui                        | console ClickHouse Cloud | La plupart des migrations — assistant guidé avec chargement initial et CDC prêts à l’emploi                 |
-| [PeerDB](/fr/products/managed-postgres/migrations/peerdb)                                     | Oui                        | auto-hébergé (Docker)    | Sources ou workflows non pris en charge par la ClickPipes UI                                                |
-| [pg&#95;dump and pg&#95;restore](/fr/products/managed-postgres/migrations/pg_dump-pg_restore) | Non                        | Votre machine locale     | Migrations ponctuelles de petits datasets ou de datasets statiques lorsque l’indisponibilité est acceptable |
-| [réplication logique](/fr/products/managed-postgres/migrations/logical-replication)           | Oui                        | Postgres source et cible | Contrôle direct de la réplication Postgres native, sans outil tiers                                         |
+| Méthode                                                                                    | Réplication continue (CDC) | Où il s’exécute              | Idéal pour                                                                                                  |
+| ------------------------------------------------------------------------------------------ | -------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [ClickPipes](/fr/products/managed-postgres/migrations/clickpipes)                             | Oui                        | console ClickHouse Cloud     | La plupart des migrations — assistant guidé avec chargement initial et CDC prêts à l’emploi                 |
+| [PeerDB](/fr/products/managed-postgres/migrations/peerdb)                                     | Oui                        | Self-hosted (Docker)         | Sources ou workflows non pris en charge par la ClickPipes UI                                                |
+| [pg&#95;dump and pg&#95;restore](/fr/products/managed-postgres/migrations/pg_dump-pg_restore) | Non                        | Votre machine locale         | Migrations ponctuelles de petits datasets ou de datasets statiques lorsque l’indisponibilité est acceptable |
+| [réplication logique](/fr/products/managed-postgres/migrations/logical-replication)           | Oui                        | Postgres source et cible     | Contrôle direct de la réplication Postgres native, sans outil tiers                                         |
 
 <div id="clickpipes">
   ## ClickPipes
@@ -80,4 +80,4 @@ présente les erreurs courantes et les étapes de reprise.
   ## Migrer depuis Supabase
 </div>
 
-Si vous migrez depuis Supabase, consultez le [guide de migration de Supabase vers ClickHouse Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) pour obtenir des instructions détaillées, étape par étape.
+Si vous migrez depuis Supabase, consultez le [guide de migration de Supabase vers Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) pour obtenir des instructions détaillées, étape par étape.

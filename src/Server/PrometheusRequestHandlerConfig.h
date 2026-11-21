@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <Core/QualifiedTableName.h>
 #include <Server/HTTPHandler.h>
 
@@ -21,7 +19,7 @@ struct PrometheusRequestHandlerConfig
         APIv1,
 
         /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-        /// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata),
+        /// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values),
         /// i.e. everything under "/api/v1" except remote write and remote read.
         Query,
 
@@ -42,9 +40,6 @@ struct PrometheusRequestHandlerConfig
     bool expose_errors = false;
     bool expose_histograms = false;
     bool expose_dimensional_metrics = false;
-
-    /// Constant labels added to every metric exposed by a handler of type Metrics.
-    std::map<String, String> constant_labels;
 
     /// Settings for types APIv1, Query, Write, Read:
     QualifiedTableName time_series_table_name;

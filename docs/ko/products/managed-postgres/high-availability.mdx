@@ -7,15 +7,15 @@ keywords: ['고가용성', 'ha', '대기 인스턴스', '복제', '장애 조치
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
 
-ClickHouse Managed Postgres는 내구성 및 성능 요구 사항에 맞는 여러 수준의 고가용성을 제공합니다. 데이터베이스를 Provisioning할 때 대기 인스턴스를 1개 또는 2개 추가할 수 있으며, 필요에 따라 나중에 **설정** 페이지에서 이 구성을 조정할 수도 있습니다.
+Managed Postgres는 내구성 및 성능 요구 사항에 맞는 여러 수준의 고가용성을 제공합니다. 데이터베이스를 Provisioning할 때 대기 인스턴스를 1개 또는 2개 추가할 수 있으며, 필요에 따라 나중에 **설정** 페이지에서 이 구성을 조정할 수도 있습니다.
 
 {/* TODO(kaushik-ubi): 고가용성 구성 화면의 스크린샷
-      경로: /images/cloud/managed-postgres/high-availability-config.png */}
+    경로: /images/cloud/managed-postgres/high-availability-config.png */}
 
 <div id="high-availability-options">
   ## 고가용성 옵션
@@ -47,7 +47,7 @@ ClickHouse Managed Postgres는 내구성 및 성능 요구 사항에 맞는 여�
   ## 대기 인스턴스와 읽기 레플리카 비교
 </div>
 
-대기 인스턴스와 읽기 레플리카는 ClickHouse Managed Postgres에서 용도가 서로 다르며, 각각 별도로 구성됩니다.
+대기 인스턴스와 읽기 레플리카는 Managed Postgres에서 용도가 서로 다르며, 각각 별도로 구성됩니다.
 
 **대기 인스턴스**는 고가용성과 자동 장애 조치만을 위한 전용 구성입니다. 프라이머리의 데이터를 스트리밍 복제로 복제하며, 프라이머리에 장애가 발생할 경우 즉시 승격될 수 있도록 항상 준비되어 있습니다. 대기 인스턴스는 읽기 쿼리용으로는 제공되지 않습니다.
 
@@ -57,7 +57,7 @@ ClickHouse Managed Postgres는 내구성 및 성능 요구 사항에 맞는 여�
   ### 대기 인스턴스가 읽기 쿼리를 처리하지 않는 이유
 </div>
 
-일부 데이터베이스 제공업체는 읽기 전용 쿼리를 위한 핫 대기 인스턴스를 제공하지만, ClickHouse Managed Postgres는 의도적으로 이를 제공하지 않습니다. 대기 인스턴스에서 읽기 쿼리를 허용하면 프라이머리에 장애가 발생했을 때 즉시 역할을 넘겨받을 준비 상태를 유지한다는 본래 목적이 훼손될 수 있습니다.
+일부 데이터베이스 제공업체는 읽기 전용 쿼리를 위한 핫 대기 인스턴스를 제공하지만, Managed Postgres는 의도적으로 이를 제공하지 않습니다. 대기 인스턴스에서 읽기 쿼리를 허용하면 프라이머리에 장애가 발생했을 때 즉시 역할을 넘겨받을 준비 상태를 유지한다는 본래 목적이 훼손될 수 있습니다.
 
 주요 우려 사항은 두 가지입니다.
 
@@ -65,12 +65,12 @@ ClickHouse Managed Postgres는 내구성 및 성능 요구 사항에 맞는 여�
 
 2. **VACUUM 간섭**: 대기 인스턴스에서 장시간 실행되는 읽기 쿼리는 프라이머리에서 `VACUUM`(및 `AUTOVACUUM`)이 dead tuple을 정리하지 못하게 만들 수 있습니다. PostgreSQL은 어떤 레플리카에서든 활성 쿼리가 여전히 접근해야 할 가능성이 있는 행은 제거할 수 없습니다. 이로 인해 테이블 팽창이 발생하고 시간이 지날수록 성능이 저하될 수 있습니다.
 
-ClickHouse Managed Postgres는 대기 인스턴스를 장애 조치 전용으로 유지함으로써 항상 동기화 상태를 유지하고, 최소한의 데이터 손실과 다운타임으로 역할을 넘겨받을 수 있도록 보장합니다. 읽기 스케일링이 필요하다면 대신 [읽기 레플리카](/ko/products/managed-postgres/read-replicas)를 사용하십시오.
+Managed Postgres는 대기 인스턴스를 장애 조치 전용으로 유지함으로써 항상 동기화 상태를 유지하고, 최소한의 데이터 손실과 다운타임으로 역할을 넘겨받을 수 있도록 보장합니다. 읽기 스케일링이 필요하다면 대신 [읽기 레플리카](/ko/products/managed-postgres/read-replicas)를 사용하십시오.
 
 <div id="handling-failures">
   ## 장애 처리
 </div>
 
-고가용성 활성화 여부와 관계없이 모든 ClickHouse Managed Postgres 인스턴스는 장애 발생 여부를 지속적으로 모니터링합니다. 모든 경우에 시스템은 장애를 자동으로 복구하려고 시도합니다.
+고가용성 활성화 여부와 관계없이 모든 Managed Postgres 인스턴스는 장애 발생 여부를 지속적으로 모니터링합니다. 모든 경우에 시스템은 장애를 자동으로 복구하려고 시도합니다.
 
 대기 인스턴스를 사용할 수 있으면 자동 복구가 더 빠르고 간단해집니다. 일반적으로 대기 인스턴스를 프라이머리로 승격하여 몇 분 내에 복구됩니다. 대기 인스턴스가 없으면 복구에 수동 개입이 필요할 수 있으며, 이로 인해 장애 지속 시간이 크게 늘어날 수 있습니다.

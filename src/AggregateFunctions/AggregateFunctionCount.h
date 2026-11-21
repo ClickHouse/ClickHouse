@@ -146,10 +146,4 @@ public:
 #endif
 };
 
-/// Build a one-row column holding a single `count()` aggregate state pre-set to `num_rows`.
-/// `count_function` must be a `count` aggregate function (its state layout is written via
-/// `AggregateFunctionCount::set`). Shared by the trivial-count / count-from-index optimizations that
-/// replace a subplan with a `ReadFromPreparedSource` emitting a precomputed count state.
-ColumnPtr createSingleCountStateColumn(const AggregateFunctionPtr & count_function, UInt64 num_rows);
-
 }

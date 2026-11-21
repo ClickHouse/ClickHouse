@@ -125,7 +125,6 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("Point"));
     check(DataTypeFactory::instance().get("Polygon"));
     check(DataTypeFactory::instance().get("MultiPolygon"));
-    check(DataTypeFactory::instance().get("MultiPoint"));
     check(DataTypeFactory::instance().get("Tuple(Map(LowCardinality(String), Array(AggregateFunction(2, quantiles(0.1, 0.2), Float32))), Array(Array(Tuple(UInt32, Tuple(a Map(String, String), b Nullable(Date), c Variant(Tuple(g String, d Array(UInt32)), Date, Map(String, String)))))))"));
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));

@@ -87,7 +87,7 @@ SELECT URLHierarchy('https://example.com/a/b?c=1')
 ```
 
 ```response title=Response
-['https://example.com/','https://example.com/a/','https://example.com/a/b?','https://example.com/a/b?c=1']
+['https://example.com/','https://example.com/a/','https://example.com/a/b','https://example.com/a/b?c=1']
 ```
 
 <div id="URLPathHierarchy">
@@ -121,7 +121,7 @@ SELECT URLPathHierarchy('https://example.com/a/b?c=1')
 ```
 
 ```response title=Response
-['/a/','/a/b?','/a/b?c=1']
+['/a/','/a/b','/a/b?c=1']
 ```
 
 <div id="cutFragment">
@@ -335,7 +335,7 @@ foo.there-is-no-such-domain
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
+    <!-- ПРИМЕЧАНИЕ: путь указывается относительно top_level_domains_path -->
 </top_level_domains_lists>
 ```
 
@@ -347,7 +347,7 @@ cutToFirstSignificantSubdomainCustomRFC(url, tld_list_name)
 
 **Аргументы**
 
-* `url` — URL или строка домена для обработки в соответствии с RFC 3986. - `tld_list_name` — имя пользовательского списка TLD, настроенного в ClickHouse.
+* `url` — URL или доменное имя для обработки в соответствии с RFC 3986. - `tld_list_name` — имя пользовательского списка TLD, настроенного в ClickHouse.
 
 **Возвращаемое значение**
 
@@ -362,9 +362,9 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 ```
 
 ```response title=Response
-┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─┐
-│ foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─────┐
+│ www.foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="cutToFirstSignificantSubdomainCustomWithWWW">
@@ -420,7 +420,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 
 Добавленный в: v22.10.0
 
-Возвращает часть домена, включающую поддомены верхнего уровня вплоть до первого значимого поддомена, не удаляя `www`.
+Возвращает часть домена, включающую поддомены верхнего уровня вплоть до первого значимого поддомена, без удаления `www`.
 Принимает имя пользовательского списка TLD.
 Может быть полезно, если вам нужен актуальный список TLD или у вас есть собственный список.
 Похоже на [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW), но соответствует [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
@@ -432,7 +432,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 <top_level_domains_lists>
     {/* https://publicsuffix.org/list/public_suffix_list.dat */}
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    {/* ПРИМЕЧАНИЕ: path указывается относительно top_level_domains_path */}
 </top_level_domains_lists>
     
 
@@ -459,7 +459,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 ```
 
 ```response title=Response
-example.custom
+www.example.custom
 ```
 
 <div id="cutToFirstSignificantSubdomainWithWWW">
@@ -585,8 +585,7 @@ SELECT
 
 Добавленный в: v1.1.0
 
-Удаляет из URL первое вхождение `name=value` для каждого запрошенного параметра.
-Сопоставляются только параметры, записанные в виде `name=`, поэтому параметр-флаг без значения остаётся неизменным; например, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` возвращает URL без изменений.
+Удаляет параметр `name` из URL, если такой параметр присутствует.
 Эта функция не кодирует и не декодирует символы в именах параметров; например, `Client ID` и `Client%20ID` считаются разными именами параметров.
 
 **Синтаксис**
@@ -602,7 +601,7 @@ cutURLParameter(url, name)
 
 **Возвращаемое значение**
 
-URL, из которого удалено первое вхождение `name=value` для каждого запрошенного параметра. [`String`](/ru/reference/data-types/string)
+URL без параметра `name`. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
@@ -615,9 +614,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─url_without_a────────────────┬─url_without_c_and_e───────┐
-│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b&#g │
-└──────────────────────────────┴───────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
 ```
 
 <div id="decodeURLComponent">
@@ -985,9 +984,9 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 ```
 
 ```response title=Response
-┌─extractURLParameter('http://example.com/?param1=value1&param2=value2', 'param1')─┐
-│ value1                                                                           │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─extractURLPa⋯, 'param1')─┐
+│ value1                   │
+└──────────────────────────┘
 ```
 
 <div id="extractURLParameters">
@@ -1022,9 +1021,9 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 ```
 
 ```response title=Response
-┌─extractURLParameterNames('http://example.com/?param1=value1&param2=value2')─┐
-│ ['param1','param2']                                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─extractURLPa⋯m2=value2')─┐
+│ ['param1','param2']      │
+└──────────────────────────┘
 ```
 
 <div id="firstSignificantSubdomain">
@@ -1059,9 +1058,9 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 ```
 
 ```response title=Response
-┌─extractURLParameters('http://example.com/?param1=value1&param2=value2')─┐
-│ ['param1=value1','param2=value2']                                       │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─extractURLParame⋯&param2=value2')─┐
+│ ['param1=value1','param2=value2'] │
+└───────────────────────────────────┘
 ```
 
 <div id="firstSignificantSubdomainCustom">
@@ -1100,9 +1099,6 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
 ```response title=Response
-┌─firstSignificantSubdomain('https://news.clickhouse.com/')─┐
-│ clickhouse                                                │
-└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="firstSignificantSubdomainCustomRFC">
@@ -1224,13 +1220,13 @@ fragment(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
-┌─fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service')─┐
-│ 1-create-a-clickhouse-service                                                                 │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─fragment('http⋯ouse-service')─┐
+│ 1-create-a-clickhouse-service │
+└───────────────────────────────┘
 ```
 
 <div id="path">
@@ -1264,9 +1260,9 @@ SELECT netloc('http://paul@www.example.com:80/');
 ```
 
 ```response title=Response
-┌─netloc('http://paul@www.example.com:80/')─┐
-│ paul@www.example.com:80                   │
-└───────────────────────────────────────────┘
+┌─netloc('http⋯e.com:80/')─┐
+│ paul@www.example.com:80  │
+└──────────────────────────┘
 ```
 
 <div id="pathFull">
@@ -1296,13 +1292,13 @@ path(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
+SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
 ```
 
 ```response title=Response
-┌─path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value')─┐
-│ /docs/reference/functions/regular-functions/url-functions                                           │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─path('https://clickhouse.com/en/sql-reference/functions/url-functions/?query=value')─┐
+│ /docs/sql-reference/functions/url-functions/                                         │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="port">
@@ -1332,13 +1328,13 @@ pathFull(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
 ```
 
 ```response title=Response
-┌─pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section')─┐
-│ /docs/reference/functions/regular-functions/url-functions?query=value#section                                   │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─pathFull('https://clickhouse.com⋯unctions/?query=value#section')─┐
+│ /docs/sql-reference/functions/url-functions/?query=value#section │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="portRFC">
@@ -1411,9 +1407,9 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 ```
 
 ```response title=Response
-┌─port('http://user:password@example.com:8080/')─┬─portRFC('http://user:password@example.com:8080/')─┐
-│                                              0 │                                              8080 │
-└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+┌─port('http:/⋯com:8080/')─┬─portRFC('htt⋯com:8080/')─┐
+│                        0 │                     8080 │
+└──────────────────────────┴──────────────────────────┘
 ```
 
 <div id="queryString">
@@ -1485,9 +1481,9 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 ```
 
 ```response title=Response
-┌─queryString('https://clickhouse.com/docs?query=value&param=123#section')─┐
-│ query=value&param=123                                                    │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─queryString(⋯3#section')─┐
+│ query=value&param=123    │
+└──────────────────────────┘
 ```
 
 <div id="topLevelDomain">
@@ -1521,9 +1517,9 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 ```
 
 ```response title=Response
-┌─queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123#section')─┐
-│ query=value&param=123#section                                                       │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌─queryStringAnd⋯=123#section')─┐
+│ query=value&param=123#section │
+└───────────────────────────────┘
 ```
 
 <div id="topLevelDomainRFC">
@@ -1557,7 +1553,7 @@ topLevelDomain(url)
 
 **Возвращаемое значение**
 
-Возвращает доменное имя, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
+Возвращает имя домена, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 

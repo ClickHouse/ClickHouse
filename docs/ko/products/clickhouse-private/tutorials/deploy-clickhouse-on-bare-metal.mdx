@@ -1,0 +1,541 @@
+---
+noindex: true
+title: "베어메탈에 ClickHouse 배포"
+sidebarTitle: "베어메탈에 배포"
+description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용하는 AWS EC2 인스턴스에서 Terraform과 Ansible을 사용해 베어메탈 노드에 ClickHouse를 배포하는 방법을 안내합니다"
+---
+
+이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용하는 AWS EC2 인스턴스에서 Terraform과 Ansible을 사용해 베어메탈 노드에 ClickHouse를 배포하는 방법을 안내합니다. 이 과정을 마치면 오퍼레이터를 사용해 ClickHouse가 배포된 RKE2 클러스터가 실행 중인 상태로 준비됩니다.
+
+자세한 인프라 사양은 [reference/infrastructure-requirements.md](/ko/products/clickhouse-private/reference/infrastructure-requirements-reference)을 참조하십시오.
+
+***
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* Linux 워크스테이션(RHEL/Rocky Linux 또는 유사한 배포판)
+* `terraform` v1.13+
+* Galaxy 역할 지원이 있는 `ansible`
+* `kubectl`
+* `helm` v3.x
+* EC2, VPC 및 S3 권한이 있는 AWS IAM 자격 증명
+* ClickHouse 컨테이너 레지스트리 액세스 권한
+* [example-scripts.zip](https://d9v141ecaehea.cloudfront.net/example-scripts.zip?Expires=1796083200\&Signature=gY-eqdeGHilnNqad8y6KVoXjEYnJlpE2-QzSXOkV-qQmMbiDX0VSrrw6TLgS4Ls8pRQ9tjMuK2pM-cr2G92ZnP7H0EMoA-5P--YLbtU5RRD-HEDnTVc1cyLfLqb2uPmiWgEuWvkNA2lrQB7THp-MwDzdueV4x0hYGY3IoZTsPo9NvbuXasLgKTZ3Ioo0-GYeAdWpxi7sTOpESGXar9regLk~36uU7HFLE4gm~-KbTYbLcgfdf4S9VQIauIQPVaDUaFZ7X7ojpC1NvKWL2mJgRW84s53WtZCp947LslH-h-6QX1wzy6FEHKQr47j7jS4TkIA1aO7f9iDM~woCD7UH6Q__\&Key-Pair-Id=K3MEXWCGKHWKPM) -- Terraform 모듈, Ansible 플레이북, Helm 값 템플릿이 포함되어 있습니다
+
+***
+
+<Steps>
+  <Step>
+    ## 단계 1: Terraform 설치
+
+    ```text
+    dnf install -y unzip git
+    ```
+
+    ```bash
+    curl -O https://releases.hashicorp.com/terraform/1.13.2/terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```text
+    unzip terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```bash
+    sudo cp terraform /usr/local/bin
+    ```
+
+    설치를 확인하세요:
+
+    ```text
+    terraform version
+    ```
+
+    예상 출력:
+
+    ```text
+    Terraform v1.13.2
+    on linux_amd64
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 2: 예시 스크립트 다운로드
+
+    ClickHouse에서 제공하는 예시 스크립트를 다운로드한 다음 압축을 해제합니다.
+
+    ```text
+    unzip example-scripts.zip
+    cd ./bare-metal
+    ```
+
+    아카이브에는 Terraform 모듈, Ansible 플레이북, 인벤토리 템플릿, Helm values 파일이 포함되어 있습니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 3: AWS 자격 증명 구성
+
+    AWS IAM 액세스 키와 시크릿 키를 사용해 자격 증명 파일을 생성하세요:
+
+    ```bash
+    cat > aws-creds.sh <<EOF
+    export AWS_ACCESS_KEY_ID=<Your AWS ACCESS KEY ID>
+    export AWS_SECRET_ACCESS_KEY=<Your AWS SECRET ACCESS KEY>
+    export AWS_REGION=us-east-2
+    EOF
+    ```
+
+    `<Your AWS ACCESS KEY ID>` 및 `<Your AWS SECRET ACCESS KEY>`를 AWS IAM 콘솔에 있는 값으로 바꾸십시오.
+
+    자격 증명을 불러오세요:
+
+    ```bash
+    source ./aws-creds.sh
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 4: Terraform 초기화 및 적용
+
+    RKE2 Terraform 모듈을 초기화합니다. Terraform 상태를 로컬에서 S3로 옮기는 경우 `-migrate-state`를 추가합니다.
+
+    ```text
+    terraform -chdir=modules/rke2 init \
+    -backend-config="encrypt=true" \
+    -backend-config="region=us-east-2" \
+    -backend-config="bucket=chb-tfstate-359774249275" \
+    -backend-config="use_lockfile=true" \
+    -backend-config="key=chb/rke2/terraform.tfstate"
+    ```
+
+    인프라를 프로비저닝하기 위해 Terraform 구성을 적용하세요:
+
+    ```text
+    terraform -chdir=modules/rke2 apply \
+    -var-file=../../vars/common.tfvars \
+    -var-file=../../vars/instances.tfvars \
+    -var-file=../../vars/rke2.tfvars
+    ```
+
+    이 작업으로 RKE2 클러스터에 필요한 EC2 인스턴스, 네트워크, 보안 그룹이 생성됩니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 5: Ansible 의존성 설치
+
+    Ansible 디렉터리로 이동하여 필요한 Galaxy 역할과 컬렉션을 설치합니다:
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ```
+
+    ```text
+    ansible-galaxy role install lablabs.rke2
+    ```
+
+    ```text
+    ansible-galaxy collection install kubernetes.core
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 6: RKE2 프로비저닝
+
+    ### 노드 준비 상태 확인
+
+    ```text
+    ansible all -i inventory.yml -a 'cloud-init status'
+    ```
+
+    ### NVMe 구성하기
+
+    ```text
+    ansible-playbook -i inventory.yml disks_nvme.yml
+    ```
+
+    ### RKE2 Playbook 실행하기
+
+    ```text
+    ansible-playbook -i inventory.yml rke2_playbook.yml
+    ```
+
+    이 플레이북은 모든 노드에 RKE2를 설치하고 구성합니다. 첫 번째 server 노드를 프로비저닝하고, 준비될 때까지 기다린 다음, 나머지 server 및 agent 노드를 클러스터에 추가합니다.
+
+    플레이북 출력에는 모든 노드(예: `chb-rke2s101`부터 `chb-rke2s302`까지)에서 실행되는 작업이 표시됩니다. 완료되면 다음과 같은 요약이 표시됩니다:
+
+    ```text
+    PLAY RECAP *********************************************************************
+    chb-rke2s101               : ok=40   changed=12   unreachable=0    failed=0    skipped=45   rescued=0    ignored=0
+    chb-rke2s102               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s201               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s202               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s301               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s302               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    ```
+
+    `K8s nodes state` 작업은 `Ready` 상태의 모든 노드와 해당 역할 및 버전을 보여주는 요약도 출력합니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 7: cert-manager 및 인증서 구성
+
+    Ansible 플레이북을 사용해 cert-manager와 trust-manager를 설치하고 ClickHouse용 인증서를 생성합니다:
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ansible-playbook -i 127.0.0.1, --connection=local manage_helm_applications.yml
+    ```
+
+    이 플레이북은 다음 작업을 수행합니다:
+
+    1. cert-manager Helm 차트를 설치합니다
+    2. trust-manager Helm 차트를 설치합니다
+    3. 자체 서명 issuer와 CA 인증서를 생성합니다
+    4. CA 인증서용 issuer를 생성합니다
+    5. Rancher를 설정합니다(선택 사항)
+    6. ClickHouse 클러스터 네임스페이스를 생성합니다
+    7. ClickHouse 서버 및 Keeper 인증서를 생성합니다
+    8. 인증서를 해당 Kubernetes 시크릿으로 복사합니다
+
+    예상 결과:
+
+    ```text
+    PLAY RECAP *****************************************************************
+    127.0.0.1                  : ok=18   changed=13   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 8: 로컬 스토리지 설치
+
+    ### local-path-provisioner 설치
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.32/deploy/local-path-storage.yaml
+    ```
+
+    ### StorageClass 만들기
+
+    ```bash
+    cd ~/bare-metal/ch-cluster-deployment
+    kubectl apply -f local-nvme-sc.yaml
+    ```
+
+    StorageClass YAML은 다음과 같아야 합니다(토폴로지 값은 노드 이름에 맞게 수정하십시오):
+
+    ```yaml
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: local-nvme-sc
+    allowVolumeExpansion: true
+    parameters:
+      path: /nvme/disk
+    provisioner: rancher.io/local-path
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowedTopologies:
+    - matchLabelExpressions:
+        - key: topology.kubernetes.io/zone
+          values:
+            - <your_cluster_name>-keeper
+            - <your_host_1>
+            - <your_host_2>
+            - <your_host_3>
+            - <your_host_4>
+            - <your_host_5>
+            - <your_host_6>
+        - key: directpv.min.io/region
+          values:
+            - default
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 9: 노드에 레이블 지정
+
+    연산자에 필요한 ClickHouse 그룹 및 토폴로지 영역 레이블을 노드에 지정합니다.
+
+    ```bash
+    kubectl get nodes |awk '{ print $1}'|grep '01'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=keeper-amd64  topology.kubernetes.io/zone=c-baremetal-ch-01-keeper --overwrite
+    kubectl get nodes |awk '{ print $1}'|grep '02'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=server-amd64  --overwrite
+    kubectl label nodes chb-rke2s102 topology.kubernetes.io/zone=chb-rke2s102 --overwrite
+    kubectl label nodes chb-rke2s202 topology.kubernetes.io/zone=chb-rke2s202 --overwrite
+    kubectl label nodes chb-rke2s302 topology.kubernetes.io/zone=chb-rke2s302 --overwrite
+    ```
+
+    환경에 맞게 노드 이름과 레이블을 조정하십시오.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 10: ClickHouse Operator 및 클러스터 설치
+
+    ### 환경 변수 설정
+
+    Helm 변수 스크립트를 생성하고 소싱하십시오. 모든 placeholder 값을 실제 값으로 업데이트하십시오:
+
+    ```bash
+    #!/bin/bash
+    # AWS/S3 creds
+    export AWS_ACCESS_KEY_ID=<your_aws_key>
+    export AWS_SECRET_ACCESS_KEY=<your_aws_secret>
+    export AWS_REGION=<your_aws_region>
+    export S3_ACCESS_KEY_ID=<s3_or_minio_key>
+    export S3_SECRET_ACCESS_KEY=<s3_or_minio_secret>
+    export S3_REGION=us-east-1
+    export S3_BUCKET_NAME=<your_s3_bucket>
+    export S3_KEY_PREFIX=<ch-s3-unique-uuid>
+    export S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+    export ECR_HOST=<ecr_host>
+    # Set AZs as determined by VPC subnets. If not relevant then use your k8s host names.
+    export AZ_LIST='["<your_host_1>", "<your_host_2>", "<your_host_3>","<your_host_4>", "<your_host_5>", "<your_host_6>"]'
+
+    PASSWORD='My super secret p@$$w0rd'
+    export HASHED_PASSWORD=$(echo -n "$PASSWORD" | sha256sum | awk '{printf $1}' | base64 -w 0)
+    export CLUSTER_NAME="baremetal-ch-01"
+    export CHART_VERSION="1.1.311"
+
+    export SERVER_NG_GROUP="server-amd64"
+    export KEEPER_NG_GROUP="keeper-amd64"
+    export KEEPER_CPU="4"
+    export KEEPER_MEMORY="16Gi"
+    export SERVER_CPU="64"
+    export SERVER_MEMORY="128Gi"
+    export CACHE_DISK_SIZE_GI=379Gi
+    ```
+
+    스크립트를 소싱하십시오:
+
+    ```bash
+    source ./set_helm_vars.sh
+    ```
+
+    ### 오퍼레이터 설치
+
+    Helm 레지스트리에 로그인하고 오퍼레이터를 설치하십시오:
+
+    ```text
+    # Log into the Helm registry
+    aws ecr get-login-password | helm registry login --username AWS --password-stdin $ECR_HOST
+
+    # Create image pull secret
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n clickhouse-operator-system
+
+    OPERATOR_VERSION=1.18587.1
+
+    helm upgrade clickhouse-operator \
+      oci://$ECR_HOST/helm/clickhouse-operator-helm \
+      --install --reuse-values \
+      --version="$OPERATOR_VERSION" \
+      --create-namespace \
+      -n clickhouse-operator-system \
+      --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+      --set-json='cilium.enabled=false' \
+      --set-json='idleScalerEnabled=false' \
+      --set-json='webhooks.enabled=false' \
+      --set-json='operator.debug=true' \
+      --set-json='operator.metricsScraper.enabled=false' \
+      --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+      --set-json='operator.featureFlags.serverCMEKEnabled=true' \
+      --set-json='imagePullSecrets=[{"name":"all-icr-io"}]' \
+      --set-json="operator.availabilityZones=$AZ_LIST"
+    ```
+
+    ### ClickHouse 클러스터 배포
+
+    클러스터 구성을 담은 Helm values 파일(`clickhouse-values.yaml`)을 생성하십시오:
+
+    ```yaml expandable
+    imagePullSecrets:
+    - name: all-icr-io
+
+    account:
+      hashedPassword: "$HASHED_PASSWORD"
+    server:
+      ssdCacheConfiguration:
+        cacheDiskSize: "$CACHE_DISK_SIZE_GI"
+      openSSL:
+        enabled: true
+        required: true
+      replicaCount: 3
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$SERVER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+          requests:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: "300Gi"
+        s3:
+          bucketName: "$S3_BUCKET_NAME"
+          keyPrefix: "$S3_KEY_PREFIX"
+          endpoint: "$S3_ENDPOINT"
+          region: "$S3_REGION"
+      image:
+        repository: "$ECR_HOST/clickhouse-server"
+        tag: "25.12.1.1497"
+      additionalEnvVars:
+        - name: AWS_ACCESS_KEY_ID
+          value: "${S3_ACCESS_KEY_ID}"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "${S3_SECRET_ACCESS_KEY}"
+
+    keeper:
+      openSSL:
+        enabled: true
+        required: true
+      image:
+        repository: "$ECR_HOST/clickhouse-keeper"
+        tag: "26.2.1.258"
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$KEEPER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+          requests:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: 30Gi
+
+    serviceAccount:
+      create: false
+      name: default
+
+    storageClass:
+      create: false
+      name: local-nvme-sc
+      provisioner: rancher.io/local-path
+    ```
+
+    values 파일을 사용하여 클러스터를 설치하십시오:
+
+    ```text
+    # Create namespace
+    kubectl create namespace ns-$CLUSTER_NAME
+
+    # Create image pull secret in the cluster namespace
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n ns-$CLUSTER_NAME
+
+    # Expand variables and install
+    TEMP_VALUES_FILE=$(mktemp)
+    envsubst < clickhouse-values.yaml > "$TEMP_VALUES_FILE"
+
+    helm upgrade "$CLUSTER_NAME" \
+      oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+      --install --reuse-values \
+      --version="$CHART_VERSION" \
+      -n ns-$CLUSTER_NAME \
+      --create-namespace \
+      --values "$TEMP_VALUES_FILE" \
+      --timeout 10m0s
+
+    rm "$TEMP_VALUES_FILE"
+    ```
+
+    ### 설치 후 수정
+
+    클러스터 배포 후, Keeper StatefulSet에 이미지 풀 시크릿과 S3 자격 증명을 추가하기 위해 패치가 필요할 수 있습니다:
+
+    ```text
+    # Copy pull secret to cluster namespace
+    kubectl get secret all-icr-io -n default -o yaml | \
+      sed "s/namespace: default/namespace: ns-$CLUSTER_NAME/" | \
+      kubectl apply -n ns-$CLUSTER_NAME --force -f -
+
+    # Patch keeper StatefulSet (use sts_keeper_patch_template.yaml from example scripts)
+    kubectl patch sts c-$CLUSTER_NAME-keeper -n ns-$CLUSTER_NAME \
+      --patch "$(envsubst < sts_keeper_patch_template.yaml)"
+
+    # Restart keeper pods
+    kubectl delete pod c-$CLUSTER_NAME-keeper-{0,1,2} -n ns-$CLUSTER_NAME
+    ```
+
+    Keeper 파드가 재배포될 때까지 기다린 후, 필요한 경우 서버 PV를 수정하십시오:
+
+    ```text
+    ./sts_server_patch.sh "ns-$CLUSTER_NAME" all-icr-io
+    kubectl delete pod -l kind=clickhouse-server
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="verify-installation">
+  ## 설치 확인
+</div>
+
+모든 파드가 실행되면 포트 포워딩하여 확인하십시오. 이 배포에서는 TLS(openSSL 활성화)를 사용하므로 9440 포트를 사용하십시오:
+
+```bash
+kubectl port-forward svc/c-$CLUSTER_NAME-server-any 9440:9440 -n ns-$CLUSTER_NAME
+```
+
+clickhouse client를 사용해 연결합니다:
+
+```bash
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --accept-invalid-certificate
+```
+
+테스트 쿼리를 실행합니다:
+
+```sql
+SELECT 1;
+```
+
+예상 출력:
+
+```text
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+1 row in set. Elapsed: 0.001 sec.
+```

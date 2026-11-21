@@ -10,7 +10,7 @@ integration:
 keywords: ['apache beam', 'ストリーム処理', 'バッチ処理', 'JDBC コネクタ', 'データパイプライン']
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -161,7 +161,7 @@ public class Main {
 コネクタを使用する際は、以下の制限事項に注意してください。
 
 * 現時点でサポートされているのは Sink 操作のみで、コネクタは Source 操作には対応していません。
-* ClickHouse は、`ReplicatedMergeTree` または `ReplicatedMergeTree` を基盤とする `Distributed` テーブルへの挿入時に重複排除を実行します。レプリケーションがない場合、通常の MergeTree への挿入では、挿入が失敗したあと再試行で成功すると、重複が発生する可能性があります。ただし、各ブロックはアトミックに挿入され、ブロックサイズは `ClickHouseIO.Write.withMaxInsertBlockSize(long)` を使用して設定できます。重複排除は、挿入されたブロックのチェックサムを用いて行われます。重複排除の詳細については、[Deduplication](/ja/concepts/features/operations/insert/deduplication) および [Deduplicate insertion config](/ja/reference/settings/session-settings/insert#insert_deduplicate) を参照してください。
+* ClickHouse は、`ReplicatedMergeTree` または `ReplicatedMergeTree` を基盤とする `Distributed` テーブルへの挿入時に重複排除を実行します。レプリケーションがない場合、通常の MergeTree への挿入では、挿入が失敗したあと再試行で成功すると、重複が発生する可能性があります。ただし、各ブロックはアトミックに挿入され、ブロックサイズは `ClickHouseIO.Write.withMaxInsertBlockSize(long)` を使用して設定できます。重複排除は、挿入されたブロックのチェックサムを用いて行われます。重複排除の詳細については、[Deduplication](/ja/concepts/features/operations/insert/deduplication) および [Deduplicate insertion config](/ja/reference/settings/session-settings#insert_deduplicate) を参照してください。
 * コネクタは DDL ステートメントを一切実行しないため、ターゲットテーブルは挿入前にあらかじめ存在している必要があります。
 
 <div id="related-content">

@@ -13,7 +13,7 @@ O ClickHouse pode ser integrado facilmente a infraestruturas de bancos de dados 
   ## Criando dumps SQL
 </div>
 
-Os dados podem ser exportados em formato SQL usando [SQLInsert](/pt-BR/reference/formats/SQLInsert). O ClickHouse gravará os dados no formato `INSERT INTO <table name> VALUES(...` e usará a opção de configuração [`output_format_sql_insert_table_name`](/pt-BR/reference/settings/formats/output-format#output_format_sql_insert_table_name) como nome da tabela:
+Os dados podem ser exportados em formato SQL usando [SQLInsert](/pt-BR/reference/formats/SQLInsert). O ClickHouse gravará os dados no formato `INSERT INTO <table name> VALUES(...` e usará a opção de configuração [`output_format_sql_insert_table_name`](/pt-BR/reference/settings/formats#output_format_sql_insert_table_name) como nome da tabela:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-Os nomes das colunas podem ser omitidos ao desativar a opção [`output_format_sql_insert_include_column_names`](/pt-BR/reference/settings/formats/output-format#output_format_sql_insert_include_column_names):
+Os nomes das colunas podem ser omitidos ao desativar a opção [`output_format_sql_insert_include_column_names`](/pt-BR/reference/settings/formats#output_format_sql_insert_include_column_names):
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 Pressupomos que a tabela `some_table` exista no banco de dados MySQL `some_db`.
 
-Alguns SGBDs podem ter limites para a quantidade de valores que pode ser processada em um único lote. Por padrão, o ClickHouse criará lotes de 65 mil valores, mas isso pode ser alterado com a opção [`output_format_sql_insert_max_batch_size`](/pt-BR/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size):
+Alguns SGBDs podem ter limites para a quantidade de valores que pode ser processada em um único lote. Por padrão, o ClickHouse criará lotes de 65 mil valores, mas isso pode ser alterado com a opção [`output_format_sql_insert_max_batch_size`](/pt-BR/reference/settings/formats#output_format_sql_insert_max_batch_size):
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,7 +78,7 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-Por padrão, o ClickHouse ignora colunas desconhecidas (controlado pela opção [input&#95;format&#95;skip&#95;unknown&#95;fields](/pt-BR/reference/settings/formats/input-format#input_format_skip_unknown_fields)) e processa os dados da primeira tabela encontrada em um dump (caso várias tabelas tenham sido exportadas para um único arquivo). Instruções DDL serão ignoradas. Para carregar dados de um dump do MySQL em uma tabela (arquivo [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
+Por padrão, o ClickHouse ignora colunas desconhecidas (controlado pela opção [input&#95;format&#95;skip&#95;unknown&#95;fields](/pt-BR/reference/settings/formats#input_format_skip_unknown_fields)) e processa os dados da primeira tabela encontrada em um dump (caso várias tabelas tenham sido exportadas para um único arquivo). Instruções DDL serão ignoradas. Para carregar dados de um dump do MySQL em uma tabela (arquivo [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
 
 ```sql
 INSERT INTO some_data

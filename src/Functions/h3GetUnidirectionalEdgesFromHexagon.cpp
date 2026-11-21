@@ -40,10 +40,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -124,7 +120,7 @@ Provides all of the unidirectional edges from the provided H3Index.
         {"index", "Hexagon index number that represents a cell.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of H3 indexes representing each unidirectional edge. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.",
+        "Returns an array of H3 indexes representing each unidirectional edge.",
         {"Array(UInt64)"}
     };
     FunctionDocumentation::Examples examples = {

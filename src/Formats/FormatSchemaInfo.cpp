@@ -10,7 +10,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -25,7 +25,6 @@
 #include <Common/SipHash.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 namespace DB
 {
@@ -227,7 +226,7 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     auto query_context = Context::createCopy(current_query_context);
-    InterpreterSelectQueryAnalyzer interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
+    InterpreterSelectQuery interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
     BlockIO io = interpreter.execute();
 
     PullingPipelineExecutor executor(io.pipeline);
@@ -289,9 +288,7 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         fs::create_directory(dir_path);
     }
 
-    /// The final file name is a hash of the schema source, so every writer of one schema targets
-    /// the same path; a shared temporary name would let them overwrite and delete each other's files.
-    auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
+    auto temp_path = fs::path(file_path.string() + ".tmp");
 
     try
     {

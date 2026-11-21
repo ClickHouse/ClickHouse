@@ -17,10 +17,10 @@ $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n - 1}
 $$
 
-<Note>
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/reference/functions/aggregate-functions/covarSampStable) function.
+:::note
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/sql-reference/aggregate-functions/reference/covarsampstable) function.
 It works slower but provides a lower computational error.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax covarSamp_syntax = "covarSamp(x, y)";
     FunctionDocumentation::Arguments covarSamp_arguments = {
@@ -54,7 +54,7 @@ FROM series LIMIT 1
         )",
         R"(
 ┌─covarSamp(x_value, y_value)─┐
-│           7.206275555555556 │
+│                         nan │
 └─────────────────────────────┘
         )"
     }
@@ -73,9 +73,9 @@ $$
 
 <br/>
 
-<Note>
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](/reference/functions/aggregate-functions/covarPopStable) function. It works slower but provides a lower computational error.
-</Note>
+:::note
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](../reference/covarPopStable.md) function. It works slower but provides a lower computational error.
+:::
     )";
     FunctionDocumentation::Syntax covarPop_syntax = "covarPop(x, y)";
     FunctionDocumentation::Arguments covarPop_arguments = {

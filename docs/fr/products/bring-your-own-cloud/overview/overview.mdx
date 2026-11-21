@@ -1,0 +1,64 @@
+---
+title: 'Bring Your Own Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: 'Vue d’ensemble'
+keywords: ['BYOC', 'cloud', 'bring your own cloud']
+description: 'Déployer ClickHouse sur votre propre infrastructure cloud'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+BYOC (Bring Your Own Cloud) vous permet de déployer ClickHouse Cloud sur votre propre infrastructure cloud. Cela peut être utile si vous avez des exigences ou des contraintes spécifiques qui vous empêchent d’utiliser le service géré ClickHouse Cloud.
+
+> **Si vous souhaitez obtenir l’accès, veuillez [nous contacter](https://clickhouse.com/cloud/bring-your-own-cloud).** Consultez nos [Conditions d’utilisation](https://clickhouse.com/legal/agreements/terms-of-service) pour plus d’informations.
+
+BYOC n’est actuellement pris en charge que sur AWS. Vous pouvez vous inscrire sur la liste d’attente pour GCP et Azure [ici](https://clickhouse.com/cloud/bring-your-own-cloud).
+
+<Note>
+  BYOC est conçu spécifiquement pour les déploiements à grande échelle et nécessite que les clients signent un contrat avec engagement.
+</Note>
+
+<div id="glossary">
+  ## Glossaire
+</div>
+
+* **ClickHouse VPC:**  Le VPC appartenant à ClickHouse Cloud.
+* **Customer BYOC VPC:** Le VPC appartenant au compte cloud du client, provisionné et géré par ClickHouse Cloud, et dédié à un déploiement BYOC de ClickHouse Cloud.
+* **Customer VPC** Les autres VPC appartenant au compte cloud du client, utilisés par les applications qui doivent se connecter au Customer BYOC VPC.
+
+<div id="features">
+  ## Fonctionnalités
+</div>
+
+<div id="supported-features">
+  ### Fonctionnalités prises en charge
+</div>
+
+* **SharedMergeTree** : ClickHouse Cloud et BYOC utilisent le même binaire et la même configuration. Toutes les fonctionnalités du cœur de ClickHouse sont donc prises en charge dans BYOC, notamment SharedMergeTree.
+* **Accès à la Console pour gérer l&#39;état du service** :
+  * Prise en charge d&#39;opérations telles que le démarrage, l&#39;arrêt et la suppression.
+  * Affichage des services et de leur statut.
+* **Sauvegarde et restauration.**
+* **Mise à l&#39;échelle verticale et horizontale manuelle.**
+* **Mise en veille automatique.**
+* **Warehouses** : Compute-Compute Separation
+* **Réseau Zero Trust via Tailscale.**
+* **Monitoring** :
+  * La console Cloud inclut des tableaux de bord d&#39;état intégrés pour surveiller l&#39;état du service.
+  * Collecte Prometheus pour une supervision centralisée avec Prometheus, Grafana et Datadog. Consultez la [documentation Prometheus](/fr/products/cloud/features/monitoring/prometheus) pour les instructions de configuration.
+* **VPC Peering.**
+* **Integrations** : consultez la liste complète sur [cette page](/fr/integrations/home).
+* **S3 sécurisé.**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/).**
+
+<div id="planned-features-currently-unsupported">
+  ### Fonctionnalités prévues (actuellement non prises en charge)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/), également appelé CMEK (clés de chiffrement gérées par le client)
+* ClickPipes pour l’ingestion
+* Mise à l’échelle automatique
+* interface MySQL

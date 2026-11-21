@@ -48,20 +48,8 @@ ${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order b
 
 truncate ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt --size 0
 
-# An exception is expected: the file shrank to zero without its inode changing.
-# The directory watcher reports that change asynchronously, so retry until the
-# server has observed it.
-deadline=$((EPOCHSECONDS + 60))
-result=FAIL
-while ((EPOCHSECONDS < deadline))
-do
-	if ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;" 2>&1 | grep -q "CANNOT_READ_ALL_DATA"; then
-		result=OK
-		break
-	fi
-	sleep 1
-done
-echo "$result"
+# exception will happen when a file unexpectedly changed the size to zero without changing the inode
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;" 2>&1 | grep -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 

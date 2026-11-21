@@ -1,7 +1,6 @@
 #include <Interpreters/SessionLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -42,6 +41,7 @@ auto eventTime()
 }
 
 using AuthType = AuthenticationType;
+using Interface = ClientInfo::Interface;
 
 void fillColumnArray(const Strings & data, IColumn & column)
 {
@@ -75,6 +75,13 @@ void fillCertificateInfo(SessionLogElement & log_entry, const std::optional<Clie
 namespace DB
 {
 
+SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
+    : auth_id(auth_id_),
+      type(type_)
+{
+    std::tie(event_time, event_time_microseconds) = eventTime();
+}
+
 ColumnsDescription SessionLogElement::getColumnsDescription()
 {
     auto event_type = std::make_shared<DataTypeEnum8>(
@@ -106,6 +113,21 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
 
+    auto interface_type_column = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"TCP",                    static_cast<Int8>(Interface::TCP)},
+            {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
+            {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
+            {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
+            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
+            {"Local",                  static_cast<Int8>(Interface::LOCAL)},
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
+            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
+            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
+        });
+    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
+
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     auto settings_type_column = std::make_shared<DataTypeArray>(
@@ -120,8 +142,6 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
-        {"clickhouse_version", lc_string_datatype, "Version of the ClickHouse server that produced the row."},
-        {"system_processor", lc_string_datatype, "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(event_type), "Login/logout result. Possible values: "
             "LoginFailure — Login error. "
             "LoginSuccess — Successful login. "
@@ -141,7 +161,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
-        {"interface", getClientInterfaceEnum(), "The interface from which the login was initiated."},
+        {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
 
         {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
@@ -175,8 +195,6 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
@@ -212,7 +230,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(client_info.interface);
 
-    columns[i++]->insertData(client_info.getClientHostName().data(), client_info.getClientHostName().length());
+    columns[i++]->insertData(client_info.client_hostname.data(), client_info.client_hostname.length());
     columns[i++]->insertData(client_info.client_name.data(), client_info.client_name.length());
     columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);
@@ -247,39 +265,36 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const AuthenticationData & user_authenticated_with,
                                  const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    add([&](SessionLogElement & log_entry)
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
+    log_entry.client_info = client_info;
+    fillCertificateInfo(log_entry, certificate_info);
+
+    if (login_user)
     {
-        log_entry.auth_id = auth_id;
-        log_entry.type = SESSION_LOGIN_SUCCESS;
-        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
+        log_entry.user = login_user->getName();
+        log_entry.user_identified_with = user_authenticated_with.getType();
+    }
 
-        log_entry.client_info = client_info;
-        fillCertificateInfo(log_entry, certificate_info);
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
 
-        if (login_user)
-        {
-            log_entry.user = login_user->getName();
-            log_entry.user_identified_with = user_authenticated_with.getType();
-        }
 
-        log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+    log_entry.session_id = session_id;
 
-        log_entry.session_id = session_id;
+    if (const auto roles_info = access->getRolesInfo())
+        log_entry.roles = roles_info->getCurrentRolesNames();
 
-        if (const auto roles_info = access->getRolesInfo())
-            log_entry.roles = roles_info->getCurrentRolesNames();
+    if (const auto profile_info = access->getDefaultProfileInfo())
+        log_entry.profiles = profile_info->getProfileNames();
 
-        if (const auto profile_info = access->getDefaultProfileInfo())
-            log_entry.profiles = profile_info->getProfileNames();
+    SettingsChanges changes = settings.changes();
+    for (const auto & change : changes)
+    {
+        String value = Settings::valueToStringUtil(change.name, change.value);
+        CoreSettings::maskSettingValue(change.name, change.value, value);
+        log_entry.settings.emplace_back(change.name, value);
+    }
 
-        SettingsChanges changes = settings.changes();
-        for (const auto & change : changes)
-        {
-            String value = Settings::valueToStringUtil(change.name, change.value);
-            CoreSettings::maskSettingValue(change.name, change.value, value);
-            log_entry.settings.emplace_back(change.name, value);
-        }
-    });
+    add(std::move(log_entry));
 }
 
 void SessionLog::addLoginFailure(
@@ -289,18 +304,15 @@ void SessionLog::addLoginFailure(
         const Exception & reason,
         const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    add([&](SessionLogElement & log_entry)
-    {
-        log_entry.auth_id = auth_id;
-        log_entry.type = SESSION_LOGIN_FAILURE;
-        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
 
-        log_entry.user = user;
-        log_entry.auth_failure_reason = reason.message();
-        log_entry.client_info = info;
-        log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
-        fillCertificateInfo(log_entry, certificate_info);
-    });
+    log_entry.user = user;
+    log_entry.auth_failure_reason = reason.message();
+    log_entry.client_info = info;
+    log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
+    fillCertificateInfo(log_entry, certificate_info);
+
+    add(std::move(log_entry));
 }
 
 void SessionLog::addLogOut(
@@ -310,21 +322,17 @@ void SessionLog::addLogOut(
     const ClientInfo & client_info,
     const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    add([&](SessionLogElement & log_entry)
+    auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
+    if (login_user)
     {
-        log_entry.auth_id = auth_id;
-        log_entry.type = SESSION_LOGOUT;
-        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
+        log_entry.user = login_user->getName();
+        log_entry.user_identified_with = user_authenticated_with.getType();
+    }
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+    log_entry.client_info = client_info;
+    fillCertificateInfo(log_entry, certificate_info);
 
-        if (login_user)
-        {
-            log_entry.user = login_user->getName();
-            log_entry.user_identified_with = user_authenticated_with.getType();
-        }
-        log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
-        log_entry.client_info = client_info;
-        fillCertificateInfo(log_entry, certificate_info);
-    });
+    add(std::move(log_entry));
 }
 
 }

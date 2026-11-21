@@ -136,7 +136,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               reverse(p)
-            Condition: (reverse(p) notIn 2-element set)
+            Condition: not((reverse(p) in 2-element set))
             Parts: 1/1
             Granules: 1000/10000
             Search Algorithm: generic exclusion search
@@ -281,7 +281,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               reverse(tuple(reverse(p), hex(p)))
-            Condition: (reverse(tuple(reverse(p), hex(p))) notIn 2-element set)
+            Condition: not((reverse(tuple(reverse(p), hex(p))) in 2-element set))
             Parts: 1/1
             Granules: 1000/10000
             Search Algorithm: generic exclusion search
@@ -426,7 +426,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               reverse(tuple(reverse(lower(p)), hex(lower(p))))
-            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) notIn 2-element set)
+            Condition: not((reverse(tuple(reverse(lower(p)), hex(lower(p)))) in 2-element set))
             Parts: 1/1
             Granules: 1000/10000
             Search Algorithm: generic exclusion search

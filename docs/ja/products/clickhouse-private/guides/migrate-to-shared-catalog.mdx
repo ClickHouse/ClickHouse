@@ -1,0 +1,193 @@
+---
+noindex: true
+title: "Shared Catalog への移行"
+description: "Shared Catalog は、ClickHouse Private インスタンスでメタデータを管理するための新しいアプローチです。"
+---
+
+Shared Catalog は、ClickHouse Private インスタンスでメタデータを管理するための新しいアプローチです。[Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) エンジンを使用するデータベースでは、すべてのレプリカに DDL ステートメントが適用されるよう ClickHouse Keeper の DDL queue を使用します。一方、[Shared](https://clickhouse.com/docs/engines/database-engines/shared) データベースエンジンでは、すべてのメタデータを Keeper 自体に保存するため、レプリカ間で DDL ステートメントを同期する必要がありません。
+
+Shared Catalog には、次のような利点があります。
+
+* すべてのレプリカで一貫した状態を維持できる
+* コンピュートノードのステートレス化 (ステートレスな Server ノードを実現) 
+* アトミックな `CREATE TABLE ... AS SELECT`
+* `UNDROP` のサポート
+* データベース間での `RENAME` や `TABLE` の移動
+* 高速で信頼性の高いレプリカのブートストラップ (ウェイクアップ、起動、Provisioning 時間を短縮) 
+
+ただし、インスタンスが初回デプロイ時に Shared Catalog で構成されていない場合は、移行が必要です。本番インスタンスを移行する前に、まずテスト環境で移行を検証することをお勧めします。
+
+<div id="migration-requirements">
+  ## 移行の要件
+</div>
+
+移行を開始する前に、次の前提条件を確認してください。
+
+<Steps>
+  <Step>
+    ### 1. Server レプリカが少なくとも 2 つあること
+
+    Operator は、新しい Shared データベースエンジンにデータベースを移行するため、ローリングアップグレードを実行します。`server.replicas` の helm 値を 2 以上に設定してください。
+  </Step>
+
+  <Step>
+    ### 2. すべてのデータベースが Replicated エンジンを使用していること
+
+    すべてのデータベース (`system` を除く) は、Replicated データベースエンジンを使用している必要があります。次のクエリで確認してください。
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    このクエリは 0 行を返す必要があります。
+  </Step>
+
+  <Step>
+    ### 3. すべてのテーブルが非レプリケートのテーブルエンジンを使用していること
+
+    どのテーブルも (`system` を除く) 、レプリケートされたテーブルエンジンまたは従来のテーブルエンジンを使用していてはなりません。次のクエリで確認してください。
+
+    ```sql
+    SELECT
+        name,
+        engine,
+        database
+    FROM system.tables
+    WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+      AND (database != 'system')
+    ```
+
+    このクエリは 0 行を返す必要があります。
+  </Step>
+
+  <Step>
+    ### 4. デタッチされたテーブルが存在しないこと
+
+    ```sql
+    SELECT * FROM system.detached_tables
+    ```
+
+    このクエリは 0 行を返す必要があります。
+
+    すべての要件が満たされたら、移行を開始できます。いずれかの要件を満たしていない場合は、ClickHouse Support にお問い合わせください。
+  </Step>
+</Steps>
+
+<div id="performing-the-migration">
+  ## 移行の実行
+</div>
+
+<Warning>
+  Hydra インスタンスでは、子インスタンスを移行する前に、まず親インスタンスを移行してください。親の移行が完了したら、各子インスタンスに対して以下の手順を繰り返します。
+</Warning>
+
+<Steps>
+  <Step>
+    ### 1. Shared Catalog 設定を有効にする
+
+    Helm の values で `featureFlags.enableSharedCatalog` を `true` に設定します。これにより設定は有効になりますが、データベースの移行はトリガーされません。このフラグを `true` に設定したまま、既存のレプリケーション対応データベースを移行せずに ClickHouse クラスターをデプロイすると、ClickHouse クラスターは起動に失敗します。
+  </Step>
+
+  <Step>
+    ### 2. 移行マーカーを追加する
+
+    Helm の values で `featureFlags.migrateToSharedCatalog` を `true` に設定します。これにより、次の処理が行われます。
+
+    * ClickHouse に `shared_database_catalog.migration_from_database_replicated` 設定が追加され、Shared Catalog モードで実行中に既存の `Replicated` データベースが存在することを想定するようになります
+    * ClickHouseCluster Kubernetes リソースに `clickhouse.com/start-shared-catalog-migration: "true"` アノテーションが追加され、このクラスターを移行するよう Operator に通知します
+
+    デプロイ後、Operator は Server ノードのローリングアップグレードをトリガーします。これにより、すべてのデータベースの type も `Shared` に変更されます。
+  </Step>
+
+  <Step>
+    ### 3. status が Ready になるまで待つ
+
+    ```bash
+    kubectl get ClickHouseCluster <instance-name>
+    ```
+  </Step>
+
+  <Step>
+    ### 4. 移行マーカーを削除する
+
+    status が Ready になったら、Helm の values で `featureFlags.migrateToSharedCatalog` を `false` に設定します。すべてのデータベースは `Replicated` ではなく `Shared` type に移行済みのため、移行設定は不要になります。
+  </Step>
+
+  <Step>
+    ### 5. すべてのデータベースが移行されたことを確認する
+
+    system database 以外のすべてのデータベースで Shared engine が使用されていることを確認します。
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Shared')
+    ```
+
+    このクエリは行を返さないはずです。この時点で、インスタンスは Shared Catalog に移行されています。
+  </Step>
+</Steps>
+
+<div id="rollback">
+  ## ロールバック
+</div>
+
+Shared Catalog で問題が発生した場合は、以前の状態にロールバックできます。
+
+<Steps>
+  <Step>
+    ### 1. 移行マーカーを削除する
+
+    Helm の values で `featureFlags.migrateToSharedCatalog` を `false` に設定します。
+  </Step>
+
+  <Step>
+    ### 2. Shared Catalog の設定を削除する
+
+    Helm の values で `featureFlags.enableSharedCatalog` を `false` に設定します。これにより、Operator が変更を元に戻します。
+  </Step>
+
+  <Step>
+    ### 3. Keeper 内の Catalog を削除する
+
+    Keeper への接続をポートフォワードし、keeper-client セッション (`clickhouse keeper-client` を使用) を開始します。
+
+    セッションを開始したら、次のコマンドを実行します。
+
+    ```text
+    ls '/clickhouse/catalog'
+    # 出力: migration_from_database_replicated_completed names references replicas uuids
+
+    rmr '/clickhouse/catalog'
+    # パス /clickhouse/catalog を再帰的に削除しようとしています。続行しますか?
+    # [y/n] y
+    ```
+
+    これにより、Keeper から Shared Catalog の状態がすべてクリーンアップされます。
+  </Step>
+
+  <Step>
+    ### 4. ロールバックを確認する
+
+    system database 以外のすべての database が再び Replicated engine を使用していることを確認します。
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    このクエリは行を返さないはずです。
+  </Step>
+</Steps>

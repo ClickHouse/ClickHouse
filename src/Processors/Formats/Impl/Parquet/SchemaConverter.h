@@ -44,13 +44,7 @@ struct SchemaConverter
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
-    /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
-    /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
-    /// failed parse caught by the caller (which leaves an empty map) does not cause
-    /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
-    /// parse according to its own settings.
-    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
-                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
+    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
@@ -154,8 +148,7 @@ private:
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
     /// For top-level columns (when current_path is empty), returns the full mapped name to support
     /// column names with dots (e.g. `integer.col` in Iceberg).
-    std::string_view useColumnMapperIfNeeded(
-        const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
 };
 
 }

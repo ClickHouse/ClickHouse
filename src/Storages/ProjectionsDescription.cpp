@@ -125,8 +125,6 @@ ProjectionsDescription ProjectionsDescription::clone() const
     ProjectionsDescription other;
     for (const auto & projection : projections)
         other.add(projection.clone());
-    for (const auto & definition_ast : unavailable)
-        other.addUnavailable(definition_ast->clone());
 
     return other;
 }
@@ -389,8 +387,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
-    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -404,7 +400,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
@@ -871,19 +867,6 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
-    for (const auto & definition_ast : unavailable)
-    {
-        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
-            continue;
-        if (if_not_exists)
-            return;
-        throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION,
-            "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
-            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
-            projection.name);
-    }
-
     auto insert_it = projections.cend();
 
     if (first)
@@ -908,14 +891,6 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        for (auto unavailable_it = unavailable.begin(); unavailable_it != unavailable.end(); ++unavailable_it)
-        {
-            if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
-                continue;
-            unavailable.erase(unavailable_it);
-            return;
-        }
-
         if (if_exists)
             return;
 
@@ -928,33 +903,6 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
-}
-
-void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
-{
-    unavailable.push_back(std::move(definition_ast));
-}
-
-Names ProjectionsDescription::getUnavailableNames() const
-{
-    Names names;
-    names.reserve(unavailable.size());
-    for (const auto & definition_ast : unavailable)
-        names.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
-    return names;
-}
-
-void ProjectionsDescription::replace(ProjectionDescription && projection)
-{
-    auto it = map.find(projection.name);
-    if (it == map.end())
-        throw Exception(
-            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
-            "There is no projection {} in table{}",
-            projection.name,
-            getHintsMessage(projection.name));
-
-    *it->second = std::move(projection);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const

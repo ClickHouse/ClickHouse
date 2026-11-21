@@ -28,7 +28,7 @@ Contient des enregistrements de journalisation. Le niveau de journalisation cons
 * `event_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de l’entrée avec une précision à la microseconde.
 * `thread_name` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom du thread ayant effectué la journalisation.
 * `thread_id` ([UInt64](/fr/reference/data-types/int-uint)) — ID du thread du système d’exploitation.
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/fr/reference/data-types/enum)) — Niveau de l’entrée. Valeurs possibles : 1 ou &#39;Fatal&#39;, 2 ou &#39;Critical&#39;, 3 ou &#39;Error&#39;, 4 ou &#39;Warning&#39;, 5 ou &#39;Notice&#39;, 6 ou &#39;Information&#39;, 7 ou &#39;Debug&#39;, 8 ou &#39;Trace&#39;, 9 ou &#39;Test&#39;.
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/fr/reference/data-types/enum)) — Niveau de l’entrée. Valeurs possibles : 1 ou &#39;Fatal&#39;, 2 ou &#39;Critical&#39;, 3 ou &#39;Error&#39;, 4 ou &#39;Warning&#39;, 5 ou &#39;Notice&#39;, 6 ou &#39;Information&#39;, 7 ou &#39;Debug&#39;, 8 ou &#39;Trace&#39;.
 * `query_id` ([String](/fr/reference/data-types/string)) — ID de la requête.
 * `logger_name` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom du logger (par ex., DDLWorker).
 * `message` ([String](/fr/reference/data-types/string)) — Le message lui-même.
@@ -64,6 +64,7 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
+microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

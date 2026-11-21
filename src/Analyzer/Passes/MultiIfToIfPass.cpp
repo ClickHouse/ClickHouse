@@ -12,7 +12,6 @@ namespace Setting
 {
     extern const SettingsBool optimize_multiif_to_if;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -64,8 +63,7 @@ void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context
 {
     const auto & settings = context->getSettingsRef();
     auto if_function_ptr
-        = createInternalFunctionIfOverloadResolver(
-            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        = createInternalFunctionIfOverloadResolver(settings[Setting::use_variant_as_common_type]);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

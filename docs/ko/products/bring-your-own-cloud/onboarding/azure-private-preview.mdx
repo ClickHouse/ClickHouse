@@ -1,0 +1,74 @@
+---
+title: 'Azure 비공개 프리뷰'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure (비공개 프리뷰)'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure']
+description: 'Terraform 모듈과 테넌트 간 인증을 사용해 Azure에서 ClickHouse BYOC를 온보딩합니다'
+doc_type: '참고'
+---
+
+import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  Azure의 BYOC는 **비공개 프리뷰**로 제공됩니다. 참여하려면 [ClickHouse 팀에 문의하세요](https://clickhouse.com/cloud/bring-your-own-cloud).
+</Note>
+
+<div id="overview">
+  ## 개요
+</div>
+
+Azure용 BYOC를 사용하면 자체 Azure 구독에서 ClickHouse를 실행할 수 있습니다. 온보딩에는 Terraform 모듈이 사용되며, 이 모듈은 ClickHouse Cloud의 프로비저너가 테넌트와 구독에서 Azure 리소스를 생성하고 관리하는 데 필요한 테넌트 간 인증을 프로비저닝합니다.
+
+배포의 다른 측면(예: [아키텍처](/ko/products/bring-your-own-cloud/overview/architecture), [네트워크 보안](/ko/products/bring-your-own-cloud/reference/network-security), [기능](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features), [연결](/ko/products/bring-your-own-cloud/configuration/connect))은 AWS 및 GCP의 BYOC와 전반적으로 유사합니다. 자세한 내용은 해당 페이지를 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+* BYOC 배포를 호스팅할 Azure **구독** 및 **테넌트**
+* ClickHouse 팀과 공유할 **구독 ID** 및 **테넌트 ID**
+
+<div id="onboarding">
+  ## 온보딩
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Terraform 모듈 적용
+
+    BYOC Azure 온보딩을 시작하려면 ClickHouse에서 제공하는 [Azure용 Terraform 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 **대상 테넌트와 구독**에 적용하세요.
+
+    필수 변수와 적용 단계는 모듈 문서를 참조하세요. 적용이 완료되면 모듈이 Azure 환경에 필요한 아이덴티티와 권한을 설정합니다.
+  </Step>
+
+  <Step>
+    ### 2. ClickHouse에 ID 제공
+
+    다음을 ClickHouse 팀에 공유하십시오:
+
+    * **대상 구독 ID** — BYOC 리소스가 생성될 Azure 구독
+    * **대상 테넌트 ID** — 해당 구독을 소유한 Azure AD(Entra) 테넌트
+    * **리전** — ClickHouse 서비스를 배포하려는 Azure 리전
+    * **VNet CIDR 범위** — BYOC VNet에 사용할 IP 주소 범위
+
+    ClickHouse 팀은 이 정보를 사용해 BYOC 인프라를 생성하고 온보딩을 완료합니다.
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### 테넌트 간 인증 작동 방식
+</div>
+
+[테넌트 간 인증에 대한 Azure 지침](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)에 따라 Terraform 모듈은 다음을 수행합니다.
+
+1. 대상 테넌트에 **멀티 테넌트 애플리케이션**을 **엔터프라이즈 애플리케이션**(서비스 주체)으로 **프로비저닝합니다**
+2. 해당 애플리케이션에 필요한 **권한을 할당**하고, 대상 구독 범위로 제한합니다
+
+이를 통해 ClickHouse Cloud 컨트롤 플레인은 Azure 자격 증명을 ClickHouse에 저장하지 않고도 구독 내에서 Azure 리소스(예: 리소스 그룹, AKS, 스토리지, 네트워킹)를 생성하고 관리할 수 있습니다.
+
+Azure의 멀티 테넌트 앱 및 테넌트 간 시나리오에 대한 자세한 내용은 다음 문서를 참조하십시오.
+
+* [Microsoft Entra ID의 단일 테넌트 및 멀티 테넌트 앱](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [테넌트 간 액세스 권한 부여(Azure SignalR 예시)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

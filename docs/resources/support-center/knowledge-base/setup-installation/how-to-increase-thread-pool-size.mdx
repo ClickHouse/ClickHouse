@@ -6,6 +6,9 @@ tags: ['Performance and Optimizations']
 keywords: ['Available Threads']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## Increasing the Number of Threads in ClickHouse {#increasing-the-number-of-threads-in-clickhouse}
 ClickHouse uses threads from the **Global Thread pool** to process queries and also perform background operations like merges and mutations. If there is no idle thread to process a query, then a new thread is created in the pool.
 
@@ -27,4 +30,4 @@ You can also free up resources if your server has a lot of idle threads - using 
 <max_thread_pool_free_size>2000</max_thread_pool_free_size>
 ```
 
-Check out the [docs](/reference/settings/server-settings/settings/max-thread#max_thread_pool_size) for more details on the settings above and other settings that affect the Global Thread pool.
+Check out the [docs](/reference/settings/server-settings/settings#max_thread_pool_size) for more details on the settings above and other settings that affect the Global Thread pool.

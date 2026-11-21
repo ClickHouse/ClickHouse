@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -27,17 +27,19 @@ Apache Polaris는 Iceberg 테이블과 Delta Tables(Generic Tables를 통해)를
 
 Polaris 카탈로그에 연결하려면 다음이 필요합니다:
 
-* Snowflake Open 카탈로그(호스팅형 Polaris) 또는 자체 호스팅 Polaris 카탈로그
+* Snowflake Open Catalog(호스팅형 Polaris) 또는 자체 호스팅 Polaris Catalog
 * Polaris 카탈로그 URI(예: `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` 또는 `http://polaris:8181/api/catalog/v1/oauth/tokens`)
 * 카탈로그 자격 증명(client ID 및 client secret)
-* Polaris 인스턴스의 OAuth tokens URI
+* Polaris 인스턴스의 OAuth token URI
 * Iceberg 데이터가 저장된 객체 스토어의 storage endpoint(예: S3)
 * ClickHouse 버전 26.1+
 
-Snowflake의 관리형 Polaris 서비스인 Open 카탈로그의 경우 URI에 `/polaris`가 포함되지만, 자체 호스팅 환경에서는 포함되지 않을 수 있습니다.
+Snowflake의 관리형 Polaris 서비스인 Open Catalog의 경우 URI에 `/polaris`가 포함되지만, 자체 호스팅 환경에서는 포함되지 않을 수 있습니다.
 
 <Steps>
-  <Step title="Polaris와 ClickHouse 간 연결 생성" id="connecting">
+  <Step>
+    ## Polaris와 ClickHouse 간 연결 생성
+
     ClickHouse를 Polaris 카탈로그에 연결하는 데이터베이스를 생성합니다:
 
     ```sql
@@ -53,7 +55,9 @@ Snowflake의 관리형 Polaris 서비스인 Open 카탈로그의 경우 URI에 `
     ```
   </Step>
 
-  <Step title="ClickHouse를 사용해 Polaris 카탈로그 쿼리" id="query-polaris-catalog">
+  <Step>
+    ## ClickHouse를 사용해 Polaris 카탈로그 쿼리
+
     연결이 설정되면 Polaris를 쿼리할 수 있습니다:
 
     ```sql title="쿼리"
@@ -78,7 +82,9 @@ Snowflake의 관리형 Polaris 서비스인 Open 카탈로그의 경우 URI에 `
     ```
   </Step>
 
-  <Step title="Polaris에서 ClickHouse로 데이터 로드" id="loading-data-into-clickhouse">
+  <Step>
+    ## Polaris에서 ClickHouse로 데이터 로드
+
     Polaris에서 ClickHouse 테이블로 데이터를 로드하려면 먼저 원하는 스키마로 대상 테이블을 생성한 다음, Polaris 테이블에서 데이터를 삽입합니다:
 
     ```sql title="쿼리"

@@ -8,12 +8,10 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <base/sleep.h>
 #include <exception>
 #include <mutex>
 
@@ -27,27 +25,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace FailPoints
-{
-    extern const char distributed_plan_delay_root_cause_report[];
-}
-
 /// TODO: move
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
-
-namespace
-{
-
-/// The in-flight exception as the initiator reports it. Not `what()`: for a Poco exception that is
-/// only the exception's name.
-StatelessTaskExecutor::TaskFailure currentTaskFailure()
-{
-    return {
-        getCurrentExceptionCode(),
-        getCurrentExceptionMessage(/*with_stacktrace=*/ false, /*check_embedded_stacktrace=*/ false, /*with_extra_info=*/ false, /*with_version=*/ false)};
-}
-
-}
 
 StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
     : thread_pool(
@@ -76,11 +55,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     ContextMutablePtr query_context = Context::createCopy(global_context);
     query_context->makeQueryContext();
     {
-        /// Start from the context's client info rather than a default-constructed one:
-        /// `makeQueryContext` filled the zero client version with this server's own version,
-        /// and a fragment can still read a `Distributed` table, in which case
-        /// `RemoteQueryExecutor` refuses to forward an unknown (zero) initiator version.
-        ClientInfo client_info = query_context->getClientInfo();
+        ClientInfo client_info;
         client_info.current_query_id = unique_task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         client_info.initial_query_id = task_description.initial_query_id;
@@ -93,11 +68,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     /// Force make_distributed_plan off: the worker runs an already-split local fragment.
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
-    query_context->setSetting("enable_cascades_optimizer", false);
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
-    auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
+    std::shared_ptr<std::promise<String>> task_promise = std::make_shared<std::promise<String>>();
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
 
@@ -137,24 +111,19 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
             auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
             query_context->setProcessListElement(process_list_entry->getQueryStatus());
 
-            /// A dispatched task is by definition not the initiator's in-process execution, so its
-            /// exchanges use the streaming/persisted transports rather than in-memory queues.
-            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
-                /*execute_locally=*/false, is_task_cancelled, update_progress);
-            task_promise->set_value(std::nullopt);
+            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context, is_task_cancelled, update_progress);
+            task_promise->set_value("");
         }
-        catch (...)
+        catch (std::exception & e)
         {
             tryLogCurrentException(getLogger("StatelessTaskExecutor"),
                 fmt::format("Task {} failed", task_description.task.task_id));
-            auto failure = currentTaskFailure();
-            /// Lets the failures this one causes in the connected tasks reach the initiator first.
-            fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
-            {
-                if (!DistributedQueryCancellation::isConsequence(failure.code))
-                    sleepForMilliseconds(1000);
-            });
-            task_promise->set_value(std::move(failure));
+            task_promise->set_value(e.what());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            task_promise->set_value("unknown exception");
         }
     };
 
@@ -168,7 +137,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         /// half-published entry so `get_status` doesn't report "running" forever
         /// for a task no thread is executing, and complete the promise with the
         /// scheduling exception so future waiters fail fast.
-        task_promise->set_value(currentTaskFailure());
+        task_promise->set_value(getCurrentExceptionMessage(/*with_stacktrace*/ false));
         std::lock_guard lock(tasks_mutex);
         tasks.erase(unique_task_id);
         throw;
@@ -180,7 +149,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id, UInt64 wait_milliseconds)
 {
     /// Make a copy of task completion future to wait for it outside of the lock
-    std::shared_future<std::optional<TaskFailure>> completion_future;
+    std::shared_future<String> completion_future;
     std::shared_ptr<Progress> progress;
     {
         std::lock_guard lock(tasks_mutex);
@@ -198,10 +167,11 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     }
 
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
-    const auto & failure = completion_future.get();
-    if (!failure)
+    auto error_message = completion_future.get();
+    if (error_message.empty())
         return TaskStatus{Result::TaskFinished, "", std::move(progress_delta)};
-    return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code};
+    else
+        return TaskStatus{Result::TaskFailed, error_message, std::move(progress_delta)};
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)

@@ -70,9 +70,11 @@ struct ClientCache
 class ClientCacheRegistry
 {
 public:
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static ClientCacheRegistry & instance();
+    static ClientCacheRegistry & instance()
+    {
+        static ClientCacheRegistry registry;
+        return registry;
+    }
 
     void registerClient(const std::shared_ptr<ClientCache> & client_cache);
     void unregisterClient(ClientCache * client);
@@ -85,12 +87,12 @@ public:
 private:
     ClientCacheRegistry() = default;
 
-    void pruneUnusedCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
+    void pruneExpiredCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
 
     std::mutex clients_mutex;
     UnorderedMapWithMemoryTracking<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
     std::mutex cache_by_key_mutex;
-    UnorderedMapWithMemoryTracking<UInt128, std::shared_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
+    UnorderedMapWithMemoryTracking<UInt128, std::weak_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -98,6 +100,8 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
+    /// Disable checksum to avoid extra read of the input stream
+    bool disable_checksum = false;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -211,7 +215,6 @@ public:
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
     Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
-
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
     Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 
@@ -239,8 +242,6 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
-
-    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 
@@ -304,12 +305,6 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
-    /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
-    /// One HeadObject. Logs a failed proof, at warning level if asked.
-    bool isObjectWrittenWithIdempotencyId(
-        const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
-        bool warn_if_unproven) const;
-
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
@@ -367,7 +362,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
-        NormalizedHTTPHeaderEntries headers,
+        HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
         const String & session_token = "",
         const std::shared_ptr<ClientCache> & shared_cache = nullptr);

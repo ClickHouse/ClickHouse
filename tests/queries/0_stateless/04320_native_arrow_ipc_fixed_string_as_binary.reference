@@ -4,8 +4,7 @@ string_as_string=0 native reader:
 7878000000
 7878780000
 7878787800
-string_as_string=0 pyarrow reader:
-fs	binary
+string_as_string=0 library reader:
 0000000000
 7800000000
 7878000000
@@ -17,8 +16,7 @@ string_as_string=1 native reader:
 7878000000
 7878780000
 7878787800
-string_as_string=1 pyarrow reader:
-fs	string
+string_as_string=1 library reader:
 0000000000
 7800000000
 7878000000

@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <Client/HedgedConnectionsFactory.h>
 #include <base/sort.h>
@@ -30,7 +30,6 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
-    bool fail_if_replica_unprobed_,
     std::shared_ptr<QualifiedTableName> table_to_check_,
     GetPriorityForLoadBalancing::Func priority_func)
     : pool(pool_)
@@ -41,7 +40,6 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
-    , fail_if_replica_unprobed(fail_if_replica_unprobed_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
@@ -118,17 +116,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         else if (state == State::CANNOT_CHOOSE)
         {
             if (connections.size() >= min_entries)
-            {
-                bool unprobed_replica = false;
-                for (const ReplicaStatus & replica : replicas)
-                    unprobed_replica |= replica.connection_establisher->getResult().local_pool_exhausted;
-
-                if (fail_if_replica_unprobed && connections.empty() && unprobed_replica)
-                    throw NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                        "All connection tries failed. Log: \n\n{}\n", fail_messages);
-
                 break;
-            }
 
             /// Determine the reason of not enough replicas.
             if (!fallback_to_stale_replicas && up_to_date_count < min_entries)
@@ -394,29 +382,6 @@ void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
     replicas[index].change_replica_timeout.reset();
     epoll.remove(replicas[index].change_replica_timeout.getDescriptor());
     timeout_fd_to_replica_index.erase(replicas[index].change_replica_timeout.getDescriptor());
-}
-
-bool HedgedConnectionsFactory::maySelectReplicaBelowQueryPlanSerializationVersion(UInt64 version) const
-{
-    if (maySelectUnverifiedReplica())
-        return true;
-
-    if (!fallback_to_stale_replicas)
-        return false;
-
-    /// Every pool has already been resolved, but the usable and not up-to-date entries are still
-    /// held by the factory and `setBestUsableReplica` may hand one of them out on a later hedge.
-    for (const ReplicaStatus & replica : replicas)
-    {
-        if (replica.is_ready)
-            continue;
-
-        TryResult result = replica.connection_establisher->getResult();
-        if (!result.entry.isNull() && result.is_usable && result.entry->getQueryPlanSerializationVersion() < version)
-            return true;
-    }
-
-    return false;
 }
 
 size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const

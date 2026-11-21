@@ -1,0 +1,239 @@
+---
+noindex: true
+title: "سجل التغييرات"
+---
+
+***
+
+<div id="airgap-2026-06-09">
+  ## airgap-2026-06-09
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.311        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+* feat(airgap): إتاحة الخيار plainRewritableDiskForSystemTables (#35033)
+* feat(operator): إضافة إصدارات arm64 (#34389)
+* feat(preflight): إضافة فحص تمهيدي لنسبة ذاكرة التخزين المؤقت [AIR-127] (#34709)
+* feat(airgap): إضافة فحص تمهيدي لترحيل Shared Catalog (#34708)
+* feat(onprem): إضافة ResourceQuota لضمان وجود ClickHouseCluster واحد فقط في كل مساحة اسم (#34615)
+
+<div id="bug-fixes">
+  ### إصلاحات الأخطاء
+</div>
+
+* fix(airgap): الانتظار حتى يتم إنشاء CRD قبل تثبيت العنقود (#34834)
+* fix(onprem): السماح بعدم وجود أي نُسخ متماثلة لـ Keeper للنسخ الفرعية في Hydra (#34693)
+* fix(operator): إصدارات FIPS المنشورة كانت تفتقد وسيطات build الصحيحة (#34600)
+* fix(onprem-clickhouse-cluster): تثبيت أعلام الميزات المهملة على القيم الافتراضية التي يتوقعها المشغّل (#34417)
+
+***
+
+<div id="airgap-2026-05-28">
+  ## airgap-2026-05-28
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+***
+
+<div id="airgap-2026-05-27">
+  ## airgap-2026-05-27
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.302        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+* feat(airgap): إضافة Git SHA إلى الوثائق غير العامة (#34183)
+* feat(airgap): دعم BackupConfiguration في مخطط Helm (#33746)
+* feat(airgap): إضافة علامات الميزات المهملة إلى فحص تمهيدي (#33545)
+
+<div id="bug-fixes">
+  ### إصلاحات الأخطاء
+</div>
+
+* fix(docs): إصلاح عرض وثيقة Airgap ذات الصفحة الواحدة (#34288)
+* fix(airgap): إصلاح روابط الارتساء في وثائق Private (#34122)
+
+***
+
+<div id="airgap-2026-05-21">
+  ## airgap-2026-05-21
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+* feat(clickhouse-operator): خيارات build لامتثال FIPS ودعم وقت التشغيل (#29677)
+* feat(onprem-clickhouse-cluster): إضافة دعم للتكوين الأساسي لـ gcp في مخطط Helm المحلي (#33501)
+
+<div id="bug-fixes">
+  ### إصلاحات الأخطاء
+</div>
+
+* إصلاح(onprem-clickhouse-cluster): تعطيل enableDynamicSSDCacheConfiguration (#33700)
+* إصلاح(onprem-clickhouse-cluster): إزالة إعدادات `openssl.fips` غير المستخدمة (#33881))
+* إصلاح(onprem-clickhouse-cluster): إزالة cloud.port من extraConfig عند اشتراط TLS (#33548)
+* إصلاح(clickhouse-operator): تعيين SsdCacheConfiguration.IsOnEmptyDir كخيار اختياري (#33570)
+
+***
+
+<div id="airgap-2026-04-23">
+  ## airgap-2026-04-23
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18231.1 |
+| helm/clickhouse-operator-helm  | 1.18231.1      |
+| helm/onprem-clickhouse-cluster | 1.1.260        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="bug-fixes">
+  ### إصلاحات الأخطاء
+</div>
+
+* إصلاح(onprem-helm-chart): السماح باستخدام معلمات storageClass و allowedTopologies (#32776)
+
+***
+
+<div id="airgap-2026-04-15">
+  ## airgap-2026-04-15
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.245        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+* feat(airgap): تفعيل Shared Catalog وStateless Servers بشكل افتراضي (#32481) — راجع [التغييرات غير المتوافقة](/ar/products/clickhouse-private/reference/breaking-changes) و[الانتقال إلى Shared Catalog](/ar/products/clickhouse-private/guides/migrate-to-shared-catalog)
+
+<div id="bug-fixes">
+  ### إصلاحات الأخطاء
+</div>
+
+* fix(airgap-management): استخدام اتصال S3 الخاص بالعنقود المصدر لاستعادة النسخة الاحتياطية (#32612)
+
+***
+
+<div id="airgap-2026-04-14">
+  ## airgap-2026-04-14
+</div>
+
+<div id="component-versions">
+  ### إصدارات المكوّنات
+</div>
+
+| المكوّن                        | الإصدار        |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.234        |
+| airgap-management              | 1.83.1         |
+| helm/airgap-management         | 1.83.1         |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### الميزات الجديدة
+</div>
+
+* feat(airgap): دعم Shared Catalog في مخطط Helm الخاص بـ onprem-clickhouse-cluster (#31779)
+* feat(airgap): إضافة دعم الخادم عديم الحالة في مخطط Helm الخاص بـ onprem-clickhouse-cluster (#32202)
+* feat(airgap): إضافة مخطط Helm لـ support-bundle (#32271)
+* feat(airgap): جعل واجهة برمجة التطبيقات الخاصة بـ airgap متوافقة مع معايير FIPS (#31811)

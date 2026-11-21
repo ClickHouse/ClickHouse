@@ -187,7 +187,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
    * Если вы запускаете ClickHouse в Docker в сети IPv6, убедитесь, что установлено `network=host`.
 
 2. Настройки конечной точки.
-   * Проверьте настройки [listen&#95;host](/ru/reference/settings/server-settings/settings/listen#listen_host) и [tcp&#95;port](/ru/reference/settings/server-settings/settings/tcp-port#tcp_port).
+   * Проверьте настройки [listen&#95;host](/ru/reference/settings/server-settings/settings#listen_host) и [tcp&#95;port](/ru/reference/settings/server-settings/settings#tcp_port).
    * По умолчанию ClickHouse server принимает подключения только с localhost.
 
 3. Настройки HTTP-протокола:
@@ -197,8 +197,8 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 4. Настройки защищённого подключения.
 
    * Проверьте:
-     * Настройку [tcp&#95;port&#95;secure](/ru/reference/settings/server-settings/settings/tcp-port#tcp_port_secure).
-     * Настройки [SSL certificates](/ru/reference/settings/server-settings/settings/other#openssl).
+     * Настройку [tcp&#95;port&#95;secure](/ru/reference/settings/server-settings/settings#tcp_port_secure).
+     * Настройки [SSL certificates](/ru/reference/settings/server-settings/settings#openssl).
    * При подключении используйте правильные параметры. Например, используйте параметр `port_secure` с `clickhouse_client`.
 
 5. Настройки пользователя:

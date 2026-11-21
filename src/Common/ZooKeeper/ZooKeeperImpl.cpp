@@ -13,7 +13,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Coordination/KeeperCommon.h>
-#include <IO/NullWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -543,7 +542,6 @@ ZooKeeper::ZooKeeper(
 
         initFeatureFlags();
         keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
-        initMaxRequestSize();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -869,14 +867,6 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
                         static_cast<int32_t>(err), err);
 }
 
-String ZooKeeper::formatRequestSizeExceeded(size_t request_size, const ZooKeeperRequest & request) const
-{
-    return fmt::format(
-        "Request size {} exceeds limit {} (client max_request_size = {}, server max_request_size = {}), request: {}",
-        request_size, getMaxRequestSize(), args.max_request_size, keeper_max_request_size,
-        request.toString(/*short_format=*/true));
-}
-
 void ZooKeeper::sendThread()
 {
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
@@ -924,13 +914,10 @@ void ZooKeeper::sendThread()
                     /// error in that window instead. The completion itself allocates, so block
                     /// MEMORY_LIMIT_EXCEEDED inside the guard rather than prebuilding the response.
                     bool callback_registered = false;
-                    /// If set, reject the request with this error instead of sending it.
-                    std::optional<Error> reject_error;
-                    const auto assert_request_window_exit = [&]
+                    const auto assert_request_window_exit = []
                     {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                        const bool unwinding = std::uncaught_exceptions() > 0;
-                        chassert(unwinding == !reject_error.has_value());
+                        chassert(std::uncaught_exceptions() > 0);
 #endif
                     };
                     SCOPE_EXIT({
@@ -941,17 +928,13 @@ void ZooKeeper::sendThread()
                         try
                         {
                             ZooKeeperResponsePtr response = info.request->makeResponse();
-                            response->error = reject_error.value_or(
-                                info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED);
+                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
                             response->xid = info.request->xid;
                             info.callback(*response);
                         }
                         catch (...)
                         {
-                            if (reject_error.has_value())
-                                tryLogCurrentException(log);
-                            else
-                                deferException(std::current_exception(), "Exception in ZooKeeper sendThread request-window callback");
+                            deferException(std::current_exception(), "Exception in ZooKeeper sendThread request-window callback");
                         }
                     });
 
@@ -972,26 +955,6 @@ void ZooKeeper::sendThread()
 
                     if (info.request->add_root_path)
                         info.request->addRootPath(args.chroot);
-
-                    /// Final exact-size check: reject only this request, session intact (no alloc/IO here, so any exception would be a bug).
-                    size_t wire_size = sizeof(int32_t) + info.request->requestSize(use_xid_64);
-                    if (pass_opentelemetry_tracing_context)
-                    {
-                        ++wire_size;
-                        if (info.request->tracing_context)
-                        {
-                            DB::NullWriteBuffer counter;
-                            info.request->tracing_context->serialize(counter);
-                            wire_size += counter.count();
-                        }
-                    }
-                    if (!checkRequestSize(wire_size))
-                    {
-                        LOG_WARNING(log, "Rejecting request: {}", formatRequestSizeExceeded(wire_size, *info.request));
-                        reject_error = Error::ZBADARGUMENTS;
-                        /// The SCOPE_EXIT guard above completes the callback with reject_error.
-                        continue;
-                    }
 
                     /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
                     /// to avoid a data race: receiveThread reads from operations concurrently,
@@ -1725,10 +1688,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
-    /// Lower-bound pre-check (chroot/tracing added later, exact check in `sendThread`); outside the try below so an oversize fails alone, not the session.
-    if (const size_t request_size = info.request->requestSize(use_xid_64); !checkRequestSize(request_size))
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, formatRequestSizeExceeded(request_size, *info.request));
-
     try
     {
         info.request->create_ts = clock::now();
@@ -1867,33 +1826,6 @@ void ZooKeeper::initFeatureFlags()
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
-}
-
-void ZooKeeper::initMaxRequestSize()
-{
-    /// If server doesn't explicitly advertise it, we ignore the path
-    if (!isFeatureEnabled(KeeperFeatureFlag::MAX_REQUEST_SIZE))
-        return;
-
-    /// Best-effort: an absent node keeps the default; a genuine read failure propagates and the connect path reconnects.
-    auto value = tryGetSystemZnode(keeper_max_request_size_path, "max request size");
-    if (!value.has_value())
-        return;
-
-    UInt64 parsed = 0;
-    /// On third-party ZooKeeper this node is ordinary user data; never fail the session over it.
-    if (!DB::tryParse(parsed, *value))
-    {
-        LOG_WARNING(log, "Cannot parse server-advertised max_request_size '{}', ignoring it", value->substr(0, 64));
-        return;
-    }
-    if (parsed != 0 && (parsed < MIN_SANE_ADVERTISED_REQUEST_SIZE_LIMIT || parsed > MAX_REQUEST_SIZE_HARD_LIMIT))
-    {
-        LOG_WARNING(log, "Server-advertised max_request_size {} is out of sane bounds, ignoring it", parsed);
-        return;
-    }
-    keeper_max_request_size = parsed;
-    LOG_TRACE(log, "Server advertised max_request_size = {}", keeper_max_request_size);
 }
 
 String ZooKeeper::tryGetAvailabilityZone()
@@ -2294,64 +2226,41 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
-bool ZooKeeper::resolveSystemLogs()
-{
-    while (true)
-    {
-        auto state = system_logs_state.load();
-        if (state == SystemLogsState::Resolved)
-            return true;
-        if (state == SystemLogsState::Unresolved && system_logs_state.compare_exchange_strong(state, SystemLogsState::InProgress))
-            break;
-        system_logs_state.wait(SystemLogsState::InProgress);
-    }
-
-    auto set_state = [&](SystemLogsState state)
-    {
-        system_logs_state = state;
-        system_logs_state.notify_all();
-    };
-
-    try
-    {
-        if (const auto global_context = Context::getGlobalContextInstance())
-        {
-            if (!global_context->hasSystemLogs())
-            {
-                set_state(SystemLogsState::Unresolved);
-                return false;
-            }
-
-            if (!zk_log)
-                zk_log = global_context->getZooKeeperLog();
-            if (!aggregated_zookeeper_log)
-                aggregated_zookeeper_log = global_context->getAggregatedZooKeeperLog();
-        }
-    }
-    catch (...)
-    {
-        set_state(SystemLogsState::Unresolved);
-        throw;
-    }
-
-    set_state(SystemLogsState::Resolved);
-    return true;
-}
-
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
+    {
+        return maybe_zk_log;
+    }
 
-    return zk_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
+        {
+            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
+            return maybe_zk_log;
+        }
+    }
+
+    return nullptr;
 }
-
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
+    {
+        return maybe_aggregated_zookeeper_log;
+    }
 
-    return aggregated_zookeeper_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
+        {
+            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
+            return maybe_aggregated_zookeeper_log;
+        }
+    }
+
+    return nullptr;
 }
 
 #ifdef ZOOKEEPER_LOG
@@ -2404,10 +2313,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
             elem.thread_id = request->thread_id;
             elem.query_id = request->query_id;
         }
-        maybe_zk_log->add([&](ZooKeeperLogElement & element)
-        {
-            element = elem;
-        });
+        maybe_zk_log->add(std::move(elem));
     }
 }
 #else

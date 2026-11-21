@@ -1,36 +1,30 @@
 ---
-title: "参考"
-sidebarTitle: "参考"
-description: "介绍 Kafka ClickPipes 支持的格式、数据源、传递语义、身份验证及实验性功能。"
-slug: "/integrations/clickpipes/kafka/reference"
-doc_type: "reference"
-keywords: ["Kafka 参考", "ClickPipes", "数据源", "Avro", "虚拟列"]
+sidebarTitle: '参考'
+description: '介绍 Kafka ClickPipes 支持的格式、数据源、传递语义、身份验证及实验性功能。'
+slug: /integrations/clickpipes/kafka/reference
+title: '参考'
+doc_type: 'reference'
+keywords: ['Kafka 参考', 'ClickPipes', '数据源', 'Avro', '虚拟列']
 integration:
-  - support_level: "core"
-  - category: "clickpipes"
+  - support_level: 'core'
+  - category: 'clickpipes'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <div id="supported-data-sources">
   ## 支持的数据源
 </div>
 
-| 名称               | 徽标                                                                                                 | 类型 | 状态   | 描述                                                            |
+| 名称               | Logo                                                                                               | 类型 | 状态   | 描述                                                            |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -- | ---- | ------------------------------------------------------------- |
-| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Apache Kafka 的流式数据摄取到 ClickHouse Cloud。     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />         | 流式 | 稳定版本 | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 的协同能力。            |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />           | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Redpanda 的流式数据摄取到 ClickHouse Cloud。         |
-| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                       | 流式 | 稳定版本 | 配置 ClickPipes，开始将 AWS MSK 的流式数据摄取到 ClickHouse Cloud。          |
-| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" /> | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Azure Event Hubs 的流式数据摄取到 ClickHouse Cloud。 |
-| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />             | 流式 | 稳定版本 | 配置 ClickPipes，开始将 WarpStream 的流式数据摄取到 ClickHouse Cloud。       |
-
-<div id="isolation-level">
-  ## 隔离级别
-</div>
-
-Kafka 消费者隔离级别决定 ClickPipe 是否只读取和插入由 Kafka 事务提交的消息。启用 `kafka_read_committed` 设置可使用 `read_committed`，并跳过已中止的 Kafka 事务中的消息。禁用该设置则使用 `read_uncommitted`，读取所有消息。您可以在**高级设置**中配置此设置。
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                | 流式 | 稳定版本 | 配置 ClickPipes，开始从 Apache Kafka 向 ClickHouse Cloud 摄取流式数据。     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />         | 流式 | 稳定版本 | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 的组合优势。            |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />            | 流式 | 稳定版本 | 配置 ClickPipes，开始从 Redpanda 向 ClickHouse Cloud 摄取流式数据。         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                       | 流式 | 稳定版本 | 配置 ClickPipes，开始从 AWS MSK 向 ClickHouse Cloud 摄取流式数据。          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" /> | 流式 | 稳定版本 | 配置 ClickPipes，开始从 Azure Event Hubs 向 ClickHouse Cloud 摄取流式数据。 |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />             | 流式 | 稳定版本 | 配置 ClickPipes，开始从 WarpStream 向 ClickHouse Cloud 摄取流式数据。       |
 
 <div id="supported-data-formats">
   ## 支持的数据格式
@@ -77,8 +71,11 @@ ClickPipes 当前支持以下标准 ClickHouse 数据类型：
 
 ClickPipes 在以下情况下支持 Variant 类型：
 
-* Avro Union 类型。如果你的 Avro schema 包含一个由多个非 NULL 类型组成的 union，ClickPipes 会推断出合适的 Variant 类型。除此之外，Avro 数据不支持 Variant 类型。
-* JSON 字段。你可以为源数据流中的任何 JSON 字段手动指定 Variant 类型 (例如 `Variant(String, Int64, DateTime)`) 。不支持复杂子类型 (Array/Map/Tuple) 。此外，由于 ClickPipes 判定应使用哪种 Variant 子类型的方式所限，在 Variant 定义中只能使用一种整数类型或 datetime 类型——例如，不支持 `Variant(Int64, UInt32)`。
+* Avro Union 类型。如果你的 Avro schema 包含一个由多个非 NULL 类型组成的 union，ClickPipes 会推断出
+  合适的 Variant 类型。除此之外，Avro 数据不支持 Variant 类型。
+* JSON 字段。你可以为源数据流中的任何 JSON 字段
+  手动指定 Variant 类型 (例如 `Variant(String, Int64, DateTime)`) 。不支持复杂子类型 (Array/Map/Tuple) 。此外，由于 ClickPipes 判定
+  应使用哪种 Variant 子类型的方式所限，在 Variant 定义中只能使用一种整数类型或 datetime 类型——例如，不支持 `Variant(Int64, UInt32)`。
 
 <div id="json-type-support">
   ### JSON 类型支持
@@ -101,13 +98,15 @@ ClickPipes 在以下情况下支持 JSON 类型：
   #### 支持的 Avro 数据类型
 </div>
 
-ClickPipes 支持所有 Avro 基本类型和复杂类型，以及除 `local-timestamp-millis` 和 `local_timestamp-micros` 之外的所有 Avro 逻辑类型。Avro `record` 类型会转换为 Tuple，`array` 类型会转换为 Array，`map` 类型会转换为 Map (仅支持字符串键) 。通常可使用[此处](/zh/concepts/features/interfaces/schema-inference#avro)列出的转换方式。我们建议对 Avro 数值类型使用精确的类型匹配，因为 ClickPipes 在类型转换时不会检查是否发生溢出或精度损失。或者，所有 Avro 类型也都可以插入到 `String` 列中，此时会表示为有效的 JSON 字符串。
+ClickPipes 支持所有 Avro 基本类型和复杂类型，以及除 `local-timestamp-millis` 和 `local_timestamp-micros` 之外的所有 Avro 逻辑类型。Avro `record` 类型会转换为 Tuple，`array` 类型会转换为 Array，`map` 类型会转换为 Map (仅支持字符串键) 。通常可使用[此处](/zh/concepts/features/interfaces/schema-inference#avro)列出的转换方式。我们建议对 Avro 数值类型使用精确的类型匹配，因为 ClickPipes 在类型转换时不会检查是否发生溢出或精度损失。
+或者，所有 Avro 类型也都可以插入到 `String` 列中，此时会表示为有效的 JSON 字符串。
 
 <div id="nullable-types-and-avro-unions">
   #### Nullable 类型和 Avro union
 </div>
 
-Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union schema 定义，其中 T 是基础 Avro 类型。在 schema inference 期间，这类 union 会被映射为 ClickHouse 的 `Nullable` 列。请注意，ClickHouse 不支持 `Nullable(Array)`、`Nullable(Map)` 或 `Nullable(Tuple)` 类型。这些类型的 Avro null union 会被映射为对应的非 Nullable 版本 (Avro Record 类型会映射为 ClickHouse 的命名 Tuple) 。对于这些类型，Avro 中的 “null” 会被 insert 为：
+Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union schema 定义，其中 T 是基础 Avro 类型。在 schema inference 期间，这类 union 会被映射为 ClickHouse 的 `Nullable` 列。请注意，ClickHouse 不支持
+`Nullable(Array)`、`Nullable(Map)` 或 `Nullable(Tuple)` 类型。这些类型的 Avro null union 会被映射为对应的非 Nullable 版本 (Avro Record 类型会映射为 ClickHouse 的命名 Tuple) 。对于这些类型，Avro 中的 “null” 会被 insert 为：
 
 * 对于 null Avro array，insert 为空 Array
 * 对于 null Avro Map，insert 为空 Map
@@ -121,7 +120,8 @@ Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union sc
   #### 支持的 Protobuf 数据类型
 </div>
 
-ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用的 proto 2 `group` 类型。基础类型转换使用以下映射：
+ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用的 proto 2 `group` 类型。基础类型转换使用
+以下映射：
 
 <Note>
   还支持所有基础类型的 `Array`、`Map` 和 `Nullable` 变体。
@@ -164,7 +164,10 @@ ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用
   #### Protobuf `oneof`
 </div>
 
-在 schema inference 过程中，Protobuf `oneof` 字段默认会映射为具名 `Tuple`，其中最多只有一个字段会包含非默认值。这些字段也可以自动映射为 `Variant` 列，此时生效的值将采用已设置的组成字段的类型。或者，也可以将每个组成字段手动映射到各自独立的 ClickHouse 列；由于 `oneof` 字段彼此互斥，因此每条记录中始终只会有一列被赋值。
+在 schema inference 过程中，Protobuf `oneof` 字段默认会映射为具名 `Tuple`，其中最多只有一个字段会包含非默认
+值。这些字段也可以自动映射为 `Variant` 列，此时生效的值将采用
+已设置的组成字段的类型。或者，也可以将每个组成字段手动映射到各自独立的 ClickHouse 列；由于 `oneof`
+字段彼此互斥，因此每条记录中始终只会有一列被赋值。
 
 <div id="protobuf-message-lists">
   #### 消息列表
@@ -192,15 +195,3 @@ ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用
 请注意，`_raw_message` 列仅建议用于 JSON 数据。
 对于只需要 JSON 字符串的使用场景 (例如使用 ClickHouse [`JsonExtract*`](/zh/reference/functions/regular-functions/json-functions#jsonextract-functions) 函数来
 填充下游 materialized view) ，删除所有“非虚拟”列可能会提升 ClickPipes 性能。
-
-<div id="structured-message-keys">
-  ### 结构化消息键
-</div>
-
-将 `_key` 映射到 `String` 列会存储原始 Kafka 消息键。此映射会跳过键解码和 schema 查找。要从结构化键中提取字段，请映射以 `_key.` 开头的源字段。例如，对于 JSON 键 `{"customer":{"id":42}}`，可将 `_key.customer.id` 映射到 `customer_id` 等目标端列。
-
-对于 `_key.*` 映射，或将 `_key` 直接映射到 `String` 以外类型的情况，ClickPipes 会先检查该键是否使用配置的 Schema Registry 编码。如果未使用，ClickPipes 会检查该键是否为 JSON 对象。使用 registry 编码的键必须与记录值使用相同的格式和 registry 家族，但可以使用不同的 schema ID。键的 schema 变更会自动检测。
-
-启用解码后，原始键、JSON 标量或数组以及格式错误的 JSON 都不会填充嵌套键字段；相应的目标端列会使用该类型的默认值。如果 ClickPipes 识别出使用 registry 编码的键，但无法获取或应用其 schema，则会将 Kafka 记录写入 ClickPipes error table。
-
-Avro 键还可以使用非记录根 schema，例如基本类型、数组、map 或 fixed 类型。要解码此类键，请将 `_key` 直接映射到 `String` 以外的兼容目标类型。非记录 schema 无法填充嵌套键字段。

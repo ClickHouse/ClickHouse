@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: 'Документирование вашей интеграции'
 title: 'Документирование вашей интеграции с ClickHouse'
-description: 'Как добавлять страницы интеграций в этот репозиторий, включая обязательные разделы и шаблон, который можно скопировать.'
+description: 'Как добавлять страницы интеграций в clickhouse-docs, включая обязательные разделы и шаблон, который можно скопировать.'
 keywords: ['партнёр', 'интеграция', 'документация', 'участие в проекте', 'pull request', 'документация интеграций']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ doc_type: 'guide'
   ## Где находится документация
 </div>
 
-* **Репозиторий:** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (`docs/` в этом дереве)
-* **Формат:** MDX, сборка с помощью [Mintlify](https://www.mintlify.com/)
-* **Расположение:** `docs/integrations/<category>/<your-integration>/`, где `<category>` отражает назначение вашего продукта (`data-visualization`, `data-ingestion`, `language-clients` и т. д.)
-* **Процесс:** откройте pull request в ветку `master`. Его проверит команда интеграций ClickHouse. Если вы вносите вклад впервые, подпишите Contributor License Agreement, когда бот попросит об этом в PR. Инструкции по локальному предварительному просмотру (`mint dev` из `docs/`) см. в [руководстве по участию в работе над документацией](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme)
+* **Репозиторий:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **Формат:** Markdown, сборка с помощью Docusaurus
+* **Расположение:** `/docs/integrations/<category>/<your-integration>/`, где `<category>` отражает назначение вашего продукта (`data-visualization`, `data-ingestion`, `language-clients` и т. д.)
+* **Процесс:** откройте pull request в ветку `main`. Его проверит команда интеграций ClickHouse. Если вы вносите вклад впервые, подпишите Contributor License Agreement, когда бот попросит об этом в PR
 
 Страницы интеграций в этом репозитории — основной справочный источник для конечных пользователей. На странице интеграции можно добавить ссылку на дополнительную документацию на вашем сайте с деталями, относящимися именно к вашему продукту.
 
@@ -49,7 +49,7 @@ doc_type: 'guide'
 </div>
 
 * **Показывайте оба варианта: Cloud и самоуправляемый.** Cloud обычно использует HTTPS на порту `8443` и нативный TCP на `9440`. Для самоуправляемого варианта по умолчанию используются `8123` и `9000`
-* **Используйте выноски Mintlify** (`<Note>`, `<Warning>`, `<Tip>`) вместо абзацев с полужирным текстом
+* **Используйте admonitions Docusaurus** (`:::note`, `:::warning`, `:::tip`) для выносок вместо абзацев с полужирным текстом
 * **Давайте ссылки на подробную информацию.** Ссылайтесь на существующую документацию по типам данных, форматам, JDBC, ClickPipes и похожим темам вместо того, чтобы объяснять всё заново
 * **Без маркетинга.** Страницы интеграций здесь — это технический справочник. Рекламный контент должен размещаться на вашем сайте; мы можем ссылаться на него из каталога партнёров
 
@@ -57,17 +57,10 @@ doc_type: 'guide'
   ## Шаблон для копирования и вставки
 </div>
 
-Заполните разделы в квадратных скобках, сохраните файл как `docs/integrations/<category>/<your-integration>/index.mdx` и откройте PR.
+Заполните разделы в квадратных скобках, сохраните файл как `/docs/integrations/<category>/<your-integration>/index.md` и откройте PR.
 
-```mdx
----
-title: '[Your product] and ClickHouse'
-sidebarTitle: '[Your product]'
-slug: /integrations/[your-product]
-description: '[One sentence: what the integration does.]'
-doc_type: 'guide'
-keywords: ['[your product]', 'integration']
----
+```markdown
+# [Your product] and ClickHouse
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]

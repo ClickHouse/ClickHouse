@@ -15,7 +15,7 @@ doc_type: 'guide'
 
 O ClickHouse aceita cabeçalhos HTTP de contexto de rastreamento, conforme descrito na [recomendação do W3C](https://www.w3.org/TR/trace-context/). Ele também aceita contexto de rastreamento por um protocolo nativo usado na comunicação entre servidores do ClickHouse ou entre o cliente e o servidor. Para testes manuais, cabeçalhos de contexto de rastreamento em conformidade com a recomendação Trace Context podem ser fornecidos ao `clickhouse-client` usando as flags `--opentelemetry-traceparent` e `--opentelemetry-tracestate`.
 
-Se nenhum contexto de rastreamento pai for fornecido, ou se o contexto de rastreamento informado não estiver em conformidade com o padrão W3C mencionado acima, o ClickHouse poderá iniciar um novo rastreamento, com probabilidade controlada pela configuração [opentelemetry&#95;start&#95;trace&#95;probability](/pt-BR/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Se nenhum contexto de rastreamento pai for fornecido, ou se o contexto de rastreamento informado não estiver em conformidade com o padrão W3C mencionado acima, o ClickHouse poderá iniciar um novo rastreamento, com probabilidade controlada pela configuração [opentelemetry&#95;start&#95;trace&#95;probability](/pt-BR/reference/settings/session-settings#opentelemetry_start_trace_probability).
 
 <div id="propagating-the-trace-context">
   ## Propagação do contexto de rastreamento
@@ -102,7 +102,7 @@ As tags ou atributos são salvos como dois arrays paralelos, contendo as chaves 
   ## Registro das configurações da consulta
 </div>
 
-A configuração [log&#95;query&#95;settings](/pt-BR/reference/settings/session-settings/log-query#log_query_settings) permite registrar alterações nas configurações da consulta durante sua execução. Quando habilitada, qualquer modificação feita nas configurações da consulta será registrada no log do span do OpenTelemetry. Esse recurso é especialmente útil em ambientes de produção para rastrear alterações de configuração que possam afetar o desempenho da consulta.
+A configuração [log&#95;query&#95;settings](/pt-BR/reference/settings/session-settings) permite registrar alterações nas configurações da consulta durante sua execução. Quando habilitada, qualquer modificação feita nas configurações da consulta será registrada no log do span do OpenTelemetry. Esse recurso é especialmente útil em ambientes de produção para rastrear alterações de configuração que possam afetar o desempenho da consulta.
 
 <div id="integration-with-monitoring-systems">
   ## Integração com sistemas de monitoramento

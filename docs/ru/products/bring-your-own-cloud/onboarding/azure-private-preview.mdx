@@ -1,0 +1,74 @@
+---
+title: 'Закрытая предварительная версия Azure'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure (закрытая предварительная версия)'
+keywords: ['BYOC', 'облако', 'собственное облако', 'azure']
+description: 'Разверните ClickHouse BYOC в Azure с помощью модуля Terraform и межтенантной аутентификации'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  BYOC в Azure доступен в **закрытой предварительной версии**. Чтобы принять участие, [свяжитесь с командой ClickHouse](https://clickhouse.com/cloud/bring-your-own-cloud).
+</Note>
+
+<div id="overview">
+  ## Обзор
+</div>
+
+BYOC в Azure позволяет запускать ClickHouse в собственной подписке Azure. Для онбординга используется модуль Terraform, который настраивает межтенантную аутентификацию, необходимую сервису развертывания ClickHouse Cloud для создания ресурсов Azure в вашем тенанте и подписке и управления ими.
+
+Другие аспекты развертывания — такие как [архитектура](/ru/products/bring-your-own-cloud/overview/architecture), [сетевая безопасность](/ru/products/bring-your-own-cloud/reference/network-security), [возможности](/ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features) и [подключение](/ru/products/bring-your-own-cloud/configuration/connect) — в целом аналогичны BYOC-предложениям для AWS и GCP; подробнее см. на этих страницах.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Подписка Azure и **тенант**, в которых вы хотите разместить развертывание BYOC
+* **Идентификатор подписки** и **идентификатор тенанта**, которые нужно предоставить команде ClickHouse
+
+<div id="onboarding">
+  ## Онбординг
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Примените модуль Terraform
+
+    Чтобы начать онбординг BYOC в Azure, примените [модуль Terraform для Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure), предоставленный ClickHouse, в вашем **целевом тенанте и подписке**.
+
+    Сведения об обязательных переменных и шагах применения см. в документации модуля. После применения модуль настроит в вашей среде Azure необходимые identity и разрешения.
+  </Step>
+
+  <Step>
+    ### 2. Передайте ID в ClickHouse
+
+    Передайте команде ClickHouse следующие данные:
+
+    * **Идентификатор целевой подписки** — подписка Azure, в которой будут созданы ресурсы BYOC
+    * **Идентификатор целевого тенанта** — тенант Azure AD (Entra), которому принадлежит эта подписка
+    * **Region** — регионы Azure, в которых вы хотите развернуть сервисы ClickHouse.
+    * **Диапазон CIDR VNet** — диапазон IP-адресов, который вы хотите использовать для VNet BYOC.
+
+    Команда ClickHouse использует эти данные для создания инфраструктуры BYOC и завершения онбординга
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### Как работает межтенантная аутентификация
+</div>
+
+Следуя [рекомендациям Azure по межтенантной аутентификации](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps), модуль Terraform:
+
+1. **Создает мультитенантное приложение** как **Enterprise Application** (service principal) в вашем целевом тенанте
+2. **Назначает этому приложению необходимые разрешения** в рамках вашей целевой подписки
+
+Это позволяет плоскости управления ClickHouse Cloud создавать ресурсы Azure и управлять ими (например, группами ресурсов, AKS, хранилищем и сетью) в вашей подписке, не сохраняя ваши учетные данные Azure в ClickHouse.
+
+Подробнее о мультитенантных приложениях и межтенантных сценариях в Azure см.:
+
+* [Single and multi-tenant apps in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [Authorize cross-tenant access (Azure SignalR example)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

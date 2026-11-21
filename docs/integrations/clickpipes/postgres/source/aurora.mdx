@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 ## Supported Postgres versions {#supported-postgres-versions}
 
@@ -95,17 +94,20 @@ Connect to your Aurora PostgreSQL writer instance as an admin user and execute t
 
 ### Using IAM authentication (optional) {#iam-authentication}
 
-<IAMAuthentication engine="postgres" service="aurora">
-  <Note>
-  IAM authentication for replication requires the `rds.iam_auth_for_replication` parameter to be set to `1`.
-  </Note>
-</IAMAuthentication>
+Instead of a password, you can authenticate the ClickPipes user via AWS IAM role-based access. This requires the `rds.iam_auth_for_replication` parameter to be set to `1`. Create the user as follows, then grant it the same schema and replication privileges shown above:
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+See [AWS IAM DB authentication (RDS/Aurora)](/integrations/clickpipes/postgres/auth) for the full steps to set up the IAM role and policy required for ClickPipes to authenticate this way.
 
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}
 
-If you want to restrict traffic to your Aurora cluster, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your Aurora security group.
+If you want to restrict traffic to your Aurora cluster, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to the `Inbound rules` of your Aurora security group.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Where to find security group in Aurora PostgreSQL?" size="lg" border/>
 

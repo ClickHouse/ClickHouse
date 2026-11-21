@@ -38,10 +38,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, so a function that throws on the default value must not be executed on the
-    /// whole dictionary - it would fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -113,7 +109,7 @@ private:
 REGISTER_FUNCTION(StringToH3)
 {
     FunctionDocumentation::Description description = R"(
-Converts the string representation of an H3 index to the `H3Index` ([UInt64](/reference/data-types/int-uint)) representation.
+Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
     )";
     FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
     FunctionDocumentation::Arguments arguments = {

@@ -4,11 +4,11 @@ sidebarTitle: '连接到目录'
 slug: /use-cases/data-lake/getting-started/connecting-catalogs
 toc_max_heading_level: 3
 description: '使用 DataLakeCatalog 数据库引擎将 ClickHouse 连接到外部数据目录，并将目录中的表暴露为原生 ClickHouse 数据库。'
-keywords: ['数据湖', '湖仓', '数据目录', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake', 'seaweedfs']
+keywords: ['数据湖', '湖仓', '数据目录', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在[上一节](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)中，你通过直接传入存储路径来查询开放表格式。实际使用中，大多数组织都会通过**数据目录**管理表元数据——也就是一个集中式注册中心，用于跟踪表的位置、schema 和分区。当你使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎将 ClickHouse 连接到某个目录时，整个目录都会作为一个 ClickHouse 数据库对外暴露。目录中的每张表都会自动显示出来，并且都可以使用完整的 ClickHouse SQL 进行查询——无需知道各个表的具体路径，也无需为每张表单独管理凭证。
 
@@ -21,7 +21,6 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 | Lakekeeper           | [Lakekeeper catalog](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | Project Nessie       | [Nessie catalog](/zh/guides/use-cases/data-warehousing/nessie-catalog)         |
 | Microsoft OneLake    | [Fabric OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)        |
-| SeaweedFS            | [SeaweedFS catalog](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
 <div id="connecting-to-unity-catalog">
   ## 连接到 Unity Catalog
@@ -33,10 +32,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) 为 Databricks 湖仓中的数据提供集中式治理。
 
-Databricks 的湖仓支持多种数据格式。借助 ClickHouse，你可以查询使用外部存储位置的 Unity Catalog Delta 表和 Iceberg 表。
+Databricks 的湖仓支持多种数据格式。借助 ClickHouse，你可以以 Delta 和 Iceberg 格式查询 Unity Catalog 中的表。
 
 <Note>
-  此集成当前仅支持 AWS。不支持位于 Databricks 托管存储上的表，因为 Unity Catalog 不会为这些位置提供凭证下发。详情请参阅 [Unity Catalog reference](/zh/guides/use-cases/data-warehousing/unity-catalog)。
+  与 Unity Catalog 的集成支持托管表和外部表。
+  此集成当前仅支持 AWS。
 </Note>
 
 <div id="configuring-unity-in-databricks">

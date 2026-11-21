@@ -218,13 +218,6 @@ public class UserDefinedRESTCatalogServer {
         return DataTokenStore.getDataToken(warehouse, identifier.getFullName());
     }
 
-    public void createTable(Identifier identifier, Schema schema) throws Exception {
-        String databaseName = identifier.getDatabaseName();
-        createDatabase(databaseName, Collections.emptyMap(), true);
-        catalog.dropTable(identifier, true);
-        createTable(identifier, schema, false);
-    }
-
     public Map<String, String> getHeader(RecordedRequest request) {
         Map<String, String> headers = new HashMap<>();
         for (Map.Entry<String, List<String>> header :
@@ -696,7 +689,9 @@ public class UserDefinedRESTCatalogServer {
                 if (noPermissionDatabases.contains(databaseName)) {
                     throw new Catalog.DatabaseNoPermissionException(databaseName);
                 }
-                createDatabase(databaseName, requestBody.getOptions(), false);
+                catalog.createDatabase(databaseName, false);
+                databaseStore.put(
+                        databaseName, Database.of(databaseName, requestBody.getOptions(), null));
                 return new MockResponse().setResponseCode(200);
             default:
                 return new MockResponse().setResponseCode(404);
@@ -846,7 +841,23 @@ public class UserDefinedRESTCatalogServer {
                 case "POST":
                     CreateTableRequest requestBody =
                             OBJECT_MAPPER.readValue(data, CreateTableRequest.class);
-                    createTable(requestBody.getIdentifier(), requestBody.getSchema(), false);
+                    Identifier identifier = requestBody.getIdentifier();
+                    Schema schema = requestBody.getSchema();
+                    TableMetadata tableMetadata;
+                    if (isFormatTable(schema)) {
+                        tableMetadata = createFormatTable(identifier, schema);
+                    } else {
+                        catalog.createTable(identifier, schema, false);
+                        tableMetadata =
+                                createTableMetadata(
+                                        requestBody.getIdentifier(),
+                                        0L,
+                                        requestBody.getSchema(),
+                                        UUID.randomUUID().toString(),
+                                        false);
+                    }
+                    tableMetadataStore.put(
+                            requestBody.getIdentifier().getFullName(), tableMetadata);
                     return new MockResponse().setResponseCode(200);
                 default:
                     return new MockResponse().setResponseCode(404);
@@ -957,27 +968,6 @@ public class UserDefinedRESTCatalogServer {
 
     private boolean isFormatTable(Schema schema) {
         return Options.fromMap(schema.options()).get(TYPE) == FORMAT_TABLE;
-    }
-
-    private void createDatabase(
-            String databaseName, Map<String, String> options, boolean ignoreIfExists)
-            throws Exception {
-        catalog.createDatabase(databaseName, ignoreIfExists);
-        databaseStore.put(databaseName, Database.of(databaseName, options, null));
-    }
-
-    private void createTable(Identifier identifier, Schema schema, boolean ignoreIfExists)
-            throws Exception {
-        TableMetadata tableMetadata;
-        if (isFormatTable(schema)) {
-            tableMetadata = createFormatTable(identifier, schema);
-        } else {
-            catalog.createTable(identifier, schema, ignoreIfExists);
-            tableMetadata =
-                    createTableMetadata(
-                            identifier, 0L, schema, UUID.randomUUID().toString(), false);
-        }
-        tableMetadataStore.put(identifier.getFullName(), tableMetadata);
     }
 
     private MockResponse tableHandle(String method, String data, Identifier identifier)

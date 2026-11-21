@@ -260,7 +260,7 @@ private:
 
     /// get implementation with interpolation
     Value getInterpolatedImpl(Float64 level) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -275,7 +275,7 @@ private:
 
     /// getMany implementation with interpolation
     void getManyInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -299,7 +299,7 @@ private:
 
     /// getFloat implementation with interpolation
     Float64 getFloatInterpolatedImpl(Float64 level) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
 
@@ -326,7 +326,7 @@ private:
 
     /// getManyFloat implementation with interpolation
     void getManyFloatInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -360,7 +360,7 @@ private:
 
     /// Calculate quantile, using linear interpolation between two closest values
     Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
@@ -449,11 +449,11 @@ Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a num
 To get the exact value, all the passed values are combined into an array, which is then partially sorted.
 Each value is counted with its weight, as if it is present `weight` times.
 A hash table is used in the algorithm.
-Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/reference/functions/aggregate-functions/quantileExact#quantileExact).
+Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact).
 You can use this function instead of `quantileExact` and specify the weight 1.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileExactWeighted(level)(expr, weight)
@@ -472,7 +472,7 @@ quantileExactWeighted(level)(expr, weight)
         R"(
 CREATE TABLE t (
     n Int32,
-    val UInt32
+    val Int32
 ) ENGINE = Memory;
 
 -- Insert the sample data
@@ -500,7 +500,7 @@ SELECT quantileExactWeighted(n, val) FROM t;
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, taking into account the weight of each element.
 
-This function is equivalent to [`quantileExactWeighted`](/reference/functions/aggregate-functions/quantileExactWeighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactWeighted`](/sql-reference/aggregate-functions/reference/quantileexactweighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesExactWeighted(level1, level2, ...)(expr, weight)
@@ -539,7 +539,7 @@ To get the interpolated value, all the passed values are combined into an array,
 Quantile interpolation is then performed using the [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) by building a cumulative distribution based on weights and then a linear interpolation is performed using the weights and the values to compute the quantiles.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
 
 We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`.
 See the example below for more details.
@@ -559,13 +559,6 @@ quantileExactWeightedInterpolated(level)(expr, weight)
     {
         "Computing exact weighted interpolated quantile",
         R"(
-CREATE TABLE t (
-    n Int32,
-    val UInt32
-) ENGINE = Memory;
-
-INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
-
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
         )",
         R"(
@@ -598,7 +591,7 @@ FROM numbers(9)
     FunctionDocumentation::Description description_quantiles_interpolated = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
 
-This function is equivalent to [`quantileExactWeightedInterpolated`](/reference/functions/aggregate-functions/quantileExactWeightedInterpolated) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactWeightedInterpolated`](/sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles_interpolated = R"(
 quantilesExactWeightedInterpolated(level1, level2, ...)(expr, weight)

@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: shard, no-replicated-database
-# no-replicated-database: on a replicated / shared-catalog database the DDL runs with no user, so the
-# in-storage access check asserted here is a no-op and the deny path silently allows.
-# Blocked on https://github.com/ClickHouse/ClickHouse/issues/111561 - re-enable when fixed.
+# Tags: shard
 
 # Regression: a backup `RESTORE` of a `Remote` storage engine over a *table-function* target that
 # resolves to a local shard must enforce the same access check that a direct `CREATE` does. A backup
@@ -42,7 +39,6 @@ CREATE USER $user;
 GRANT CREATE TABLE, SELECT, INSERT ON $db.* TO $user;
 GRANT TABLE ENGINE ON Remote TO $user;
 GRANT REMOTE ON *.* TO $user;
-GRANT READ ON DISK TO $user;
 REVOKE SELECT, INSERT ON $db.protected_target FROM $user;
 EOF
 

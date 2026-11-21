@@ -8,7 +8,7 @@ keywords: ['Синхронное', 'Асинхронное', 'Чтение да�
 
 Новая настройка allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree позволяет увеличить число потоков чтения (потоков) по сравнению с числом потоков в остальной части конвейера выполнения запроса.
 
-Обычно настройка [max&#95;threads](/ru/reference/settings/session-settings/max-threads#max_threads) [определяет](https://clickhouse.com/company/events/query-performance-introspection) количество потоков для параллельного чтения и параллельной обработки запросов:
+Обычно настройка [max&#95;threads](/ru/reference/settings/session-settings#max_threads) [определяет](https://clickhouse.com/company/events/query-performance-introspection) количество потоков для параллельного чтения и параллельной обработки запросов:
 
 <Image img={sync_read} size="md" alt="Диаграмма синхронного чтения данных" />
 

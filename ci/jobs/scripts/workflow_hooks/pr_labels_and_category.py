@@ -93,7 +93,7 @@ class Labels:
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
 
-    # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
+    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
     COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes

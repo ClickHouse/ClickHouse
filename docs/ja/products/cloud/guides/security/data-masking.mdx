@@ -483,7 +483,7 @@ ORDER BY user_id ASC
   ## ログデータにクエリマスキングルールを使用する
 </div>
 
-特にログデータをマスクしたい ClickHouse OSS ユーザーは、データのマスキングに [クエリマスキングルール](/ja/reference/settings/server-settings/settings/query#query_masking_rules) (ログマスキング) を利用できます。
+特にログデータをマスクしたい ClickHouse OSS ユーザーは、データのマスキングに [クエリマスキングルール](/ja/reference/settings/server-settings/settings#query_masking_rules) (ログマスキング) を利用できます。
 
 そのためには、サーバー設定で正規表現ベースのマスキングルールを定義します。
 これらのルールは、クエリとすべてのログメッセージがサーバーログやシステムテーブル (`system.query_log`、`system.text_log`、`system.processes` など) に保存される前に適用されます。

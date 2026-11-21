@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "ClickHouse Private용 백업 전략"
+sidebarTitle: "백업 전략"
+description: "이 문서는 ClickHouse Private에 특화된 백업 동작과 제한 사항을 설명합니다."
+---
+
+이 문서는 ClickHouse Private에 특화된 백업 동작과 제한 사항을 설명합니다. 일반적인 ClickHouse 백업 개념(전체 백업과 증분 백업, 백업 체인, SQL 구문)은 [ClickHouse 공식 백업 문서](https://clickhouse.com/docs/operations/backup/overview)를 참조하십시오. 단계별 절차는 [백업 및 복원(수동)](/ko/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) 또는 [API를 통해 백업 관리](/ko/products/clickhouse-private/guides/manage-backups-via-the-private-api)를 참조하십시오.
+
+<div id="backup-location">
+  ## 백업 위치
+</div>
+
+백업은 **Amazon S3**에 저장됩니다. 각 클러스터의 백업은 클러스터별 S3 키 접두사(CR의 `spec.s3.keyPrefix`에서 확인 가능) 아래에 정리되며, 이로 인해 동일한 S3 버킷을 공유하더라도 서로 다른 클러스터의 백업은 서로 격리된 상태로 유지됩니다.
+
+<div id="manual-vs-api-driven-backups">
+  ## 수동 백업과 API 기반 백업 비교
+</div>
+
+ClickHouse Private는 두 가지 백업 방식을 지원합니다:
+
+* **수동 (SQL)** -- 서버 파드에서 `BACKUP`/`RESTORE` SQL 문을 직접 실행합니다. 범위와 S3 경로를 완전히 제어할 수 있습니다. [백업 및 복원(수동)](/ko/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)을 참조하십시오.
+* **API 기반** -- Private API REST 엔드포인트를 사용하여 오퍼레이터가 관리하는 `Backup` 사용자 지정 리소스를 생성합니다. [API를 통한 백업 관리](/ko/products/clickhouse-private/guides/manage-backups-via-the-private-api) 및 [API 참조](/ko/products/clickhouse-private/reference/clickhouse-private-api-reference)를 참조하십시오.
+
+<div id="backup-pod-designation">
+  ## 백업 파드 지정
+</div>
+
+MultiSTS 아키텍처에서는 정확히 하나의 레플리카가 **백업 파드**로 지정됩니다(`ReplicaStateMap`에서 `isBackupPod: true`). 백업 작업은 항상 이 파드에서 실행됩니다. 연산자는 scale-in 중에 백업 작업이 중단되지 않도록 백업 파드를 폐기 대상으로 지정하지 않습니다.
+
+<div id="restore-limitation">
+  ## 복원 제한 사항
+</div>
+
+Private API는 **백업을 생성한 동일한 클러스터(cluster)로 복원하는 것**(`instance_id == target_instance_id`)을 허용하지 않습니다. 이는 가동 중인 프로덕션(production) 클러스터에 추가 부하가 발생하는 것을 방지하고, 데이터가 덮어써질 위험을 줄이기 위한 것입니다. 권장되는 방법은 새 클러스터를 프로비저닝한 뒤 해당 클러스터로 복원하는 것입니다.
+
+동일한 클러스터로 반드시 복원해야 하는 경우(예: 특정 테이블(table)을 복구해야 하는 경우)에는 서버 파드에서 직접 수동 SQL 명령을 사용하십시오.
+
+<div id="incremental-backup-chain-integrity">
+  ## 증분 백업 체인 무결성
+</div>
+
+증분 백업에 S3 수명 주기 정책을 사용할 때는, 해당 전체 백업에 의존하는 증분 백업이 아직 남아 있는 동안 만료 규칙으로 전체 백업이 삭제되지 않도록 하십시오. 전체 백업이 삭제되면 해당 체인에 있는 모든 증분 백업을 복원할 수 없게 됩니다.

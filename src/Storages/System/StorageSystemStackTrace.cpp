@@ -27,6 +27,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
+#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -189,33 +190,19 @@ void signalHandler(int, siginfo_t * info, void * context)
 /// Wait for data in pipe and read it.
 bool wait(int timeout_ms)
 {
-    /// Deduct the time actually spent rather than one millisecond per `EINTR`: the old counter gave up
-    /// long before the deadline under dense signals, needed thousands of interruptions to expire under
-    /// sparse ones, and - because it tested for equality with zero - could step past zero into
-    /// `poll(fd, 1, -1)`, waiting forever. Same accounting as `ReadBufferFromFileDescriptor::poll`.
-    const UInt64 timeout_microseconds = timeout_ms > 0 ? static_cast<UInt64>(timeout_ms) * 1000 : 0;
-    int remaining_ms = timeout_ms;
-    Stopwatch watch;
-
     while (true)
     {
         int fd = notification_pipe.fds_rw[0];
         pollfd poll_fd{fd, POLLIN, 0};
 
-        int poll_res = poll(&poll_fd, 1, remaining_ms);
+        int poll_res = poll(&poll_fd, 1, timeout_ms);
         if (poll_res < 0)
         {
             if (errno == EINTR)
             {
-                /// No positive deadline to exhaust (a non-blocking probe, or an indefinite wait):
-                /// retry the probe instead of letting a signal decide the outcome.
-                if (timeout_microseconds == 0)
-                    continue;
-
-                const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-                if (elapsed_microseconds >= timeout_microseconds)
+                --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
+                if (timeout_ms == 0)
                     return false;
-                remaining_ms = static_cast<int>((timeout_microseconds - elapsed_microseconds + 999) / 1000);
                 continue;
             }
 
@@ -441,6 +428,9 @@ public:
 protected:
     Chunk generate() override
     {
+#ifdef OS_LINUX
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
+#endif
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -570,7 +560,19 @@ protected:
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                            arr.emplace_back(StackTrace::resolveAddressForStorage(frame_pointers[i]));
+                        {
+                            const void * virtual_addr = frame_pointers[i];
+#ifdef OS_LINUX
+                            const auto * object = symbol_index.findObject(virtual_addr);
+                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
+#else
+                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
+                            /// so we store virtual addresses directly in the trace column.
+                            uintptr_t physical_addr = uintptr_t(virtual_addr);
+#endif
+                            arr.emplace_back(physical_addr);
+                        }
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
@@ -733,8 +735,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());

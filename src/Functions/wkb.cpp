@@ -49,8 +49,6 @@ public:
             transform = std::make_shared<WKBLineStringTransform>();
         else if (arguments[0].type->getName() == WKBPolygonTransform::name)
             transform = std::make_shared<WKBPolygonTransform>();
-        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
-            transform = std::make_shared<WKBMultiPointTransform>();
         else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
             transform = std::make_shared<WKBMultiLineStringTransform>();
         else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
@@ -84,13 +82,13 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
-             "INSERT INTO geom1 VALUES((0, 0));\n"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
+             "INSERT INTO geom1 VALUES((0, 0));"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-┌─hex(wkb(a))────────────────────────────────┐
-│ 010100000000000000000000000000000000000000 │
-└────────────────────────────────────────────┘
+    ┌─hex(wkb(a))─-----------------------------------------┐
+    │ 010100000000000000000000000000000000003440           │
+    └──────────────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

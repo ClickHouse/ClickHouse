@@ -78,10 +78,10 @@ public:
         const String & filename_,
         const size_t & size_,
         const size_t buf_size_,
-        bool use_adaptive_whole_file_buffer_,
+        bool use_adaptive_buffer_size_,
         size_t adaptive_buffer_max_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , use_adaptive_whole_file_buffer(use_adaptive_whole_file_buffer_)
+        , use_adaptive_buffer_size(use_adaptive_buffer_size_)
         , adaptive_max_buffer_size(adaptive_buffer_max_size_)
         , archive_writer(archive_writer_)
         , filename(filename_)
@@ -107,7 +107,7 @@ public:
 
     void finalizeImpl() override
     {
-        if (use_adaptive_whole_file_buffer)
+        if (use_adaptive_buffer_size)
         {
             if (offset())
                 writeDataChunk();
@@ -124,7 +124,7 @@ public:
 private:
     void nextImpl() override
     {
-        if (use_adaptive_whole_file_buffer)
+        if (use_adaptive_buffer_size)
         {
             if (!available())
             {
@@ -195,7 +195,7 @@ private:
             entry = nullptr;
         }
         /// Bytes counter is incorrect for adaptive buffer because of adjusted nextimpl_working_buffer_offset.
-        if (throw_if_error and (!use_adaptive_whole_file_buffer and bytes != expected_size))
+        if (throw_if_error and (!use_adaptive_buffer_size and bytes != expected_size))
         {
             throw Exception(
                 ErrorCodes::CANNOT_PACK_ARCHIVE,
@@ -220,7 +220,7 @@ private:
 
     void checkResult(int code) { checkResultCodeImpl(code, filename); }
 
-    const bool use_adaptive_whole_file_buffer;
+    const bool use_adaptive_buffer_size;
     const size_t adaptive_max_buffer_size;
 
     std::weak_ptr<LibArchiveWriter> archive_writer;
@@ -273,7 +273,7 @@ std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const Strin
         filename,
         size,
         buf_size,
-        /*use_adaptive_whole_file_buffer*/ false,
+        /*use_adaptive_buffer_size*/ false,
         adaptive_buffer_max_size);
 }
 
@@ -286,7 +286,7 @@ std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const Strin
         filename,
         /*size*/ 0,
         buf_size,
-        /*use_adaptive_whole_file_buffer*/ true,
+        /*use_adaptive_buffer_size*/ true,
         adaptive_buffer_max_size);
 }
 

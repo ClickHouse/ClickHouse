@@ -36,7 +36,7 @@ IP 访问列表通过指定允许连接的源地址，过滤发往 ClickHouse �
 <Info>
   **仅适用于 PrivateLink 外部的连接**
 
-  IP 访问列表仅适用于来自公网、且不通过 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/index) 的连接。
+  IP 访问列表仅适用于来自公共互联网 (即 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/index) 之外) 的连接。
   如果你只希望接收来自 PrivateLink 的流量，请在 IP 允许列表中设置 `DenyAll`。
 </Info>
 
@@ -62,7 +62,7 @@ IP 访问列表通过指定允许连接的源地址，过滤发往 ClickHouse �
   * 拒绝对该服务的所有访问
 </Accordion>
 
-下图显示了一个访问列表，它允许来自某个 IP 地址范围的流量，该范围标记为“NY Office range”：
+此截图显示了一个访问列表，它允许来自某个 IP 地址范围的流量，该范围标记为“NY Office range”：
 
 <Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud 中现有的访问列表" border />
 

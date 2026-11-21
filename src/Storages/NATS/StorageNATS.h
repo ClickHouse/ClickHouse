@@ -34,9 +34,7 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        LoadingStrictnessLevel mode,
-        bool authentication_determined_by_table_,
-        bool fresh_definition_);
+        LoadingStrictnessLevel mode);
 
     ~StorageNATS() override;
 
@@ -125,7 +123,6 @@ private:
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
-    bool fresh_definition;
 
     void scheduleStreamingTasksImpl() override;
 
@@ -143,7 +140,6 @@ private:
     void dropConsumers();
 
     bool subscribeConsumers();
-    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
 
     void stopEventLoop();

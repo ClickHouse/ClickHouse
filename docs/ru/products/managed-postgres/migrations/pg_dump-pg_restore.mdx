@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/pg_dump-pg_restore
 sidebarTitle: 'pg_dump и pg_restore'
-title: 'Миграция в ClickHouse Managed Postgres с помощью pg_dump и pg_restore'
+title: 'Миграция в Managed Postgres с помощью pg_dump и pg_restore'
 description: 'Узнайте, как перенести данные PostgreSQL в ClickHouse Managed Postgres с помощью pg_dump и pg_restore'
 keywords: ['postgres', 'postgresql', 'pg_dump', 'pg_restore', 'миграция', 'перенос данных', 'Managed Postgres']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 Это руководство содержит пошаговые инструкции по миграции вашей базы данных PostgreSQL в ClickHouse Managed Postgres с помощью утилит `pg_dump` и `pg_restore`.
@@ -37,10 +37,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Пара последовательностей
 
 <div id="migration-pgdump-pg-restore-dump">
-  ## Создайте дамп исходной базы данных
+  ## Создайте dump исходной базы данных
 </div>
 
-Теперь воспользуемся `pg_dump`, чтобы создать дамп-файл перечисленных выше объектов. Это простая команда:
+Теперь воспользуемся `pg_dump`, чтобы создать dump-файл перечисленных выше объектов. Это простая команда:
 
 ```shell
 pg_dump \
@@ -71,10 +71,10 @@ pg_dump \
 Теперь, когда у нас есть файл дампа, мы можем восстановить его в экземпляре ClickHouse Managed Postgres с помощью `pg_restore`.
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### Создайте экземпляр ClickHouse Managed Postgres
+  ### Создайте экземпляр Managed Postgres
 </div>
 
-Сначала убедитесь, что у вас настроен экземпляр ClickHouse Managed Postgres, желательно в том же регионе, что и исходный источник. Вы можете воспользоваться кратким руководством [здесь](/ru/products/managed-postgres/quickstart#create-postgres-database). Вот что мы развернем в рамках этого руководства:
+Сначала убедитесь, что у вас настроен экземпляр Managed Postgres, желательно в том же регионе, что и исходный источник. Вы можете воспользоваться кратким руководством [здесь](/ru/products/managed-postgres/quickstart#create-postgres-database). Вот что мы развернем в рамках этого руководства:
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Создание экземпляра ClickHouse Managed Postgres" size="md" border />
 
@@ -82,7 +82,7 @@ pg_dump \
   ### Восстановите дамп
 </div>
 
-Теперь, вернувшись к локальной машине, мы можем использовать команду `pg_restore`, чтобы восстановить данные из дампа в наш экземпляр ClickHouse Managed Postgres:
+Теперь, вернувшись к локальной машине, мы можем использовать команду `pg_restore`, чтобы восстановить данные из дампа в наш экземпляр Managed Postgres:
 
 ```shell
 pg_restore \
@@ -91,7 +91,7 @@ pg_restore \
   rds-dump
 ```
 
-Вы можете получить строку подключения для своего экземпляра ClickHouse Managed Postgres в консоли ClickHouse Cloud; очень простое объяснение приведено [здесь](/ru/products/managed-postgres/connection).
+Вы можете получить строку подключения для своего экземпляра Managed Postgres в консоли ClickHouse Cloud; очень простое объяснение приведено [здесь](/ru/products/managed-postgres/connection).
 
 Здесь тоже есть пара флагов, на которые стоит обратить внимание:
 
@@ -106,10 +106,10 @@ pg_restore \
   ## Проверьте миграцию
 </div>
 
-После завершения восстановления вы можете подключиться к своему экземпляру ClickHouse Managed Postgres и убедиться, что все данные и объекты были успешно перенесены. Для подключения и выполнения запросов можно использовать любой клиент PostgreSQL.
-Вот как выглядит наш ClickHouse Managed Postgres после миграции:
+После завершения восстановления вы можете подключиться к своему экземпляру Managed Postgres и убедиться, что все данные и объекты были успешно перенесены. Для подключения и выполнения запросов можно использовать любой клиент PostgreSQL.
+Вот как выглядит наш Managed Postgres после миграции:
 
-<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="Настройка целевой базы данных ClickHouse Managed Postgres" size="xl" border />
+<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="Настройка целевой базы данных Managed Postgres" size="xl" border />
 
 Как видно, все таблицы, индексы, представления и последовательности на месте, а количество данных совпадает.
 
@@ -128,6 +128,6 @@ pg_restore \
   ## Следующие шаги
 </div>
 
-Поздравляем! Вы успешно перенесли базу данных PostgreSQL в ClickHouse Managed Postgres с помощью `pg_dump` и `pg_restore`. Теперь можно перейти к изучению возможностей ClickHouse Managed Postgres и его интеграции с ClickHouse. Вот краткое 10-минутное руководство для быстрого старта:
+Поздравляем! Вы успешно перенесли базу данных PostgreSQL в ClickHouse Managed Postgres с помощью pg&#95;dump и pg&#95;restore. Теперь вы можете изучить возможности Managed Postgres и его интеграцию с ClickHouse. Для начала ознакомьтесь с этим 10-минутным кратким руководством:
 
-* [Краткое руководство по быстрому старту с ClickHouse Managed Postgres](/ru/products/managed-postgres/quickstart)
+* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)

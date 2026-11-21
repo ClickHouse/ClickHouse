@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Управление резервными копиями через Private API"
+sidebarTitle: "Управление резервными копиями через API"
+description: "Создавайте, отслеживайте, планируйте и восстанавливайте резервные копии ClickHouse с помощью Private API."
+---
+
+Создавайте, отслеживайте, планируйте и восстанавливайте резервные копии ClickHouse с помощью Private API.
+
+Сведения о ручном управлении резервными копиями без API см. в разделе [Backup and Restore](/ru/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* ClickHouse Private API установлен и доступен (например, через проброс порта к `http://localhost:8080/`)
+* Развернут как минимум один кластер ClickHouse (в этом руководстве используется `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## Создание полной резервной копии
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+В ответе содержится UUID резервной копии.
+
+<div id="check-backup-status">
+  ## Проверка статуса резервной копии
+</div>
+
+Запросите информацию о конкретной резервной копии по UUID:
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+После успешного завершения резервного копирования поле `status.state` принимает значение `Ready`.
+
+<div id="list-all-backups">
+  ## Просмотр всех резервных копий
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+Конечная точка поддерживает параметры запроса для фильтрации и сортировки. Например, чтобы найти последнюю успешную резервную копию:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## Создание инкрементных резервных копий
+</div>
+
+Инкрементные резервные копии сохраняют только данные, изменившиеся с момента предыдущей резервной копии, образуя цепочку, начальной точкой которой служит полная резервная копия.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## Резервное копирование отдельных таблиц или баз данных
+</div>
+
+Укажите, что именно нужно включить в резервную копию, с помощью полей `databases` и `tables`. Имена таблиц должны быть полными (то есть в формате `db.table`).
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## Планирование создания резервных копий с помощью CronJob
+</div>
+
+Используйте CronJob в Kubernetes, чтобы автоматизировать создание резервных копий:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+Это настраивает ежедневное создание полной резервной копии в 2:00. Предполагается, что Private API доступен по адресу `http://clickhouse-private-api-airgap-management:8080`.
+
+<div id="restore-from-a-backup">
+  ## Восстановление из резервной копии
+</div>
+
+<div id="via-the-api">
+  ### Через API
+</div>
+
+API предоставляет конечную точку restore, которая восстанавливает резервную копию в другом целевом экземпляре:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+В целях безопасности API не допускает восстановление в тот же экземпляр. Чтобы не перегружать исходный кластер, для восстановления рекомендуется развернуть новый кластер.
+
+<div id="manual-sql-alternative">
+  ### Альтернатива: восстановление вручную через SQL
+</div>
+
+Для более точного контроля восстановление можно выполнить напрямую с помощью SQL. Например, чтобы восстановить одну базу данных под новым именем:
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## Управление жизненным циклом резервных копий
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### Политика жизненного цикла S3
+</div>
+
+Используйте политики жизненного цикла S3, чтобы автоматически переносить старые резервные копии в другое хранилище и удалять их по истечении срока хранения:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+В этом примере резервные копии перемещаются в Standard-IA через 7 дней, в Glacier — через 30 дней, а через 90 дней удаляются.
+
+<div id="backup-chain-integrity-warning">
+  ### Предупреждение о целостности цепочки резервного копирования
+</div>
+
+Политики жизненного цикла S3 не учитывают цепочки инкрементных резервных копий. Если полная резервная копия в основе цепочки будет удалена, пока на неё всё ещё ссылаются инкрементные резервные копии, эти инкрементные резервные копии станет невозможно восстановить.
+
+Убедитесь, что срок хранения полных резервных копий превышает интервал между циклами полного резервного копирования. Регулярно проверяйте, что резервные копии можно восстановить.

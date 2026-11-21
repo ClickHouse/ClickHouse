@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "Lancer les vérifications Preflight"
+sidebarTitle: "Lancer les vérifications preflight"
+description: "Pour garantir la préparation de votre environnement ou effectuer une validation avant mise à niveau, nous proposons des vérifications preflight."
+---
+
+Pour garantir la préparation de votre environnement ou effectuer une validation avant mise à niveau, nous proposons des vérifications preflight. Les vérifications Preflight s&#39;appuient sur [Troubleshoot](https://troubleshoot.sh/), un plugin pour Kubernetes dédié au diagnostic des clusters. Aucune donnée ne sera exportée pendant cette opération.
+
+Le guide pratique suivant explique comment lancer les vérifications preflight.
+
+<div id="install-the-plugin">
+  ## Installer le plugin
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+Ou consultez la [documentation de Troubleshoot](https://troubleshoot.sh/docs/) pour connaître les autres options d’installation.
+
+<div id="copy-the-preflight-helm-chart">
+  ## Copiez le package Helm Preflight
+</div>
+
+Ajoutez le package Preflight à votre étape de copie vers ECR :
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## Exécutez les vérifications
+</div>
+
+Utilisez `helm template` pour générer la spécification Preflight, puis redirigez-la vers `kubectl preflight` :
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+Cela permet de valider les labels de nœud, la configuration de StorageClass et d&#39;autres prérequis. Cela vérifie également qu&#39;un cluster ClickHouse existant est prêt pour une mise à niveau et signale les feature flags obsolètes ou les nouvelles exigences.
+
+Le résultat affiche chaque vérification et son statut. Si une vérification échoue, il inclut des recommandations pour corriger le problème.
+
+Pour valider avec une StorageClass personnalisée :
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### Permissions requises
+</div>
+
+L’utilisateur ou le compte de service qui exécute `kubectl preflight` doit disposer d’un accès en lecture aux ressources suivantes :
+
+| Portée                                                       | Ressources                                                                                |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| À l’échelle du cluster                                       | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| Espace de noms de l’opérateur (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| Espace de noms du cluster (`ns-<cluster-name>`)              | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+Un principal doté du ClusterRole intégré `view`, ainsi que d’un accès `view` aux espaces de noms concernés, suffit.
