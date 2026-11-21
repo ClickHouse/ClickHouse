@@ -2,7 +2,6 @@
 
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 
-
 namespace DB
 {
 HTTPServer::HTTPServer(

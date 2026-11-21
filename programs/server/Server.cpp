@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 
+#include <cstring>
 #include <memory>
 #include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
@@ -172,6 +173,8 @@
 #    include <glibc-rseq/rseq.h>
 #endif
 #include <Common/config_version.h>
+
+#include <Server/HTTP/HTTP2Server.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -4678,6 +4681,30 @@ void Server::createServers(
 #endif
                 });
             }
+        }
+
+        if (server_type.shouldStart(ServerType::Type::HTTP2))
+        {
+            /// HTTP/2
+
+            LOG_INFO(&logger(), "Entered HTTP/2");
+
+            port_name = "http2_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
+
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    ServerType::Type::HTTP2,
+                    "HTTP/2 http://" + address.toString(),
+                    std::make_unique<HTTP2Server>(
+                        createHTTP2HandlerFactory(*this), server_pool, socket, http_params));
+            });
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP))
