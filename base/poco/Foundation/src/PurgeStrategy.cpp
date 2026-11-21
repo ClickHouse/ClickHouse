@@ -42,6 +42,9 @@ void PurgeStrategy::list(const std::string& path, std::vector<File>& files)
 	p.makeAbsolute();
 	Path parent = p.parent();
 	std::string baseName = p.getFileName();
+	/// With stream compression the live log file is "<path>.lz4" (see CompressedLogFile).
+	/// It matches the archive prefix below, but it is not an archive and must never be purged.
+	const std::string live_compressed_name = baseName + ".lz4";
 	baseName.append(".");
 
 	DirectoryIterator it(parent);
@@ -49,6 +52,7 @@ void PurgeStrategy::list(const std::string& path, std::vector<File>& files)
 	while (it != end)
 	{
 		if (it.name().compare(0, baseName.size(), baseName) == 0
+			&& it.name() != live_compressed_name
 			&& it.name().find(".incomplete") == std::string::npos)
 		{
 			files.push_back(*it);
@@ -136,7 +140,10 @@ void PurgeOneFileStrategy::purge(const std::string& path)
 
     if (files.empty())
     {
-        File(path).setSize(0);
+        /// In stream compression mode the live file is "<path>.lz4", so "path" may not exist.
+        File file(path);
+        if (file.exists())
+            file.setSize(0);
         return;
     }
 
