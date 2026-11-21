@@ -1,0 +1,9 @@
+client, marshalled column: caught expected exception
+client, blob of 2^62 bytes: caught expected exception
+client, marshalled totals without rows: caught expected exception
+initiator, complete stage, marshalled column: caught expected exception
+initiator, intermediate stage, marshalled column: converted back
+initiator, intermediate stage, blob of 2^62 bytes: caught expected exception
+initiator, intermediate stage, blob of 2^40 bytes under a memory limit: caught expected exception
+initiator, intermediate stage, marshalled totals without rows: caught expected exception
+server alive
