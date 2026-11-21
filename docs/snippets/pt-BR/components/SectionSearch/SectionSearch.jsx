@@ -16,7 +16,9 @@ export const SectionSearch = ({ section = "/reference/statements", label = "Stat
     const KEY_STAGING = "d3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54"
     const KEY_LOCAL = "b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b"
     const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? KEY_STAGING : KEY_LOCAL
-    const EMBED = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js"
+    // Pinned with its subresource integrity hash (see the update instructions in inkeep-init.js).
+    const EMBED = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5.119/dist/embed.js"
+    const EMBED_INTEGRITY = "sha384-+Gf6Mr27hHCxYbuIDvsYAH5kgS5v8WYmSCrsokwyFn0SDpTn0sdeq88sHj3nphi0"
     // A fonte legada *.mintlify.app expunha páginas na raiz do host, enquanto
     // a fonte *.mintlify.site inclui um prefixo /docs.
     const PREVIEW_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/
@@ -161,6 +163,8 @@ export const SectionSearch = ({ section = "/reference/statements", label = "Stat
         s.id = "inkeep-embed-js-script"
         s.type = "module"
         s.src = EMBED
+        s.integrity = EMBED_INTEGRITY
+        s.crossOrigin = "anonymous"
         s.onload = () => {
           // Retain the embed API even if the modal bundle later replaces the
           // shared window.Inkeep global before this component remounts.

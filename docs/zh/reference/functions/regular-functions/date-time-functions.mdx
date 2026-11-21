@@ -1411,7 +1411,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 
 **替换字段：**
 
-| 占位符 | 说明                                     | 示例         |
+| 占位符 | 描述                                     | 示例         |
 | --- | -------------------------------------- | ---------- |
 | %a  | 星期名称缩写 (Mon-Sun)                       | Mon        |
 | %b  | 月份名称缩写 (Jan-Dec)                       | Jan        |
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-引入版本：v20.1.0
+引入版本：v23.1.0
 
 与 `formatDateTime` 类似，不同之处在于它使用 Joda 风格而不是 MySQL 风格来格式化日期时间。请参阅 [Joda Time 文档](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)。
 
@@ -4722,10 +4722,12 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 例如，
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` 返回的结果与 `toStartOfYear(t)` 相同，
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` 返回的结果与 `toStartOfMonth(t)` 相同，
-* `toStartOfInterval(t, INTERVAL 1 DAY)` 返回的结果与 `toStartOfDay(t)` 相同，
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` 返回的结果与 `toStartOfFifteenMinutes(t)` 相同。
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` 舍入到的边界与 `toStartOfYear(t)` 相同，
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` 舍入到的边界与 `toStartOfMonth(t)` 相同，
+* `toStartOfInterval(t, INTERVAL 1 DAY)` 舍入到的边界与 `toStartOfDay(t)` 相同，
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` 舍入到的边界与 `toStartOfFifteenMinutes(t)` 相同。
+
+结果类型可能与上述函数不同 (见下文) 。
 
 计算是相对于以下特定时间点进行的：
 
@@ -4749,6 +4751,13 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 第二种重载分别模拟了 TimescaleDB 的 `time_bucket()` 函数和 PostgreSQL 的 `date_bin()` 函数。
 
+结果与 `value` 参数类型相同：`Date` 对应 `Date`，`Date32` 对应 `Date32`，`DateTime` 对应 `DateTime`，`DateTime64` 对应相同标度的 `DateTime64`。
+唯一的例外是亚秒级单位比 `DateTime64` 参数的标度更精细的情况 (例如对 `DateTime64(0)` 使用 `INTERVAL 1500 MILLISECOND`) ：此时结果采用该单位的标度，以便表示桶边界。
+低于 `Date` 或 `DateTime` 范围的结果 (例如将 `1970-01-01` 向下取整到周) 会被限制为其最小值。
+当禁用设置 [`to_start_of_interval_preserves_argument_type`](/zh/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) 时，结果类型改为取决于时间间隔单位，
+与 26.11 之前的版本相同：`WEEK` 及更长的单位为 `Date`，`DAY` 至 `SECOND` 为 `DateTime`，亚秒级单位为具有该单位标度的 `DateTime64`。
+这仅适用于不带 `origin` 的重载：带 `origin` 的重载在这种情况下同样保持参数的类型，只是当参数为 `DateTime64` 且单位为亚秒级时，结果采用该单位的标度。
+
 **语法**
 
 ```sql
@@ -4760,12 +4769,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **参数**
 
-* `value` — 要向下取整的日期或日期时间值。[`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
-* `x` — 时间间隔长度的数值。 - `unit` — 时间间隔单位：YEAR、QUARTER、MONTH、WEEK、DAY、HOUR、MINUTE、SECOND、MILLISECOND、MICROSECOND、NANOSECOND。 - `time_zone` — 可选。字符串形式的时区名称。 - `origin` — 可选。计算所用的原点 (仅第二种重载)。
+* `value` — 要向下取整的日期或日期时间值。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+* `x` — 时间间隔长度的数值。 - `unit` — 时间间隔单位：YEAR、QUARTER、MONTH、WEEK、DAY、HOUR、MINUTE、SECOND、MILLISECOND、MICROSECOND、NANOSECOND。 - `time_zone` — 可选。字符串形式的时区名称。 - `origin` — 可选。计算所用的起始点 (仅第二种重载)。
 
 **返回值**
 
-返回包含输入值的时间间隔起点。[`DateTime`](/zh/reference/data-types/datetime)
+返回包含输入值的时间间隔起点，类型与输入值相同。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 
@@ -4777,11 +4786,11 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**使用起点**
+**使用起始点**
 
 ```sql title=Query
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
@@ -5371,6 +5380,7 @@ int32samoa: 1546300800
 引入版本：v23.8.0
 
 将日期或日期时间值从某个时区转换为 UTC 时区的时间戳。此函数主要用于兼容 Apache Spark 及类似框架。
+对于因夏令时调整而出现两次或不存在的本地时间，其转换方式与 `toDateTime` 相同。
 
 **语法**
 

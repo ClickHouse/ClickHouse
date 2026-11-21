@@ -15,9 +15,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "أُضيف `ie_join` إلى القائمة الافتراضية، لذا يُنفَّذ join الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام IEJoin بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "تم إهمال 'default' لصالح تحديد خوارزميات join صراحةً، كما أصبحت parallel_hash الآن مفضلة على hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "أُضيف `ie_join` إلى القائمة الافتراضية، لذا يُنفَّذ الربط الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام IEJoin بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` اسم مستعار قديم لـ `hash` وقد أُزيل من القائمة الافتراضية، لكنه لا يزال مقبولًا. ولا يتحكم إدراج `hash` أو `parallel_hash` في درجة توازي الربط."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "تم إهمال 'default' لصالح تحديد خوارزميات الربط صراحةً، كما أصبحت parallel_hash الآن مفضلة على التجزئة"}]}]} />
 
 يحدد خوارزمية [ربط](/ar/reference/statements/select/join) المستخدمة.
 
@@ -28,7 +28,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 تؤثر معظم الخوارزميات في الاستعلام فقط عندما تكون هي الخوارزمية المحددة له. لكن بعضها يغيّر التخطيط بمجرد إدراجه، حتى لو كان خيارًا احتياطيًا منخفض الأولوية لا يُختار في النهاية، لأن القرار يُتخذ قبل اختيار الخوارزمية. ويوجد تأثيران من هذا النوع:
 
 * يصبح استدلال النوع لـ مفتاح الربط أكثر صرامة (فعلى سبيل المثال، لا يمكن لـ ربط merge ضم مفاتيح من أنواع مختلفة مثل `String` و`Nullable(String)`). قد يغيّر ذلك الأنواع الناتجة لأعمدة `USING`، وقد يؤدي إلى فشل ربط مع جدول ذي محرك من نوع `Join` بسبب `TYPE_MISMATCH`. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge`.
-* يحصل `ORDER BY ... LIMIT` على الجانب المحفوظ من الربط على فرز صريح بدلًا من قراءة بترتيب primary key، لأن الربط يُفترض أنه يقطع القراءة المرتبة (يُدرج ربط merge فرزًا خاصًا به قبل الربط؛ ويُعيد ربط partial merge فرز كتل اليسرى؛ كما أن الربط الذي يمكنه إنتاج كتل مؤجلة لا ينشر القراءة المرتبة أيضًا). تكون النتيجة نفسها، لكن plan أقل كفاءة. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge` و`partial_merge` و`prefer_partial_merge` و`grace_hash` و`auto`، وكذلك بواسطة قيمة غير صفرية لـ `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
+* يحصل `ORDER BY ... LIMIT` على الجانب المحفوظ من الربط على فرز صريح بدلًا من قراءة بترتيب primary key، لأن الربط يُفترض أنه يقطع القراءة المرتبة (يُدرج ربط merge فرزًا خاصًا به قبل الربط؛ ويُعيد ربط partial merge فرز كتل اليسرى؛ كما أن الربط الذي يمكنه إنتاج كتل مؤجلة لا ينشر القراءة المرتبة أيضًا). تكون النتيجة نفسها، لكن الخطة أقل كفاءة. يتم تفعيله بواسطة `full_sorting_merge` و`parallel_full_sorting_merge` و`partial_merge` و`prefer_partial_merge` و`grace_hash` و`auto`، وكذلك بواسطة قيمة غير صفرية لـ `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
 ينطبق كلاهما حتى عندما يُنفذ الاستعلام في النهاية باستخدام `hash` أو خوارزمية أخرى. إذا كان ذلك غير مرغوب فيه، فلا تدرج الخوارزميات المذكورة أعلاه في `join_algorithm` للاستعلامات المتأثرة.
 
@@ -36,26 +36,26 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * grace&#95;hash
 
-يُستخدم [ربط Grace hash](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). توفّر Grace hash خيار خوارزمية يتيح تنفيذ عمليات ربط معقدة بكفاءة مع الحد من استهلاك الذاكرة.
+يُستخدم [ربط Grace بالتجزئة](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). توفّر Grace بالتجزئة خيار خوارزمية يتيح تنفيذ عمليات ربط معقدة بكفاءة مع الحد من استهلاك الذاكرة.
 يُقصد من اختيار `grace_hash` صراحةً استخدامه أساسًا لأغراض التشخيص. لتمكين الكتابة لـ الربط، اضبط [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) بدلًا من ذلك.
 
-يكون `grace_hash` خارجيًا بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن فورًا، بينما يجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا يقسمانه إلا بعد تجاوز عتبة الكتابة. اختره عندما تعرف مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تجاوز المرحلة داخل الذاكرة. عتبة الكتابة نفسها هي التي تستخدمها كل خوارزمية hash، وهي [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحدى القيمتين غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. دون عتبة، يُتجاوز `grace_hash` إلى الخوارزمية التالية في القائمة، ويُرفض إذا كان الخوارزمية الوحيدة.
+يكون `grace_hash` خارجيًا بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن فورًا، بينما يجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا يقسمانه إلا بعد تجاوز عتبة الكتابة. اختره عندما تعرف مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تجاوز المرحلة داخل الذاكرة. عتبة الكتابة نفسها هي التي تستخدمها كل خوارزمية تجزئة، وهي [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحدى القيمتين غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. دون عتبة، يُتجاوز `grace_hash` إلى الخوارزمية التالية في القائمة، ويُرفض إذا كان الخوارزمية الوحيدة.
 
-تقرأ المرحلة الأولى من ربط grace الجدول الأيمن وتقسّمه إلى N حاوية بحسب قيمة hash لأعمدة المفتاح (يكون N في البداية `grace_hash_join_initial_buckets`). ويتم ذلك بطريقة تضمن إمكانية معالجة كل حاوية بشكل مستقل. تُضاف صفوف من الحاوية الأولى إلى hash جدول في الذاكرة بينما تُحفظ البقية على القرص. وإذا تجاوز حجم hash جدول عتبة الكتابة، يزداد عدد الحاويات مع إعادة تعيين الحاوية المخصصة لكل صف. وأي صفوف لا تنتمي إلى الحاوية الحالية تُفرَّغ ويُعاد تعيينها.
+تقرأ المرحلة الأولى من ربط grace الجدول الأيمن وتقسّمه إلى N حاوية بحسب قيمة التجزئة لأعمدة المفتاح (يكون N في البداية `grace_hash_join_initial_buckets`). ويتم ذلك بطريقة تضمن إمكانية معالجة كل حاوية بشكل مستقل. تُضاف صفوف من الحاوية الأولى إلى جدول تجزئة في الذاكرة بينما تُحفظ البقية على القرص. وإذا تجاوز حجم جدول التجزئة عتبة الكتابة، يزداد عدد الحاويات مع إعادة تعيين الحاوية المخصصة لكل صف. وأي صفوف لا تنتمي إلى الحاوية الحالية تُفرَّغ ويُعاد تعيينها.
 
 يدعم `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
-* hash
+* تجزئة
 
-تُستخدم [Hash خوارزمية ربط](https://en.wikipedia.org/wiki/Hash_join). وهي التنفيذ الأكثر عمومية الذي يدعم جميع تركيبات النوع وصرامة ومفاتيح الربط المتعددة المجموعة باستخدام `OR` في قسم `JOIN ON`.
+تُستخدم [خوارزمية الربط بالتجزئة](https://en.wikipedia.org/wiki/Hash_join). وهي التنفيذ الأكثر عمومية الذي يدعم جميع تركيبات النوع وصرامة ومفاتيح الربط المتعددة المجموعة باستخدام `OR` في قسم `JOIN ON`.
 
-عند استخدام خوارزمية `hash`، يُرفَع الجزء الأيمن من `JOIN` إلى الذاكرة.
+عند استخدام خوارزمية `hash`، يُرفَع الجزء الأيمن من `JOIN` إلى RAM.
 
 * parallel&#95;hash
 
-صيغة من ربط `hash` تقسّم البيانات إلى حاويات وتبني عدة جداول hash بدلًا من واحدة بشكل متزامن لتسريع هذه العملية.
+مماثلة لـ `hash`، ومُبقاة لأغراض التوافق. يمكن لعمليات الربط بالتجزئة من نوع `INNER` و`LEFT` و`RIGHT` و`FULL` بناء جدول التجزئة على ما يصل إلى `max_threads` من خيوط التنفيذ، ويحدد `parallel_hash_join_threshold` متى يحدث ذلك. ولبنائه على عدة خيوط تنفيذ كلما سمح نوع الربط بذلك، اضبط `parallel_hash_join_threshold` على `0`.
 
-عند استخدام خوارزمية `parallel_hash`، يُرفَع الجزء الأيمن من `JOIN` إلى الذاكرة.
+عند استخدام خوارزمية `parallel_hash`، يُرفَع الجزء الأيمن من `JOIN` إلى RAM.
 
 * partial&#95;merge
 

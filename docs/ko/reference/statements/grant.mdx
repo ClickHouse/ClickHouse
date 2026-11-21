@@ -167,6 +167,15 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,22 +227,27 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
-  * [`내부 검사`](#introspection)
+  * [`INTROSPECTION`](#introspection)
     * `addressToLine`
     * `addressToLineWithInlines`
     * `addressToSymbol`
@@ -635,6 +649,25 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. 수준: `GLOBAL`
   * `demangle`. 수준: `GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+[AI 함수](/ko/reference/functions/regular-functions/ai-functions)를 사용할 수 있도록 허용합니다. AI 함수를 호출하려면 선택한 자격 증명에 대한 `NAMED COLLECTION` 권한(privilege)도 있어야 합니다.
+
+* `AI FUNCTIONS`. 수준: `GROUP`
+  * `aiClassify`. 수준: `GLOBAL`
+  * `aiEmbed`. 수준: `GLOBAL`
+  * `aiExtract`. 수준: `GLOBAL`
+  * `aiFilter`. 수준: `GLOBAL`
+  * `aiGenerate`. 수준: `GLOBAL`
+  * `aiRedact`. 수준: `GLOBAL`
+  * `aiSimilarity`. 수준: `GLOBAL`
+  * `aiTranslate`. 수준: `GLOBAL`
+
+예시:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### SOURCES {#sources}
 
 외부 데이터 소스를 사용할 수 있도록 허용합니다. 소스를 기반으로 하는 [데이터베이스 엔진](/ko/reference/engines/database-engines/index), [테이블 엔진](/ko/reference/engines/table-engines/index) 및 [테이블 함수](/ko/reference/functions/table-functions/index)에 적용됩니다.
@@ -688,7 +721,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   이 활성화된 경우에만 지원됩니다.
 </Note>
 
-정규식 필터를 사용해 특정 소스 URI에 대한 접근 권한을 부여할 수 있습니다. 이를 통해 사용자가 접근할 수 있는 외부 데이터 소스를 세부적으로 제어할 수 있습니다.
+정규식 필터를 사용해 특정 소스 URI에 대한 액세스 권한을 부여할 수 있습니다. 이를 통해 사용자가 액세스할 수 있는 외부 데이터 소스를 세부적으로 제어할 수 있습니다.
 
 **구문:**
 
@@ -745,9 +778,20 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**권한 철회:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **중요한 제한 사항:**
 
-* **부분 취소는 허용되지 않습니다:** 이미 권한이 부여된 필터 패턴의 부분 집합만 취소할 수는 없습니다. 필요한 경우 전체 권한 부여를 취소한 후 새 패턴으로 다시 권한을 부여해야 합니다.
+* **필터는 문자열로 비교됩니다:** `REVOKE`는 부여된 필터와 정확히 일치하는 필터만 제거합니다. `S3('s3://foo/bar/.*')`를 철회하려고 하면 `S3('s3://foo/.*')`에 대한 권한 부여 범위가 좁혀지는 것이 아니라 예외가 발생합니다.
+* **부분 철회는 허용되지 않습니다:** 이미 권한이 부여된 필터 패턴의 부분 집합만 철회할 수는 없습니다. 필요한 경우 전체 권한 부여를 철회한 후 새 패턴으로 다시 권한을 부여해야 합니다.
 * **와일드카드 권한 부여는 허용되지 않습니다:** `GRANT READ ON *('regexp')` 또는 이와 유사한 와일드카드 전용 패턴은 사용할 수 없습니다. 반드시 구체적인 소스를 지정해야 합니다.
 
 ### dictGet {#dictget}

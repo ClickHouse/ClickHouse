@@ -50,6 +50,8 @@ Uso de cuotas de todos los usuarios.
 * `max_failed_sequential_authentications` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Número máximo permitido de fallos consecutivos de autenticación dentro del período especificado.
 * `queries_per_normalized_hash` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Número máximo actual de ejecuciones de una misma consulta normalizada dentro del período actual.
 * `max_queries_per_normalized_hash` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Número máximo permitido de ejecuciones de una misma consulta normalizada dentro del período especificado.
+* `profile_events` ([Map(String, UInt64)](/es/reference/data-types/map)) — Consumo actual de cada evento de perfilado sobre el que la cuota establece un límite.
+* `max_profile_events` ([Map(String, UInt64)](/es/reference/data-types/map)) — Consumo máximo permitido de cada evento de perfilado sobre el que la cuota establece un límite. Un valor de 0 significa que el evento solo se monitoriza, sin límite.
 
 ## Véase también {#see-also}
 

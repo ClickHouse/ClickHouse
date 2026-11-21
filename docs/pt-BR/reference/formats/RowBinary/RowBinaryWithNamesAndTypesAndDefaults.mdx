@@ -17,17 +17,13 @@ import RowBinaryFormatSettings from '/snippets/pt-BR/common-row-binary-format-se
 | ------- | ----- | ----- |
 | ✔       | ✗     |       |
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 Semelhante ao formato [`RowBinaryWithNamesAndTypes`](/pt-BR/reference/formats/RowBinary/RowBinaryWithNamesAndTypes), mas com um byte extra antes de cada célula que indica se o valor `DEFAULT` da coluna deve ser usado — exatamente como no formato [`RowBinaryWithDefaults`](/pt-BR/reference/formats/RowBinary/RowBinaryWithDefaults). Essa combinação oferece suporte a `INSERT`s com evolução de esquema: quem grava pode omitir colunas do cabeçalho (elas recebem o `DEFAULT` da coluna de destino) e, para qualquer coluna que enviar, pode marcar células individuais como &quot;usar o `DEFAULT` da coluna&quot; sem confundir isso com `NULL`.
 
 Este formato é apenas de entrada.
 
-<div id="wire-format">
-  ## Formato de transmissão
-</div>
+## Formato de transmissão {#wire-format}
 
 O cabeçalho é idêntico ao de [`RowBinaryWithNamesAndTypes`](/pt-BR/reference/formats/RowBinary/RowBinaryWithNamesAndTypes):
 
@@ -41,9 +37,7 @@ Após o cabeçalho, cada linha é composta por `N` células. Para cada célula:
   * `0x01` — usa a expressão `DEFAULT` da coluna de destino. Nenhum byte de valor vem em seguida.
   * `0x00` — um valor vem em seguida, serializado pelo serializador `RowBinary` do tipo da coluna. Para `Nullable(T)`, os bytes do valor começam com o byte nulo de `Nullable` (`0` para não nulo, `1` para NULL) e, em seguida, vêm o valor interno, se não for nulo.
 
-<div id="defaults-vs-null">
-  ## Valores padrão vs NULL
-</div>
+## Valores padrão vs NULL {#defaults-vs-null}
 
 O marcador de valor padrão por célula e o byte nulo interno de `Nullable` são independentes. Uma coluna `Nullable(UInt32) DEFAULT 42` pode ser enviada de três formas diferentes por linha:
 
@@ -53,20 +47,16 @@ O marcador de valor padrão por célula e o byte nulo interno de `Nullable` são
 | `00 01`   | Caminho do valor, depois `NULL` via o tipo `Nullable`. |
 | `00 00 …` | Caminho do valor, depois um valor interno não nulo.    |
 
-<div id="schema-evolution">
-  ## Evolução do esquema
-</div>
+## Evolução do esquema {#schema-evolution}
 
 | Caso                                                    | Comportamento                                                                                                                                                                          |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coluna totalmente ausente do cabeçalho do arquivo       | Preenchida no destino via `insertDefaultsForNotSeenColumns`; condicionada por `defaults_for_omitted_fields`.                                                                           |
-| Coluna presente no cabeçalho, marcador de célula `0x01` | `insertDefault` por linha.                                                                                                                                                             |
+| Coluna presente no cabeçalho, marcador de célula `0x01` | A expressão `DEFAULT` da coluna de destino, condicionada por `defaults_for_omitted_fields`; caso contrário, o valor padrão do tipo da coluna.                                          |
 | Coluna presente no cabeçalho, marcador de célula `0x00` | O valor é processado normalmente.                                                                                                                                                      |
 | Coluna extra no cabeçalho, ausente na tabela de destino | Descartada silenciosamente quando `input_format_skip_unknown_fields = 1` (o marcador é consumido primeiro; se `0x01`, nada mais; se `0x00`, o valor tipado é processado e descartado). |
 
-<div id="example-usage">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#example-usage}
 
 ```sql title="Query"
 SELECT * FROM format(
@@ -85,9 +75,7 @@ SELECT * FROM format(
 * O cabeçalho contém uma coluna chamada `x` do tipo `Nullable(UInt32)`.
 * A única célula usa o marcador `0x01`, que significa &quot;usar `DEFAULT 42`&quot;.
 
-<div id="format-settings">
-  ## Configurações de formato
-</div>
+## Configurações de formato {#format-settings}
 
 <RowBinaryFormatSettings />
 

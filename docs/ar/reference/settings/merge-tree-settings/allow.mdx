@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُنشأة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="allow_coalescing_columns_in_partition_or_order_key">
-  ## allow_coalescing_columns_in_partition_or_order_key
-</div>
+## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 عند تمكينه، يتيح استخدام أعمدة الدمج في جدول CoalescingMergeTree
 ضمن مفتاح التقسيم أو مفتاح الفرز.
 
-<div id="allow_commit_order_projection">
-  ## allow_commit_order_projection
-</div>
+## allow_commit_order_projection {#allow_commit_order_projection}
 
 <ExperimentalBadge />
 
@@ -38,9 +34,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُمكّن إسقاطات حسب ترتيب commit التي تخزّن العمودين الافتراضيين `_block_number` و`_block_offset`، مع الحفاظ على ترتيب الإدراج الأصلي عبر عمليات الدمج.
 ويتطلب أن يكون `enable_block_number_column` و`enable_block_offset_column` ممكّنين.
 
-<div id="allow_dimensions_outside_sorting_key">
-  ## allow_dimensions_outside_sorting_key
-</div>
+## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -60,9 +54,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 ينطبق هذا الفحص فقط على الجداول التي تُجري aggregation فعليًا (أي التي تحتوي على عمود واحد على الأقل من نوع aggregate-state)
 ويُتخطى عند تفعيل `allow_tuple_element_aggregation`.
 
-<div id="allow_floating_point_partition_key">
-  ## allow_floating_point_partition_key
-</div>
+## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -73,9 +65,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 * `0` — مفتاح التقسيم ذي الفاصلة العائمة غير مسموح.
 * `1` — مفتاح التقسيم ذي الفاصلة العائمة مسموح.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -84,17 +74,13 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 يسمح بإنشاء فهارس skip من نوع minmax على أعمدة JSON ‏(Object). يكون هذا الخيار معطّلًا افتراضيًا لأن
 مسار تسلسل فهرس minmax لا يمكنه التعامل مع قيم Field غير المتجانسة التي قد تحتويها أعمدة JSON.
 
-<div id="allow_nullable_key">
-  ## allow_nullable_key
-</div>
+## allow_nullable_key {#allow_nullable_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح باستخدام النوع Nullable كمفتاح أساسي.
 
-<div id="allow_part_offset_column_in_projections">
-  ## allow_part_offset_column_in_projections
-</div>
+## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -102,9 +88,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 
 السماح باستخدام العمود &#39;&#95;part&#95;offset&#39; في استعلام SELECT الخاص بالإسقاطات.
 
-<div id="allow_reduce_blocking_parts_task">
-  ## allow_reduce_blocking_parts_task
-</div>
+## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -113,9 +97,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 مهمة تعمل في الخلفية لتقليل الأجزاء المعيقة في جداول shared merge tree.
 في ClickHouse Cloud فقط
 
-<div id="allow_remote_fs_zero_copy_replication">
-  ## allow_remote_fs_zero_copy_replication
-</div>
+## allow_remote_fs_zero_copy_replication {#allow_remote_fs_zero_copy_replication}
 
 <ExperimentalBadge />
 
@@ -123,9 +105,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 
 لا تستخدم هذا الإعداد في بيئة الإنتاج لأنه غير مُهيّأ بعد.
 
-<div id="allow_summing_columns_in_partition_or_order_key">
-  ## allow_summing_columns_in_partition_or_order_key
-</div>
+## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,17 +114,13 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 عند تمكينه، يسمح باستخدام أعمدة الجمع في جدول SummingMergeTree ضمن
 مفتاح التقسيم أو مفتاح الفرز.
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indices {#allow_suspicious_indices}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يرفض الفهارس الأساسية/الثانوية ومفاتيح الترتيب ذات التعبيرات المتطابقة
 
-<div id="allow_tuple_element_aggregation">
-  ## allow_tuple_element_aggregation
-</div>
+## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -156,9 +132,17 @@ CoalescingMergeTree. وتُوسَّع Tuples المتداخلة بشكل متك�
 العناصر الطرفية كلٌّ على حدة. هذا الإعداد ثابت
 ويجب تحديده عند إنشاء الجدول.
 
-<div id="allow_vertical_merges_from_compact_to_wide_parts">
-  ## allow_vertical_merges_from_compact_to_wide_parts
-</div>
+## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد. لم يعد يُسمح افتراضيًا بإنشاء فهارس تشابه المتجهات على محركات MergeTree المتخصصة"}]}]} />
+
+يحدد ما إذا كان يُسمح بإنشاء فهرس `vector_similarity` على محرك من عائلة `MergeTree` غير `MergeTree` / `ReplicatedMergeTree`،
+مثل `ReplacingMergeTree` أو `CollapsingMergeTree`. مع هذه المحركات، قد يُرجع الاستعلام `SELECT ... FINAL` الذي يستخدم الفهرس نتائج خاطئة.
+لا يُفحص هذا الإعداد إلا عند إنشاء الفهرس، ولذلك لا يؤثر في الجداول الموجودة مسبقًا ولا في عمليات `ATTACH`.
+
+## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

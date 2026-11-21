@@ -631,9 +631,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 ### Nullable {#nullable}
 
-El valor Nil de Go representa un NULL de ClickHouse. Puede usarse si un campo está declarado como Nullable. En el momento de insert, se puede pasar Nil tanto para la versión normal como para la Nullable de una columna. En el primer caso, se conservará el valor predeterminado del tipo; por ejemplo, una cadena vacía para string. En la versión Nullable, se almacenará un valor NULL en ClickHouse.
+El valor Nil de Go representa un NULL de ClickHouse. Puede usarse si un campo está declarado como Nullable. En el momento de inserción, se puede pasar Nil tanto para la versión normal como para la Nullable de una columna. En el primer caso, se conservará el valor predeterminado del tipo; por ejemplo, una cadena vacía para cadena. En la versión Nullable, se almacenará un valor NULL en ClickHouse.
 
-Al escanear, el usuario debe pasar un puntero a un tipo que admita nil, por ejemplo, *string, para poder representar el valor nil de un campo Nullable. En el ejemplo siguiente, col1, que es un Nullable(String), recibe por tanto un **string. Esto permite representar nil.
+Al escanear, el usuario debe pasar un puntero a un tipo que admita nil, por ejemplo, *string, para poder representar el valor nil de un campo Nullable. En el ejemplo siguiente, col1, que es un Nullable(String), recibe por tanto un **string. Esto permite representar nil. Al escanear un NULL en un destino que no puede representar nil, como *int64, se devuelve el error &quot;converting NULL to *int64 is unsupported&quot;. Los tipos que implementan `sql.Scanner` gestionan NULL mediante su propio `Scan(nil)`.
 
 ```go
 if err = conn.Exec(ctx, `

@@ -51,6 +51,26 @@ Nombre de threads du pool de threads Aggregator qui exécutent une tâche.
 
 Nombre de jobs en attente ou en cours d’exécution dans le pool de threads Aggregator.
 
+### AIRequestThreads {#airequestthreads}
+
+Nombre de threads dans le thread pool des requêtes IA.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+Nombre de threads exécutant une task dans le thread pool des requêtes IA.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+Nombre de jobs en file d’attente ou actifs dans le thread pool des requêtes IA.
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Nombre total de sessions stockées dans le pool de sessions d&#39;Amber
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Nombre total de sessions pour Amber : sessions stockées dans le pool et sessions en cours d&#39;utilisation
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Nombre de fragments d’AST accumulés par le fuzzer AST côté serveur en vue de futures mutations.
@@ -383,18 +403,6 @@ Nombre total de demandes de CPU slot actuellement en cours de planification
 
 Valeur de la limite souple du nombre de slots CPU
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Nombre de threads dans le pool de threads du hash join concurrent.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Nombre de threads du pool de threads de jointure de hachage concurrente qui exécutent une tâche.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Nombre de tâches en attente ou en cours d’exécution dans le pool de threads du hash join concurrent.
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 Nombre total de slots de requête obtenus
@@ -607,6 +615,14 @@ Nombre de serveurs enregistrés du Distributed Cache
 
 Nombre de serveurs du Distributed Cache enregistrés dans l’AZ actuelle
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+Nombre de fichiers temporaires validés appartenant à ce processus serveur du Distributed Cache
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+Taille totale, en octets, des fichiers temporaires validés appartenant à ce processus serveur du Distributed Cache
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Nombre de connexions ouvertes entre Distributed Cache et le serveur ClickHouse
@@ -622,6 +638,18 @@ Nombre de clients S3 mis en cache dans le Distributed Cache
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 Nombre de connexions ouvertes en fonction de DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+Nombre d&#39;ID de données temporaires actifs et validés
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Métrique du client Distributed Cache. Nombre de connexions ouvertes pour les données temporaires sans passer par le pool de connexions
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+Nombre de serveurs ayant des données temporaires validées
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -855,13 +883,13 @@ Nombre de threads du pool de threads global exécutant une tâche.
 
 Nombre de jobs en file d&#39;attente ou en cours d&#39;exécution dans le pool global de threads.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Taille, en octets, du cache des types de champs du schéma Iceberg actuel dans les catalogues Glue
+Taille en octets du code PTX des kernels que le moteur GPU a compilés pour les expressions et qu&#39;il conserve chargés sur le périphérique.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Nombre d&#39;entrées dans le cache des types de champs du schéma Iceberg actuel dans les catalogues Glue
+Kernels compilés par le moteur GPU pour les expressions et chargés en mémoire sur le périphérique.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -874,6 +902,18 @@ Nombre de threads du pool de threads HashedDictionary exécutant une tâche.
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 Nombre de jobs en file d&#39;attente ou en cours d&#39;exécution dans le pool de threads HashedDictionary.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Nombre de threads dans le pool de threads chargé de la destruction de la table de droite d’une jointure par hachage.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Nombre de threads du pool de threads chargé de détruire la table de droite d’une jointure par hachage qui exécutent une task.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Nombre de jobs en attente ou en cours d’exécution dans le pool de threads chargé de détruire la table de droite d’une jointure par hachage.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -943,18 +983,6 @@ Nombre de threads du pool de threads IcebergCompaction qui exécutent une tâche
 
 Nombre de jobs en file d’attente ou actifs dans le pool de threads IcebergCompaction.
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Nombre de threads du thread pool utilisé pour décoder les fichiers manifest de données Iceberg.
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Nombre de threads exécutant une task dans le thread pool utilisé pour le décodage des fichiers manifest de données Iceberg.
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Nombre de jobs en file d&#39;attente ou actifs dans le thread pool utilisé pour décoder les fichiers manifest de données Iceberg.
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 Taille du cache des métadonnées Iceberg, en octets
@@ -962,6 +990,14 @@ Taille du cache des métadonnées Iceberg, en octets
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Nombre de fichiers mis en cache dans le cache de métadonnées Iceberg
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Nombre d&#39;entrepôts dans le cache d&#39;entrepôts du serveur de catalogue REST Iceberg
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Taille du cache des entrepôts du serveur de catalogue REST Iceberg. Chaque entrepôt compte pour 1
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1326,6 +1362,18 @@ Nombre de threads actifs utilisés pour finaliser l’instantané
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 Nombre de threads planifiés utilisés pour la finalisation de l’instantané
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+Nombre de threads dans le thread pool dédié au chargement des statistiques des parts.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+Nombre de threads du thread pool de chargement des statistiques des parts qui exécutent une task.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+Nombre de jobs en attente ou en cours d’exécution dans le thread pool de chargement des statistiques des parts.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2270,6 +2318,18 @@ Nombre d&#39;entrées dans les caches de déduplication des tables des tags des 
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 
 Nombre de fichiers temporaires créés
+
+### TransactionLogEntries {#transactionlogentries}
+
+Nombre d&#39;entrées dans le journal des transactions (`/log`) lors de sa dernière énumération
+
+### TransactionsRunning {#transactionsrunning}
+
+Nombre de transactions en cours d’exécution démarrées sur cette réplique
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+Différence entre le dernier snapshot de transaction et le watermark global ; les nouvelles transactions lisent avec un retard équivalent à ce nombre de CSN
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

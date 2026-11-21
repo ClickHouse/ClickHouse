@@ -6,9 +6,7 @@ title: 'gRPC 인터페이스'
 doc_type: '참고'
 ---
 
-<div id="grpc-interface-introduction">
-  ## 소개
-</div>
+## 소개 {#grpc-interface-introduction}
 
 ClickHouse는 [gRPC](https://grpc.io/) 인터페이스를 지원합니다. 이는 HTTP/2와 [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers)를 사용하는 오픈 소스 원격 프로시저 호출 시스템입니다. ClickHouse의 gRPC 구현은 다음을 지원합니다.
 
@@ -23,9 +21,7 @@ ClickHouse는 [gRPC](https://grpc.io/) 인터페이스를 지원합니다. 이�
 
 이 인터페이스 사양은 [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)에 설명되어 있습니다.
 
-<div id="grpc-interface-configuration">
-  ## gRPC 구성
-</div>
+## gRPC 구성 {#grpc-interface-configuration}
 
 gRPC 인터페이스를 사용하려면 기본 [서버 구성](/ko/concepts/features/configuration/server-config/configuration-files)에서 `grpc_port`를 설정하십시오. 다른 구성 옵션은 아래 예시를 참조하십시오.
 
@@ -34,36 +30,31 @@ gRPC 인터페이스를 사용하려면 기본 [서버 구성](/ko/concepts/feat
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- 다음 두 파일은 SSL이 활성화된 경우에만 사용됩니다 -->
+        <!-- The following two files are used only if SSL is enabled -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
-        <!-- 서버가 클라이언트에 인증서를 요청하는지 여부 -->
+        <!-- Whether server requests client for a certificate -->
         <ssl_require_client_auth>false</ssl_require_client_auth>
 
-        <!-- 다음 파일은 ssl_require_client_auth=true인 경우에만 사용됩니다 -->
+        <!-- The following file is used only if ssl_require_client_auth=true -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- 기본 압축 알고리즘 (클라이언트가 별도의 알고리즘을 지정하지 않은 경우 적용됩니다. QueryInfo의 result_compression 참조).
-             지원 알고리즘: none, deflate, gzip, stream_gzip -->
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- 기본 압축 수준 (클라이언트가 별도의 수준을 지정하지 않은 경우 적용됩니다. QueryInfo의 result_compression 참조).
-             지원 수준: none, low, medium, high -->
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
-        <!-- 송수신 메시지 크기 제한(바이트 단위). -1은 무제한을 의미합니다 -->
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- 상세 로그를 확인하려면 활성화하십시오 -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-<div id="grpc-client">
-  ## 내장 클라이언트
-</div>
+## 내장 클라이언트 {#grpc-client}
 
 제공된 [사양](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)을 사용하여 gRPC가 지원하는 모든 프로그래밍 언어로 클라이언트를 작성할 수 있습니다.
 또는 내장 Python 클라이언트를 사용할 수 있습니다. 이 클라이언트는 리포지토리의 [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py)에 있습니다. 내장 클라이언트를 사용하려면 Python 모듈 [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart)가 필요합니다.

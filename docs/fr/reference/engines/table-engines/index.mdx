@@ -18,13 +18,9 @@ Le moteur de table (type de table) détermine :
 * Si l’exécution multithread des requêtes est possible.
 * Les paramètres de réplication.
 
-<div id="engine-families">
-  ## Familles de moteurs
-</div>
+## Familles de moteurs {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 Les moteurs de table les plus polyvalents et les plus complets pour les charges de travail intensives. Leur caractéristique commune est une insertion rapide des données, suivie d’un traitement en arrière-plan. Les moteurs de la famille `MergeTree` prennent en charge la réplication des données (via les versions [Replicated*](/fr/reference/engines/table-engines/mergetree-family/replication) des moteurs), le partitionnement, les index secondaires de saut de données et d’autres fonctionnalités absentes des autres moteurs.
 
@@ -46,9 +42,7 @@ Moteurs de la famille :
 | [Moteurs de table Replicated*](/fr/reference/engines/table-engines/mergetree-family/replication)                        |
 | [Recherche en texte intégral avec des index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 Des [moteurs](/fr/reference/engines/table-engines/log-family/index) légers offrant un minimum de fonctionnalités. Ils sont particulièrement efficaces lorsque vous devez alimenter rapidement de nombreuses petites tables (jusqu&#39;à environ 1 million de lignes), puis les lire ultérieurement dans leur intégralité.
 
@@ -61,9 +55,7 @@ Moteurs de la famille :
 | [StripeLog](/fr/reference/engines/table-engines/log-family/stripelog)          |
 | [Log](/fr/reference/engines/table-engines/log-family/log)                      |
 
-<div id="integration-engines">
-  ### Moteurs d&#39;intégration
-</div>
+### Moteurs d&#39;intégration {#integration-engines}
 
 Moteurs permettant de communiquer avec d&#39;autres systèmes de stockage et de traitement de données.
 
@@ -99,9 +91,7 @@ Moteurs de la famille :
 | [SQLite](/fr/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/fr/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### Moteurs spéciaux
-</div>
+### Moteurs spéciaux {#special-engines}
 
 Moteurs de la famille :
 
@@ -126,9 +116,7 @@ Moteurs de la famille :
 | [KeeperMap](/fr/reference/engines/table-engines/special/keepermap)             |
 | [FileLog](/fr/reference/engines/table-engines/special/filelog)                 |
 
-<div id="table_engines-virtual_columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#table_engines-virtual_columns}
 
 Une colonne virtuelle est un attribut inhérent au moteur de table, défini dans le code source du moteur.
 
@@ -136,9 +124,9 @@ Vous ne devez pas spécifier de colonnes virtuelles dans la requête `CREATE TAB
 
 Pour sélectionner des données depuis une colonne virtuelle, vous devez spécifier son nom dans la requête `SELECT`. `SELECT *` ne renvoie pas les valeurs des colonnes virtuelles.
 
-Si vous créez une table avec une colonne portant le même nom que l&#39;une des colonnes virtuelles de la table, la colonne virtuelle devient inaccessible. Nous ne recommandons pas de le faire. Pour éviter les conflits, les noms des colonnes virtuelles sont généralement préfixés par un trait de soulignement.
+Si vous créez une table avec une colonne portant le même nom que l&#39;une des colonnes virtuelles de la table, la colonne virtuelle devient inaccessible. Nous ne recommandons pas de le faire. Pour éviter les conflits, les noms des colonnes virtuelles sont généralement préfixés par un trait de soulignement. Pour les tables de la famille `MergeTree`, une telle colonne est rejetée, sauf si le paramètre `allow_reserved_column_names` est activé.
 
-* `_table` — Contient le nom de la table depuis laquelle les données ont été lues. Type : [String](/fr/reference/data-types/string).
+* `_table` — Contient le nom de la table depuis laquelle les données ont été lues. Type : [String](/fr/reference/data-types/string).
 
   Quel que soit le moteur de table utilisé, chaque table inclut une colonne virtuelle universelle nommée `_table`.
 

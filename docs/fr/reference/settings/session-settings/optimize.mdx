@@ -49,6 +49,14 @@ Valeurs possibles :
 * 0 — toujours,
 * entier négatif - jamais.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de remplacer les colonnes filtrées par `ColumnConst` lorsqu'un prédicat d'égalité garantit que toutes les valeurs retenues sont égales à une constante."}]}]} />
+
+Remplace les colonnes filtrées par `ColumnConst` lorsqu&#39;un prédicat d&#39;égalité garantit que toutes les valeurs retenues sont égales à une constante.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -268,6 +276,18 @@ Exécute un second passage de promotion de `PREWHERE` après que des optimisatio
 ajouter des filtres supplémentaires au-dessus d’une étape de lecture `MergeTree` (par ex. pushdown de prédicats via
 `JOIN`, réécritures de projection). Lorsqu’un `PREWHERE` existe déjà, le nouveau
 filtre y est fusionné avec `AND` au lieu de rester une étape de filtrage distincte.
+
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Nouveau paramètre qui détermine quand la sélection de projection applique les index de saut différés de la table de base avant de comparer les coûts : les passes supplémentaires ne sont exécutées que si le meilleur candidat de projection lit plus que cette fraction de l'estimation du nombre de marques du parent, établie à partir de la seule clé primaire. L'ancienne valeur 1.0 rétablit le comportement précédent : avec ratio = 1, l'affinage n'est jamais exécuté, car il ne pourrait influer que sur des candidats que la comparaison fondée sur la seule clé primaire rejette de toute façon."}]}]} />
+
+Lorsque `use_skip_indexes_on_data_read` est activé, les index de saut de la table de base sont appliqués au moment de la lecture des données ; le nombre de marques auquel est comparé un candidat de projection ordinaire est donc estimé à partir de la seule clé primaire. Si le meilleur candidat de projection ordinaire lit plus que cette fraction de cette estimation et que la table de base dispose d&#39;index de saut exploitables pour la requête, ces index sont appliqués à la table de base lors de la planification, et le nombre de marques affiné sert à la comparaison. Avec `0`, ils sont toujours appliqués ; avec `1`, la comparaison reste fondée sur la seule clé primaire. Les projections d&#39;agrégation ne sont pas concernées.
+
+Valeurs possibles :
+
+* Un nombre à virgule flottante compris dans la plage `[0, 1]`.
 
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 

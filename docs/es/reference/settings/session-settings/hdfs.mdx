@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="hdfs_create_new_file_on_insert">
-  ## hdfs_create_new_file_on_insert
-</div>
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -28,9 +26,7 @@ Valores posibles:
 * 0 — la consulta `INSERT` agrega datos nuevos al final del archivo.
 * 1 — la consulta `INSERT` crea un archivo nuevo.
 
-<div id="hdfs_ignore_file_doesnt_exist">
-  ## hdfs_ignore_file_doesnt_exist
-</div>
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,17 +39,13 @@ Valores posibles:
 * 1 — `SELECT` devuelve un resultado vacío.
 * 0 — `SELECT` lanza una excepción.
 
-<div id="hdfs_replication">
-  ## hdfs_replication
-</div>
+## hdfs_replication {#hdfs_replication}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número real de réplicas se puede especificar al crear el archivo HDFS.
 
-<div id="hdfs_skip_empty_files">
-  ## hdfs_skip_empty_files
-</div>
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -64,9 +56,20 @@ Valores posibles:
 * 0 — `SELECT` genera una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío para un archivo vacío.
 
-<div id="hdfs_throw_on_zero_files_match">
-  ## hdfs_throw_on_zero_files_match
-</div>
+## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración: omite los archivos con un segmento de ruta que empieza por `_` o `.` por debajo del prefijo sin glob al enumerar archivos mediante glob, como hacen otros lectores del ecosistema Hive. Las tablas con `partition_strategy = 'hive'` siempre omiten dichas rutas."}]}]} />
+
+Activa o desactiva la omisión de rutas ocultas al enumerar archivos mediante glob en las tablas del motor [HDFS](/es/reference/engines/table-engines/integrations/hdfs), es decir, archivos con un segmento de ruta que empieza por `_` o `.` por debajo del prefijo sin glob de la ruta. Un segmento que contiene `=` es un directorio de partición (como `_p=1` para una columna de partición `_p`) y no se considera oculto. Los escritores del ecosistema Hive (Hive, Spark, Trino) dejan la salida en curso en staging y escriben archivos marcadores bajo dichas rutas (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), por lo que leerlos provoca una condición de carrera con el commit del escritor. Los segmentos dentro del prefijo sin glob no se comprueban. Las tablas con `partition_strategy = 'hive'` siempre omiten las rutas ocultas, independientemente de este parámetro de configuración.
+
+Valores posibles:
+
+* 0 — se leen todos los archivos que coinciden con el glob.
+* 1 — se omiten los archivos con un segmento de ruta oculto por debajo del prefijo sin glob.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -79,9 +82,7 @@ Valores posibles:
 * 1 — `SELECT` lanza una excepción.
 * 0 — `SELECT` devuelve un resultado vacío.
 
-<div id="hdfs_truncate_on_insert">
-  ## hdfs_truncate_on_insert
-</div>
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

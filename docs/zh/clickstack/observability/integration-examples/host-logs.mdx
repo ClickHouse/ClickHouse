@@ -1,0 +1,367 @@
+---
+slug: /clickstack/observability/integration-examples/host-logs
+title: '使用 ClickHouse Observability 监控主机日志'
+sidebarTitle: '通用主机日志'
+description: '使用 OpenTelemetry 采集器采集主机 syslog 文件，并将其发送到 ClickHouse Observability。'
+doc_type: 'guide'
+keywords: ['主机日志', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', '系统监控', '服务器日志']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry 采集器收集主机的 syslog 文件，并将其发送到 ClickHouse Observability。如果不想从自己的主机收集日志，也可以使用[演示数据集](#demo-dataset)来试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* 用于运行采集器示例的 Docker，或现有的 OpenTelemetry Collector Contrib 部署
+* 如需采集您自己的日志：syslog 文件，以及采集器读取这些文件的权限
+* 如需运行演示：用于下载样本数据的 `curl`
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **Team Settings → Data → Managed Telemetry**，复制 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制配置，或点击 **Reveal key** 查看已隐藏的 key。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为配合下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的实际端点 (含端口) 和 API key。请使用不带 `/v1/logs` 后缀的基础 HTTP 端点，导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    请使用您的采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果采集器无需身份验证，请在下方配置中省略导出器的 `headers` 块。有关设置说明，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+采集器容器必须能够访问该端点。如果目标端采集器运行在本机上，请使用 `http://host.docker.internal:4318`。下方的 Docker 命令已包含主机映射。
+
+## 与现有主机集成 {#existing-hosts}
+
+<Steps>
+  <Step title="查找 syslog 文件" id="locate-syslog">
+    常见的日志位置包括：Ubuntu/Debian 上的 `/var/log/syslog`、基于 RHEL 的系统上的 `/var/log/messages`，以及 macOS 文本日志所在的 `/var/log/system.log`。请检查您主机上实际存在的文件：
+
+    ```bash
+    tail -20 /var/log/syslog
+    ```
+
+    请根据需要替换路径。如果你的 Linux 主机仅将日志写入 systemd 系统日志 (journal) ，请改用 [Systemd/Journald 指南](/zh/clickstack/observability/integration-examples/systemd)。本指南仅读取文本文件，不会采集 macOS 统一日志存储 (unified log) 中的日志。
+  </Step>
+
+  <Step title="配置采集器" id="configure-collector">
+    将对应的配置保存为 `host-logs.yaml`。请根据文件中的时间戳格式选择配置。如有需要，可将 `include` 改为 `/var/log/host/messages` 或 `/var/log/host/system.log`。只有格式相同的文件才能一并添加。
+
+    <Tabs>
+      <Tab title="ISO 时间戳">
+        适用于以 `2026-10-15T12:34:56.123456+00:00` 这类时间戳开头的日志行：
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: '2006-01-02T15:04:05.999999999Z07:00'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+      </Tab>
+
+      <Tab title="传统 syslog">
+        适用于以 `Oct 15 12:34:56` 这类时间戳开头的日志行：
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: 'Jan _2 15:04:05'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+
+        传统时间戳不包含年份和时区。解析器会自动推断年份；如果主机记录日志时使用的不是 UTC，请将 `location` 设置为主机所在的 IANA 时区，例如 `America/Chicago`。
+      </Tab>
+    </Tabs>
+
+    该接收器会提取 `hostname`、`unit`、`pid` (如有) 和 `message`，并在 `Body` 中保留原始日志行。它还会将 `service.name` 设置为 `host-service`，并将主机名复制到 `host.name`。由于这些文本格式不包含严重级别字段，该配置不会根据消息文本推断严重级别。
+  </Step>
+
+  <Step title="运行采集器" id="run-collector">
+    设置[连接变量](#connection-details)，然后在包含 `host-logs.yaml` 的目录中运行：
+
+    ```bash
+    docker run --rm --name host-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log:/var/log/host:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    在 macOS 上，请使用 `-v /private/var/log:/var/log/host:ro`，并允许 Docker Desktop 访问该目录。请确保采集器对所选日志文件具有读取权限。
+
+    请保持此终端处于打开状态。设置 `start_at: end` 后，接收器只会采集启动后新写入的日志行。请执行一些会写入所选日志文件的常规操作，以生成日志数据。
+  </Step>
+
+  <Step title="检查日志" id="verify-logs">
+    打开 **搜索** 页面，选择你的 **Logs** source，按 `ServiceName:host-service` 进行过滤，然后选择 **Last 15 minutes**。展开任意一条日志，即可查看已解析的主机名、unit、PID 和消息。
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该样本包含 11,658 行 syslog 日志，时间跨度为 24 小时，涵盖启动消息、SSH 活动、防火墙拦截、计划任务和服务重启等内容。
+
+<Steps>
+  <Step title="下载样本" id="download-sample">
+    ```bash
+    mkdir -p host-demo
+    cd host-demo
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo-collector">
+    将以下内容保存为下载目录中的 `host-logs-demo.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/host:
+        include: [/var/log/host/journal.log]
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%dT%H:%M:%S%z'
+              location: UTC
+          - type: add
+            field: attributes.source
+            value: host-demo
+          - type: add
+            field: resource["service.name"]
+            value: host-demo
+          - type: copy
+            from: attributes.hostname
+            to: resource["host.name"]
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/host:
+          receivers: [filelog/host]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      此时间戳变换仅用于演示，会将样本数据平移到大约过去 24 小时的时间范围内，截止于摄取时间前两分钟。处理您自己的日志时，请使用[现有主机配置](#existing-hosts)，以保留原始时间戳。
+    </Note>
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo-collector">
+    设置[连接变量](#connection-details)，然后在下载目录中运行：
+
+    ```bash
+    docker run --rm --name host-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd):/var/log/host:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    采集器导出样本期间，请保持终端打开，并检查输出中是否有错误。重新启动一个新容器可能会导致样本日志重复。
+  </Step>
+
+  <Step title="验证演示日志" id="verify-demo-logs">
+    打开 **搜索**，选择您的 **Logs** source，按 `ServiceName:host-demo` 过滤，并选择 **最近 2 天**。展开任意一条日志，查看解析后的属性。确认数据无误后，按 **Ctrl+C** 停止采集器。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 搜索页面中的主机演示日志](/images/clickstack/observability-host-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">下载仪表盘配置</TrackedLink>} id="download-dashboard" />
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，点击右上角的 **Import**。
+    2. 上传 `host-logs-dashboard.json`。
+    3. 将图表映射到您的 **Logs** source，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="view-dashboard">
+    导入后，仪表盘会显示所选时间范围内的日志。如需将样本数据与其他服务的数据区分开，可按 `ServiceName:host-demo` 进行筛选 (可选) 。选择 **最近 2 天** 即可查看完整的样本数据。
+
+    该仪表盘涵盖日志量、系统单元、SSH 活动、防火墙拦截和服务重启等信息。严重级别字段默认为空，除非您的摄取管道提供了该值。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![主机日志仪表盘，显示日志量、系统单元、SSH 活动、安全事件、服务重启和防火墙活动](/images/clickstack/observability-host-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      如需查看您自己的日志，请检查 SSH activity、Firewall blocks 和 security-events 图表的聚合筛选条件，如其中包含 `ServiceName = 'host-demo' AND`，请将其删除。然后通过仪表盘的服务名称过滤器选择您的主机日志。
+    </Note>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 采集器无法启动 {#collector-fails-to-start}
+
+检查采集器终端输出中是否有配置错误。确认 YAML 文件存在于已挂载的路径下，并确保在运行 Docker 的终端中已设置好连接变量。
+
+### 未显示日志 {#no-logs}
+
+* 确认该文件存在于主机上，且其挂载路径与 `include` 匹配。
+* 检查文件权限；如果使用 macOS，还需检查 Docker Desktop 的文件共享设置。
+* 如需采集实时日志，请在采集器启动后生成新的日志条目；`start_at: end` 会跳过已有内容。
+* 检查采集器输出中是否存在身份验证错误或导出错误。
+* 检查 **Logs** source、服务名称过滤器和时间范围。如果使用演示数据，请选择 **最近 2 天**。
+
+### 日志未能正确解析 {#logs-not-parsing}
+
+将文件中的一行内容与所选的时间戳格式进行比对，使用与之匹配的配置，必要时调整传统 syslog 的时区。避免使用范围过宽的文件通配符，以免采集到其他应用程序的无关日志格式。
+
+## 后续步骤 {#next-steps}
+
+* 为身份验证失败或服务错误设置[告警](/zh/clickstack/observability/features/alerts)。
+* 按 `host.name` 或解析得到的 `unit` 属性进行过滤，以查看特定主机或服务。
+* 有关部署指导，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

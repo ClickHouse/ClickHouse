@@ -14,11 +14,9 @@ doc_type: '참고'
   같은 스키마 안에서도 객체마다 서로 다른 기법을 적용할 수 있습니다. 예를 들어, 일부 객체는 `String` 타입이 가장 적합하고 다른 객체는 `Map` 타입이 더 적합할 수 있습니다. `String` 타입을 사용하면 추가로 스키마를 결정할 필요가 없다는 점에 유의하십시오. 반면 아래에서 보듯이 `Map` 키 안에 하위 객체를 중첩할 수도 있으며, 여기에 JSON을 나타내는 `String`을 포함할 수도 있습니다:
 </Info>
 
-<div id="using-string">
-  ## String 유형 사용하기
-</div>
+## String 타입 사용하기 {#using-string}
 
-객체가 매우 동적이고, 예측 가능한 구조가 없으며, 임의로 중첩된 객체를 포함한다면 String 유형을 사용해야 합니다. 값은 아래에서 보이듯 JSON 함수를 사용해 쿼리 시점에 추출할 수 있습니다.
+객체가 매우 동적이고, 예측 가능한 구조가 없으며, 임의로 중첩된 객체를 포함한다면 String 타입을 사용해야 합니다. 값은 아래에서 보이듯 JSON 함수를 사용해 쿼리 시점에 추출할 수 있습니다.
 
 위에서 설명한 구조화된 접근 방식으로 데이터를 처리하는 방법은 동적 JSON을 다루는 사용자에게는 대개 적합하지 않습니다. 동적 JSON은 변경될 수 있거나 스키마(schema)가 충분히 파악되지 않은 경우가 많기 때문입니다. 완전한 유연성이 필요하다면 JSON을 `String`로 그대로 저장한 뒤, 필요에 따라 함수를 사용해 필드를 추출하면 됩니다. 이는 JSON을 구조화된 객체로 처리하는 방식의 정반대에 있는 극단적인 접근입니다. 하지만 이러한 유연성에는 비용이 따르며, 특히 쿼리 구문이 더 복잡해지고 성능이 저하된다는 단점이 있습니다.
 
@@ -39,7 +37,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username
+ORDER BY username;
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -167,9 +165,7 @@ String 함수는 인덱스를 사용하는 명시적 형 변환보다 현저히 
 
 이 접근 방식은 유연한 대신 성능과 구문 측면에서 분명한 대가가 따르므로, 스키마에서 매우 동적인 객체에만 사용해야 합니다.
 
-<div id="simple-json-functions">
-  ### 단순 JSON 함수
-</div>
+### 단순 JSON 함수 {#simple-json-functions}
 
 위 예시에서는 JSON* 함수 계열을 사용합니다. 이 함수들은 [simdjson](https://github.com/simdjson/simdjson) 기반의 전체 JSON 파서를 사용하며, 엄격하게 파싱하고 서로 다른 수준에 중첩된 동일한 field를 구분합니다. 또한 문법적으로는 올바르지만 형식이 잘 정돈되지 않은 JSON(예: key 사이에 공백이 2칸 있는 경우)도 처리할 수 있습니다.
 

@@ -15,30 +15,22 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
 
 <Steps>
   <Step title="Откройте страницу API Keys">
-    Используйте вкладку **API Keys** в левом меню, чтобы создавать ключи API и управлять ими.
+    Используйте вкладку **Ключи API** в левом меню, чтобы создавать ключи API и управлять ими.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Вкладка API Keys](/images/cloud/manage/openapi1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Вкладка ключей API](/images/cloud/manage/openapi1.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Начните создание ключа API">
-    На странице **API Keys** сначала отобразится предложение создать ваш первый ключ API, как показано ниже. После создания первого ключа вы сможете создавать новые ключи с помощью кнопки `New API Key`, которая появится в правом верхнем углу.
+    На странице **Ключи API** сначала отобразится предложение создать ваш первый ключ API, как показано ниже. После создания первого ключа вы сможете создавать новые ключи с помощью кнопки `New API Key`, которая появится в правом верхнем углу.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Страница API Keys](/images/cloud/manage/openapi2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Страница ключей API](/images/cloud/manage/openapi2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -56,13 +48,9 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
     </Tip>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Форма создания ключа API](/images/cloud/manage/openapi3.png)
-
-    </Frame>
-
+      <Frame>
+        ![Форма создания ключа API](/images/cloud/manage/openapi3.png)
+      </Frame>
     </div>
   </Step>
 
@@ -72,13 +60,9 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
     Эндпоинты Query API учитывают списки разрешённых IP-адресов на уровне ключа API. Поскольку запросы проксируются из инфраструктуры ClickHouse, списки разрешённых IP-адресов на уровне сервиса не применяются. Подробности см. в разделе [IP Access Control](/ru/products/cloud/features/sql-console-features/query-endpoints#ip-access-control).
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Разрешённые IP-адреса, настроенные для ключа API](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Разрешённые IP-адреса, настроенные для ключа API](/images/cloud/guides/query-endpoints/specific-locations.webp)
+      </Frame>
     </div>
 
     Закончив настройку ключа, нажмите **Generate API Key**.
@@ -88,13 +72,9 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
     На следующем экране будут показаны ваши Key ID и Key secret. Скопируйте эти значения и сохраните их в безопасном месте, например в хранилище секретов. После ухода с этого экрана они больше не будут отображаться.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Данные ключа API](/images/cloud/manage/openapi4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Данные ключа API](/images/cloud/manage/openapi4.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -110,26 +90,22 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
   </Step>
 
   <Step title="Управляйте существующими ключами API">
-    Вернувшись на страницу **API Keys**, вы увидите имя ключа, последние четыре символа Key ID, разрешения, status, дату истечения срока действия и создателя. На этом экране можно редактировать имя ключа, разрешения и срок действия. Здесь же ключи можно отключать или удалять.
+    Вернувшись на страницу **Ключи API**, вы увидите имя ключа, последние четыре символа Key ID, разрешения, status, дату истечения срока действия и создателя. На этом экране можно редактировать имя ключа, разрешения и срок действия. Здесь же ключи можно отключать или удалять.
 
     <Note>
       Удаление ключа API — необратимое действие. Любые сервисы, использующие этот ключ, немедленно потеряют доступ к ClickHouse Cloud.
     </Note>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Страница управления API Keys](/images/cloud/manage/openapi5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Страница управления ключами API](/images/cloud/manage/openapi5.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="endpoints">
-  ## Конечные точки
+  ## Конечные точки {#endpoints}
 </div>
 
 Сведения о конечных точках см. в [справочнике API](/ru/products/cloud/api-reference/organization/get-list-of-available-organizations).

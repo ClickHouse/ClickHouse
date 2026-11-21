@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 테이블 함수는 YTsaurus 클러스터에서 데이터를 읽을 수 있게 해줍니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
@@ -24,14 +22,12 @@ ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
 
 <Info>
   이는 향후 릴리스에서 하위 호환성이 깨지는 방식으로 변경될 수 있는 실험적 기능입니다.
-  [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) 설정을 사용하여
+  [enable&#95;ytsaurus&#95;table&#95;function](/ko/reference/settings/session-settings/enable#enable_ytsaurus_table_function) 설정을 사용하여
   YTsaurus 테이블 함수 사용을 활성화하십시오.
-  `set allow_experimental_ytsaurus_table_function = 1` 명령을 입력하십시오.
+  `set enable_ytsaurus_table_function = 1` 명령을 입력하십시오.
 </Info>
 
-<div id="arguments">
-  ## 인수
-</div>
+## 인수 {#arguments}
 
 * `http_proxy_url` — YTsaurus http 프록시의 URL입니다.
 * `cypress_path` — 데이터 소스의 Cypress 경로입니다.

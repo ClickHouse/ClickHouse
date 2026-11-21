@@ -82,12 +82,12 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ### Autenticación {#authentication}
 
-| Option          | Type                        | Default               | DSN param                          | Description                                                                                                                                                  | Best practice                                                                                                         | When misconfigured                                                                                                                                                                              |
-| --------------- | --------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Auth.Username` | `string`                    | `"default"`           | `username` or URL user portion     | Nombre de usuario para la autenticación en ClickHouse                                                                                                        | Nunca use `default` en producción. Cree usuarios específicos con permisos mínimos.                                    | Nombre de usuario incorrecto: `"Code: 516. DB::Exception: Authentication failed"`. Cadena vacía: usa `"default"` de forma silenciosa.                                                           |
-| `Auth.Password` | `string`                    | `""`                  | `password` or URL password portion | Contraseña para la autenticación en ClickHouse                                                                                                               | Use variables de entorno o gestores de secretos en producción. Codifique los caracteres especiales en la URL del DSN. | Contraseña incorrecta: `"Code: 516. DB::Exception: Authentication failed"`. Caracteres especiales sin codificar en la URL: errores de parsing.                                                  |
-| `Auth.Database` | `string`                    | `""` (server default) | `database` or URL path (`/mydb`)   | Base de datos predeterminada para la conexión                                                                                                                | Especifíquela siempre de forma explícita. Use bases de datos específicas por aplicación en producción.                | Inexistente: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. Vacía en una configuración multi-tenant: las consultas van a la base de datos equivocada.                                 |
-| `GetJWT`        | `func(ctx) (string, error)` | `nil`                 | (programmatic only)                | Función de callback que devuelve un JWT para la autenticación en ClickHouse Cloud. Puede sustituirse por consulta con `WithJWT(token)`. *(Desde la v2.35.0)* | Implemente caché/renovación de tokens: se invoca por conexión/solicitud.                                              | Token caducado: errores de autenticación. Callback bloqueante: timeout. El JWT tiene prioridad sobre usuario/contraseña. Requiere TLS; sin él, vuelve a usuario/contraseña de forma silenciosa. |
+| Option          | tipo                        | Default               | Parámetro DSN                          | Descripción                                                                                                                                                  | Práctica recomendada                                                                                                         | When misconfigured                                                                                                                                                                                                                                           |
+| --------------- | --------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Auth.Username` | `string`                    | `"default"`           | `username` or URL user portion     | Nombre de usuario para la autenticación en ClickHouse                                                                                                        | Nunca use `default` en producción. Cree usuarios específicos con permisos mínimos.                                    | Nombre de usuario incorrecto: `"Code: 516. DB::Exception: Authentication failed"`. Cadena vacía: usa `"default"` de forma silenciosa.                                                                                                                        |
+| `Auth.Password` | `string`                    | `""`                  | `password` or URL password portion | Contraseña para la autenticación en ClickHouse                                                                                                               | Use variables de entorno o gestores de secretos en producción. Codifique los caracteres especiales en la URL del DSN. | Contraseña incorrecta: `"Code: 516. DB::Exception: Authentication failed"`. Caracteres especiales no URL-encoded: errores de análisis del DSN, con la contraseña mostrada como `xxxxx` (consulte [Errores de análisis del DSN](#dsn-parse-errors)). |
+| `Auth.Database` | `string`                    | `""` (server default) | `database` or URL path (`/mydb`)   | Base de datos predeterminada para la conexión                                                                                                                | Especifíquela siempre de forma explícita. Use bases de datos específicas por aplicación en producción.                | Inexistente: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. Vacía en una configuración multi-tenant: las consultas van a la base de datos equivocada.                                                                                              |
+| `GetJWT`        | `func(ctx) (string, error)` | `nil`                 | (programmatic only)                | Función de callback que devuelve un JWT para la autenticación en ClickHouse Cloud. Puede sustituirse por consulta con `WithJWT(token)`. *(Desde la v2.35.0)* | Implemente caché/renovación de tokens: se invoca por conexión/solicitud.                                              | Token caducado: errores de autenticación. Callback bloqueante: tiempo de espera. El JWT tiene prioridad sobre usuario/contraseña. Requiere TLS; sin él, vuelve a usuario/contraseña de forma silenciosa.                                                              |
 
 ```go
 GetJWT: func(ctx context.Context) (string, error) {
@@ -455,6 +455,28 @@ Pruebe los siguientes pasos en orden y diagnostique la causa raíz antes de ajus
 * Verifique las credenciales en la tabla `system.users`
 * Compruebe si hay problemas de codificación de URL con caracteres especiales en las contraseñas del DSN
 * Confirme que el usuario tenga acceso a la base de datos especificada
+
+### Errores de análisis del DSN {#dsn-parse-errors}
+
+**Causa:** El DSN no es una URL válida. A menudo, la contraseña contiene caracteres especiales (por ejemplo, `/`, `?`, `#`, `@`, `:` o `&`) que no están URL-encoded.
+
+Los errores de análisis del DSN no muestran las credenciales. El error sustituye por `xxxxx` la contraseña de userinfo, el parámetro de consulta `password` y la contraseña incluida en el parámetro de consulta `http_proxy`:
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:abc/db": invalid port ":abc" after host
+```
+
+Si el error del analizador puede contener parte de las credenciales, el controlador oculta los detalles:
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:9000/db": invalid URL (details hidden because they may contain credentials; URL-encode the username, password and http_proxy values)
+```
+
+**Solución:**
+
+* Codifique en formato URL el nombre de usuario y la contraseña en el DSN, por ejemplo, con `url.UserPassword("user", password).String()`, o con `url.QueryEscape(password)` para el parámetro de consulta `password`.
+* Codifique en formato URL la URL completa del proxy en el parámetro de consulta `http_proxy`.
+* Si el error sigue mostrando `details hidden`, configure `Options` en el código con `clickhouse.Open` en lugar de usar un DSN.
 
 ### Errores de certificado TLS {#tls-errors}
 

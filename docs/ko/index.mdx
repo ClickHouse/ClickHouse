@@ -13,6 +13,19 @@ export const localizeHref = (href) => {
     return `/${locale}${href}`;
 };
 
+export const withDocsBase = (href) => {
+    if (!href || !href.startsWith('/')) return href;
+    const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    return base + href;
+};
+
+export const navigateTo = (event, href) => {
+    if (event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    window.location.href = href;
+};
+
 export const FullWidthDivider = ({ style }) => {
     const ref = useRef(null);
     useEffect(() => {
@@ -178,7 +191,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const path = localizeHref('/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server');
+    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
     return (
         <a
             href={path}
@@ -199,7 +212,7 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = '/ko/get-started/setup/cloud';
+    const path = '/get-started/setup/cloud';
     return (
         <a
             className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
@@ -257,7 +270,7 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-      /* Integrations 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
+      /* 통합 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
       html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
       html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
       .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
@@ -403,7 +416,7 @@ export const PageWrapper = ({ children }) => {
 
         <HeroCard title="데이터 웨어하우징" galaxyEvent="docs.home.data-warehousing" description="인사이트와 앱을 위해 데이터를 즉시 분석하고 탐색할 수 있습니다. 무거운 워크로드를 오프로드해 더 빠르게 확장할 수 있습니다." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="에이전트형 분석" galaxyEvent="docs.home.agentic-analytics" description="AI 에이전트가 실시간 데이터를 직접 쿼리하여 즉각적인 대화형 인사이트와 시각화를 제공하도록 합니다." href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="에이전트" galaxyEvent="docs.home.agentic-analytics" description="AI 에이전트가 실시간 데이터를 직접 쿼리하여 즉각적인 대화형 인사이트와 시각화를 제공하도록 합니다." href={localizeHref("/agents")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
@@ -442,7 +455,7 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href={localizeHref("/clickstack/observability/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
             <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>

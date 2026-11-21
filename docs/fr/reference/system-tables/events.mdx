@@ -29,87 +29,83 @@ Nombre de commandes de certificats ACME passées.
 
 ### AdaptiveAggregationBucketsRetired {#adaptiveaggregationbucketsretired}
 
-Nombre de buckets à deux niveaux dont la mémoire de travail (slot d&#39;arena, références aux fragments intermédiaires) a été libérée juste après l&#39;achèvement de leur fusion-conversion, avant la fin de la fusion globale.
+Nombre de buckets à deux niveaux dont le slot d&#39;arena a été libéré par la fusion de l&#39;agrégation adaptative juste après la conversion de la dernière unité du bucket. Le slot ne contient les états fusionnés que d&#39;une seule unité à la fois ; les états de chaque unité précédente sont donc libérés dès sa propre conversion.
+
+### AdaptiveAggregationCountFirstUnits {#adaptiveaggregationcountfirstunits}
+
+Nombre d’unités de fusion de l’agrégation adaptative qui ont d’abord compté leurs groupes, puis n’ont construit les autres états d’agrégation que pour les groupes ayant les comptages les plus élevés, car l’agrégation alimente `ORDER BY count() LIMIT n` et sa conversion finale ne conserve que ces groupes.
 
 ### AdaptiveAggregationDrainedRecords {#adaptiveaggregationdrainedrecords}
 
-Nombre d&#39;enregistrements différés que l&#39;agrégation adaptative a vidés dans la table partagée au moment de la fusion.
+Nombre d&#39;enregistrements en attente que l&#39;agrégation adaptative a vidés dans les tables de la fusion.
 
-### AdaptiveAggregationGiveUps {#adaptiveaggregationgiveups}
+### AdaptiveAggregationFrozenTableSpills {#adaptiveaggregationfrozentablespills}
 
-Nombre de threads ayant renoncé au gel lors de l&#39;agrégation adaptative parce que leur flux ne contenait que peu de clés distinctes.
+Nombre de fois où un fil d’exécution de l’agrégation adaptative a écrit sa table locale gelée sur disque, soit parce que la requête a dépassé le seuil d’agrégation externe alors que les états d’agrégation de la table continuaient de croître, soit parce que le planificateur de mémoire a demandé un déversement.
 
 ### AdaptiveAggregationLocalFreezes {#adaptiveaggregationlocalfreezes}
 
 Nombre de tables de hachage locales gelées par l&#39;agrégation adaptative lorsque le seuil de gel a été atteint.
 
-### AdaptiveAggregationPressureDrainedRecords {#adaptiveaggregationpressuredrainedrecords}
+### AdaptiveAggregationMergeUnits {#adaptiveaggregationmergeunits}
 
-Nombre d&#39;enregistrements en attente que l&#39;agrégation adaptative a vidés de façon anticipée en cas de pression mémoire.
-
-### AdaptiveAggregationPressureStandDowns {#adaptiveaggregationpressurestanddowns}
-
-Nombre de threads de l&#39;agrégation adaptative ayant définitivement quitté la phase d&#39;apprentissage parce que la pression mémoire a dépassé le seuil de l&#39;agrégation externe ; leurs tables locales sont donc déversées via l&#39;agrégation externe ordinaire.
-
-### AdaptiveAggregationPressureSweeps {#adaptiveaggregationpressuresweeps}
-
-Nombre de fois où l&#39;agrégation adaptative a vidé par anticipation les enregistrements mis en attente en raison de la pression mémoire.
+Nombre d&#39;unités de fusion (séquences de partitions d&#39;un bucket à deux niveaux fusionnées en une seule table) que l&#39;agrégation adaptative a fusionnées et converties.
 
 ### AdaptiveAggregationProbeBypasses {#adaptiveaggregationprobebypasses}
 
 Nombre de threads ayant cessé de sonder leur table locale figée lors de l&#39;agrégation adaptative, car presque aucune ligne ne l&#39;atteignait.
 
-### AdaptiveAggregationResidueReleases {#adaptiveaggregationresiduereleases}
+### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-Nombre de fois où l&#39;agrégation adaptative a écrit sur disque sa table de drainage partagée parce qu&#39;un thread repassé à l&#39;algorithme de référence était sur le point d&#39;effectuer un déversement à cause d&#39;elle.
+Nombre d&#39;enregistrements en attente que la fusion de l&#39;agrégation adaptative a ignorés, car le top-K par `count`, `uniqExact` ou `uniqExactIf` n&#39;avait besoin d&#39;aucun de leurs groupes.
 
-### AdaptiveAggregationSealedChunks {#adaptiveaggregationsealedchunks}
+### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-Nombre de fragments fusionnés scellés par l&#39;agrégation adaptative à partir des lots de staging placés en tampon.
+Nombre d&#39;unités de fusion que l&#39;agrégation adaptative a ignorées sans les vider, car le top-K par `count`, `uniqExact` ou `uniqExactIf` n&#39;avait besoin d&#39;aucun de leurs groupes : soit leurs classes de comptage restaient bornées sous le seuil d&#39;un top-K décroissant, soit un top-K croissant avait déjà trouvé suffisamment de groupes ayant le plus petit rang possible.
 
-### AdaptiveAggregationSealNormalizations {#adaptiveaggregationsealnormalizations}
+### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
-Nombre de colonnes d&#39;arguments en attente que le scellement de l&#39;agrégation adaptative a normalisées depuis une représentation encapsulée (Const, Replicated, Sparse, LowCardinality) vers la forme dense consommée par la vidange.
+Nombre d&#39;octets d&#39;enregistrements en attente que l&#39;agrégation adaptative a écrits sur disque en cas de pression mémoire, avant compression.
 
-### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
+### AdaptiveAggregationSpilledRecords {#adaptiveaggregationspilledrecords}
 
-Nombre de fois où l&#39;agrégation adaptative a déversé sa table de vidange partagée sur disque sous pression mémoire, en atteignant la limite de partie de données ou sur requête explicite de déversement.
+Nombre d&#39;enregistrements en attente que l&#39;agrégation adaptative a écrits sur disque en cas de pression mémoire.
 
-### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
+### AdaptiveAggregationSpills {#adaptiveaggregationspills}
 
-Nombre de fois où l&#39;agrégation adaptative a abandonné l&#39;arriéré en attente parce qu&#39;un thread exécutant l&#39;algorithme de référence — soit un thread que le dégel y avait replacé, soit un thread qui s&#39;était retiré de lui-même — était sur le point d&#39;effectuer un déversement alors que des enregistrements en attente étaient encore présents en mémoire.
-
-### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
-
-Nombre de requêtes de déversement émises par le planificateur de mémoire que l&#39;agrégation adaptative a traitées en écrivant sur disque les enregistrements en attente ou le résidu de vidage partagé, plutôt que de quitter le chemin adaptatif.
+Nombre de fois où un fil d’exécution de l’agrégation adaptative a écrit ses enregistrements en attente sur disque, parce que la requête a dépassé le seuil d’agrégation externe ou que le planificateur de mémoire a demandé un déversement.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
-Nombre d&#39;octets de clés mis en attente par l&#39;agrégation adaptative en vue du vidage lors de la fusion.
-
-### AdaptiveAggregationStagedChunkPiecesOverBound {#adaptiveaggregationstagedchunkpiecesoverbound}
-
-Nombre de morceaux d&#39;un fragment intermédiaire découpé que l&#39;agrégation adaptative a publiés alors qu&#39;ils dépassaient encore la limite pour laquelle le fragment avait été découpé. Un fragment est découpé aux frontières des buckets, puis enregistrement par enregistrement à l&#39;intérieur d&#39;un bucket qui dépasse à lui seul la limite ; il s&#39;agit donc d&#39;un enregistrement unique dont les octets intermédiaires dépassent à eux seuls la limite. Un tel morceau est réclamé dans son intégralité, et son écoulement peut dépasser d&#39;autant la partie de données sous pression.
-
-### AdaptiveAggregationStagedChunkSplits {#adaptiveaggregationstagedchunksplits}
-
-Nombre de fragments mis en attente que l&#39;agrégation adaptative a découpés aux frontières des buckets lors de la publication, parce que le drainage d&#39;un fragment était estimé au-delà de la limite de la partie de données sous pression.
-
-### AdaptiveAggregationStagedClaimsClosedAtBound {#adaptiveaggregationstagedclaimsclosedatbound}
-
-Nombre de claims de fragments mis en attente par les drains de l&#39;adaptive aggregation qui ont été fermés avant un fragment dont l&#39;ajout aurait porté le batch à la limite de la partie de données de pression, ce fragment étant alors reporté sur le claim suivant. La limite s&#39;applique au batch tel qu&#39;il est drainé : ainsi, deux fragments se situant chacun juste en dessous de celle-ci — deux morceaux d&#39;un fragment coupé dépassant d&#39;un seul enregistrement la moitié d&#39;une partie de données — sont drainés dans deux tables plutôt qu&#39;une ; seul un premier fragment dépassant à lui seul la limite est claimé dans tous les cas.
+Nombre d&#39;octets de clés mis en attente par l&#39;agrégation adaptative dans ses tampons de partition.
 
 ### AdaptiveAggregationStagedRecords {#adaptiveaggregationstagedrecords}
 
-Nombre d&#39;enregistrements différés mis en attente par l&#39;agrégation adaptative avant la déduplication.
-
-### AdaptiveAggregationStagedRecordsMerged {#adaptiveaggregationstagedrecordsmerged}
-
-Nombre d&#39;enregistrements en attente que l&#39;agrégation adaptative a éliminés par fusion, en tant que clés dupliquées, lors de la publication et du scellement.
+Nombre d&#39;enregistrements différés mis en attente par l&#39;agrégation adaptative dans ses tampons de partition.
 
 ### AdaptiveAggregationThaws {#adaptiveaggregationthaws}
 
 Nombre de fois où l&#39;agrégation adaptative a dégelé les tables locales parce que le flux intermédiaire s&#39;est avéré dominé par les répétitions.
+
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+Nombre de blocs dont la sélection adaptative du codec a évalué le coût dès le départ, en les compressant avec chaque codec candidat et en conservant la sortie la plus compacte.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+Nombre de blocs dont le coût a été réévalué par la sélection adaptative du codec après que le codec gagnant mémorisé a perdu son avantage sur ces blocs.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+Nombre de blocs que la sélection adaptative du codec a compressés uniquement avec le codec gagnant mémorisé.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+Octets compressés produits par le codec par défaut sur les blocs échantillons de la sélection adaptative du codec, à raison d&#39;un par fenêtre de `adaptive_codec_selection_period` blocs.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+Octets compressés écrits par la sélection adaptative du codec sur ses blocs d&#39;échantillon. Le ratio par rapport à `AdaptiveCodecBytesDefault` correspond au gain obtenu par rapport au codec par défaut.
 
 ### AddressesDiscovered {#addressesdiscovered}
 
@@ -143,6 +139,10 @@ Nombre de tables de hachage initialisées en mode à deux niveaux pour l’agré
 
 Nombre de groupes dont les colonnes de clé n&#39;ont pas été matérialisées lors de la conversion d&#39;un bucket à deux niveaux d&#39;une agrégation, car une borne HAVING portant sur le count() propre à ce groupe l&#39;avait déjà écarté (optimisation de plan aggregationHavingPrefilter).
 
+### AggregationIndexedTables {#aggregationindexedtables}
+
+Nombre de tables de hachage d’agrégation à un seul niveau dont les cellules ont été indexées par partitions des valeurs de hachage, afin que les fusions puissent lire les cellules d’une partie d’une table sans la convertir en table à deux niveaux ni la parcourir intégralement. L’agrégation adaptative indexe la table à un seul niveau de chaque fil d’exécution lorsque celui-ci se termine.
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 Nombre de blocs auxquels l’optimisation des plages de clés identiques a été appliquée
@@ -157,7 +157,7 @@ Nombre de flux d&#39;agrégation ayant reconstruit leur table de hachage selon l
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-Nombre de fois où une table de hachage restreinte au set partagé de clés conservées lors de la coupure d&#39;un GROUP BY LIMIT trivial a été réalimentée avec ces clés après avoir été vidée dans un fichier temporaire par l&#39;agrégation externe (voir le paramètre `optimize_trivial_group_by_limit_query`).
+Nombre de fois où une table de hachage qui a cessé d&#39;admettre de nouvelles clés avec `group_by_overflow_mode = any` a été réalimentée avec les clés qu&#39;elle avait conservées, après avoir été vidée dans un fichier temporaire par l&#39;agrégation externe, afin que leurs lignes restantes continuent d&#39;être agrégées. Couvre à la fois le set partagé du seuil de l’optimisation triviale GROUP BY LIMIT (voir le paramètre `optimize_trivial_group_by_limit_query`) et le set propre à chaque flux d&#39;une simple limite `max_rows_to_group_by`.
 
 ### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
 
@@ -191,9 +191,29 @@ Nombre de lignes ignorées lors de l&#39;agrégation parce que leur clé de regr
 
 Nombre de requêtes HTTP adressées aux fournisseurs d’IA.
 
+### AIAPICallsFailed {#aiapicallsfailed}
+
+Nombre de requêtes adressées au fournisseur d’IA ayant échoué après épuisement de toutes les tentatives de réessai.
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+Nombre de requêtes adressées au fournisseur d’IA réessayées après un échec temporaire.
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+Nombre de requêtes adressées au fournisseur d’IA et rejetées avec le code HTTP 429 (Too Many Requests).
+
+### AICacheReadTokens {#aicachereadtokens}
+
+Jetons de prompt lus depuis le cache du fournisseur, tels que rapportés par les fournisseurs de conversation IA. Inclus dans AIInputTokens.
+
+### AICacheWriteTokens {#aicachewritetokens}
+
+Jetons de prompt écrits dans le cache du fournisseur, tels que signalés par les fournisseurs de conversation IA. Inclus dans AIInputTokens.
+
 ### AIInputTokens {#aiinputtokens}
 
-Nombre total de tokens du prompt consommés par l’ensemble des appels à la fonction d’IA dans la requête.
+Nombre total de jetons du prompt consommés par l’ensemble des appels à la fonction d’IA dans la requête, y compris les lectures et écritures en cache.
 
 ### AIORead {#aioread}
 
@@ -215,6 +235,14 @@ Nombre d’opérations d’écriture via l’interface AIO de Linux ou de FreeBS
 
 Nombre d’octets écrits via l’interface AIO sous Linux ou FreeBSD
 
+### AIRequestMicroseconds {#airequestmicroseconds}
+
+Temps total consacré aux requêtes adressées au fournisseur d’IA, y compris les tentatives échouées et l’analyse des réponses, hors temporisation entre les nouvelles tentatives. Valeur cumulée sur l’ensemble des fils d’exécution.
+
+### AIRetryBackoffMicroseconds {#airetrybackoffmicroseconds}
+
+Temps total d’attente avant les réessais des requêtes ayant échoué auprès du fournisseur d’IA. Valeur cumulée sur l’ensemble des fils d’exécution.
+
 ### AIRowsProcessed {#airowsprocessed}
 
 Nombre de lignes ayant reçu un résultat généré par l’IA.
@@ -230,6 +258,38 @@ Nombre d’octets ayant transité par le limiteur de débit &#39;max&#95;network
 ### AllUsersThrottlerSleepMicroseconds {#allusersthrottlersleepmicroseconds}
 
 Temps total pendant lequel une requête a été mise en attente pour respecter la limitation de débit de &#39;max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users&#39;.
+
+### AmberConnectionsCreated {#amberconnectionscreated}
+
+Nombre de connexions créées pour Amber
+
+### AmberConnectionsElapsedMicroseconds {#amberconnectionselapsedmicroseconds}
+
+Temps total passé à établir des connexions pour Amber
+
+### AmberConnectionsErrors {#amberconnectionserrors}
+
+Nombre de cas où la création d’une connexion pour Amber a échoué
+
+### AmberConnectionsExpired {#amberconnectionsexpired}
+
+Nombre de connexions expirées pour Amber
+
+### AmberConnectionsPreserved {#amberconnectionspreserved}
+
+Nombre de connexions conservées pour Amber
+
+### AmberConnectionsReset {#amberconnectionsreset}
+
+Nombre de connexions réinitialisées pour Amber
+
+### AmberConnectionsReused {#amberconnectionsreused}
+
+Nombre de connexions réutilisées pour Amber
+
+### AmberFailedPromotions {#amberfailedpromotions}
+
+Nombre de fois où ce nœud a acquis le verrou maître amber sans parvenir à isoler (fencing) puis à récupérer le volume, et a donc dû libérer le verrou.
 
 ### AnalyzePatchRangesMicroseconds {#analyzepatchrangesmicroseconds}
 
@@ -429,7 +489,7 @@ Nombre de fois où la fonctionnalité de réplicas parallèles automatiques n’
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-Nombre de fois où le nombre de lignes lues depuis le stockage s&#39;est écarté d&#39;un facteur supérieur à 2 des statistiques mises en cache, ce qui a conduit les réplicas parallèles automatiques à les collecter de nouveau au lieu de prendre une décision
+Nombre de fois où le nombre de lignes lues depuis le stockage s&#39;est écarté des statistiques mises en cache de plus de `automatic_parallel_replicas_statistics_drift_ratio`, ce qui a conduit les réplicas parallèles automatiques à les collecter de nouveau au lieu de prendre une décision
 
 ### AzureClients {#azureclients}
 
@@ -635,17 +695,33 @@ Nombre d’exécutions du thread BlobCopier
 
 Nombre d’erreurs de verrouillage de blobs survenues lors de l’exécution de BlobKiller
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+Nombre de blobs renvoyés par le stockage des métadonnées dans le cadre d’un batch
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 Nombre de blobs renvoyés par le stockage des métadonnées
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+Nombre de blobs renvoyés un par un par le stockage des métadonnées
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 Nombre d’erreurs survenues lors de l’enregistrement de blobs pendant l’exécution de BlobKiller
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+Nombre de blobs supprimés au sein d’un batch dont la suppression par BlobKiller a été enregistrée dans le stockage des métadonnées
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 Nombre de blobs dont la suppression par BlobKiller a été consignée dans le stockage des métadonnées
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+Nombre de blobs supprimés individuellement dont la suppression par BlobKiller a été enregistrée dans le stockage des métadonnées
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -838,6 +914,18 @@ Temps total consacré à la détection d&#39;inversions de bits dues à des inco
 ### CompressedReadBufferChecksumDoesntMatchSingleBitMismatch {#compressedreadbufferchecksumdoesntmatchsinglebitmismatch}
 
 Nombre de fois où une erreur de somme de contrôle d’un bloc compressé a été causée par une différence d’un seul bit.
+
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+Nombre de blocs compressés (blocs de données compressés indépendamment les uns des autres) écrits par `CompressedWriteBuffer` (fichiers, réseau, données temporaires).
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+Nombre d&#39;octets non compressés (c&#39;est-à-dire le nombre d&#39;octets avant compression) transmis aux codecs de compression par `CompressedWriteBuffer`.
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+Temps total passé dans les codecs de compression au sein de `CompressedWriteBuffer`.
 
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
@@ -1270,6 +1358,18 @@ Nombre de répertoires créés par le stockage de métadonnées « plain&#95;rew
 
 Nombre de répertoires supprimés par le stockage de métadonnées « plain&#95;rewritable » pour S3ObjectStorage.
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+Nombre de fois où un disque &#39;plain&#95;rewritable&#39; en lecture seule a chargé son état à partir du fichier d’instantané au lieu de procéder à l’énumération du stockage d’objet (un rafraîchissement qui constate que le snapshot est inchangé ne le lit pas et n’est pas comptabilisé).
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+Nombre de tentatives d’écriture en échec du fichier d’instantané d’un disque &#39;plain&#95;rewritable&#39; (l’écriture est réessayée).
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+Nombre de fichiers d’instantané écrits par les disques &#39;plain&#95;rewritable&#39;.
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 Nombre de fois où une étape d&#39;annulation d&#39;une transaction de métadonnées « plain&#95;rewritable » ayant échoué a dû être répétée parce que le stockage d&#39;objet l&#39;a rejetée.
@@ -1434,6 +1534,14 @@ Nombre de transformations `DISTINCT` préliminaires ayant libéré leur table de
 
 Événement de connexion de Distributed Cache. Temps nécessaire pour se connecter à Distributed Cache
 
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Événement client de Distributed Cache. Temps passé à envoyer des paquets EndRequest au Distributed Cache
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Événement client de Distributed Cache. Nombre de paquets EndRequest non envoyés parce que le socket n&#39;était pas accessible en écriture (le serveur avait cessé de le vider) : la connexion est alors interrompue et le serveur détecte l&#39;EOF
+
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
 Événement du tampon de lecture de Distributed Cache. Estimation des octets in-flight lors des seeks ayant envisagé d&#39;abandonner la connexion (à comparer avec DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
@@ -1457,6 +1565,14 @@ Nombre de transformations `DISTINCT` préliminaires ayant libéré leur table de
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 Événement du tampon d&#39;écriture du Distributed Cache. Nombre d&#39;écritures dans le cache exécutées de manière intégrée sur le thread appelant (écritures de données temporaires, qui n&#39;ont aucune écriture vers le stockage d&#39;objet avec laquelle se chevaucher)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+Événement du tampon de lecture de Distributed Cache. Estimation du nombre d&#39;octets en transit sur les connexions comptabilisées dans DistrCacheKeptConnectionsWithInflightData (à comparer avec DistrCacheUnusedDataPacketsBytesUnknownRequest)
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+Événement du tampon de lecture de Distributed Cache. Nombre de fois où une connexion a été conservée dans le pool lors de l&#39;annulation d&#39;une requête de lecture alors que des données pouvaient encore arriver, car le nombre estimé d&#39;octets en transit ne dépassait pas `distributed_cache_min_inflight_bytes_to_discard_connection`
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1526,6 +1642,10 @@ Nombre de transformations `DISTINCT` préliminaires ayant libéré leur table de
 
 Événement client de Distributed Cache. Nombre d&#39;erreurs de Distributed Cache pouvant faire l&#39;objet d&#39;une nouvelle tentative lors des requêtes de lecture (comptabilisées à chaque occurrence, y compris celles corrigées par une nouvelle tentative)
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Événement du Distributed Cache. Nombre de lectures dont la connexion a été perdue avant l&#39;accusé de réception final ; la plage reçue dans son intégralité a été acceptée
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 Événement du tampon de lecture de Distributed Cache. Temps consacré à la lecture depuis Distributed Cache
@@ -1594,6 +1714,10 @@ Temps total pendant lequel une requête est restée en pause afin de respecter l
 
 Événement de connexion du Distributed Cache. Temps consacré à la suppression des connexions obsolètes du pool
 
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Événement client de Distributed Cache. Nombre de requêtes ouvertes que le client a dû clôturer lui-même lors de leur libération (nouvelle tentative ayant entraîné une reconnexion, nouvelle requête émise alors qu&#39;une requête précédente n&#39;était pas terminée, ou disparition du client), au lieu que le lecteur les clôture explicitement
+
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
 Événement de connexion du Distributed Cache. Nombre de connexions au Distributed Cache réutilisées
@@ -1658,6 +1782,10 @@ Distributed Cache read buffer event. Temps écoulé entre la demande d&#39;une n
 
 Événement du serveur Distributed Cache. Nombre d’octets lus depuis le stockage d’objets dans le cache distribué lors de la lecture depuis le cache du système de fichiers&quot;
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Événement du serveur Distributed Cache. Temps passé à attendre le mutex des fichiers temporaires validés en cas de contention.
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 Événement du serveur Distributed Cache. Temps d&#39;attente d&#39;un mutex de bucket de connexions par client en cas de contention (register/unregister/identify/eviction)
@@ -1698,6 +1826,10 @@ Distributed Cache read buffer event. Temps écoulé entre la demande d&#39;une n
 
 Événement du serveur Distributed Cache. Nombre de paquets clients RefreshCredentials reçus par DistributedCacheServer
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Événement du serveur Distributed Cache. Nombre de requêtes dont le client a fermé la connexion sans envoyer EndRequest (client arrêté de force, client dont le socket n&#39;était pas accessible en écriture ou ancien client), si bien que le serveur a cessé de les traiter à la réception d&#39;EOF. Les fermetures à l&#39;initiative de ce serveur (arrêt ou éviction de connexion) ne sont pas comptabilisées
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Événement du serveur Distributed Cache. Le nombre de clients S3 mis en cache réutilisés
@@ -1717,6 +1849,38 @@ Distributed Cache read buffer event. Temps écoulé entre la demande d&#39;une n
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 Événement du tampon de lecture du Distributed Cache. Nombre de basculements entre les serveurs du Distributed Cache dans le cache en mode read/write-through
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Événement du serveur Distributed Cache. Nombre d&#39;échecs validés de planification du nettoyage des données temporaires
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Événement du serveur Distributed Cache. Temps consacré au traitement des contrôles de données temporaires validés
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Événement du serveur Distributed Cache. Nombre de fichiers temporaires validés ayant expiré
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Événement du serveur Distributed Cache. Nombre de prolongations validées du TTL des fichiers temporaires
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Événement du serveur Distributed Cache. Nombre de fichiers temporaires validés qui ont été publiés
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Événement du serveur Distributed Cache. Nombre de publications temporaires validées qui ont été rejetées
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Événement du serveur Distributed Cache. Nombre de fichiers temporaires validés qui ont été libérés
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Événement du serveur Distributed Cache. Nombre de lectures temporaires validées qui ont été rejetées
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1746,13 +1910,65 @@ Distributed Cache read buffer event. Temps écoulé entre la demande d&#39;une n
 
 Événement client du Distributed Cache. Nombre d’erreurs du distributed cache lors des requêtes vers les tables système d’introspection (system.distributed&#95;cache, system.distributed&#95;cache&#95;metrics, system.distributed&#95;cache&#95;events). Ces requêtes ne sont pas réessayées ; les erreurs réessayables et non réessayables sont donc comptabilisées ensemble
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre d&#39;échecs de fonctions de rappel du registre de données temporaires qu&#39;il contient
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Événement du Distributed Cache relatif aux données temporaires validées. Temps passé à attendre le mutex du registre des données temporaires en cas de contention
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre d&#39;échecs de planification de tasks du registre des données temporaires
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre de batchs de libération
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre de batchs de libération en échec
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre de libérations abandonnées après un échec définitif ou après l&#39;expiration du TTL côté serveur au cours des nouvelles tentatives, et laissées au nettoyage par TTL
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre de batchs de renouvellement
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Événement du Distributed Cache relatif aux données temporaires validées. Nombre de batchs de renouvellement en échec
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 Événement de connexion du Distributed Cache. Nombre d’octets écrits dans les fichiers temporaires créés dans le Distributed Cache
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Événement du Distributed Cache relatif aux données temporaires validées. Nombre de confirmations de publication en échec
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre de publications confirmées sur le serveur d&#39;origine
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 Événement de connexion du Distributed Cache. Nombre de fichiers temporaires créés dans le Distributed Cache
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Événement Distributed Cache relatif aux données temporaires validées. Nombre d&#39;échecs de transfert de propriétaire
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Événement du Distributed Cache relatif aux données temporaires validées. Nombre de réponses de publication ambiguës
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Événement du Distributed Cache relatif aux données temporaires validées. Nombre de fichiers publiés par un client
 
 ### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
 
@@ -2266,6 +2482,14 @@ Attente dans l’état DOWNLOADING
 
 Nombre de fois où l&#39;attente d&#39;un segment de fichier à l&#39;état DOWNLOADING a dépassé le délai imparti (voir `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+Nombre de fois où l&#39;attente d&#39;un segment de fichier à l&#39;état DOWNLOADING s&#39;est terminée parce que le composant de téléchargement a libéré le segment avant d&#39;avoir téléchargé les données jusqu&#39;à la position attendue
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+Temps passé dans les attentes comptabilisées par `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 Temps d’écriture d’un segment de fichier avec write()
@@ -2422,6 +2646,10 @@ Temps de verrouillage en lecture du cache du système de fichiers dans la file d
 
 Durée de verrouillage du cache du système de fichiers lors de l’écriture dans la file de priorité
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+Nombre de segments de fichier promus (déplacés) de la file d’attente probatoire vers la file protégée dans la politique du cache SLRU.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 Nombre de fois où une réservation dans le cache du système de fichiers avec réservation anticipée n&#39;a pas pu être satisfaite faute de place et a été retentée avec exactement la taille demandée
@@ -2506,9 +2734,25 @@ Compte le nombre total de fois où le pool global de threads a diminué par supp
 
 Temps total passé à attendre le lancement de nouveaux threads.
 
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+Nombre de granules lus par les lecteurs PREWHERE (les granules sur lesquels PREWHERE a été évalué). Chaque granule n&#39;est compté qu&#39;une seule fois, même s&#39;il est réparti sur plusieurs blocs lus.
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+Nombre de granules entièrement rejetés par PREWHERE : toutes les lignes du granule ont été éliminées par le filtre. Un granule dont au moins une ligne est conservée n&#39;est pas comptabilisé. Chaque granule n&#39;est compté qu&#39;une seule fois, même lorsqu&#39;il est réparti sur plusieurs blocs de lecture. Il s&#39;agit d&#39;un décompte logique du filtrage, qui ne signifie pas que le lecteur principal n&#39;a rien lu dans le granule.
+
 ### HardPageFaults {#hardpagefaults}
 
 Le nombre de défauts de page majeurs dans les threads d&#39;exécution des requêtes. Des valeurs élevées indiquent soit que vous avez oublié de désactiver le swap sur votre serveur, soit l&#39;éviction de pages mémoire du binaire ClickHouse en cas de très forte pression mémoire, soit l&#39;utilisation réussie de la méthode de lecture « mmap » pour les données des tables.
+
+### HashJoinBuiltWithParallelLayout {#hashjoinbuiltwithparallellayout}
+
+Nombre de tables de hachage construites en plusieurs parties de données pour les jointures par hachage. Jusqu’à `max_threads` fils d’exécution remplissent les parties de données simultanément ; avec `max_threads = 1`, un seul fil d’exécution les remplit toutes. Le paramètre `parallel_hash_join_threshold` détermine quelles jointures par hachage sont construites de cette manière.
+
+### HashJoinBuiltWithSerialLayout {#hashjoinbuiltwithseriallayout}
+
+Nombre de tables de hachage construites pour les jointures par hachage en une seule partie de données, une insertion à la fois. Chaque table de hachage n’est comptée qu’une fois : une jointure par hachage Grace incrémente donc ce compteur d’une unité pour chaque bucket qu’elle charge en mémoire. Voir HashJoinBuiltWithParallelLayout.
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
@@ -2650,6 +2894,10 @@ Temps total passé à lire les fichiers Iceberg `metadata.json` depuis le stocka
 
 Nombre de fichiers Iceberg `metadata.json` lus depuis le stockage (et non servis par le cache de métadonnées Iceberg).
 
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Nombre de fois où un fichier Iceberg `metadata.json` a été vérifié pour s&#39;assurer qu&#39;il contient les champs exigés par la spécification Iceberg. Un fichier servi depuis le cache de métadonnées Iceberg n&#39;est vérifié qu&#39;une seule fois.
+
 ### Temps d’attente de lecture des fichiers de métadonnées Iceberg en microsecondes {#icebergmetadatareadwaittimemicroseconds}
 
 Temps total passé par les lecteurs de données à attendre la lecture et l’analyse des fichiers de métadonnées Iceberg, cumulé sur l’ensemble des threads de lecture.
@@ -2681,6 +2929,10 @@ Nombre de fichiers ignorés lors de l’optimisation par exclusion de partitions
 ### IcebergPartitionPrunedManifestFiles {#icebergpartitionprunedmanifestfiles}
 
 Nombre de fichiers manifest Iceberg ignorés sans avoir été lus, grâce aux résumés de partition de la manifest list
+
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+Nombre de fichiers de données Iceberg ignorés, car les bornes de leur manifest ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN
 
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
@@ -2874,6 +3126,14 @@ Nombre de lignes non appariées émises par NonJoinedBlocksTransform.
 
 Temps total passé à exécuter les optimisations du plan JOIN.
 
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+Nombre de clés de jointure constituées d&#39;une seule colonne `String` de 16 octets ou plus que les jointures par hachage ont insérées dans leurs tables de hachage sous la forme de leur `SipHash` 128 bits (voir `enable_packed_string_keys_in_hash_join`). Une jointure avec `OR` insère une clé pour chaque condition. Une ligne est comptée à nouveau à chaque nouvelle insertion : après qu&#39;une jointure `grace_hash` a divisé ses compartiments, ou après qu&#39;une jointure qui déverse sur le disque a basculé sur `grace_hash`.
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+Nombre de clés de jointure `String` simples d&#39;au plus 15 octets que les jointures par hachage ont insérées de manière intégrée dans leurs tables de hachage (voir `enable_packed_string_keys_in_hash_join`). Une jointure avec `OR` insère une clé pour chaque condition. Une ligne est comptabilisée de nouveau lorsqu&#39;elle est réinsérée : après qu&#39;une jointure `grace_hash` a divisé ses compartiments, ou après qu&#39;une jointure qui déverse sur le disque bascule vers `grace_hash`.
+
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
 Nombre total de lignes dans la table probe pour une opération JOIN.
@@ -2888,7 +3148,11 @@ Nombre total de lignes du résultat d&#39;une opération JOIN.
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-Nombre de fois où un (Concurrent)HashJoin a basculé vers un GraceHashJoin en raison d’une limite mémoire dans SpillingHashJoin.
+Nombre de fois où un HashJoin a basculé vers un GraceHashJoin en raison d’une limite de mémoire dans SpillingHashJoin.
+
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+Nombre de fois où un HashJoin a été remplacé par un MergeJoin en raison de la limite de mémoire dans SpillingHashJoin. MergeJoin est préféré à GraceHashJoin lorsque le plan de requête exige que la jointure préserve l&#39;ordre des lignes du flux de gauche.
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
@@ -3322,9 +3586,17 @@ Nombre de lectures de snapshots ayant échoué
 
 Nombre d’objets de snapshot envoyés aux nœuds followers
 
+### KeeperReadSnapshotStreamingSeeks {#keeperreadsnapshotstreamingseeks}
+
+Nombre de fois où un transfert de snapshot en flux continu a repositionné son lecteur parce que NuRaft a demandé un objet autre que le suivant
+
 ### KeeperReconfigRequest {#keeperreconfigrequest}
 
 Nombre de requêtes de reconfiguration
+
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+Nombre de fois où Keeper a refusé une requête qui aurait entraîné l&#39;annulation d&#39;entrées de log déjà validées
 
 ### KeeperRemoveRequest {#keeperremoverequest}
 
@@ -3674,6 +3946,30 @@ Temps total consacré par MemoryWorker aux tâches d’arrière-plan
 
 Nombre de fusions en arrière-plan lancées.
 
+### MergeCheckpointable {#mergecheckpointable}
+
+Nombre de fusions en arrière-plan lancées avec `enable_merge_checkpoints` et faisant l&#39;objet de points de contrôle.
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+Temps total consacré à l&#39;enregistrement des points de contrôle de fusion, y compris leur validation.
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+Nombre de points de contrôle de fusion supprimés parce que la fusion n&#39;a pas pu reprendre à partir de ceux-ci.
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+Nombre de points de contrôle de fusion supprimés lors de leur nettoyage ou de la suppression de la table.
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+Nombre de fusions reprises à partir d&#39;un point de contrôle de fusion.
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+Nombre de points de contrôle de fusion enregistrés.
+
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
 Temps total consacré à la finalisation des résultats de fusion (renommage des parts, vérification du checksum, mises à jour de ZooKeeper)
@@ -3729,6 +4025,10 @@ Temps consacré à la réinitialisation de la tâche pour l’exécuteur MergeMu
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 Temps passé à attendre la fin de l’exécuteur MergeMutate.
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+Nombre de fusions en arrière-plan lancées avec `enable_merge_checkpoints` qui ne peuvent pas faire l&#39;objet d&#39;un point de contrôle, par exemple les fusions horizontales.
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -4110,6 +4410,10 @@ Nombre d’objets de lease expirés et de marqueurs condamnés supprimés du sto
 
 Objets qui ne correspondaient pas au motif glob ou regex et qui ont été ignorés lors de l’établissement de la liste.
 
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+Objets ignorés lors de l&#39;énumération parce qu&#39;un segment de leur chemin situé sous le préfixe non glob est masqué (il commence par « &#95; » ou « . »).
+
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 
 Nombre total d’objets renvoyés par l’API de listing du stockage objet avant tout filtrage.
@@ -4458,6 +4762,10 @@ Nombre de répliques utilisées pour exécuter une requête en mode de réplique
 
 Le nombre total de groupes de lignes Parquet élagués par les filtres de Bloom.
 
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+Groupes de lignes dont le lecteur Parquet d’un fichier situé dans un stockage d’objet ou à une URL a commencé à lire les données de colonne avant que leur décodage ne soit planifié, dans la limite de sa part de max&#95;download&#95;threads
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 Le nombre total de colonnes ayant passé le filtre
@@ -4481,6 +4789,10 @@ Nombre total de groupes de lignes Parquet élagués par les filtres de dictionna
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Temps d’attente des lectures de fichiers Parquet effectuées par les threads de décodage (et non par les threads de prélecture)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+Nombre de fichiers Parquet qu&#39;une lecture a ignorés sans les ouvrir, parce que les statistiques min/max des colonnes de filtre, conservées avec les métadonnées du fichier mises en cache lors d&#39;une lecture antérieure de la même version de ce fichier, excluent tous les groupes de lignes
 
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
@@ -4549,6 +4861,18 @@ Nombre de lignes des colonnes d&#39;entrée PREWHERE Parquet lues sous forme d&#
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 Le nombre total de lignes ayant passé le filtre
+
+### ParquetRuntimeFilterPrunedPages {#parquetruntimefilterprunedpages}
+
+Nombre de pages Parquet ignorées car leur index de page ne peut contenir aucune clé d’un filtre d’exécution de JOIN
+
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+Nombre de groupes de lignes Parquet ignorés, car leurs statistiques de colonne ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+Nombre de groupes de lignes Parquet dont la plage de la colonne de tri `ORDER BY ... LIMIT` a été déterminée à partir des valeurs de leur dictionnaire susceptibles de satisfaire le filtre, leurs statistiques min/max ne permettant pas de la borner (voir `use_top_k_dynamic_filtering`)
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
@@ -4712,7 +5036,7 @@ Nombre de fois où une entrée a été trouvée dans le cache de l’index prima
 
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
-Nombre de fois où une entrée n’a pas été trouvée dans le cache d’index primaire, ce qui a nécessité de charger un fichier d’index en mémoire, une opération coûteuse qui augmente la latence des requêtes.
+Nombre de fois où une entrée n’a pas été trouvée dans le cache de l’index primaire, ce qui a nécessité de charger un fichier d’index en mémoire, une opération coûteuse qui augmente la latence des requêtes.
 
 ### Requêtes avec sous-requêtes {#querieswithsubqueries}
 
@@ -4961,6 +5285,10 @@ Nombre d’octets lus à partir de sources compressées (fichiers, réseau), c�
 ### ReaderExecutorBytesFromSource {#readerexecutorbytesfromsource}
 
 Octets physiques que ReaderExecutor a adressés à la source après échec sur tous les niveaux de cache (préchargement au premier plan et en arrière-plan, y compris les octets d’un préchargement gaspillés par un abandon ultérieur) ; ne comprend pas les octets servis par le consumer — voir ReaderExecutorDeliveredBytes.
+
+### ReaderExecutorBytesOutsideRequestMap {#readerexecutorbytesoutsiderequestmap}
+
+Part de ReaderExecutorBytesFromSource située en dehors de la map de requêtes annoncée par le lecteur. Vaut zéro pour les lectures sans map.
 
 ### ReaderExecutorCacheGetRequests {#readerexecutorcachegetrequests}
 
@@ -5257,6 +5585,10 @@ Nombre de lignes lues dans les tables MergeTree par le lecteur principal (après
 ### RowsReadByPrewhereReaders {#rowsreadbyprewherereaders}
 
 Nombre total de lignes lues dans des tables MergeTree par les lecteurs prewhere.
+
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+Nombre de lignes rejetées par PREWHERE : lignes pour lesquelles la condition PREWHERE a été évaluée à false. Il s&#39;agit d&#39;un décompte de filter logique, qui ne signifie pas que le lecteur principal a évité de lire ces lignes.
 
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 
@@ -6390,6 +6722,10 @@ Temps total pendant lequel les threads de traitement (requêtes et autres tâche
 
 Nombre d’appels aux fonctions de table.
 
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+Nombre de fois où un DFA a été construit à partir d&#39;un motif LIKE afin d&#39;ignorer des blocs de dictionnaire d&#39;un index de texte. La réutilisation d&#39;un DFA déjà construit n&#39;est pas comptabilisée.
+
 ### TextIndexDiscardHint {#textindexdiscardhint}
 
 Nombre de granules d’index pour lesquelles une lecture directe depuis l’index de texte a été ajoutée comme indication, puis abandonnée en raison d’une sélectivité insuffisante.
@@ -6670,6 +7006,94 @@ Nombre de négociations TLS effectuées pour les connexions entrantes (côté se
 
 Nombre de granules ignorés lors de la lecture, car l&#39;index primaire indique que toutes leurs lignes se situent au-delà du seuil top-K courant publié par l&#39;agrégation (voir `enable_group_by_top_k_dynamic_filtering`) ou par le tri (voir `use_top_k_dynamic_filtering`).
 
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+Temps passé dans `BEGIN TRANSACTION`, explicite ou implicite
+
+### TransactionBegins {#transactionbegins}
+
+Nombre de `BEGIN TRANSACTION`, explicites ou implicites
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+Nombre de transactions ayant démarré avec un snapshot antérieur au dernier CSN, en raison du retard du watermark global
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+Temps consacré à la finalisation des transactions validées après l&#39;allocation de leur CSN
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+Temps écoulé entre le début d&#39;une validation de transaction et l&#39;allocation de son CSN par Keeper
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+Nombre de validations de transaction ayant échoué avec `SERIALIZATION_ERROR` en raison de la modification d&#39;une partie de données par une opération concurrente
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+Temps passé à la validation des transactions, sans attendre le chargement du CSN
+
+### TransactionCommits {#transactioncommits}
+
+Nombre de validations de transaction lancées, y compris celles en lecture seule et celles qui ont échoué
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+Nombre de validations de transaction pour lesquelles Keeper a attribué un CSN
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+Nombre de validations de transaction dont l&#39;issue est inconnue en raison d&#39;une erreur matérielle de Keeper
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+Temps passé à attendre l&#39;issue des validations dont le statut est inconnu
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+Nombre de répliques que cette réplique a marquées comme mortes pour les transactions
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+Nombre d&#39;entrées du journal de transactions (`/log`) lues depuis Keeper
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+Temps passé à charger le journal des transactions (`/log`) depuis Keeper : listage du journal, lecture des nouvelles entrées et application de celles-ci
+
+### TransactionLogLoads {#transactionlogloads}
+
+Nombre de chargements du journal des transactions (`/log`) depuis Keeper
+
+### TransactionsCommitted {#transactionscommitted}
+
+Nombre de transactions validées, y compris celles en lecture seule
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+Nombre de transactions annulées
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+Nombre d&#39;ID de transaction invalidés par cette réplique
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+Nombre d&#39;attentes du chargement d&#39;un CSN dans le dernier snapshot, effectuées par un `COMMIT` synchrone ou par `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+Temps passé à attendre qu&#39;un CSN soit chargé dans le snapshot le plus récent
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+Nombre d&#39;attentes, via `COMMIT` avec `wait_visible` ou `SYSTEM SYNC TRANSACTION LOG`, jusqu&#39;à ce que le watermark atteigne un CSN, de sorte qu&#39;une nouvelle transaction sur cette réplique le voie
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+Temps passé à attendre que le watermark atteigne un CSN
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 Nombre de fois où un bloc de données a été trouvé dans le cache décompressé, évitant ainsi la décompression.
@@ -6785,6 +7209,38 @@ Nombre approximatif d’octets expulsés du cache d’index vectoriel.
 ### VersionedCollapsingSortedMilliseconds {#versionedcollapsingsortedmilliseconds}
 
 Temps total consacré au collapsing par version des colonnes triées
+
+### VortexConvertMicroseconds {#vortexconvertmicroseconds}
+
+Temps passé à convertir en colonnes ClickHouse les tableaux Arrow fournis par un parcours Vortex
+
+### VortexFilterPushdownConjunctsDropped {#vortexfilterpushdownconjunctsdropped}
+
+Nombre de conjoints WHERE de premier niveau qui n&#39;ont pas pu être traduits pour un parcours Vortex et ne sont appliqués qu&#39;ensuite par ClickHouse
+
+### VortexFilterPushdownConjunctsPushed {#vortexfilterpushdownconjunctspushed}
+
+Nombre de conjoints WHERE de premier niveau traduits et délégués (pushdown) à un parcours Vortex
+
+### VortexReadBytes {#vortexreadbytes}
+
+Nombre d&#39;octets lus par un parcours Vortex via le tampon de lecture de ClickHouse
+
+### VortexReadRequests {#vortexreadrequests}
+
+Nombre de requêtes de lecture émises par un parcours Vortex via le tampon de lecture de ClickHouse
+
+### VortexReadWaitMicroseconds {#vortexreadwaitmicroseconds}
+
+Temps passé par le pipeline à attendre qu’un parcours Vortex fournisse la division suivante
+
+### VortexScanEmptySplits {#vortexscanemptysplits}
+
+Nombre de divisions de parcours Vortex dont toutes les lignes ont été éliminées par le filter appliqué en amont (pushed-down). Une telle division n&#39;est transmise, et donc comptabilisée, que lorsque le parcours préserve l&#39;ordre du fichier (`input_format_vortex_preserve_order`) : c&#39;est le seul lecteur concerné
+
+### VortexScanSplits {#vortexscansplits}
+
+Nombre de divisions fournies par les parcours Vortex
 
 ### WaitMarksLoadMicroseconds {#waitmarksloadmicroseconds}
 

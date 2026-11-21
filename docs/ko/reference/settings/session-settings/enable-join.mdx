@@ -47,8 +47,10 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 빌드 측에서 수집한 런타임 필터를 사용하여 JOIN의 프로브 측 그래뉼을 프루닝합니다. `enable_join_runtime_filters`를 참조하십시오.
 `use_skip_indexes_on_data_read = 1`인 경우에만 적용됩니다.
-프로브 측의 프라이머리 키 컬럼이거나 `minmax`, `set` 또는 `bloom_filter` 스킵 인덱스가 적용된 조인 키만 프루닝할 수 있습니다.
+프로브 측의 프라이머리 키 컬럼이거나, `minmax`, `set` 또는 `bloom_filter` 스킵 인덱스가 적용되었거나, 전역 행 인덱스 `_part_starting_offset + _part_offset`인 조인 키만 프루닝할 수 있습니다. 서브쿼리에서 찾은 행을 가져오기 위해 전역 행 인덱스로 셀프 조인하면 해당 행이 속한 그래뉼만 읽습니다. 전역 행 인덱스는 하나의 쿼리 안에서만 행을 식별하므로, 조인의 양쪽 모두 같은 쿼리에서 테이블을 읽어야 합니다.
 런타임 필터가 정확한 키 값을 유지한 경우 프루닝 프레디케이트는 해당 값들로 이루어진 `IN` 집합이 되고, 그렇지 않으면 키의 최솟값/최댓값 범위가 사용됩니다(이 경우 프루닝 효과가 더 낮습니다).
+
+Iceberg 테이블(Iceberg table)에서는 이 설정으로 데이터 파일 전체를 건너뛸 수 있으며, 읽는 파일 내의 Parquet 행 그룹(row groups)과 페이지도 건너뛸 수 있습니다. [use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/ko/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning)을 참조하십시오. 이 동작은 `use_skip_indexes_on_data_read` 값과 관계없이 적용됩니다.
 
 병렬 레플리카(`enable_parallel_replicas = 1`)에서도 동작합니다. 각 레플리카는 직접 구성한 필터로 자신이 읽는 그래뉼을 프루닝합니다. 이 필터는 일부만 포함할 수 있습니다. `RIGHT` 조인에서는 빌드 측이 레플리카 간에 분할되므로, 각 레플리카의 필터에는 자신이 담당하는 부분만 포함됩니다. 하지만 조인의 어느 한쪽만 분할되고, 일치하는 모든 행 쌍은 정확히 하나의 레플리카에서 만나며, 각 레플리카는 결과 중 서로 겹치지 않는 부분을 출력하므로 결과는 여전히 올바릅니다.
 

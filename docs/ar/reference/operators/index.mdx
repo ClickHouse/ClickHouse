@@ -668,12 +668,12 @@ SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 
 ### IS NULL {#is_null}
 
-* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NULL` ما يلي:
+* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المشغّل `IS NULL` ما يلي:
   * `1` إذا كانت القيمة `NULL`.
   * `0` بخلاف ذلك.
-* بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NULL` دائمًا القيمة `0`.
+* بالنسبة إلى القيم الأخرى، يعيد المشغّل `IS NULL` دائمًا القيمة `0`.
 
-يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null != 0 FROM TABLE`.
+عندما لا يُستخدم العمود في أي موضع آخر من الاستعلام، يمكن للدالة أن تقرأ العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null != 0 FROM TABLE`. ويتحكّم في هذا التحسين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)، وهو مفعّل افتراضيًا.
 
 {/* */}
 
@@ -689,10 +689,10 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is_not_null}
 
-* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NOT NULL` ما يلي:
+* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المشغّل `IS NOT NULL` ما يلي:
   * `0` إذا كانت القيمة `NULL`.
   * `1` في غير ذلك.
-* بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NOT NULL` دائمًا `1`.
+* بالنسبة إلى القيم الأخرى، يعيد المشغّل `IS NOT NULL` دائمًا `1`.
 
 {/* */}
 
@@ -706,7 +706,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-يمكن تحسين ذلك عبر تفعيل إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، لا تقرأ الدالة سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`.
+عندما لا يُستخدم العمود في أي موضع آخر من الاستعلام، يمكن للدالة ألّا تقرأ سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`. ويتحكّم في هذا التحسين إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)، وهو مفعّل افتراضيًا.
 
 ## التحقق من القيم المنطقية {#checking-boolean-values}
 

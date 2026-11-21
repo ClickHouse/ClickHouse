@@ -12,13 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="allow_nondeterministic_mutations">
-  ## allow_nondeterministic_mutations
-</div>
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-允许复制表上的变更使用 `dictGet` 等非确定性函数的用户级设置。
+用户级设置，允许复制表上的变更使用 `dictGet` 等非确定性函数，以及值可能因副本而异的虚拟列 (例如 `_table`、`_database` 和 `_disk_name`) 。
 
 例如，字典在各个节点之间可能会不同步，因此默认情况下，禁止复制表上的变更从字典中拉取值。启用此设置后将允许这种行为，但用户有责任确保所使用的数据在所有节点之间都是同步的。
 
@@ -37,9 +35,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </profiles>
 ```
 
-<div id="allow_nondeterministic_optimize_skip_unused_shards">
-  ## allow_nondeterministic_optimize_skip_unused_shards
-</div>
+## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

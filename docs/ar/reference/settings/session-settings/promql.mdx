@@ -34,6 +34,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يضبط وقت التقييم المستخدم مع لهجة promql، بوصفه طابعًا زمنيًا لـ Unix بالثواني مع جزء كسري اختياري. وتعني `'auto'` الوقت الحالي.
 
+## promql_max_points_per_series {#promql_max_points_per_series}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="11000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "11000"},{"label": "إعداد جديد لتقييد مستوى الدقة في استعلامات النطاق عبر واجهة برمجة تطبيقات HTTP لـ Prometheus، على غرار Prometheus."}]}]} />
+
+الحد الأقصى لمستوى الدقة في استعلامات النطاق عبر واجهة برمجة تطبيقات HTTP لـ Prometheus (`/api/v1/query_range`). وعلى غرار Prometheus، يُرفض الاستعلام إذا تجاوزت قيمة `(end - start) / step` هذه القيمة. وتعني القيمة 0 عدم وجود حد. ولا تخضع دالة الجدول [prometheusQueryRange](/ar/reference/functions/table-functions/prometheusQueryRange) لهذا الحد.
+
 ## promql_push_down_label_matchers {#promql_push_down_label_matchers}
 
 <PrivatePreviewBadge />

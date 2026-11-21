@@ -9,12 +9,12 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Guides de démarrage rapide",
+          "group": "Quickstarts",
           "pages": [
             "fr/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "Tous les cas d’usage",
+              "group": "All use cases",
               "pages": [
                 "fr/get-started/setup/cloud",
                 "fr/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -26,7 +26,7 @@
             },
             {
               "expanded": false,
-              "group": "Analytique en temps réel",
+              "group": "Real-time analytics",
               "pages": [
                 "fr/get-started/quickstarts/create-your-first-materialized-view",
                 "fr/get-started/quickstarts/create-your-first-projection"
@@ -34,7 +34,7 @@
             },
             {
               "expanded": false,
-              "group": "Entrepôt de données",
+              "group": "Data warehousing",
               "pages": [
                 "fr/get-started/quickstarts/connect-your-iceberg-catalog",
                 "fr/get-started/quickstarts/mutations"
@@ -42,7 +42,7 @@
             },
             {
               "expanded": false,
-              "group": "Observabilité",
+              "group": "Observability",
               "pages": [
                 "fr/get-started/quickstarts/working-with-the-map-type"
               ]
@@ -64,10 +64,10 @@
           "group": "Use cases",
           "pages": [
             "fr/get-started/use-cases/overview",
+            "fr/get-started/use-cases/choosing-a-service",
             "fr/get-started/use-cases/real-time-analytics",
             "fr/get-started/use-cases/observability",
-            "fr/get-started/use-cases/data-warehousing",
-            "fr/get-started/use-cases/agentic-analytics"
+            "fr/get-started/use-cases/data-warehousing"
           ]
         },
         "fr/get-started/about/deployment-modes"

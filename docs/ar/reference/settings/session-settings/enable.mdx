@@ -20,11 +20,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لتمكين تجميع `GROUP BY` التكيفي، الذي يجمّد جدول التجزئة المحلي لكل خيط عند بلوغه `adaptive_aggregator_freeze_threshold` مفتاحًا، بحيث تستمر المفاتيح المتكررة في التجميع ضمن الجداول المحلية الصغيرة، بينما تُوجَّه المفاتيح النادرة وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket؛ وبذلك تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لتمكين تجميع `GROUP BY` التكيفي، الذي يجمّد جدول التجزئة المحلي لكل خيط عند بلوغه `adaptive_aggregator_freeze_threshold` مفتاحًا، بحيث تستمر المفاتيح المتكررة في التجميع ضمن الجداول المحلية الصغيرة، بينما تُوجَّه المفاتيح النادرة وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket؛ وبذلك تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط."}]}]} />
 
-يُفعّل خوارزمية `GROUP BY` التكيفية: يُجمّع كل خيط البيانات في جدول التجزئة المحلي الخاص به حتى يبلغ `adaptive_aggregator_freeze_threshold` مفتاحًا (أو `adaptive_aggregator_freeze_threshold_bytes` من الذاكرة)، ثم يُجمَّد الجدول، بحيث تستمر صفوف المفاتيح المرصودة مسبقًا (المتكررة) في تحديثه مباشرةً، بينما تُوجَّه المفاتيح الجديدة (النادرة) وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket. تبقى المفاتيح المتكررة في جداول صغيرة مقيمة في ذاكرة التخزين المؤقت، بينما تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط.
+يُفعّل خوارزمية `GROUP BY` التكيفية: يُجمّع كل خيط البيانات في جدول التجزئة المحلي الخاص به حتى يبلغ `adaptive_aggregator_freeze_threshold` مفتاحًا أو تبلغ الذاكرة المؤقتة لجدول التجزئة `adaptive_aggregator_freeze_threshold_bytes`، ثم يُجمَّد الجدول، بحيث تستمر صفوف المفاتيح المرصودة مسبقًا (المتكررة) في تحديثه مباشرةً، بينما تُرحَّل المفاتيح الجديدة (النادرة) مؤقتًا وفق تجزئتها إلى مخازن مؤقتة لكل قسم وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket، الذي يعالج الأقسام بضعةً في كل مرة ضمن جداول بحجم ذاكرة التخزين المؤقت. تبقى المفاتيح المتكررة في جداول صغيرة مقيمة في ذاكرة التخزين المؤقت، بينما تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط.
 
-تُراعى إعدادات التجميع الخارجي (`max_bytes_before_external_group_by`، `max_bytes_ratio_before_external_group_by`): عند تجاوز العتبة، تُفرَّغ قوائم الانتظار مبكرًا في الجدول المشترك، وإذا لم يكن ذلك كافيًا للعودة إلى ما دون العتبة، يُرحَّل الجدول المشترك إلى القرص باستخدام التجميع الخارجي العادي.
+تُراعى إعدادات التجميع الخارجي (`max_bytes_before_external_group_by`، `max_bytes_ratio_before_external_group_by`): عند تجاوز العتبة، يكتب الخيط سجلاته المرحلية إلى القرص ويحرّرها، ثم يقرؤها الدمج مجددًا bucket تلو الآخر. أما الجدول الذي لم يُجمَّد بعد فيُكتب إلى القرص كما في التجميع الخارجي العادي بمجرد أن يشغل قدرًا كافيًا من الذاكرة، ويُكتب الجدول المجمّد بمجرد أن تكبر حالات التجميع فيه بما يكفي، مثل حالات `uniqExact` أو `groupArray`؛ ثم يبدأ الخيط في ملء جدول جديد.
 
 ## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
@@ -45,16 +45,6 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 فعِّل `DISTINCT` في الاستعلامات الفرعية `IN`. هذا إعداد للموازنة بين الفوائد والتكلفة: إذ يمكن أن يؤدي تفعيله إلى تقليل حجم الجداول المؤقتة المنقولة للاستعلامات الفرعية `IN` الموزعة بشكل كبير، وتسريع نقل البيانات بين المقاطع بشكل ملحوظ، من خلال ضمان إرسال القيم الفريدة فقط.
 ومع ذلك، فإن تفعيل هذا الإعداد يضيف عبئًا إضافيًا على عمليات الدمج في كل عقدة، إذ يجب تنفيذ إزالة التكرار (`DISTINCT`). استخدم هذا الإعداد عندما يكون نقل البيانات عبر الشبكة هو عنق الزجاجة وتكون الكلفة الإضافية للدمج مقبولة.
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين برنامج الترميز التجريبي للضغط `ALP` بشكل منفصل، من دون `allow_experimental_codecs`."}]}]} />
-
-يُمكّن برنامج الترميز لضغط `ALP`.
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -83,6 +73,58 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 فعّل مُحسِّن Cascades المعتمد على التكلفة لخطط الاستعلامات الموزعة.
 لا يسري مفعوله إلا عند استخدام `make_distributed_plan = 1`: فهذا الإعداد وحده لا يغيّر تخطيط الاستعلامات على عقدة واحدة.
 
+## enable_cleanup_old_data_files_compaction {#enable_cleanup_old_data_files_compaction}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_cleanup_old_data_files_compaction`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_cleanup_old_data_files_compaction`."}]}]} />
+
+يتيح تنظيف ملفات البيانات القديمة أثناء دمج ملفات Iceberg.
+
+يُشغِّل التنظيف `iceberg_compaction_data_cleanup` بعد الدمج، فيُنهي صلاحية اللقطات التي أصبحت متقادمة بسبب الدمج، على غرار
+`expire_snapshots`: إذ يزيلها من البيانات الوصفية للجدول ويحذف الملفات التي لا تشير إليها أي لقطة أخرى. أما في الجداول
+ذات إصدار التنسيق 1 أو التي تقع خلف catalog معاملاتي، فيقتصر على حذف الملفات، وتبقى اللقطات في البيانات الوصفية.
+
+## enable_database_hms_catalog {#enable_database_hms_catalog}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_database_hms_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_database_hms_catalog`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "السماح باستخدام محرك قاعدة البيانات DataLakeCatalog التجريبي مع catalog_type = 'hive'"}]}]} />
+
+يتيح استخدام محرك قاعدة البيانات `DataLakeCatalog` مع `catalog_type = 'hms'`
+
+## enable_database_materialized_postgresql {#enable_database_materialized_postgresql}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_database_materialized_postgresql`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_database_materialized_postgresql`."}]}]} />
+
+يتيح إنشاء قواعد بيانات باستخدام `Engine = MaterializedPostgreSQL(...)`.
+
+## enable_database_paimon_rest_catalog {#enable_database_paimon_rest_catalog}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_database_paimon_rest_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_database_paimon_rest_catalog`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يتيح استخدام محرك قاعدة البيانات `DataLakeCatalog` مع `catalog_type = 'paimon_rest'`
+
 ## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -98,6 +140,18 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد للتحكم في تفعيل التكامل التجريبي مع Elasticsearch (محرك الجدول `Elasticsearch` ودالة الجدول `elasticsearch`)."}]}]} />
 
 يُمكّن التكامل التجريبي مع Elasticsearch، أي محرك الجدول `Elasticsearch` ودالة الجدول `elasticsearch`.
+
+## enable_eval_table_function {#enable_eval_table_function}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_eval_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين دالة الجدول التجريبية `eval`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_eval_table_function`."}]}]} />
+
+يُمكّن دالة الجدول `eval`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -161,6 +215,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_funnel_functions`."}]}]} />
 
 تمكين الدوال الخاصة بتحليل مسار التحويل.
+
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لتمكين برنامج الترميز التجريبي للضغط `GDeflate`."}]}]} />
+
+يُمكّن برنامج الترميز للضغط `GDeflate`.
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -301,6 +365,30 @@ SET dialect = 'clickhouse_json';
 يكون عملية على البيانات الوصفية فقط: إذ تُطبَّق تلميحات النوع وقت الاستعلام على أجزاء البيانات الموجودة
 وتُجسَّد أثناء عمليات الإدراج وعمليات الدمج في الخلفية بدلاً من إعادة كتابة البيانات التاريخية.
 
+## enable_kusto_dialect {#enable_kusto_dialect}
+
+<BetaBadge />
+
+**الأسماء البديلة**: `allow_experimental_kusto_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_kusto_dialect`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "نُقلت لهجة Kusto Query Language (KQL) إلى المرحلة التجريبية (Beta)."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن لهجة Kusto Query Language (KQL)، وهي بديل للغة SQL.
+
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_lateral_join`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد للسماح بصيغة `LATERAL JOIN`."}]}]} />
+
+يتيح استخدام صيغة LATERAL JOIN. عند تفعيل هذا الإعداد، يصبح بإمكان الاستعلامات الفرعية في الجانب الأيمن من JOIN الإشارة إلى عمود من الجانب الأيسر، مما يتيح استخدام الاستعلامات الفرعية المترابطة في عبارة FROM (‏LATERAL JOIN وفق معيار SQL).
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -399,6 +487,18 @@ _time:1h error | stats by (host) count()
 لا يتحكم هذا الإعداد في إمكانية أن تكون subcolumns الـ tuple المستخرجة من النوع `Nullable` (على سبيل المثال، من columns من النوع Dynamic أو Variant أو JSON أو Tuple).
 استخدم `allow_nullable_tuple_in_extracted_subcolumns` للتحكم في إمكانية أن تكون subcolumns الـ tuple المستخرجة من النوع `Nullable`.
 
+## enable_object_storage_queue_hive_partitioning {#enable_object_storage_queue_hive_partitioning}
+
+<ExperimentalBadge />
+
+**اسم بديل**: `allow_experimental_object_storage_queue_hive_partitioning`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_object_storage_queue_hive_partitioning`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+يتيح استخدام التقسيم بنمط Hive مع المحرّكين `S3Queue`/`AzureQueue`
+
 ## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -446,6 +546,30 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 يجب أن تتفق جميع الخوادم المشاركة في استعلام موزّع على هذه القيمة. فعند استخدام `distributed_aggregation_memory_efficient`، تعتمد أرقام buckets ثنائية المستوى على تجزئة المفتاح، وهي تختلف بين الطريقتين؛ لذلك قد تقسم الخوادم التي تختلف في هذا الإعداد المفتاح نفسه إلى buckets مختلفة وتنتج نتيجة مدمجة بصورة غير صحيحة. ولضمان هذا الاتفاق، ترسل initiator دائمًا قيمتها الفعلية مع الاستعلامات الثانوية، حتى عندما تكون مستمدة فقط من الإعدادات الافتراضية للخادم/الملف الشخصي، متجاوزةً الإعدادات الافتراضية للخوادم البعيدة.
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد يجعل عمليات الربط بالتجزئة على مفتاح `String` واحد أسرع وأقل استهلاكًا للذاكرة."}]}]} />
+
+يجعل عمليات الربط `hash` و`parallel_hash` و`grace_hash` على مفتاح واحد من النوع `String` أو `Nullable(String)` أسرع، ويقلل استهلاكها للذاكرة. وتستوفي عملية الربط التي تتضمن `OR` هذا الشرط إذا كان كل شرط من شروطها يحتوي على مفتاح واحد من هذا النوع.
+
+ونظرًا لصغر حجم جدول التجزئة، تبلغ عملية الربط الحدَّين `max_bytes_in_join` و`max_bytes_before_external_join` في وقت متأخر.
+
+لا ينطبق هذا الإعداد على المفاتيح من النوع `FixedString` أو `LowCardinality(Nullable(String))`، ولا على الجداول التي تستخدم المحرك `Join`، ولا على `joinGet`. أما عملية الربط على مفتاح من النوع `LowCardinality(String)` فقد تستخدم قاموس المفتاح بدلًا من ذلك. كما لا يتأثر بهذا الإعداد أي ربط يُقدَّر عدد صفوف جانبه الأيمن بأقل من `min_rows_for_packed_string_keys_in_hash_join`.
+
+## enable_paimon_storage_engine {#enable_paimon_storage_engine}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_paimon_storage_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_paimon_storage_engine`."}]}]} />
+
+يتيح إنشاء جداول باستخدام محركات الجداول `Paimon*`.
+
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -464,6 +588,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 يفعّل مرمّز الضغط `PCO`.
 
+## enable_polyglot_dialect {#enable_polyglot_dialect}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_polyglot_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد لتمكين لهجة مُحوِّل SQL المسمّى polyglot."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_polyglot_dialect`."}]}]} />
+
+يُمكِّن مُحوِّل SQL المسمّى polyglot، الذي يحوّل استعلامات SQL المكتوبة بأكثر من 30 لهجة (مثل MySQL وPostgreSQL وSQLite وSnowflake وDuckDB وغيرها) إلى ClickHouse SQL.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -473,6 +609,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 السماح للتجميع الموفّر للذاكرة (راجع `distributed_aggregation_memory_efficient`) بإنتاج buckets بترتيب غير متسلسل.
 قد يحسّن ذلك الأداء عندما تكون أحجام buckets التجميع غير متوازنة، إذ يتيح للنسخة المتماثلة إرسال buckets ذات المعرّفات الأعلى إلى initiator بينما تواصل معالجة بعض buckets الكبيرة ذات المعرّفات الأقل.
 والجانب السلبي هو احتمال زيادة استخدام الذاكرة.
+
+## enable_prql_dialect {#enable_prql_dialect}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_prql_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_prql_dialect`."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن PRQL، وهي لغة بديلة عن SQL.
 
 ## enable_quantized_codec {#enable_quantized_codec}
 
@@ -517,6 +665,14 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 * 0 - معطّل
 * 1 - مفعّل
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد. في الإصدار 26.10، كانت جداول التجزئة في ربط `parallel_hash` تنتقل إلى وضع Robin Hood عندما يكبر حجمها، مما يوفّر الذاكرة لكنه قد يُبطئ عمليات الربط الكبيرة."}]}]} />
+
+يتيح لجداول التجزئة في الربط بالتجزئة الذي يقسّم جدول التجزئة إلى أجزاء (راجع `hash_join_layout`) التحوّل إلى وضع Robin Hood عندما يكبر حجمها، على غرار جداول التجزئة المستخدمة في التجميع. وبذلك يستهلك جدول التجزئة الخاص بالجدول الأيمن الذي يضم أكثر من 8 ملايين مفتاح تقريبًا ذاكرةً أقل بما يصل إلى النصف، لكن عمليات البحث في الربط قد تصبح أبطأ بحسب طبيعة المفاتيح.
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
@@ -750,14 +906,50 @@ ClickHouse. يظل استعلام `SET` محللًا بصيغة SQL عادية،
 
 فعّل التكامل التجريبي مع XGBoost، أي تخطيط القاموس `XGBOOST` والدالة `predictXGBoost`.
 
-## enable_zxc_codec {#enable_zxc_codec}
+## enable_ytsaurus_dictionary_source {#enable_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
+**الأسماء البديلة**: `allow_experimental_ytsaurus_dictionary_source`
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين استخدام برنامج الترميز التجريبي للضغط `ZXC` بشكل مستقل، دون `allow_experimental_codecs`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_ytsaurus_dictionary_source`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
 
-يُمكّن برنامج الترميز للضغط `ZXC`.
+يُمكّن مصدر القاموس `ytsaurus` للتكامل مع YTsaurus.
+
+## enable_ytsaurus_table_engine {#enable_ytsaurus_table_engine}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_ytsaurus_table_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_ytsaurus_table_engine`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+يُمكّن محرك الجدول `YTsaurus` للتكامل مع YTsaurus.
+
+## enable_ytsaurus_table_function {#enable_ytsaurus_table_function}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_ytsaurus_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_ytsaurus_table_function`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+يُمكّن دالة الجدول `ytsaurus` للتكامل مع YTsaurus.
+
+## enable_zxc_codec {#enable_zxc_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين استخدام مرمّز الضغط التجريبي `ZXC` بشكل مستقل، دون `allow_experimental_codecs`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "نُقل مرمّز الضغط `ZXC` إلى المرحلة التجريبية (Beta)."}]}]} />
+
+يُمكّن مرمّز الضغط `ZXC`.
 
 {/*AUTOGENERATED_END*/}
