@@ -316,7 +316,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
             String query_fragment;
             if (!uri.getRawQuery().empty())
-                query_fragment = "?" + uri.getRawQuery();
+                query_fragment.append("?").append(uri.getRawQuery());
             if (!uri.getFragment().empty())
                 query_fragment += "#" + uri.getFragment();
 

@@ -23,6 +23,7 @@ struct S3AuthSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, SecretString) \
     M(CLASS_NAME, S3RequestPayer) \
     M(CLASS_NAME, S3UriStyle)
 
