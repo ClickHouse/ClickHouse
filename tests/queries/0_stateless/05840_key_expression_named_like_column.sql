@@ -1,4 +1,5 @@
--- A key or skip index expression that has the name of a stored column replaced that column when the table was written:
+-- A key, skip index or projection sorting key expression that has the name of a stored column replaced that column when the
+-- table was written:
 -- https://github.com/ClickHouse/ClickHouse/issues/133178
 
 DROP TABLE IF EXISTS t_src;
@@ -14,6 +15,7 @@ CREATE TABLE t_bad (name String, `length(name)` UInt64, INDEX il length(name) TY
 CREATE TABLE t_bad (x Int64, `negate(x)` Int64) ENGINE = MergeTree ORDER BY `negate(x)` PRIMARY KEY negate(x); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_bad (x Int64, `negate(x)` Int64) ENGINE = MergeTree ORDER BY (negate(x), `negate(x)`); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_bad (x String, `cityHash64(x)` UInt64) ENGINE = MergeTree ORDER BY `cityHash64(x)` SAMPLE BY cityHash64(x); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_bad (x String, `lower(x)` String, PROJECTION p (SELECT * ORDER BY lower(x))) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t_src (s String) ENGINE = Memory;
 INSERT INTO t_src VALUES ('HeLLo');
@@ -32,10 +34,12 @@ DROP TABLE t_alter;
 
 CREATE TABLE t_alter (x String, `lower(x)` String) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE t_alter ADD INDEX il lower(x) TYPE minmax; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_alter ADD PROJECTION p (SELECT * ORDER BY lower(x)); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_alter';
 DROP TABLE t_alter;
 
--- Accepted: the key reads the column itself, or the column is not stored, or it is not a key element.
+-- Accepted: the key reads the column itself, or the column is not stored, or it is not a key element, or the projection
+-- does not store it.
 CREATE TABLE t_ok (x String, `lower(x)` String ALIAS upper(x)) ENGINE = MergeTree ORDER BY lower(x);
 INSERT INTO t_ok VALUES ('B'), ('A');
 SELECT x, `lower(x)` FROM t_ok ORDER BY x;
@@ -46,7 +50,7 @@ INSERT INTO t_ok VALUES ('B', 'q'), ('A', 'r');
 SELECT * FROM t_ok ORDER BY x;
 DROP TABLE t_ok;
 
-CREATE TABLE t_ok (x String, `lower(x)` String) ENGINE = MergeTree ORDER BY length(lower(x));
+CREATE TABLE t_ok (x String, `lower(x)` String, PROJECTION p (SELECT x ORDER BY lower(x))) ENGINE = MergeTree ORDER BY length(lower(x));
 INSERT INTO t_ok VALUES ('B', 'q'), ('A', 'r');
 SELECT * FROM t_ok ORDER BY x;
 DROP TABLE t_ok;

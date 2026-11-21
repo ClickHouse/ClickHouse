@@ -2303,14 +2303,15 @@ void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMet
     auto get_violations = [](const StorageInMemoryMetadata & metadata)
     {
         Violations violations;
-        auto add = [&](const String & owner, const ASTPtr & expression_list, const Names & names)
+        auto add = [&](const String & owner, const ASTPtr & expression_list, const Names & names, const ColumnsDescription * projection_columns = nullptr)
         {
             if (!expression_list)
                 return;
             const auto & elements = expression_list->children;
             chassert(elements.size() == names.size());
             for (size_t i = 0; i < elements.size(); ++i)
-                if (!elements[i]->as<ASTIdentifier>() && metadata.columns.hasPhysical(names[i]))
+                if (!elements[i]->as<ASTIdentifier>() && metadata.columns.hasPhysical(names[i])
+                    && (!projection_columns || projection_columns->hasPhysical(names[i])))
                     violations.emplace_back(owner, names[i]);
         };
 
@@ -2321,6 +2322,10 @@ void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMet
         for (const auto & index : metadata.secondary_indices)
             if (!index.isImplicitlyCreated())
                 add("skip index " + backQuoteIfNeed(index.name), index.expression_list_ast, index.column_names);
+        /// A projection part is sorted by its own key, which replaces only a column that the projection stores.
+        for (const auto & projection : metadata.projections)
+            add("sorting key of projection " + backQuoteIfNeed(projection.name), projection.metadata->sorting_key.expression_list_ast,
+                projection.metadata->sorting_key.column_names, &projection.metadata->columns);
         return violations;
     };
 
