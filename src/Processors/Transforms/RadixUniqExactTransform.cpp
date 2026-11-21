@@ -349,7 +349,7 @@ Columns packedTupleColumns(const ColumnTuple & tuple)
         }
 
         const size_t num_rows = nullable->size();
-        const UInt8 * nulls = nullable->getNullMapData().data();
+        const UInt8 * nulls = nullable->getNullMapRawDataOrZeros();
         auto flags = ColumnUInt8::create(num_rows);
         auto & flags_data = flags->getData();
         for (size_t row = 0; row < num_rows; ++row)
