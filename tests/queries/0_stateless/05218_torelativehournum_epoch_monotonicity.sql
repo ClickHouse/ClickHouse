@@ -138,7 +138,7 @@ SETTINGS session_timezone = 'America/New_York';
 
 DROP TABLE t_relative_hour_date32;
 
--- `Date` in a time zone with an offset of more than 12 hours: `1970-01-01` wraps around to a large number.
+-- `Date` in a time zone east of UTC by more than 12 hours: `1970-01-01` is 0 and `1970-01-02` is 11 in `Pacific/Tongatapu` (same values as upstream 05615).
 DROP TABLE IF EXISTS t_relative_hour_date;
 CREATE TABLE t_relative_hour_date (d Date)
 ENGINE = MergeTree ORDER BY d
