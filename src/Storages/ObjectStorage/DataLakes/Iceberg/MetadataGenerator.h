@@ -27,10 +27,15 @@ struct SnapshotRemovals
 
 Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object);
 
+/// Appends `metadata_file` to `metadata-log` and drops the oldest entries over the limit.
+/// The table property `write.metadata.previous-versions-max` takes precedence over `previous_versions_max`.
+void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> previous_versions_max);
+
 class MetadataGenerator
 {
 public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
+    /// `metadata_previous_versions_max` bounds `metadata-log` unless the table sets `write.metadata.previous-versions-max`.
+    MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, std::optional<UInt64> metadata_previous_versions_max_);
 
     struct NextMetadataResult
     {
@@ -78,6 +83,7 @@ public:
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
+    std::optional<UInt64> metadata_previous_versions_max;
 
     pcg64_fast gen;
     std::uniform_int_distribution<Int64> dis;
