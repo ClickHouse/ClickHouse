@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -79,7 +80,7 @@ BlockIO InterpreterSetQuery::execute()
     /// Work on a copy so the original AST keeps the placeholders: they are still needed by the
     /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
     SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters(), getFormatSettings(getContext()));
     /// A session-wide value would also detach the `SET` that turns it back off,
     /// which is likely to cause confusion.
     if (changes.tryGet("run_query_in_background"))
@@ -106,7 +107,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Resolve query parameters used as setting values, e.g. `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters(), getFormatSettings(getContext()));
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
     {

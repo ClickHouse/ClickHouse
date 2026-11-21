@@ -1816,7 +1816,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
+        ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
@@ -1833,7 +1833,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Replace query parameters because AST cannot be serialized otherwise.
             if (!query_parameters.empty())
             {
-                ReplaceQueryParameterVisitor visitor(query_parameters);
+                ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
                 visitor.visit(parsed_query);
             }
 
@@ -2605,7 +2605,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
+        ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
@@ -3323,7 +3323,7 @@ void ClientBase::processParsedSingleQuery(
         {
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
-            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters(), getFormatSettings(client_context));
 
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : changes)
@@ -3349,7 +3349,7 @@ void ClientBase::processParsedSingleQuery(
             /// client would remember an empty default database and silently reset the current database
             /// when it has to re-establish a lost connection.
             ASTPtr use_query = parsed_query->clone();
-            ReplaceQueryParameterVisitor(client_context->getQueryParameters()).visit(use_query);
+            ReplaceQueryParameterVisitor(client_context->getQueryParameters(), getFormatSettings(client_context)).visit(use_query);
             const String new_database = use_query->as<ASTUseQuery &>().getDatabase();
 
             /// If the client initiates the reconnection, it takes the settings from the config.

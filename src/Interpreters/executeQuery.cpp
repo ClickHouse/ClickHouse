@@ -3057,7 +3057,7 @@ static BlockIO executeQueryImpl(
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
         if (out_ast && probably_has_params)
         {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters(), getFormatSettings(context));
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
@@ -3278,7 +3278,7 @@ static BlockIO executeQueryImpl(
             /// snippets are not part, so this second pass is required even when the base query has none.
             if (const auto & query_parameters = context->getQueryParameters(); !query_parameters.empty())
             {
-                ReplaceQueryParameterVisitor visitor(query_parameters);
+                ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(context));
                 visitor.visit(out_ast);
             }
 
