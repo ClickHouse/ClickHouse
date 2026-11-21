@@ -17,6 +17,7 @@
 #include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -968,6 +969,18 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
     }
 }
 
+/// Whether a column holding at most one value keeps a small, bounded size however often it is updated.
+/// `LowCardinality` grows its dictionary on every insert; a `Tuple` of fixed-width values is not fixed-width itself.
+static bool keepsBoundedSizeWhenReused(const IColumn & column)
+{
+    if (column.lowCardinality())
+        return false;
+    if (column.valuesHaveFixedSize())
+        return true;
+    const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
+    return tuple && std::ranges::all_of(tuple->getColumns(), [](const auto & element) { return keepsBoundedSizeWhenReused(*element); });
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
@@ -1010,12 +1023,12 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 
-    /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
+    /// Only fixed-width key columns and tuples of them keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
     /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
     /// thread-local storage could pin arbitrarily large buffers after the query ends.
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
-        [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+        [](const ColumnPtr & column) { return keepsBoundedSizeWhenReused(*column); });
 }
 
 MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
@@ -1109,20 +1122,26 @@ BoolMask MergeTreeSetIndex::checkInRange(
             continue;
         }
 
-        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            sparse_key_ranges[sparse_pos],
-            indexes_mapping[i].functions,
-            mapping_first_function_number,
-            sparse_data_types[sparse_pos],
-            single_point);
+        const Range * key_range = &sparse_key_ranges[sparse_pos];
+        std::optional<Range> new_range;
+        if (!indexes_mapping[i].functions.empty())
+        {
+            new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+                *key_range,
+                indexes_mapping[i].functions,
+                mapping_first_function_number,
+                sparse_data_types[sparse_pos],
+                single_point);
 
-        if (!new_range)
-            return {true, true};
+            if (!new_range)
+                return {true, true};
+            key_range = &*new_range;
+        }
 
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        range.left.update(key_range->left);
+        range.right.update(key_range->right);
+        range.left_included = key_range->left_included;
+        range.right_included = key_range->right_included;
     }
 
     if (tuple_size == 1)
@@ -1261,21 +1280,27 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         if (indexes_mapping[i].key_index >= key_ranges.size())
             return {true, true};
 
-        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].key_index],
-            indexes_mapping[i].functions,
-            mapping_first_function_number,
-            data_types[indexes_mapping[i].key_index],
-            single_point);
+        const Range * key_range = &key_ranges[indexes_mapping[i].key_index];
+        std::optional<Range> new_range;
+        if (!indexes_mapping[i].functions.empty())
+        {
+            new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+                *key_range,
+                indexes_mapping[i].functions,
+                mapping_first_function_number,
+                data_types[indexes_mapping[i].key_index],
+                single_point);
 
-        if (!new_range)
-            return {true, true};
+            if (!new_range)
+                return {true, true};
+            key_range = &*new_range;
+        }
 
         FieldValueRange & range = ranges[i];
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        range.left.update(key_range->left);
+        range.right.update(key_range->right);
+        range.left_included = key_range->left_included;
+        range.right_included = key_range->right_included;
     }
 
     if (tuple_size == 1)

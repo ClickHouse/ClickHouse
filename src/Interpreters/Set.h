@@ -432,7 +432,7 @@ private:
     using FieldValueRanges = std::vector<FieldValueRange>;
 
     /// Buffer reused across checkInRange calls (which run once per mark during index analysis)
-    /// to avoid per-call column allocations. For fixed-width key types it is a per-thread cache
+    /// to avoid per-call column allocations. For fixed-width key types (and tuples of them) it is a per-thread cache
     /// (invalidated by the next call on the same thread) whose retained size is small and bounded.
     /// Variable-width key types (e.g. String) could pin arbitrarily large reserved capacity in
     /// thread-local storage after the query ends, so for them the given query-scoped scratch
@@ -444,7 +444,7 @@ private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
-    /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
+    /// Whether all key columns have fixed-width values (or tuples of them), making the ranges buffer cacheable.
     bool cache_ranges = false;
 };
 
