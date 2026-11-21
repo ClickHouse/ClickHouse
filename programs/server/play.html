@@ -15263,11 +15263,13 @@ function renderMarkdownInline(escaped) {
         (m, ticks, body) => stashFragment(saved, '<code>' + body + '</code>'));
 
     text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
-        const safe = safeMarkdownUrl(url);
-        return safe ? stashFragment(saved, '<img src="' + escapeAttr(safe) + '" alt="' + escapeAttr(alt) + '">') : m;
+        /// An attribute value is built from the expanded text, so `escapeAttr` sees a fragment's quotes.
+        const safe = safeMarkdownUrl(unstashFragments(saved, url));
+        return safe ? stashFragment(saved, '<img src="' + escapeAttr(safe)
+            + '" alt="' + escapeAttr(unstashFragments(saved, alt)) + '">') : m;
     });
     text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
-        const safe = safeMarkdownUrl(url);
+        const safe = safeMarkdownUrl(unstashFragments(saved, url));
         return safe ? stashFragment(saved, '<a href="' + escapeAttr(safe)
             + '" target="_blank" rel="noopener noreferrer">' + label + '</a>') : m;
     });
