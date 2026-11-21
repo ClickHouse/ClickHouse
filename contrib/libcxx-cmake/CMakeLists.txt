@@ -87,6 +87,8 @@ if (OS_WINDOWS)
         "${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp"
         "${LIBCXX_SOURCE_DIR}/src/support/win32/support.cpp"
     )
+    # Like `text_encoding.cpp` above: it tests a `std::from_chars_result` as a `bool`, which is C++26.
+    set_source_files_properties("${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp" PROPERTIES COMPILE_OPTIONS "-std=c++26")
 endif ()
 
 add_library(cxx ${SRCS})
