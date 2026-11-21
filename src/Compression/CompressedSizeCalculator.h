@@ -26,6 +26,10 @@ public:
         return compressed_total;
     }
 
+    /// The size `getCompressedBytes` would report if the input ended now, without finalizing the buffer:
+    /// more input can be written after the call.
+    UInt64 peekCompressedBytes() const;
+
     /// Size of the uncompressed input passed in via this buffer's `write`/streaming interface.
     UInt64 getUncompressedBytes() const { return count(); }
 

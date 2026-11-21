@@ -1,4 +1,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+
+#include <Processors/QueryResultPreview.h>
 #include <Access/EnabledQuota.h>
 
 namespace DB
@@ -36,6 +38,11 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         stopReading();
         return;
     }
+
+    /// Query result previews (see `QueryResultPreview.h`) must not count towards the result
+    /// limits and quotas: they are not part of the result.
+    if (isQueryResultPreview(chunk))
+        return;
 
     if (chunk)
     {

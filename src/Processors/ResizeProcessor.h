@@ -28,6 +28,9 @@ public:
     ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
+
+    /// A pure router: chunks are forwarded whole, previews included (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override { return true; }
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
@@ -81,6 +84,9 @@ public:
     }
 
     String getName() const override { return "StrictResize"; }
+
+    /// A pure router: chunks are forwarded whole, previews included (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override { return true; }
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:

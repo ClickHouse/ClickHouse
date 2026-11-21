@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -73,6 +74,19 @@ void IMergingTransformBase::setHaveAllInputs()
     have_all_inputs = true;
 }
 
+void IMergingTransformBase::acceptQueryResultPreview(Chunk chunk)
+{
+    /// Previews arrive through different inputs, so an older one may come after a newer one. Each
+    /// preview supersedes the previous ones, so only a preview newer than both the pending and the
+    /// already forwarded one is kept.
+    UInt64 sequence_number = getQueryResultPreviewSequenceNumber(chunk);
+    if (sequence_number <= last_forwarded_query_result_preview
+        || (pending_query_result_preview && sequence_number <= getQueryResultPreviewSequenceNumber(pending_query_result_preview)))
+        return;
+
+    pending_query_result_preview = std::move(chunk);
+}
+
 bool IMergingTransformBase::tryInitializeInput(size_t input_num)
 {
     auto & input_state = input_states[input_num];
@@ -93,6 +107,15 @@ bool IMergingTransformBase::tryInitializeInput(size_t input_num)
     /// we won't have to read any chunks anymore;
     /// If virtual row exists, let it pass through, so don't read more chunks.
     auto chunk = input.pull(true);
+
+    /// See `QueryResultPreview.h`: previews bypass the merging algorithm.
+    if (isQueryResultPreview(chunk))
+    {
+        acceptQueryResultPreview(std::move(chunk));
+        input.setNeeded();
+        return false;
+    }
+
     bool virtual_row = isVirtualRow(chunk);
     if (limit_hint == 0 && !virtual_row)
         input.setNeeded();
@@ -216,8 +239,19 @@ IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * 
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
+    bool pushed_output_chunk = false;
     if ((state.output_chunk || !state.output_chunk.getChunkInfos().empty()) && !is_port_full)
+    {
         output.push(std::move(state.output_chunk));
+        pushed_output_chunk = true;
+    }
+
+    /// An out-of-band query result preview forwarded from one of the inputs (see `QueryResultPreview.h`).
+    if (pending_query_result_preview && !is_port_full && !pushed_output_chunk)
+    {
+        last_forwarded_query_result_preview = getQueryResultPreviewSequenceNumber(pending_query_result_preview);
+        output.push(std::move(pending_query_result_preview));
+    }
 
     if (!is_initialized)
         return prepareInitializeInputs(updated_inputs);
@@ -283,7 +317,18 @@ IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * 
             if (!input.hasData())
                 return Status::NeedData;
 
-            state.input_chunk.set(input.pull(/* set_not_needed */ true));
+            auto pulled_chunk = input.pull(/* set_not_needed */ true);
+
+            /// An out-of-band query result preview (see `QueryResultPreview.h`): forward it to the
+            /// output instead of feeding it to the merging algorithm.
+            if (isQueryResultPreview(pulled_chunk))
+            {
+                acceptQueryResultPreview(std::move(pulled_chunk));
+                input.setNeeded();
+                return Status::NeedData;
+            }
+
+            state.input_chunk.set(std::move(pulled_chunk));
             const auto & input_chunk = state.input_chunk.chunk;
 
             bool virtual_row = isVirtualRow(input_chunk);

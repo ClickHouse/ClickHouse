@@ -21,6 +21,11 @@ enum class FramedPacketKind : uint8_t
     Data,
     Totals,
     Extremes,
+    /// A real-time preview of the query result (see the `query_result_previews` setting). Each
+    /// `preview` packet carries a complete, self-contained document of the payload format and fully
+    /// replaces the previous one. Unlike `data`/`totals`/`extremes`, previews are additional content:
+    /// they are not part of the byte-exact concatenation invariant of the unframed output.
+    Preview,
 };
 
 /** A framing format multiplexes different parts of the query response in a single stream:
@@ -88,6 +93,11 @@ public:
     /// instead (see `finalize`). `onPayload` resets the pending kind back to `Data` once the
     /// portion's boundary is taken.
     void beginPayload(FramedPacketKind kind) { pending_payload_kind = kind; }
+
+    /// Drops the bytes buffered since the last `onPayload` boundary, without writing a packet. Used
+    /// when the serialization of a `preview` portion threw: a preview is best effort, so the query
+    /// goes on, and the partial document must not leak into the next packet.
+    void discardPayload();
 
     /// Called on query progress, possibly from another thread than `onPayload`
     /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.

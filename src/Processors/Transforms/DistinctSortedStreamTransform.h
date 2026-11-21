@@ -40,6 +40,9 @@ public:
 
     String getName() const override { return "DistinctSortedStreamTransform"; }
 
+    /// Preview chunks are deduplicated standalone, without touching the accumulated state.
+    bool supportsQueryResultPreviews() const override { return true; }
+
 protected:
     void transform(Chunk & chunk) override;
 
@@ -71,6 +74,9 @@ private:
     Sizes other_columns_sizes;
     ColumnRawPtrs other_columns; // used during processing
     ColumnNumbers materialized_columns_pos;
+
+    /// All the distinct key columns, for the standalone deduplication of query result previews.
+    ColumnNumbers all_distinct_columns_pos;
 
     MutableColumns prev_chunk_latest_key;
 };

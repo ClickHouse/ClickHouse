@@ -33,6 +33,9 @@ public:
 
     String getName() const override { return "MergingSortedTransform"; }
 
+    /// Preview chunks bypass the merging algorithm (see `IMergingTransformBase::prepare`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
     /// TopN dynamic filtering: publish the value of the first sort column in the last row within the
     /// limit - the exact final threshold - once the merge gets there. The sorting transforms before the
     /// merge only publish the thresholds of their own streams, which can be much looser.

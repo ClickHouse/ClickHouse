@@ -61,6 +61,9 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
+    /// Preview chunks are sorted standalone, without touching the shared threshold or the counters.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     /// If limit < min_limit_for_partial_sort_optimization, skip optimization with threshold_block.
     /// Because for small LIMIT partial sorting may be very faster then additional work
     /// which is made if optimization is enabled (comparison with threshold, filtering).

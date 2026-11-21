@@ -52,7 +52,7 @@ Int64 AggregateWindowFunctionRecalculate::evaluate(const WindowBounds & bounds, 
             covered_end = frame_end;
         }
 
-        state.insertResultInto(result);
+        state.insertResultInto(result, frame_end - frame_start);
         for (Int64 row = from + 1; row < to; ++row)
             result.insertRangeFrom(result, result.size() - 1, 1);
         from = to;

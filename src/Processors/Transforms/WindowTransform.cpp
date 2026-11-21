@@ -1,6 +1,9 @@
 #include <Processors/Transforms/WindowTransform.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <Processors/Port.h>
+#include <Processors/QueryResultPreview.h>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -12,6 +15,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -126,6 +134,7 @@ WindowTransform::WindowTransform(
     const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
+    , window_functions_for_preview(functions)
     , indexes(params)
     , arguments(params.input_header, functions)
     , frame(params)
@@ -167,10 +176,15 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    /// Cancellation is checked per row here; window functions evaluate each batch without cancellation checks
-    while (!isCancelled())
+    /// Cancellation of the processor is checked per row here; window functions evaluate each batch observing
+    /// only the killed flag and the time limit of the query (see `AggregateState`), so a batch is also evaluated
+    /// once its estimated work is large: otherwise a single batch with a moving frame (e.g.
+    /// `quantileExact(x) OVER (ROWS BETWEEN 50000 PRECEDING AND CURRENT ROW)`, which recalculates the aggregate
+    /// over the whole frame on each row) would keep running long after the processor is cancelled.
+    while (!isCancelledOrOuterCancelled())
     {
-        if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
+        if (bounds.rows != 0
+            && (peers.current().location.block != batch_start.block || batch_frame_rows >= max_batch_frame_rows))
             evaluateRowsBatch();
 
         if (peers.current().location == partition.bounds().end)
@@ -208,6 +222,23 @@ void WindowTransform::recordCurrentRowBounds()
         bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
     if (params.requirements.frame_end)
         bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
+    if (!aggregate_functions.empty() && params.requirements.frame_start && params.requirements.frame_end)
+    {
+        /// Mirrors `AggregateWindowFunctionRecalculate`: it adds the whole frame when the frame start moves,
+        /// and the rows the frame end advanced by otherwise. With an unbounded frame start the aggregate
+        /// functions only add the rows the frame end advanced by, which are bounded by the block size.
+        const Int64 frame_start = frame.bounds().start.row_index_in_partition;
+        const Int64 frame_end = frame.bounds().end.row_index_in_partition;
+        if (params.window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            if (frame_start != previous_frame_start)
+                batch_frame_rows += std::max<Int64>(frame_end - frame_start, 0);
+            else
+                batch_frame_rows += std::max<Int64>(frame_end - previous_frame_end, 0);
+        }
+        previous_frame_start = frame_start;
+        previous_frame_end = frame_end;
+    }
     if (params.requirements.peers_start)
         bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
     if (params.requirements.peers_start)
@@ -235,6 +266,7 @@ void WindowTransform::evaluateRowsBatch()
         pending_outputs.push_back(packBlock(block, std::exchange(current_results, {})));
 
     clearBounds(bounds);
+    batch_frame_rows = 0;
 }
 
 void WindowTransform::startNextPartition()
@@ -247,6 +279,8 @@ void WindowTransform::startNextPartition()
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
     first_row_read_by_functions = 0;
+    previous_frame_start = 0;
+    previous_frame_end = 0;
 
     resetPartitions(general_functions, aggregate_functions);
 }
@@ -261,6 +295,14 @@ IProcessor::Status WindowTransform::prepare()
     {
         input.close();
         return Status::Finished;
+    }
+
+    /// An out-of-band query result preview computed by `work` (see `QueryResultPreview.h`).
+    if (pending_query_result_preview)
+    {
+        if (output.canPush())
+            output.push(std::move(pending_query_result_preview));
+        return Status::PortFull;
     }
 
     if (!pending_outputs.empty())
@@ -293,6 +335,12 @@ IProcessor::Status WindowTransform::prepare()
     if (input.hasData())
     {
         pending_input = input.pull(/*set_not_needed=*/true);
+
+        /// A query result preview is computed standalone by `work`, out of band (see
+        /// `QueryResultPreview.h`); it must not enter the window calculation state.
+        if (isQueryResultPreview(*pending_input))
+            query_result_preview_input = std::exchange(pending_input, std::nullopt).value();
+
         return Status::Ready;
     }
 
@@ -300,8 +348,95 @@ IProcessor::Status WindowTransform::prepare()
     return Status::NeedData;
 }
 
+void WindowTransform::computeQueryResultPreview()
+{
+    Chunk preview = std::move(query_result_preview_input);
+
+    /// The marker must not enter the one-shot pipeline: the fresh transform would divert
+    /// the chunk right back instead of computing it. It is put back on the computed preview, which
+    /// keeps the sequence number of the original one.
+    auto preview_info = preview.getChunkInfos().extract<QueryResultPreviewInfo>();
+
+    /// A window function may throw on the intermediate values of a preview (see
+    /// `QueryResultPreview.h`); then the preview is dropped.
+    Chunk computed;
+    try
+    {
+        /// The one-shot transform is driven right here instead of by a nested executor: this thread
+        /// already holds the CPU slot of the query, and an executor would wait for another one (with
+        /// a workload limited to one concurrent thread, forever).
+        WindowTransform transform(
+            inputs.front().getSharedHeader(), outputs.front().getSharedHeader(), params.window_description, window_functions_for_preview);
+        /// The executor cancels this transform only, so the one-shot one observes its flag in its per-row check.
+        transform.outer_cancellation_flag = &getCancellationFlag();
+        OutputPort source(inputs.front().getSharedHeader());
+        InputPort sink(outputs.front().getSharedHeader());
+        connect(source, transform.getInputs().front());
+        connect(transform.getOutputs().front(), sink);
+
+        source.push(std::move(preview));
+        source.finish();
+        sink.setNeeded();
+
+        /// A single input chunk produces a single output chunk, but drain defensively.
+        while (true)
+        {
+            if (isCancelled())
+                return;
+
+            const auto status = transform.prepare();
+            if (status == Status::Finished)
+                break;
+
+            if (status == Status::Ready)
+            {
+                transform.work();
+            }
+            else if (status == Status::PortFull && sink.hasData())
+            {
+                Chunk next = sink.pull();
+                sink.setNeeded();
+                if (!next.hasRows())
+                    continue;
+                if (!computed)
+                    computed = std::move(next);
+                else
+                    computed.append(next);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected status {} of a window transform computing a query result preview", statusToName(status));
+            }
+        }
+
+        if (sink.hasData())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A window transform computing a query result preview finished with unread output");
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview_info, isCancelled());
+        return;
+    }
+
+    /// An empty preview is a preview state of its own: it replaces the previous one and tells the
+    /// client to clear it, so it is forwarded instead of being dropped (a preview emptied upstream
+    /// by `HAVING`, `OFFSET` or `LIMIT` arrives here with no rows).
+    if (!computed.hasColumns())
+        computed.setColumns(outputs.front().getHeader().cloneEmptyColumns(), 0);
+
+    computed.getChunkInfos().add(std::move(preview_info));
+    pending_query_result_preview = std::move(computed);
+}
+
 void WindowTransform::work()
 {
+    if (query_result_preview_input)
+    {
+        computeQueryResultPreview();
+        return;
+    }
+
     chassert(pending_input || input_is_finished);
 
     if (pending_input)
