@@ -142,7 +142,7 @@ struct ZooKeeperReconfigRequest final : ZooKeeperRequest
     String new_members;
     int64_t version{}; // kazoo sends a 64bit integer in this request
 
-    [[nodiscard]] String getPath() const override { return keeper_config_path; }
+    [[nodiscard]] String getPath() const override { return String(keeper_config_path); }
     [[nodiscard]] OpNum getOpNum() const override { return OpNum::Reconfig; }
     void writeImpl(WriteBuffer & out) const override;
     [[nodiscard]] size_t sizeImpl() const override;

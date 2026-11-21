@@ -36,6 +36,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/if.h>
+#include <Functions/indexHint.h>
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
@@ -1393,17 +1394,22 @@ static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
     }
 }
 
+/// The statistics range of a key operand, or std::nullopt when it is missing, not numeric, or
+/// does not give `guarantee`.
 static std::optional<IEJoinOperandRange> getIEJoinOperandRange(
-    const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats, const JoinActionRef & operand, ValueRangeGuarantee guarantee)
 {
     auto it = column_stats.find(operand.getColumnName());
-    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+    if (it == column_stats.end())
         return {};
-    auto min_value = statisticsFieldToFloat64(*it->second.min_value);
-    auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+    const auto range = it->second.valueRange(guarantee);
+    if (!range)
+        return {};
+    auto min_value = statisticsFieldToFloat64(range->min);
+    auto max_value = statisticsFieldToFloat64(range->max);
     if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
         return {};
-    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = range->null_fraction};
 }
 
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
@@ -1422,8 +1428,9 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
-    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs);
-    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs);
+    /// Uniform interpolation tolerates inexact endpoints, but the values must be spread over the range.
+    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs, ValueRangeGuarantee::Representative);
+    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs, ValueRangeGuarantee::Representative);
     if (!left_range || !right_range)
         return {};
 
@@ -1478,8 +1485,10 @@ static Float64 estimateIEJoinKeyPairSelectivity(
     bool first_bound_is_upper = shared_column_on_left ? isLessFamily(first_op) : !isLessFamily(first_op);
     const auto & lower_bound = first_bound_is_upper ? second_bound : first_bound;
     const auto & upper_bound = first_bound_is_upper ? first_bound : second_bound;
-    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound);
-    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound);
+    /// Refuting `lo <= hi` from min/max needs the true extremes of the joined rows; without them the
+    /// pair is scored as independent.
+    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound, ValueRangeGuarantee::Exact);
+    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound, ValueRangeGuarantee::Exact);
     bool bounds_ordered = lower_bound_range && upper_bound_range
         && lower_bound_range->min <= upper_bound_range->min && lower_bound_range->max <= upper_bound_range->max;
 
@@ -2090,6 +2099,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     auto & join_expression = join_operator.expression;
 
+    /// `indexHint` is always 1 and only index analysis reads its argument, which a condition still in `ON` never reaches.
+    std::erase_if(join_expression, [](const JoinActionRef & condition)
+    {
+        const auto * node = condition.getNode();
+        return node->type == ActionsDAG::ActionType::FUNCTION && FunctionIndexHint::tryGet(node->function_base);
+    });
+
     const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
     const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
@@ -2132,8 +2148,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            const QueryPlanOptimizations::RelationStatsOptions stats_options{
+                .find_single_node_read = &optimization_settings.find_single_node_read};
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0], stats_options).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1], stats_options).column_stats;
         }
     }
 
@@ -2620,7 +2638,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
         auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            ? QueryPlanOptimizations::estimateReadRowsCount(
+                  *children[1],
+                  QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+                  .column_stats
             : right_relation_column_stats;
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
@@ -2732,7 +2753,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .has_runtime_filters = join_step->hasRuntimeFilters(),
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -3099,6 +3121,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
             && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
             optimizer_flags |= 8;
+        if (has_runtime_filters)
+            optimizer_flags |= 16;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3177,6 +3201,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
         if (optimizer_flags & 8)
             step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->has_runtime_filters = bool(optimizer_flags & 16);
     }
     return step;
 }
@@ -3221,6 +3246,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->has_runtime_filters = has_runtime_filters;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;
