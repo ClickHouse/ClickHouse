@@ -21,6 +21,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -95,7 +96,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     }
 
     /// Skip prefix before names and types.
-    format_reader->skipPrefixBeforeHeader();
+    size_t skipped_prefix_rows = format_reader->skipPrefixBeforeHeader();
 
     VectorWithMemoryTracking<String> column_names;
     VectorWithMemoryTracking<String> type_names;
@@ -111,6 +112,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
+
+    number_of_header_rows = skipped_prefix_rows + static_cast<size_t>(with_names || is_header_detected)
+        + static_cast<size_t>(with_types || !type_names.empty());
 
     if (!column_names.empty())
     {
@@ -473,7 +477,14 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     }
 
     if (!with_names && !with_types && try_detect_header)
+    {
+        header_detection_first_row.clear();
+        header_detection_second_row.reset();
         tryDetectHeader(column_names, data_type_names);
+        header_detection_attempted = true;
+        names_detected_from_data = !column_names.empty();
+        types_detected_from_data = !data_type_names.empty();
+    }
 
     if (!data_type_names.empty())
     {
@@ -485,6 +496,13 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
         NamesAndTypesList result;
         for (size_t i = 0; i != data_type_names.size(); ++i)
             result.emplace_back(column_names[i], DataTypeFactory::instance().get(data_type_names[i]));
+        declared_type_names.clear();
+        UnorderedSetWithMemoryTracking<String> repeated_names;
+        for (size_t i = 0; i != data_type_names.size(); ++i)
+            if (!declared_type_names.emplace(column_names[i], data_type_names[i]).second)
+                repeated_names.insert(column_names[i]);
+        for (const auto & name : repeated_names)
+            declared_type_names.erase(name);
         return result;
     }
 
@@ -523,6 +541,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
         return;
 
     const auto & [first_row_values, first_row_types] = *first_row;
+    header_detection_first_row = first_row_values;
 
     /// The first row contains non String elements, it cannot be a header.
     if (!checkIfAllTypesAreString(first_row_types))
@@ -541,6 +560,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
     }
 
     const auto & [second_row_values, second_row_types] = *second_row;
+    header_detection_second_row = second_row_values;
 
     DataTypes data_types;
     bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfAllValuesAreTypeNames(readNamesFromFields(second_row_values));
@@ -608,6 +628,46 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracki
     }
 }
 
+bool FormatWithNamesAndTypesSchemaReader::headerDetectionAgreesWithParser(const Names & expected_names) const
+{
+    /// No data, or a `*WithNames*` / `*WithTypes*` format that has no header detection.
+    if (!header_detection_attempted || header_detection_first_row.empty())
+        return true;
+
+    /// The same rules as in `RowInputFormatWithNamesAndTypes::tryDetectHeader`: the first row holds the
+    /// column names when its values and the destination names are a subset of one another, and then the
+    /// second row holds the types when all its values are type names.
+    const auto first_row_names = readHeaderDetectionValuesFromFields(header_detection_first_row);
+    UnorderedSetWithMemoryTracking<std::string_view> expected_names_set(expected_names.begin(), expected_names.end());
+    UnorderedSetWithMemoryTracking<std::string_view> first_row_names_set(first_row_names.begin(), first_row_names.end());
+    const bool parser_detects_names
+        = isSubsetOf(first_row_names_set, expected_names_set) || isSubsetOf(expected_names_set, first_row_names_set);
+    if (parser_detects_names != names_detected_from_data)
+        return false;
+    if (!parser_detects_names)
+        return true;
+
+    const bool parser_detects_types
+        = header_detection_second_row && checkIfAllValuesAreTypeNames(readHeaderDetectionValuesFromFields(*header_detection_second_row));
+    return parser_detects_types == types_detected_from_data;
+}
+
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const
+{
+    /// The parser reads the rows for header detection with `readRowForHeaderDetection`, which takes a
+    /// field as a string when it can be one under the escaping rule and as it is otherwise (e.g. a bare
+    /// number with the `Quoted` rule of `CustomSeparated`), see `readStringOrFieldByEscapingRule`.
+    VectorWithMemoryTracking<String> values;
+    values.reserve(fields.size());
+    auto escaping_rule = format_reader->getEscapingRule();
+    for (const auto & field : fields)
+    {
+        ReadBufferFromString field_buf(field);
+        values.emplace_back(readStringOrFieldByEscapingRule(field_buf, escaping_rule, format_settings));
+    }
+    return values;
+}
+
 std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypes()
 {
     /// Check if we tried to detect a header and have buffered types from read rows.
@@ -621,7 +681,7 @@ std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataT
     return readRowAndGetDataTypesImpl();
 }
 
-VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields)
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const
 {
     VectorWithMemoryTracking<String> names;
     names.reserve(fields.size());

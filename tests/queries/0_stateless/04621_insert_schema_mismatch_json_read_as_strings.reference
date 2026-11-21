@@ -1,0 +1,27 @@
+-- JSONEachRow, number into String with input_format_json_read_numbers_as_strings = 0 (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, number into String with the setting enabled plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, boolean into String with input_format_json_read_bools_as_strings = 0 (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, boolean into String with the setting enabled plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, array into String with input_format_json_read_arrays_as_strings = 0 (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, array into String with the setting enabled plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, object into String with input_format_json_read_objects_as_strings = 0 (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, object into String with the setting enabled plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- TSV, number into String with input_format_json_read_numbers_as_strings = 0 plus an unrelated bad numeric column (JSON-only setting, no false positive)
+insert failed as expected
+explanation missing

@@ -1,0 +1,6 @@
+-- int32 into IPv4: valid (no false positive)
+explanation missing
+-- int64 into IPv4: a genuine structure mismatch
+explanation present
+-- double into IPv4: a genuine structure mismatch
+explanation present

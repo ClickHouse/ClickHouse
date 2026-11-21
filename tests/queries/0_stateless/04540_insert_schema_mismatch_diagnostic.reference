@@ -1,0 +1,12 @@
+-- clickhouse-local, type mismatch
+explanation present
+-- clickhouse-local, matching data (no false positive)
+explanation missing
+-- clickhouse-client, synchronous insert, type mismatch
+explanation present
+-- clickhouse-client, asynchronous insert, type mismatch
+explanation present
+-- HTTP interface, synchronous insert, type mismatch
+explanation present
+-- HTTP interface, asynchronous insert, type mismatch
+explanation present

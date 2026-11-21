@@ -1,0 +1,15 @@
+-- JSONEachRow: a homogeneous array read positionally into a Tuple(Bool, UInt8)
+explanation missing
+explanation present
+-- JSONEachRow: homogeneous pairs read into a Map with input_format_json_map_as_array_of_tuples
+explanation missing
+explanation present
+explanation present
+-- Form: a numeric value read with the whole-text deserializer
+explanation missing
+explanation present
+-- Values: a quoted string literal read into a nested column with the whole-text deserializer
+explanation missing
+explanation present
+-- BSONEachRow: an ObjectId read into a String column
+explanation missing

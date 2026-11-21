@@ -1,0 +1,18 @@
+-- BSONEachRow: a boolean value for a Bool column is valid (no false positive)
+explanation missing
+-- BSONEachRow: a boolean value for a UInt8 column is valid (no false positive)
+explanation missing
+-- BSONEachRow: a boolean value for a DateTime column is valid (no false positive)
+explanation missing
+-- BSONEachRow: a boolean value for a Float64 column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a boolean value for a Decimal32(2) column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a boolean value for a DateTime64 column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a boolean value for a IPv4 column is a genuine structure mismatch
+explanation present
+-- MsgPack: a boolean value for a UInt8 column is valid (no false positive)
+explanation missing
+-- MsgPack: a boolean value for a Float64 column is a genuine structure mismatch
+explanation present

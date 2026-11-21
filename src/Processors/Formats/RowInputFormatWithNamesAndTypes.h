@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -52,6 +53,7 @@ protected:
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
     bool supportsCustomSerializations() const override { return true; }
+    [[nodiscard]] size_t getNumberOfHeaderRows() const override { return number_of_header_rows; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -79,6 +81,7 @@ private:
     bool try_detect_header;
     bool allow_variable_number_of_columns;
     bool is_header_detected = false;
+    size_t number_of_header_rows = 0;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -134,8 +137,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
     }
 
+    /// Skip the prefix before the header. Returns the number of skipped rows (lines skipped by
+    /// `input_format_*_skip_first_lines`), which the file segmentation engine counts as rows.
+    virtual size_t skipPrefixBeforeHeader() { return 0; }
+
     /// Skip delimiters, if any.
-    virtual void skipPrefixBeforeHeader() {}
     virtual void skipRowStartDelimiter() {}
     virtual void skipFieldDelimiter() {}
     virtual void skipRowEndDelimiter() {}
@@ -185,6 +191,64 @@ public:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    /// The -WithNamesAndTypes formats carry the declared column types in the second header row; when the
+    /// parser is configured to use that header (`input_format_with_types_use_header`), it validates those
+    /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix). The same
+    /// applies to a types row auto-detected in the data of a plain format (`*_detect_header`), which
+    /// `readSchema` latches in `types_detected_from_data`.
+    [[nodiscard]] bool hasExactTypesFromData() const override
+    {
+        return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
+    }
+
+    /// `RowInputFormatWithNamesAndTypes::readPrefix` compares the declared type name with `getName` of
+    /// the destination type, not the types themselves.
+    [[nodiscard]] bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
+
+    [[nodiscard]] UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
+
+    /// When a types row is present but the parser is configured to ignore it
+    /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
+    /// verbatim, while the parser reads the data by value instead. The inferred schema then does not
+    /// describe what is parsed, so a comparison against it would attach a misleading explanation to an
+    /// unrelated value-level parse error (e.g. a `CSVWithNamesAndTypes` types row declaring `String` for a
+    /// `UInt8` destination that happily accepts the quoted number `"1"` in the data).
+    [[nodiscard]] bool schemaDescribesParsedData() const override
+    {
+        return !((with_types || types_detected_from_data) && !format_settings.with_types_use_header);
+    }
+
+    /// A header row with column names auto-detected in the data of a plain format (`*_detect_header`,
+    /// latched by `readSchema` in `names_detected_from_data`) makes the parser map the columns by name,
+    /// like the -WithNames formats do, as long as the parser is configured to use a names header
+    /// (`input_format_with_names_use_header`).
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override
+    {
+        return !(names_detected_from_data && format_settings.with_names_use_header);
+    }
+
+    /// A `*WithNames*` format (`with_names`) carries a names header, and so does a plain format whose
+    /// header was auto-detected in the data (`names_detected_from_data`); in both cases the parser maps
+    /// the columns by name when configured to use that header (`input_format_with_names_use_header`),
+    /// see `RowInputFormatWithNamesAndTypes::readPrefix`. This covers the `*WithNames*` formats that do
+    /// not advertise `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g.
+    /// `RowBinaryWithNamesAndTypes`), which `hasStrictOrderOfColumns` alone does not capture.
+    [[nodiscard]] bool mapsColumnsByName() const override
+    {
+        return (with_names || names_detected_from_data) && format_settings.with_names_use_header;
+    }
+
+    /// The header names are resolved against the destination through `CaseAwareBlockNameMap`
+    /// (see `ColumnMapping::addColumns`), honoring `input_format_column_name_matching_mode`.
+    [[nodiscard]] bool honorsColumnNameMatchingMode() const override { return true; }
+
+    [[nodiscard]] bool readRowsAheadToDetectHeaderAndFoundNone() const override
+    {
+        return header_detection_attempted && !names_detected_from_data && !types_detected_from_data;
+    }
+
+    [[nodiscard]] bool headerDetectionAgreesWithParser(const Names & expected_names) const override;
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
@@ -204,10 +268,21 @@ protected:
 
 private:
     void tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out);
-    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields);
+    [[nodiscard]] VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> readHeaderDetectionValuesFromFields(const VectorWithMemoryTracking<String> & fields) const;
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
+    bool names_detected_from_data = false;
+    bool types_detected_from_data = false;
+    /// The type names of the types row as read by the last `readSchema` call, see `getDeclaredTypeNames`.
+    UnorderedMapWithMemoryTracking<String, String> declared_type_names;
+    bool header_detection_attempted = false;
+    /// The raw fields of the first two rows seen by the header detection of the last `readSchema` call,
+    /// see `headerDetectionAgreesWithParser`. `header_detection_second_row` is unset when the data has a
+    /// single row.
+    VectorWithMemoryTracking<String> header_detection_first_row;
+    std::optional<VectorWithMemoryTracking<String>> header_detection_second_row;
     DataTypes buffered_types;
 };
 

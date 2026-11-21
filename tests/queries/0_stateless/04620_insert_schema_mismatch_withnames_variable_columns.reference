@@ -1,0 +1,6 @@
+-- CSVWithNames with a variable number of columns: a genuine text-into-numeric mismatch is still explained
+insert failed as expected
+explanation present
+-- TSVWithNames with a variable number of columns: a genuine text-into-numeric mismatch is still explained
+insert failed as expected
+explanation present

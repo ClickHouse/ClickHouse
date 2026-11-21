@@ -1,14 +1,31 @@
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <IO/VarInt.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char insert_schema_mismatch_diagnostic_fail[];
+}
+
+bool isInsertDataErrorWorthExplaining(int code)
+{
+    return isParseError(code) || code == ErrorCodes::CANNOT_PARSE_TEXT;
+}
 
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
@@ -38,6 +55,32 @@ Chunk IInputFormat::generate()
         auto file_name = getFileNameFromReadBuffer(getReadBuffer());
         if (!file_name.empty())
             e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        /// For a parse or conversion error, attach the schema-mismatch explanation if one is available.
+        if (parse_error_diagnostic_provider && isInsertDataErrorWorthExplaining(e.code()))
+        {
+            String diagnostic;
+            try
+            {
+                /// Stands in for a failure while the diagnostic is prepared, e.g. exceeding the memory
+                /// limit when a provider copies the captured data.
+                fiu_do_on(FailPoints::insert_schema_mismatch_diagnostic_fail,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::insert_schema_mismatch_diagnostic_fail);
+                });
+                diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError());
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// The explanation is an optional addition to the exception being handled. A failure
+                /// anywhere in preparing it, including in the provider before the explanation itself
+                /// is computed (e.g. copying the captured data under the query memory limit), must not
+                /// replace the original exception, so it is Ok to ignore it and omit the explanation.
+            }
+            if (!diagnostic.empty())
+                e.addMessage(diagnostic);
+        }
+
         throw;
     }
 }
