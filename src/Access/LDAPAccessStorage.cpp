@@ -401,37 +401,36 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 }
 
 
+/// The read-only methods below don't lock `mutex`: `memory_storage` is synchronized by itself,
+/// and `mutex` is held by `authenticateImpl` during the network communication with the LDAP server.
+/// Waiting for it here would make lookups (e.g. the check for a name collision in `MultipleAccessStorage`)
+/// wait for unrelated LDAP authentications.
 std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
-    std::lock_guard lock(mutex);
     return memory_storage.find(type, name);
 }
 
 
 std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
 {
-    std::lock_guard lock(mutex);
     return memory_storage.findAll(type);
 }
 
 
 bool LDAPAccessStorage::exists(const UUID & id) const
 {
-    std::lock_guard lock(mutex);
     return memory_storage.exists(id);
 }
 
 
 AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    std::lock_guard lock(mutex);
     return memory_storage.read(id, throw_if_not_exists);
 }
 
 
 std::optional<std::pair<String, AccessEntityType>> LDAPAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    std::lock_guard lock(mutex);
     return memory_storage.readNameWithType(id, throw_if_not_exists);
 }
 

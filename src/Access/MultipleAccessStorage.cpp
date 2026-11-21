@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
     extern const int ACCESS_ENTITY_NOT_FOUND;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 using Storage = IAccessStorage;
@@ -486,9 +487,10 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
             return false;
     }
 
-    /// If the updating involves renaming check that the renamed entity will be accessible by name.
+    /// If the updating involves renaming check that the new name is not used in another storage:
+    /// the same name must not refer to entities in different storages.
     auto storages = getStoragesInternal();
-    if ((storages->size() > 1) && (storages->front() != storage_for_updating))
+    if (storages->size() > 1)
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
@@ -498,7 +500,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                 for (const auto & storage : *storages)
                 {
                     if (storage == storage_for_updating)
-                        break;
+                        continue;
                     if (storage->find(new_entity->getType(), new_entity->getName()))
                     {
                         throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
@@ -521,19 +523,62 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
                                         bool allow_no_password, bool allow_plaintext_password) const
 {
     auto storages = getStoragesInternal();
+
+    /// Users from different user directories are distinct entities, but some code identifies users by name,
+    /// so the same name must not refer to more than one user.
+    auto throw_name_collision = [&](const String & user_name, const StoragePtr & storage, const StoragePtr & other_storage) -> void
+    {
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "User {} exists in {}, but a user with the same name also exists in {}",
+            backQuote(user_name), storage->getStorageName(), other_storage->getStorageName());
+    };
+
+    /// If a user with this name already exists, only its storage may authenticate it. Otherwise an external directory
+    /// (e.g. LDAP) could introduce a second user with the same name on login, in particular with `AlwaysAllowCredentials`,
+    /// which LDAP accepts without contacting the LDAP server.
+    StoragePtr existing_user_storage;
+    if (storages->size() > 1 && credentials.isReady())
+    {
+        for (const auto & storage : *storages)
+        {
+            if (!storage->find(AccessEntityType::USER, credentials.getUserName()))
+                continue;
+            if (existing_user_storage)
+                throw_name_collision(credentials.getUserName(), existing_user_storage, storage);
+            existing_user_storage = storage;
+        }
+    }
+
     for (size_t i = 0; i != storages->size(); ++i)
     {
         const auto & storage = (*storages)[i];
-        bool is_last_storage = (i == storages->size() - 1);
+        if (existing_user_storage && storage != existing_user_storage)
+            continue;
+
+        bool is_last_storage = (i == storages->size() - 1) || (storage == existing_user_storage);
         auto auth_result = storage->authenticate(credentials, address, external_authenticators, client_info,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
         if (auth_result)
         {
+            /// Check again: a user with the same name could have appeared in another storage concurrently,
+            /// or the storage could have just introduced the user.
+            for (size_t j = 0; j != storages->size(); ++j)
+            {
+                if (j == i)
+                    continue;
+                const auto & other_storage = (*storages)[j];
+                if (other_storage->find(AccessEntityType::USER, auth_result->user_name))
+                    throw_name_collision(auth_result->user_name, storage, other_storage);
+            }
+
             std::lock_guard lock{mutex};
             ids_cache.set(auth_result->user_id, storage);
             return auth_result;
         }
+
+        if (storage == existing_user_storage)
+            break;
     }
 
     if (throw_if_user_not_exists)

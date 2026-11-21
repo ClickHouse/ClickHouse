@@ -32,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -58,6 +59,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 
 namespace FailPoints
@@ -671,10 +673,13 @@ bool AccessControl::insertUnlocked(
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    if (storage && !replace_if_exists && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
+    auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
+
+    /// The same name must not refer to entities in different storages, whether the storage is specified explicitly or not.
+    /// A replacement replaces only an entity of the destination storage, so it is refused too if another storage holds the name.
+    if (checkNameCollisionInOtherStorage(*storage_for_insertion, entity, throw_if_exists || replace_if_exists, conflicting_id))
         return false;
 
-    auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
     auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());
 
     /// A name collision, and in particular a no-op `CREATE ... IF NOT EXISTS`, is not validated as an insertion.
@@ -873,6 +878,24 @@ void AccessControl::moveAccessEntities(
     try
     {
         std::lock_guard lock{access_entities_mutex};
+
+        /// The same name must not refer to entities in different storages, so a move is refused if any storage
+        /// other than the source one already holds the name (e.g. a user of the config with the same name).
+        /// This is checked before anything is removed from the source storage.
+        auto source_storage = getStorageByName(source_storage_name);
+        for (const auto & entity : source_storage->read(ids))
+        {
+            for (const auto & other_storage : getStorages())
+            {
+                if (other_storage == source_storage)
+                    continue;
+                if (other_storage->find(entity->getType(), entity->getName()))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot move to {} because {} already exists in {}",
+                        entity->formatTypeWithName(), backQuote(destination_storage_name), entity->formatTypeWithName(),
+                        backQuote(other_storage->getStorageName()));
+            }
+        }
+
         if (isAnyFeatureTierRestricted(*this))
             checkFeatureTierForMoveUnlocked(ids, source_storage_name, destination_storage_name);
         MultipleAccessStorage::moveAccessEntities(ids, source_storage_name, destination_storage_name);

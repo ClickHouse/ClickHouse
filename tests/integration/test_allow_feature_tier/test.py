@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import threading
+import time
 import uuid
 
 import pytest
@@ -18,7 +19,6 @@ instance = cluster.add_instance(
     ],
     user_configs=[
         "configs/users.d/users.xml",
-        "configs/users.d/config_experimental_user.xml",
     ],
     stay_alive=True,
 )
@@ -101,9 +101,6 @@ MERGE_TREE_EXPERIMENTAL_SETTING_IN_PROFILE = (
 MERGE_TREE_PRODUCTION_MIN = 536870912
 MERGE_TREE_PRODUCTION_MAX = 2147483648
 MERGE_TREE_PRODUCTION_VALUE = 1073741824
-
-# Defined in configs/users.d/config_experimental_user.xml, with a profile setting `EXPERIMENTAL_SETTING` to 1
-CONFIG_EXPERIMENTAL_USER = "tier_config_experimental_user"
 
 # Allowed by configs/custom_settings_prefix.xml
 CUSTOM_SETTING = "custom_setting_of_this_test"
@@ -1598,7 +1595,8 @@ def test_move_rolls_back_entities_removed_before_failure(start_cluster):
             )
 
 
-def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster):
+def test_create_if_not_exists_does_not_shadow_config_user(start_cluster):
+    # The same name must not refer to users of different storages, so a user of the config is not shadowed.
     user = "tier_config_user"
     with entities(instance, users=[user], storage="local_directory"):
         assert read_experimental_setting(instance, user) == "0"
@@ -1610,74 +1608,59 @@ def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster)
         storages = instance.query(
             f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
         ).splitlines()
-        assert storages == ["local_directory", "users_xml"]
-        assert read_experimental_setting(instance, user) == "1"
-
-
-def test_shadowing_a_config_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    with entities(instance, users=[user], storage="local_directory"):
-        assert read_experimental_setting(instance, user) == "1"
-
-        with feature_tier(instance, "1"):
-            # The new user carries no settings, but it takes over the name and drops the EXPERIMENTAL
-            # setting the config user resolves to.
-            assert_experimental_change_is_blocked(
-                instance,
-                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password",
-            )
-            assert (
-                instance.query(
-                    f"SELECT count() FROM system.users WHERE name = '{user}' AND storage = 'local_directory'"
-                ).strip()
-                == "0"
-            )
-        assert read_experimental_setting(instance, user) == "1"
-
-
-def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    drop_entities(instance, users=[user], storage="local_directory")
-    instance.query(
-        f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
-    )
-    assert read_experimental_setting(instance, user) == "0"
-
-    try:
-        with feature_tier(instance, "1"):
-            # Dropping the user exposes the config user again, which puts the EXPERIMENTAL setting back.
-            assert_experimental_change_is_blocked(
-                instance, f"DROP USER {user} FROM local_directory"
-            )
-            assert_experimental_change_is_blocked(
-                instance, f"ALTER USER {user} RENAME TO tier_renamed_shadow_user"
-            )
+        assert storages == ["users_xml"]
         assert read_experimental_setting(instance, user) == "0"
-    finally:
-        drop_entities(
-            instance,
-            users=[user, "tier_renamed_shadow_user"],
-            storage="local_directory",
-        )
 
-
-def test_moving_a_shadowing_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    with entities(instance, users=[user], storage="local_directory"):
-        with entities(instance, users=[user], storage="memory"):
-            instance.query(
-                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
+        for create in ["CREATE USER", "CREATE USER OR REPLACE"]:
+            output, error = instance.query_and_get_answer_with_error(
+                f"{create} {user} IDENTIFIED WITH no_password"
             )
-            assert read_experimental_setting(instance, user) == "0"
+            assert output == ""
+            assert "already exists" in error, error
 
-            with feature_tier(instance, "1"):
-                # `memory` is looked up after `users_xml`, so the move exposes the config user again.
-                assert_experimental_change_is_blocked(
-                    instance, f"MOVE USER {user} TO memory"
-                )
-            assert read_experimental_setting(instance, user) == "0"
+
+def test_move_is_refused_when_config_has_same_name_user(start_cluster):
+    # A same-name user can still appear in the config after the user was created in another storage.
+    # Moving the user must not keep the name used in two storages.
+    user = "tier_move_collision_user"
+    config_path = "/etc/clickhouse-server/users.d/tier_move_collision_user.xml"
+    with entities(instance, users=[user]):
+        instance.query(f"CREATE USER {user} IN local_directory IDENTIFIED WITH no_password")
+        assert instance.query("SELECT currentUser()", user=user).strip() == user
+        try:
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"echo '<clickhouse><users><{user}><no_password/></{user}></users></clickhouse>' > {config_path}",
+                ]
+            )
+            instance.query("SYSTEM RELOAD CONFIG")
+            assert instance.query(
+                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+            ).splitlines() == ["local_directory", "users_xml"]
+
+            # While the name refers to two users, nobody can log in with it.
+            output, error = instance.query_and_get_answer_with_error(
+                "SELECT currentUser()", user=user
+            )
+            assert output == ""
+            assert "AUTHENTICATION_FAILED" in error, error
+
+            error = instance.query_and_get_error(f"MOVE USER {user} TO memory")
+            assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
+            assert instance.query(
+                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+            ).splitlines() == ["local_directory", "users_xml"]
+        finally:
+            instance.exec_in_container(["rm", "-f", config_path])
+            instance.query("SYSTEM RELOAD CONFIG")
+
+        # Once the user of the config is removed, the remaining user can log in again.
+        assert instance.query(
+            f"SELECT storage FROM system.users WHERE name = '{user}'"
+        ).splitlines() == ["local_directory"]
+        assert instance.query("SELECT currentUser()", user=user).strip() == user
 
 
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
@@ -1703,6 +1686,74 @@ def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
         )
         assert output == ""
         assert "already exists" in error, error
+
+
+def test_concurrent_creates_in_different_storages_cannot_both_take_a_name(start_cluster):
+    """An implicit `CREATE` paused after its checks must not let a `CREATE ... IN <storage>` take the same name."""
+    instance.query("CREATE TABLE IF NOT EXISTS tier_concurrent_create_table (x UInt8) ENGINE = Memory")
+    cases = [
+        (
+            "CREATE QUOTA tier_concurrent_quota",
+            "CREATE QUOTA tier_concurrent_quota IN memory",
+            "DROP QUOTA IF EXISTS tier_concurrent_quota",
+            "SELECT count() FROM system.quotas WHERE name = 'tier_concurrent_quota'",
+        ),
+        (
+            "CREATE ROW POLICY tier_concurrent_policy ON default.tier_concurrent_create_table",
+            "CREATE ROW POLICY tier_concurrent_policy ON default.tier_concurrent_create_table IN memory",
+            "DROP ROW POLICY IF EXISTS tier_concurrent_policy ON default.tier_concurrent_create_table",
+            "SELECT count() FROM system.row_policies WHERE short_name = 'tier_concurrent_policy'",
+        ),
+    ]
+    for implicit_create, named_create, drop, count in cases:
+        # `DROP` without `FROM` removes the entity of only one storage, so run it for every storage.
+        for _ in range(2):
+            instance.query(drop)
+        results = {}
+        implicit_thread = None
+        named_thread = None
+        named_query_id = str(uuid.uuid4())
+        try:
+            with feature_tier(instance, "1"):
+                instance.query(f"SYSTEM ENABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+                implicit_thread = threading.Thread(
+                    target=lambda: results.update(implicit=instance.query_and_get_answer_with_error(implicit_create))
+                )
+                implicit_thread.start()
+                instance.query(f"SYSTEM WAIT FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT} PAUSE", timeout=60)
+
+                named_thread = threading.Thread(
+                    target=lambda: results.update(
+                        named=instance.query_and_get_answer_with_error(named_create, query_id=named_query_id)
+                    )
+                )
+                named_thread.start()
+                # Resume the paused statement only when the named `CREATE` has either finished or is running.
+                for _ in range(600):
+                    if not named_thread.is_alive():
+                        break
+                    if instance.query(f"SELECT count() FROM system.processes WHERE query_id = '{named_query_id}'").strip() == "1":
+                        break
+                    time.sleep(0.1)
+                instance.query(f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+
+                implicit_thread.join(timeout=60)
+                named_thread.join(timeout=60)
+                assert not implicit_thread.is_alive()
+                assert not named_thread.is_alive()
+                assert results["implicit"] == ("", "")
+                assert results["named"][0] == ""
+                assert "already exists" in results["named"][1], results["named"][1]
+                assert instance.query(count).strip() == "1"
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+            if implicit_thread is not None:
+                implicit_thread.join(timeout=60)
+            if named_thread is not None:
+                named_thread.join(timeout=60)
+            for _ in range(2):
+                instance.query(drop)
+    instance.query("DROP TABLE tier_concurrent_create_table")
 
 
 def test_const_constraint_is_sticky_when_previous_constraints_are_kept(start_cluster):
@@ -1754,31 +1805,6 @@ def test_restore_access_entities_checks_feature_tier(start_cluster):
             )
     finally:
         drop_entities(instance, users=[user])
-
-
-def test_restore_replaces_user_from_readonly_storage(start_cluster):
-    user = "tier_config_user"
-    backup_name = f"tier_restore_collision_{uuid.uuid4().hex}"
-    backup = f"Disk('backups', '{backup_name}')"
-    with entities(instance, users=[user], storage="local_directory"):
-        instance.query(
-            f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-            f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
-        )
-        instance.query(f"BACKUP TABLE system.users TO {backup}")
-        drop_entities(instance, users=[user], storage="local_directory")
-
-        instance.query(
-            f"RESTORE TABLE system.users FROM {backup} "
-            "SETTINGS create_access = 'replace'"
-        )
-        assert (
-            instance.query(
-                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
-            ).splitlines()
-            == ["local_directory", "users_xml"]
-        )
-        assert read_experimental_setting(instance, user) == "1"
 
 
 def test_replicated_update_reapplies_after_version_conflict(start_cluster):
@@ -1985,14 +2011,18 @@ def test_or_replace_checks_removed_settings_of_the_replaced_entity(start_cluster
         instance.query(f"CREATE SETTINGS PROFILE {hidden} IN memory SETTINGS {constraint}")
         instance.query(f"CREATE SETTINGS PROFILE {replaced} IN local_directory SETTINGS {constraint}")
 
-        # `local_directory` is looked up before `memory`, so it gets a new profile which hides the one in
-        # `memory` and replaces nothing.
-        instance.query(f"CREATE SETTINGS PROFILE OR REPLACE {hidden}", user=actor)
+        # `local_directory` is the destination storage, and a replacement replaces only an entity of the
+        # destination storage. The name is used in `memory`, so the replacement is refused instead of
+        # creating a second profile with the same name.
+        error = instance.query_and_get_error(
+            f"CREATE SETTINGS PROFILE OR REPLACE {hidden}", user=actor
+        )
+        assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
         assert (
             instance.query(
                 f"SELECT storage FROM system.settings_profiles WHERE name = '{hidden}' ORDER BY storage"
             )
-            == "local_directory\nmemory\n"
+            == "memory\n"
         )
 
         # A profile replaced in place must keep the constrained setting.
