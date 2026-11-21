@@ -5145,6 +5145,9 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     };
 
     ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+    /// has accepted a job, and nothing would wait for that job while it uses `converter` and `res` by reference.
+    runner.reserve(max_threads);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -6112,11 +6115,14 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             };
 
             ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
+            /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+            /// has accepted a job, and nothing would wait for that job while it uses `converter` by reference.
+            runner.reserve(threads);
             try
             {
                 /// Passing converter as a reference is fine: `runner` waits for all tasks before
                 /// this scope (and the captured state) is destroyed.
-                const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
                 for (size_t i = 0; i < threads; ++i)
                     runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
             }
