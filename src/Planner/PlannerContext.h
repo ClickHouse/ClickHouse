@@ -209,11 +209,12 @@ public:
     [[nodiscard]] bool isBuildingCacheableLogicalPlan() const { return is_building_cacheable_logical_plan; }
 
     /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
-    /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
+    /// logical plan built for a shard under `serialize_query_plan`, a local plan from which
     /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
-    /// replicas. Everything materialized while planning must then survive serialization, which rules
-    /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
-    /// receiving node cannot resolve it.
+    /// replicas, or a plan (or a subquery plan inside one) built under `make_distributed_plan`, also
+    /// when only the query-level context has it. Everything materialized while planning must then
+    /// survive serialization, which rules out a JIT-compiled expression: a compiled function has no
+    /// name in `FunctionFactory`, so the receiving node cannot resolve it.
     [[nodiscard]] bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
     /// See `SelectQueryOptions::view_source_in_subqueries`.
