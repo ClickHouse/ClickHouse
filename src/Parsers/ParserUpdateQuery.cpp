@@ -78,7 +78,7 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// but it can parse
     /// (1 AS x)
     /// which we should not allow as well.
-    if (!query->predicate->tryGetAlias().empty())
+    if (query->predicate->hasAlias())
         return false;
 
     if (s_settings.ignore(pos, expected))
