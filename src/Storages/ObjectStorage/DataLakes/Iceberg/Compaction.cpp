@@ -1091,6 +1091,7 @@ bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update
         case SnapshotSummaryOperation::APPEND:
             return summary->getUpdate<SnapshotSummaryUpdateAppend>();
         case SnapshotSummaryOperation::DELETE:
+            /// TODO: `TRUNCATE` writes an empty `delete` snapshot. Compaction drops it from the rewritten history. Support it before compaction leaves experimental.
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
             if (overwriteIsPositionDeleteOnly(summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>()))

@@ -525,6 +525,14 @@ bool StorageObjectStorage::supportsDelete() const
     return configuration->supportsDelete();
 }
 
+bool StorageObjectStorage::supportsTruncate() const
+{
+    if (!configuration->isDataLakeConfiguration())
+        return true;
+
+    return configuration->supportsTruncate();
+}
+
 bool StorageObjectStorage::supportsParallelInsert() const
 {
     /// Defense in depth. `InsertDependenciesBuilder` refreshes every dependency before calling this method,
@@ -1166,8 +1174,11 @@ void StorageObjectStorage::truncate(
 
     if (configuration->isDataLakeConfiguration())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Truncate is not supported for data lake engine");
+        if (!configuration->supportsTruncate())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported for this data lake engine");
+
+        getExternalMetadata(local_context)->truncate(local_context, catalog, getStorageID());
+        return;
     }
 
     if (path.hasGlobsIgnorePlaceholders())

@@ -274,6 +274,25 @@ bool StorageObjectStorageCluster::supportsDelete() const
     return configuration->supportsDelete();
 }
 
+bool StorageObjectStorageCluster::supportsTruncate() const
+{
+    return configuration->supportsTruncate();
+}
+
+void StorageObjectStorageCluster::truncate(
+    const ASTPtr & /* query */,
+    const StorageMetadataPtr & /* metadata_snapshot */,
+    ContextPtr local_context,
+    TableExclusiveLockHolder & /* table_holder */)
+{
+    if (!configuration->supportsTruncate())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
+
+    /// The table is created lazily. Load its metadata before use.
+    configuration->update(object_storage, local_context);
+    configuration->getExternalMetadata()->truncate(local_context, catalog, getStorageID());
+}
+
 bool StorageObjectStorageCluster::optimize(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
