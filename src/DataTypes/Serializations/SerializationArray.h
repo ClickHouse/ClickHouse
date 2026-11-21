@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class ColumnArray;
+
 class SerializationArray final : public SimpleTextSerialization
 {
 private:
@@ -93,6 +95,8 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
+    bool supportsRowRanges() const override { return nested->supportsRowRanges(); }
+
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, WriteBuffer & stream, bool position_independent_encoding);
     static bool deserializeOffsetsBinaryBulk(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
@@ -114,6 +118,13 @@ public:
     const SerializationPtr & getNestedSerialization() const { return nested; }
 
 private:
+    void deserializeElementsWithRowRanges(
+        ColumnArray & column_array,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
