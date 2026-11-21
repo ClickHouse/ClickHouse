@@ -1,0 +1,19 @@
+float constant	1
+float constant	1
+float constant	0
+enum bridge	1
+enum bridge	1
+strict bound	0
+strict bound	0
+index hint	1
+index hint	1
+projection	1.000000000000000001
+projection	1.000000000000000001
+exact chain	1
+exact chain	1
+exact chain hint	1
+exact chain hint	1
+chain column	0
+chain column	0
+datetime64	1
+datetime64	1
