@@ -90,6 +90,8 @@ public:
     /// Without this, a write would leave metadata files in the table location before failing.
     bool isTransactional() const override { return true; }
 
+    bool supportsMetadataUpdates() const override { return true; }
+
     /// Iceberg commits are forwarded to the Iceberg REST endpoint. Delta writes commit through `_delta_log` and never get here.
     bool updateMetadata(
         const String & namespace_name,

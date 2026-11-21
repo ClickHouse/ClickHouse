@@ -295,7 +295,14 @@ public:
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
     [[nodiscard]] virtual bool writesInitialMetadata() const { return false; }
 
+    /// Whether `updateMetadata` is implemented. Check before staging files for a catalog commit.
+    [[nodiscard]] virtual bool supportsMetadataUpdates() const { return false; }
+
     /// Updates metadata in catalog.
+    /// Returns `true` on success and `false` only on a confirmed conflict that permits cleanup and retry.
+    /// Throws `ICEBERG_COMMIT_REJECTED` on a definite rejection that permits cleanup, or `ICEBERG_COMMIT_STATE_UNKNOWN`
+    /// when the outcome cannot be established. Other exceptions must also conservatively preserve the written files.
+    /// Internal retries must not turn an applied commit with a lost response into a reported conflict.
     /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
     /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
     [[nodiscard]] virtual bool updateMetadata(

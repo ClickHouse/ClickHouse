@@ -66,6 +66,7 @@ namespace DB::ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
     extern const int FAULT_INJECTED;
 }
 
@@ -896,7 +897,7 @@ bool GlueCatalog::commitTableUpdate(
         auto get_outcome = glue_client->GetTable(get_request);
         if (!get_outcome.IsSuccess())
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
                 "Exception calling GetTable for table {}.{}: {}",
                 namespace_name, table_name, get_outcome.GetError().GetMessage());
 
@@ -931,7 +932,7 @@ bool GlueCatalog::commitTableUpdate(
                 return true;
 
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
                 "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
                 new_metadata_path, namespace_name, table_name, current_metadata_path);
         }
@@ -952,10 +953,13 @@ bool GlueCatalog::commitTableUpdate(
             return true;
 
         if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
+        {
+            /// The SDK may have retried an applied request before returning this error.
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Can not update metadata of table {}.{} in Glue catalog: {}",
+                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+                "Iceberg Glue commit outcome is unknown for table {}.{}; written files must be preserved: {}",
                 namespace_name, table_name, response.GetError().GetMessage());
+        }
 
         /// A rejected single attempt did not land; after an SDK retry the rejection may come from our own landed attempt.
         update_may_have_landed = update_may_have_landed || request_retried;
@@ -963,7 +967,7 @@ bool GlueCatalog::commitTableUpdate(
     }
 
     throw DB::Exception(
-        DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
         "Can not update metadata of table {}.{} in Glue catalog: it was modified concurrently {} times",
         namespace_name, table_name, MAX_UPDATE_TABLE_ATTEMPTS);
 }

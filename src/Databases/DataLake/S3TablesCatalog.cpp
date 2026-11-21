@@ -250,7 +250,7 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, /* ignore_result */ true, /* allow_retries */ true);
         LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=true)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
@@ -336,7 +336,8 @@ String S3TablesCatalog::sendRequest(
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
     const String & method,
-    bool ignore_result) const
+    bool ignore_result,
+    bool allow_retries) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -364,10 +365,17 @@ String S3TablesCatalog::sendRequest(
     headers.emplace_back("Content-Type", "application/json");
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
+    auto read_settings = context->getReadSettings();
+    /// A snapshot commit may succeed even if its response is lost. Replaying it could return HTTP 409,
+    /// which the caller would treat as a confirmed rejection and delete files referenced by the committed snapshot.
+    /// `max_tries` includes the initial attempt, so 1 disables transport retries.
+    if (!allow_retries)
+        read_settings.http_settings.max_tries = 1;
+
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(read_settings)
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
