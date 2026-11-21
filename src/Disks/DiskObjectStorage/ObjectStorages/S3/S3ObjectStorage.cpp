@@ -347,6 +347,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         const auto & settings = query_context->getSettingsRef();
         request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
     }
+    else if (const auto global_context = Context::getGlobalContextInstance();
+             !global_context || global_context->getSettingsRef()[Setting::s3_validate_request_settings])
+    {
+        /// A table merges its endpoint section into the stored settings without validating them.
+        request_settings.validateUploadSettings();
+    }
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
@@ -798,11 +804,17 @@ void S3ObjectStorage::applyNewSettings(
     const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
+    const bool validate_settings = context->getSettingsRef()[Setting::s3_validate_request_settings];
 
+    /// A table and a disk reload are validated below.
     settings_from_config->loadFromConfigForObjectStorage(
-        config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+        config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(),
+        /* validate_settings */ for_disk_s3 && !options.server_disk_reload && validate_settings);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
+    /// Merging below only adds the fields a layer sets, so credentials removed from the config would be kept.
+    if (options.server_disk_reload)
+        modified_settings->auth_settings = S3::S3AuthSettings();
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     /// So does a restricted client: the parsing of a restricted query dropped the server's authentication material
@@ -842,6 +854,31 @@ void S3ObjectStorage::applyNewSettings(
 
     for (const auto & [name, value] : options.explicit_request_settings)
         modified_settings->request_settings.setByName(name, value);
+
+    if (validate_settings)
+    {
+        if (options.server_disk_reload)
+        {
+            try
+            {
+                settings_from_config->request_settings.validateUploadSettings();
+                modified_settings->request_settings.validateUploadSettings();
+            }
+            catch (const Exception & e)
+            {
+                /// Not rethrown: the rest of the config reload must still be applied, including the new authentication
+                /// settings of this disk, so its client is rebuilt below.
+                LOG_ERROR(log, "The new S3 request settings of disk {} were not applied, it keeps its current ones: {}", disk_name, e.message());
+                modified_settings->request_settings = S3::S3RequestSettings(s3_settings.get()->request_settings);
+            }
+        }
+        else if (!for_disk_s3 && context->hasQueryContext() && !context->isBackgroundContext())
+        {
+            /// The check of readObject and writeObject, done before the query settings are stored in the table.
+            auto request_settings = modified_settings->request_settings;
+            request_settings.updateFromSettings(context->getSettingsRef(), /* if_changed */ true);
+        }
+    }
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);

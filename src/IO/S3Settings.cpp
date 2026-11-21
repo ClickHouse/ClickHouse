@@ -10,11 +10,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool s3_validate_request_settings;
-}
-
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool read_only;
@@ -27,10 +22,11 @@ namespace S3RequestSetting
 void S3Settings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const DB::Settings & settings)
+    const DB::Settings & settings,
+    bool validate_settings)
 {
     auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
-    request_settings = S3::S3RequestSettings(config, settings, config_prefix);
+    request_settings = S3::S3RequestSettings(config, settings, config_prefix, "", validate_settings);
 }
 
 void S3Settings::loadFromConfigForObjectStorage(
@@ -80,7 +76,8 @@ void S3SettingsByEndpoint::loadFromConfig(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
     auto default_auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
-    auto default_request_settings = S3::S3RequestSettings(config, settings, config_prefix);
+    /// An entry is one layer of the settings a query or backup uses; they are validated there, after all overrides.
+    auto default_request_settings = S3::S3RequestSettings(config, settings, config_prefix, "", /* validate_settings */ false);
 
     for (const String & key : config_keys)
     {
@@ -92,7 +89,7 @@ void S3SettingsByEndpoint::loadFromConfig(
             auth_settings.updateIfChanged(S3::S3AuthSettings(config, settings, key_path));
 
             auto request_settings{default_request_settings};
-            request_settings.updateIfChanged(S3::S3RequestSettings(config, settings, key_path, "", settings[Setting::s3_validate_request_settings]));
+            request_settings.updateIfChanged(S3::S3RequestSettings(config, settings, key_path, "", /* validate_settings */ false));
 
             s3_settings.emplace(
                 config.getString(endpoint_path),

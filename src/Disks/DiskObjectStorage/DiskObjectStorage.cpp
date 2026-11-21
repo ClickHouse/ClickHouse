@@ -1045,7 +1045,12 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     /// settings comparison in `applyNewSettings` does not cover (e.g. the proxy configuration).
     for (const auto & [location, info] : cluster->getConfiguration())
         object_storages->takePointingTo(location)->applyNewSettings(
-            config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true, .force_client_rebuild = true});
+            config, info.config_prefix, context,
+            IObjectStorage::ApplyNewSettingsOptions{
+                .allow_client_change = true,
+                .force_client_rebuild = true,
+                .server_disk_reload = true,
+            });
 
     {
         std::unique_lock lock(resource_mutex);
