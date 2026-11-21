@@ -108,6 +108,14 @@ void checkRowPoliciesBeforeAlter(
         return;
 
     const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
+
+    /// binding the lookup tables of a policy needs no grant of the user who alters the table: a copy of the global context has full access
+    auto analysis_context = Context::createCopy(context->getGlobalContext());
+    analysis_context->makeQueryContext();
+    analysis_context->setSettings(context->getSettingsRef());
+    if (const auto & database = context->getCurrentDatabase(); !database.empty())
+        analysis_context->setCurrentDatabase(database);
+
     const auto tables = tablesWithPoliciesOnColumnsOf(table, context);
 
     const auto & access_control = context->getAccessControl();
@@ -130,7 +138,7 @@ void checkRowPoliciesBeforeAlter(
                 if (filter.empty())
                     continue;
 
-                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, context);
+                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, analysis_context);
                 for (const auto & command : commands)
                 {
                     if (removesColumn(command) && usesColumn(used_columns, command.column_name))
