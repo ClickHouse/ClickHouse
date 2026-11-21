@@ -9,9 +9,20 @@ mixed codecs	1
 throwIf in or	1000
 throwIf in or, prewhere	1000
 throwIf in indexHint	1000
+invalid match pattern in or	1000
+invalid match pattern in or, prewhere	1000
+invalid like pattern in or	1000
+invalid match pattern in indexHint	1000
+invalid constant match pattern in indexHint	1000
+invalid constant like pattern in indexHint	1000
+valid patterns	0
 nullable equals	[2]	1
 nullable like	[2]	1
 nullable greater	[1,2]	2
 nullable not equals	[1,2,3,4]	3
-nullable not	[2,3,4,5]	3
+nullable not	[2,3,4,5]	2
 nullable is null	[0]	1
+nullable equals default	[4]	1
+nullable empty	[4]	1
+nullable in	[4]	1
+nullable less	[4]	1

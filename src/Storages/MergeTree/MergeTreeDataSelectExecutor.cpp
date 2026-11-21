@@ -64,7 +64,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/Regexps.h>
 #include <Functions/indexHint.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -1310,9 +1312,8 @@ private:
             else if (result.depends || !result.depends_on_other_columns)
             {
                 const auto & name = node.function_base->getName();
-                /// The pattern is compiled and can be invalid, so it must not depend on the column.
                 if (functions_with_pattern.contains(name))
-                    result.safe = result.safe && argument_results.size() >= 2 && !argument_results[1].depends;
+                    result.safe = result.safe && isPatternValid(node);
                 else
                     result.safe = result.safe && safe_functions.contains(name);
             }
@@ -1320,6 +1321,42 @@ private:
 
         visited[&node] = result;
         return result;
+    }
+
+    /// The pattern is compiled and can be invalid, so it must be a constant that is known to compile.
+    /// A pattern that is not folded to a constant, such as `materialize('[')`, is compiled only for the rows the query
+    /// evaluates the function on, and a constant one is not compiled at all inside of `indexHint`.
+    static bool isPatternValid(const ActionsDAG::Node & node)
+    {
+        if (node.children.size() != 2)
+            return false;
+
+        const auto & pattern_column = node.children[1]->column;
+        const ColumnConst * pattern = pattern_column ? checkAndGetColumnConstStringOrFixedString(pattern_column.get()) : nullptr;
+        if (!pattern)
+            return false;
+
+        /// `like` and similar describe it themselves.
+        if (node.function_base->getName() != "match")
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node.children.size());
+            for (const auto * child : node.children)
+                arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+            arguments[1].column = pattern;
+            return !node.function_base->canThrow(arguments);
+        }
+
+        try
+        {
+            Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(
+                pattern->getValue<String>());
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+        return true;
     }
 
     static inline const std::unordered_set<std::string_view> safe_functions = {
@@ -1333,7 +1370,7 @@ private:
         "and", "or", "not", "xor", "indexHint",
     };
 
-    /// Safe if only the first argument depends on the column.
+    /// Safe if the pattern is a valid constant.
     static inline const std::unordered_set<std::string_view> functions_with_pattern = {
         "like", "notLike", "ilike", "notILike", "match",
     };

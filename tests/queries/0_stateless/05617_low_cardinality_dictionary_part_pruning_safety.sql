@@ -53,6 +53,16 @@ INSERT INTO t_lc_short_circuit SELECT number, 'a' FROM numbers(1000);
 SELECT 'throwIf in or', count() FROM t_lc_short_circuit WHERE s = 'a' OR throwIf(1) SETTINGS optimize_move_to_prewhere = 0, short_circuit_function_evaluation = 'enable';
 SELECT 'throwIf in or, prewhere', count() FROM t_lc_short_circuit PREWHERE s = 'a' OR throwIf(1) SETTINGS short_circuit_function_evaluation = 'enable';
 SELECT 'throwIf in indexHint', count() FROM t_lc_short_circuit WHERE s = 'a' AND indexHint(throwIf(materialize(1)) = 0);
+-- A pattern that is not folded to a constant is compiled only for the rows the function is evaluated on,
+-- and a constant pattern is not compiled at all inside of `indexHint`, so an invalid pattern must not be compiled either.
+SELECT 'invalid match pattern in or', count() FROM t_lc_short_circuit WHERE s = 'a' OR match(s, materialize('[')) SETTINGS optimize_move_to_prewhere = 0, short_circuit_function_evaluation = 'enable';
+SELECT 'invalid match pattern in or, prewhere', count() FROM t_lc_short_circuit PREWHERE s = 'a' OR match(s, materialize('[')) SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT 'invalid like pattern in or', count() FROM t_lc_short_circuit WHERE s = 'a' OR s LIKE materialize('a\\') SETTINGS optimize_move_to_prewhere = 0, short_circuit_function_evaluation = 'enable';
+SELECT 'invalid match pattern in indexHint', count() FROM t_lc_short_circuit WHERE s = 'a' AND indexHint(match(s, materialize('[')));
+SELECT 'invalid constant match pattern in indexHint', count() FROM t_lc_short_circuit WHERE s = 'a' AND indexHint(match(s, '['));
+SELECT 'invalid constant like pattern in indexHint', count() FROM t_lc_short_circuit WHERE s = 'a' AND indexHint(s LIKE 'a\\');
+-- Valid constant patterns still skip the part.
+SELECT 'valid patterns', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_short_circuit WHERE match(s, '^b') OR s LIKE 'b%' OR s ILIKE 'B_');
 DROP TABLE t_lc_short_circuit;
 
 -- Comparisons of a `LowCardinality(Nullable(...))` column have the type `LowCardinality(Nullable(UInt8))`.
@@ -69,4 +79,9 @@ SELECT 'nullable greater', arraySort(groupArray(id)), (SELECT sum(parts) FROM (E
 SELECT 'nullable not equals', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s != 'v')) FROM t_lc_nullable WHERE s != 'v';
 SELECT 'nullable not', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE NOT (s = 'x'))) FROM t_lc_nullable WHERE NOT (s = 'x');
 SELECT 'nullable is null', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s IS NULL)) FROM t_lc_nullable WHERE s IS NULL;
+-- The marker of complete dictionaries tells apart the parts with `NULL` and with the default value of the nested type.
+SELECT 'nullable equals default', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s = '')) FROM t_lc_nullable WHERE s = '';
+SELECT 'nullable empty', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE empty(s))) FROM t_lc_nullable WHERE empty(s);
+SELECT 'nullable in', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s IN ('', 'zz'))) FROM t_lc_nullable WHERE s IN ('', 'zz');
+SELECT 'nullable less', arraySort(groupArray(id)), (SELECT sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_nullable WHERE s < 'c')) FROM t_lc_nullable WHERE s < 'c';
 DROP TABLE t_lc_nullable;
