@@ -1,0 +1,19 @@
+no limit	100	0	99
+rows 30	30	0	29
+rows 30 from block 4	30	30	59
+rows 25	20	0	19
+rows 1	10	0	9
+bytes 1	10	0	9
+unbounded rows 30	100	100	4950
+unbounded bytes 1	100	100	4950
+outer rows 30	30	0	29
+inner rows 30	30	0	29
+outer rows 30, inner no limit	30	0	29
+outer bytes 1	10	0	9
+watermark rows 30	30	0	29
+watermark unbounded rows 30	100	100	4950
+partitioned rows 30	30
+partitioned rows 70	70	2
+partitioned unbounded rows 30	100	100	4950
+partitioned watermark unbounded rows 30	100	100	4950
+merged part from block 2	20	20	58

@@ -22,7 +22,18 @@ struct ReadRoundContext
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const SharedHeader output_header;
+    /// Limits of the query and its parent queries, before `max_rows_to_read` and `max_bytes_to_read` are cleared in `query_info`.
+    const std::shared_ptr<const StorageLimitsList> storage_limits;
 };
+
+/// The tightest non-zero `max_rows_to_read` and `max_bytes_to_read` of the query and its parent queries; 0 means no limit.
+struct ReadRoundLimits
+{
+    UInt64 max_rows = 0;
+    UInt64 max_bytes = 0;
+};
+
+ReadRoundLimits getReadRoundLimits(const StorageLimitsList * storage_limits);
 
 ReadRoundContext makeReadRoundContext(
     const MergeTreeData & storage,

@@ -20,4 +20,23 @@ ClassifiedPartitions classifyPartitions(const ReadState & state, const std::map<
     return classification;
 }
 
+ClassifiedPartitions classifyPartitions(
+    const ReadState & state,
+    const std::map<String, Int64> & safe_block_numbers,
+    const std::map<String, Int64> & snapshot_block_numbers,
+    const StreamSettings & stream_settings)
+{
+    auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
+    for (const auto & [partition_id, snapshot_block_number] : snapshot_block_numbers)
+    {
+        if (classification.changed_partitions.contains(partition_id) || state.getPartitionCursor(partition_id).block_number > snapshot_block_number)
+            continue;
+
+        classification.idle_partitions.erase(partition_id);
+        classification.unchanged_partitions.insert(partition_id);
+    }
+
+    return classification;
+}
+
 }

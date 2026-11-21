@@ -175,7 +175,8 @@ Pipe makePlaceholderPipe(const SharedHeader & output_header, Chunk chunk)
 std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const ReadRoundContext & reading_context,
     const ReadState & state,
-    const std::map<String, Int64> & safe_block_numbers)
+    const std::map<String, Int64> & safe_block_numbers,
+    const ClassifiedPartitions & classification)
 {
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
@@ -183,7 +184,6 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto storage_metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
     const auto storage_snapshot = reading_context.storage.getStorageSnapshot(streaming_metadata, context);
-    const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 
     ReadRoundPipeline result;
