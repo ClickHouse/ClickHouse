@@ -164,8 +164,7 @@ public:
 
                 if (!src)
                 {
-                    for (Int64 i = 0; i < size; ++i)
-                        result_column->insertDefault();
+                    result_type->insertManyDefaultsInto(*result_column, static_cast<size_t>(size));
                 }
                 else if (is_const)
                 {
@@ -214,7 +213,7 @@ public:
             else if (has_defaults)
                 result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
             else
-                result_column->insertDefault();
+                result_type->insertDefaultInto(*result_column);
         }
 
         return result_column;

@@ -53,7 +53,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in [1, {}], {} given", getName(), INT64_MAX, offset);
 
             if (offset > bounds.frame_end[i] - bounds.frame_start[i])
-                result.insertDefault();
+                result_type->insertDefaultInto(result);
             else
                 arguments.at(0, bounds.frame_start[i] + offset - 1).appendTo(result);
         }

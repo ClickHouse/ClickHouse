@@ -81,7 +81,7 @@ public:
             else if (arguments.size() > 2)
                 arguments.at(2, row).appendTo(result);
             else
-                result.insertDefault();
+                result_type->insertDefaultInto(result);
         }
 
         if (is_lead)
