@@ -41,6 +41,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+static const std::unordered_set<std::string_view> required_configuration_keys = {"url"};
+static const std::unordered_set<std::string_view> optional_configuration_keys
+    = {"filename", "format", "compression_method", "compression", "structure"};
+
 void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
@@ -227,6 +231,10 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
 
 void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    /// A stored definition keeps loading with the keys it was created with.
+    if (!is_replayed_definition)
+        validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys, {}, /* only_query_overrides= */ true);
+
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(parsed_arguments);

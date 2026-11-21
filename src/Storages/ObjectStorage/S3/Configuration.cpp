@@ -26,6 +26,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
+#include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -215,6 +216,11 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 /// Request settings which the storage definition (arguments or named collection) takes over the `<s3>` config,
 /// see `StorageS3Configuration::getExplicitRequestSettings`.
 static constexpr std::array explicit_request_setting_names = {"upload_checksum_algorithm", "delete_checksum_algorithm"};
+
+static constexpr auto key_value_argument_names = std::to_array<std::string_view>({
+    "access_key_id", "compression_method", "delete_checksum_algorithm", "format", "no_sign",
+    "partition_columns_in_data_file", "partition_strategy", "secret_access_key", "session_token",
+    "storage_class", "storage_class_name", "structure", "upload_checksum_algorithm"});
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
@@ -491,7 +497,7 @@ bool looksLikeBoolArgument(const ASTPtr & arg)
 
 }
 
-void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure, bool is_replayed_definition)
 {
     auto extra_credentials = extractExtraCredentials(args);
 
@@ -513,6 +519,18 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             S3StorageParsedArguments::getSignatures(with_structure));
 
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
+    /// A stored definition keeps loading with the keys it was created with.
+    if (!is_replayed_definition)
+    {
+        for (const auto & [key, _] : key_value_args)
+        {
+            if (std::ranges::find(key_value_argument_names, key) == key_value_argument_names.end())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected key-value argument `{}`: only {} can be passed as key-value arguments",
+                    key, fmt::join(key_value_argument_names, ", "));
+        }
+    }
     if (key_value_args.contains("structure"))
         with_structure = false;
 
@@ -1254,7 +1272,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     S3StorageParsedArguments parsed_arguments;
-    parsed_arguments.fromAST(args, context, with_structure);
+    parsed_arguments.fromAST(args, context, with_structure, is_replayed_definition);
     initializeFromParsedArguments(std::move(parsed_arguments));
     setPaths({url.key});
     chassert(s3_settings != nullptr);

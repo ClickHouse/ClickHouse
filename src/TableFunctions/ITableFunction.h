@@ -132,6 +132,9 @@ public:
     /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
     void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
+    /// For the `AS` table function of a table definition replayed from stored metadata (see `isReplayedTableDefinition`).
+    void setReplayedDefinition(bool value) { is_replayed_table_definition = value; }
+
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
     /// tables through a table function (e.g. the `URL` database): the table is referenced in the
@@ -182,6 +185,8 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+    bool is_replayed_table_definition = false;
+
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
