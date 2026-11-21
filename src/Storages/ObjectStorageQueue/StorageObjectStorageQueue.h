@@ -155,6 +155,7 @@ private:
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
+    UInt64 idle_unregister_threshold_ms TSA_GUARDED_BY(mutex);
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);

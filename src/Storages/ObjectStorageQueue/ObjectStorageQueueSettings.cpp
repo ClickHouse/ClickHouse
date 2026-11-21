@@ -43,6 +43,7 @@ namespace ErrorCodes
     DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
     DECLARE(UInt64, polling_max_timeout_ms, 10 * 60 * 1000, "Maximum timeout before next polling", 0) \
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
+    DECLARE(UInt64, idle_unregister_threshold_ms, 5000, "Reschedule interval above which the table unregisters itself from the active-processors registry until the next poll cycle", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(Bool, use_persistent_processing_nodes, true, "This setting is deprecated", 0) \
