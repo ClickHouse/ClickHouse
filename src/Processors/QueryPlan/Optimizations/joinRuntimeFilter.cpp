@@ -221,13 +221,10 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
-/// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer or an `Enum` to an integer
-/// type, which wraps around, or a number to a float. Arrays, tuples, maps and `QBit`s are checked element by element,
-/// paired as `CAST` pairs them. A cast built by `ActionsDAG::addCast` clamps a date out of the range of its target type, so
-/// with `clamps_dates` a conversion between date types cannot throw either.
+/// Whether casting `from` to `to` cannot throw. Integer-to-integer conversions wrap around, conversions to a float round,
+/// and a cast built by `ActionsDAG::addCast` clamps an out-of-range date (`clamps_dates`).
 static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to, bool clamps_dates)
 {
-    /// A NULL cannot be converted to a type that is not `Nullable`.
     if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
         return false;
 
@@ -259,7 +256,7 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
         return true;
     }
 
-    /// Not left to `canBeSafelyCast`, which pairs the elements of a tuple in a `Map` by position and takes any `QBit` cast as safe.
+    /// `canBeSafelyCast` pairs tuples inside a `Map` by position and accepts any `QBit` cast.
     const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
     const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
     if (from_map && to_map)
@@ -280,15 +277,13 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
     if (clamps_dates && isDateOrDate32OrDateTimeOrDateTime64(from_nested) && isDateOrDate32OrDateTimeOrDateTime64(to_nested))
         return true;
 
-    /// A number converted to a float is rounded, never rejected.
     if (isFloat(to_nested) && (isInteger(from_nested) || isFloat(from_nested)))
         return true;
 
     return (isInteger(from_nested) || isEnum(from_nested)) && isInteger(to_nested);
 }
 
-/// A cast, or a conversion function to an integer type (`toInt32`, ...), whose conversion cannot throw.
-/// A cast written in the query follows `date_time_overflow_behavior`, so dates are not exempt here.
+/// A cast written in the query follows `date_time_overflow_behavior`, so it may throw on a date.
 static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
 {
     static constexpr std::string_view integer_conversions[] = {
@@ -304,8 +299,7 @@ static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
     return canCastWithoutThrowing(node.children.front()->result_type, node.result_type, /*clamps_dates=*/false);
 }
 
-/// Whether the key can be computed on any row without throwing. Its runtime filter computes it below the steps that
-/// remove rows before the join, while the join computes it only on the rows it receives.
+/// A runtime filter computes the key also on rows that are removed before the join.
 static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
 {
     return allReachableNodes({key}, [](const ActionsDAG::Node * node)
@@ -509,9 +503,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
-    /// For each key pair, in the order `preCalculateKeys` returns the keys: whether its probe key can throw, and its type,
-    /// both as the query wrote it. `preCalculateKeys` may cast the key to the common type (`String` vs `FixedString`
-    /// keys, also as tuple elements), and this cast is checked below together with the cast of the filter itself.
+    /// Per key pair in `preCalculateKeys` order, as written in the query, before it casts keys to a common type.
     VectorWithMemoryTracking<bool> probe_key_can_throw;
     DataTypes probe_key_types;
 
@@ -600,8 +592,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    /// A key that can throw gets no runtime filter, see `canComputeKeyOnAnyRow`. The other keys still get theirs, the
-    /// filter is an over-approximation, but not for LEFT ANTI JOIN, whose `NOT IN` filter has to cover every key.
+    /// A filter on a subset of the keys over-approximates, except for LEFT ANTI JOIN, whose `NOT IN` filter needs every key.
     if (std::ranges::all_of(probe_key_can_throw, std::identity{})
         || (check_left_does_not_contain && std::ranges::any_of(probe_key_can_throw, std::identity{})))
         return false;
@@ -708,8 +699,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    /// The probe key as written is cast to the common type by `ActionsDAG::addCast`, in `preCalculateKeys` or in the filter
-    /// itself (see `createRuntimeFilterCondition`).
+    /// Both `preCalculateKeys` and `createRuntimeFilterCondition` cast the key to the common type with `ActionsDAG::addCast`.
     for (size_t i = common_types.size(); i-- > 0;)
     {
         if (canCastWithoutThrowing(join_key_probe_types_as_written[i], common_types[i], /*clamps_dates=*/true))
