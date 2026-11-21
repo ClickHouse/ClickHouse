@@ -7035,7 +7035,7 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     if (indexes && indexes->use_skip_indexes && !indexes->skip_indexes.skip_index_for_top_k_filtering
         && settings[Setting::use_skip_indexes_for_top_k] && !isFloat(removeLowCardinality(top_k_filter_info->data_type)))
     {
-        std::unordered_set<std::string> ignored_index_names;
+        std::unordered_set<std::string> ignored_index_names; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `parseIdentifiersOrStringLiteralsToSet`, which returns std::unordered_set
         if (settings[Setting::ignore_data_skipping_indexes].changed)
             ignored_index_names = parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indexes].toString(), settings);
 
