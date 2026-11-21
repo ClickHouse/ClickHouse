@@ -272,6 +272,9 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     [[nodiscard]] virtual std::optional<StorageType> getStorageType() const = 0;
 
+    /// The S3 endpoint that the catalog sets for all its tables, empty if it sets none.
+    [[nodiscard]] virtual std::string getStorageEndpoint() const { return ""; }
+
     [[nodiscard]] virtual std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
         const std::string & table_name) const;

@@ -823,15 +823,21 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
     }
 }
 
-std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const
+std::string DatabaseDataLake::getStorageEndpointForTable(
+    const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata) const
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
-    auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
-    auto table_url = endpoint_from_settings.empty()
+    /// The endpoint that the catalog sets for all its tables is the last resort: the one that came with the table
+    /// takes precedence, as in Iceberg Java and PyIceberg, and `storage_endpoint` takes precedence over both.
+    auto endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
+    if (endpoint.empty() && table_metadata.getEndpoint().empty() && table_metadata.isS3Location())
+        endpoint = catalog.getStorageEndpoint();
+
+    auto table_url = endpoint.empty()
         ? table_metadata.getLocation()
-        : table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+        : table_metadata.getLocationWithEndpoint(endpoint, settings[DatabaseDataLakeSetting::storage_uri_style]);
     /// Only the S3 configuration parses this as a URI and decodes the key from it, the others take the path verbatim.
     if (table_metadata.isS3Location())
         return DataLake::encodeLocationForURI(table_url);
@@ -867,7 +873,7 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
 
     if (table_metadata.hasLocation())
     {
-        auto table_endpoint = getStorageEndpointForTable(table_metadata);
+        auto table_endpoint = getStorageEndpointForTable(catalog, table_metadata);
         LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
         if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
             table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
@@ -2039,7 +2045,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto storage_engine_arguments = storage->engine->arguments;
     if (table_metadata.isDefaultReadableTable())
     {
-        auto table_endpoint = getStorageEndpointForTable(table_metadata);
+        auto table_endpoint = getStorageEndpointForTable(*catalog, table_metadata);
         if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
             table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
 
@@ -2426,7 +2432,7 @@ The following settings are supported:
 | `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `true`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
-| `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
+| `storage_endpoint`      | Endpoint URL for the underlying storage. If it is not set, an S3 table uses the endpoint that the catalog vends with the table (with `vended_credentials`), or else the `s3.endpoint` from the `overrides` or `defaults` of the Iceberg REST catalog configuration. |
 | `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
