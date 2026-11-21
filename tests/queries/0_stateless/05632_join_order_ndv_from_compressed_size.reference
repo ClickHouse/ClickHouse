@@ -1,0 +1,7 @@
+Join on a column with 16 distinct values: the selectivity is far above that of a unique key, so the join is much larger than its inputs.
+1
+0
+The same with Delta: no estimate, the join is taken as a join with a unique key.
+1
+Join of a skewed foreign key with a unique key without an estimate: the join is as large as the foreign key side.
+100.00 thousand

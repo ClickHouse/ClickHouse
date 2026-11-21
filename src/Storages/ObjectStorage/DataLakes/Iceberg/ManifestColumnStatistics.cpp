@@ -12,11 +12,19 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/Statistics/DistinctValuesFromCompressedSize.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+
+namespace DB::Setting
+{
+extern const SettingsBool estimate_distinct_values_from_metadata;
+}
 
 namespace DB::Iceberg
 {
@@ -85,7 +93,8 @@ ManifestColumnStatistics::ManifestColumnStatistics(
     ContextPtr context,
     const std::unordered_map<Int32, UInt64> & table_distinct_values)
     : schema_processor(schema_processor_)
-    , statistics_builder(std::move(context))
+    , statistics_builder(context)
+    , estimate_distinct_values_from_compressed_size(context->getSettingsRef()[Setting::estimate_distinct_values_from_metadata])
 {
     for (const auto & name : column_names)
     {
@@ -171,6 +180,8 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
         const ColumnInfo * info = info_it != parsed_entry.columns_infos.end() ? &info_it->second : nullptr;
         if (info && info->nulls_count && *info->nulls_count >= 0 && static_cast<UInt64>(*info->nulls_count) <= rows)
             metrics.nulls = static_cast<UInt64>(*info->nulls_count);
+        if (info && info->bytes_size && *info->bytes_size > 0)
+            metrics.compressed_bytes = static_cast<UInt64>(*info->bytes_size);
     }
 
     if (entry.common_partition_specification)
@@ -208,12 +219,18 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
     return file_metrics;
 }
 
-void ManifestColumnStatistics::addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics)
+void ManifestColumnStatistics::addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics, UInt64 rows)
 {
     if (!metrics.identity_partition_value)
         inputs.identity_partition_known = false;
     else if (!metrics.identity_partition_value->isNull())
         inputs.identity_partition_values.insert(*metrics.identity_partition_value);
+
+    if (metrics.compressed_bytes)
+    {
+        inputs.rows_with_compressed_size += rows;
+        inputs.compressed_bytes += *metrics.compressed_bytes;
+    }
 }
 
 void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file)
@@ -232,7 +249,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     for (size_t i = 0; i < targets.size(); ++i)
     {
         const auto & metrics = file_metrics[i];
-        addToDistinctValuesInputs(distinct_values_inputs[i], metrics);
+        addToDistinctValuesInputs(distinct_values_inputs[i], metrics, rows);
         /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic. With the
         /// bounds alone, the merged NULL count misses its NULLs, which the statistics record (see
         /// `StatisticsBasic::nullCountCoversAllRows`), so that the NULL fraction is unknown while the bounds stay valid.
@@ -241,6 +258,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
         /// from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
+        distinct_values_inputs[i].has_statistics = true;
         statistics_builder.addStatistics(
             targets[i].name,
             ColumnStatistics::createBasicFromSummary(targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls));
@@ -293,6 +311,25 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
     statistics_builder.subtractDeletedRows(deleted_rows);
+
+    /// The NULL counts and the bounds are optional in a manifest independently of the sizes of the columns. A column
+    /// whose files have none of them has no statistics to keep a number of distinct values, although its sizes give
+    /// one (see `estimate_distinct_values_from_metadata`). It gets a summary without the NULL count and the bounds
+    /// of the rows whose sizes are known, and the rule of the sizes below sets its number of distinct values. Only
+    /// with an estimate, so that a column without one stays without statistics.
+    if (estimate_distinct_values_from_compressed_size)
+    {
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            const auto & inputs = distinct_values_inputs[i];
+            if (inputs.has_statistics || !estimateDistinctValuesFromCompressedSize(inputs.rows_with_compressed_size, inputs.compressed_bytes))
+                continue;
+            statistics_builder.addStatistics(
+                targets[i].name,
+                ColumnStatistics::createBasicFromSummary(targets[i].storage_type, inputs.rows_with_compressed_size, Field(), Field(), std::nullopt));
+        }
+    }
+
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
@@ -313,7 +350,20 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         const auto & distinct_value_input = distinct_values_inputs[i];
         /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
         if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, live_rows))
+        {
             statistics_builder.setCardinality(col_name, *distinct_values);
+        }
+        /// The last rule, which is not a measurement: see `estimate_distinct_values_from_metadata`.
+        else if (estimate_distinct_values_from_compressed_size)
+        {
+            const auto from_size = estimateDistinctValuesFromCompressedSize(
+                distinct_value_input.rows_with_compressed_size, distinct_value_input.compressed_bytes);
+            if (from_size)
+            {
+                statistics_builder.setCardinality(col_name, std::min(*from_size, std::max<UInt64>(live_rows, 1)));
+                estimate.distinct_values_from_metadata.insert(col_name);
+            }
+        }
     }
     estimate.estimator = estimator;
 }
