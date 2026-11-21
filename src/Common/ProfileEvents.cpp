@@ -1083,6 +1083,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheBackgroundEvictedBytes, "Number of bytes evicted by background thread", ValueType::Number) \
     M(FilesystemCacheIdleClientEvictions, "Number of times all cache entries of an idle distributed-cache client (`user_id`) were purged because no access happened within `idle_client_ttl_sec`.", ValueType::Number) \
     M(FilesystemCacheBackgroundRemovedInvalidatedEntries, "Number of invalidated (lazily-removed) priority queue entries purged by the background cleanup thread", ValueType::Number) \
+    M(FilesystemCachePriorityIncreaseBufferFull, "Number of filesystem cache hits which found their buffer of priority increases full. Such a hit applies the buffer if the priority queue is not locked, and otherwise its increase is lost (see the `lru_batch_priority_increase_buffer_size` cache setting)", ValueType::Number) \
+    M(FilesystemCacheAppliedPriorityIncreases, "Number of filesystem cache priority increases applied to the priority queue in batches, when the `lru_batch_priority_increase` cache setting is enabled", ValueType::Number) \
     M(FilesystemCacheClientsMapLockWaitMicroseconds, "Time spent waiting on a contended per-client (`user_id`) usage map shard lock in the overcommit cache policy", ValueType::Microseconds) \
     M(FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, "Time for which the background thread executed the invalidated priority queue entries cleanup job", ValueType::Milliseconds) \
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \

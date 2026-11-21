@@ -286,6 +286,21 @@ const std::vector<Chart> & getCharts()
             },
         },
         {
+            "Buffered priority increases (per second)",
+            {
+                {"Applied", "sum(ProfileEvent_FilesystemCacheAppliedPriorityIncreases)"},
+                {"BufferFull", "sum(ProfileEvent_FilesystemCachePriorityIncreaseBufferFull)"},
+            },
+        },
+        {
+            "Pending priority increases",
+            {
+                {"Pending", "sumIf(value, metric = 'FilesystemCachePendingPriorityIncreases')"},
+            },
+            "asynchronous_metric_log",
+            "metric IN ('FilesystemCachePendingPriorityIncreases')",
+        },
+        {
             "Background jobs (per second)",
             {
                 {"FreeSpaceKeepingRuns", "sum(ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun)"},

@@ -4857,3 +4857,149 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
+
+TEST_F(FileCacheTest, LRUPendingPriorityIncreases)
+{
+    /// A hit is applied to the queue later, in a batch. Check that it still protects the segment
+    /// from eviction, and that a hit pending for an invalidated segment does no harm.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string cache_path = caches_dir / "cache_pending_priority_increases" / "";
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+
+    auto cache = std::make_shared<DB::FileCache>("pending_priority_increases", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+
+    std::vector<DB::FileCacheKey> keys;
+    for (size_t i = 0; i < 6; ++i)
+        keys.push_back(DB::FileCacheKey::fromPath("pending_key_" + std::to_string(i)));
+
+    auto add = [&](size_t i)
+    {
+        auto holder = cache->getOrSet(keys[i], 0, 1, file_size, {}, 0, user);
+        auto segment = holder->getSingleFileSegment();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(1, 1000, failure_reason));
+        download(cache_path, *segment);
+        FileSegment::complete(std::move(segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+    };
+    auto hit = [&](size_t i)
+    {
+        auto holder = cache->getOrSet(keys[i], 0, 1, file_size, {}, 0, user);
+        ASSERT_EQ(holder->front().state(), State::DOWNLOADED);
+        holder->front().increasePriority();
+    };
+    auto cached = [&](size_t i)
+    {
+        const auto infos = cache->getFileSegmentInfos(user.user_id);
+        return std::ranges::any_of(infos, [&](const auto & info) { return info.key == keys[i]; });
+    };
+
+    for (size_t i = 0; i < 4; ++i)
+        add(i);
+
+    /// More hits than a buffer holds: the hit which finds it full applies it.
+    for (size_t i = 0; i < 40; ++i)
+        hit(0);
+
+    hit(1);
+    cache->removeFileSegment(keys[1], 0, user.user_id);
+
+    add(4);
+    add(5);
+
+    ASSERT_TRUE(cached(0));
+    ASSERT_FALSE(cached(1));
+    ASSERT_FALSE(cached(2));
+    ASSERT_TRUE(cached(3));
+    ASSERT_TRUE(cached(4));
+    ASSERT_TRUE(cached(5));
+
+    cache.reset();
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+}
+
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCachePriorityIncreaseBufferFull;
+    extern const Event FilesystemCacheAppliedPriorityIncreases;
+}
+
+TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
+{
+    /// A queue without a cache, so that no cleanup task applies the increases while the test checks them.
+    ServerUUID::setRandomForUnitTests();
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10);
+    priority.setBatchPriorityIncreaseSettings({.enabled = true, .buffer_size = 2, .max_batch_size = 64});
+    size_t notifications = 0;
+    priority.setApplyPriorityIncreasesNotifier([&] { ++notifications; });
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_pending_priority_increases_buffer";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    auto key = DB::FileCacheKey::fromPath("pending_buffer_key");
+    auto origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+    CacheStateGuard state_guard;
+
+    std::vector<IFileCachePriority::IteratorPtr> iterators;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        auto state_lock = state_guard.lock();
+        iterators.push_back(priority.add(key_metadata, i * 10, 10, &state_lock));
+    }
+
+    auto queue_offsets = [&]
+    {
+        auto lock = priority.getPriorityGuard().readLock();
+        std::vector<size_t> offsets;
+        for (const auto & entry : priority.queue)
+            offsets.push_back(entry->offset);
+        return offsets;
+    };
+    auto hit = [&](size_t i) { ASSERT_TRUE(priority.tryIncreasePriority(*iterators[i], true, state_guard)); };
+
+    auto & events = ProfileEvents::global_counters;
+    const auto buffer_full_before = events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull];
+    const auto applied_before = events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases];
+
+    /// The first record fills the ring of two slots to half, which asks for the records to be applied.
+    hit(0);
+    hit(1);
+    ASSERT_EQ(notifications, 1u);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 2u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+
+    /// The ring is full: the hit applies the ring and itself.
+    hit(2);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull], buffer_full_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases], applied_before + 3);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{30, 0, 10, 20}));
+
+    /// The emptied ring fills to half again.
+    hit(3);
+    ASSERT_EQ(notifications, 2u);
+    priority.applyAllPendingPriorityIncreases();
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+
+    hit(0);
+    ASSERT_EQ(notifications, 3u);
+}

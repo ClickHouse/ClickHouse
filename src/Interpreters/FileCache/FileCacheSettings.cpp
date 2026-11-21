@@ -42,6 +42,9 @@ namespace ErrorCodes
     DECLARE(Bool, cache_on_write_operations, false, "Enables write-through cache (cache on INSERT and MERGE)", 0) \
     DECLARE(FileCachePolicy, cache_policy, FILECACHE_DEFAULT_CACHE_POLICY, "Cache eviction policy", 0) \
     DECLARE(Double, slru_size_ratio, FILECACHE_DEFAULT_SLRU_RATIO, "SLRU cache policy size ratio of protected to probationary elements", 0) \
+    DECLARE(NonZeroUInt64, lru_batch_priority_increase_buffer_size, FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_BUFFER_SIZE, "Capacity of each buffer of priority increases when `lru_batch_priority_increase` is enabled, from 2 to 256. Each priority queue has as many buffers as CPU cores, and a thread always adds to the same one. A cache hit which finds its buffer full applies it if the priority queue is not locked, and otherwise its increase is lost. Changes take effect after a server restart", 0) \
+    DECLARE(NonZeroUInt64, lru_batch_priority_increase_max_batch_size, FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE, "Maximum number of buffered priority increases which the background cleanup task or an insert applies under one lock of the priority queue, when `lru_batch_priority_increase` is enabled, from 1 to 256. A cache hit which finds its buffer full applies that whole buffer", 0) \
+    DECLARE(Bool, lru_batch_priority_increase, true, "On a cache hit, record the priority increase of the file segment and apply recorded increases to the priority queue in batches, instead of locking the queue on every hit. If false, every hit tries to lock the queue and the increase is lost when the queue is busy", 0) \
     DECLARE(UInt64, background_download_threads, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS, "Number of background download threads. Value 0 disables background download", 0) \
     DECLARE(UInt64, background_download_queue_size_limit, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT, "Maximum number of file segments in the background download queue. Value 0 means no limit. Background download is disabled when background_download_threads is 0", 0) \
     DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Alignment-rounded prefetch threshold for an already-started segment, not a cap on total segment size. Below this size, background download fills up to the value rounded up to boundary_alignment. Once downloaded_size reaches it, background download continues up to downloaded_size rounded up to boundary_alignment", 0) \
@@ -277,6 +280,17 @@ void FileCacheSettings::validate()
 
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
+    if (settings[FileCacheSetting::lru_batch_priority_increase_buffer_size] < FILECACHE_MIN_BATCH_PRIORITY_INCREASE_BUFFER_SIZE
+        || settings[FileCacheSetting::lru_batch_priority_increase_buffer_size] > FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`lru_batch_priority_increase_buffer_size` must be between {} and {}",
+            FILECACHE_MIN_BATCH_PRIORITY_INCREASE_BUFFER_SIZE, FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE);
+
+    if (settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size] > FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`lru_batch_priority_increase_max_batch_size` must not exceed {}",
+            FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE);
 
     if (settings[FileCacheSetting::use_split_cache] && isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
         throw Exception(

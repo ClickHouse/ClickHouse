@@ -4,6 +4,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
 #include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
@@ -411,10 +412,33 @@ public:
         invalidate_notifier = on_invalidate;
     }
 
+    struct BatchPriorityIncreaseSettings
+    {
+        bool enabled = false;
+        size_t buffer_size = FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_BUFFER_SIZE;
+        size_t max_batch_size = FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE;
+    };
+
+    /// Wrappers propagate it down.
+    virtual void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings)
+    {
+        batch_priority_increase_enabled.store(settings.enabled, std::memory_order_relaxed);
+        batch_priority_increase_buffer_size.store(settings.buffer_size, std::memory_order_relaxed);
+        batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
+    }
+
+    /// Hook fired when pending priority increases should be applied. Set once on startup. Wrappers propagate it down.
+    virtual void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) { apply_priority_increases_notifier = notifier; }
+
     /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
     /// under its owning queue's write lock so cleanup serializes with foreground operations.
     /// Returns the number removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
+
+    virtual void applyAllPendingPriorityIncreases() = 0;
+
+    /// The number of priority increases recorded and not applied yet. Repeated hits of a thread on one entry make one.
+    virtual size_t getPendingPriorityIncreasesApprox() const = 0;
 
     struct UsageStat
     {
@@ -534,6 +558,11 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+
+    std::atomic<bool> batch_priority_increase_enabled = false;
+    std::atomic<size_t> batch_priority_increase_buffer_size = BatchPriorityIncreaseSettings{}.buffer_size;
+    std::atomic<size_t> batch_priority_increase_max_batch_size = BatchPriorityIncreaseSettings{}.max_batch_size;
+    std::function<void()> apply_priority_increases_notifier;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

@@ -222,6 +222,9 @@ public:
 
     size_t getFileSegmentsNum() const;
 
+    /// For `system.asynchronous_metrics`.
+    size_t getPendingPriorityIncreasesApprox() const;
+
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
     size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
@@ -360,6 +363,8 @@ private:
     IFileCachePriority::SharedEvictionCursor reserve_cursor{IFileCachePriority::EvictionCursor::Reserve};
 
     std::mutex apply_settings_mutex;
+
+    static IFileCachePriority::BatchPriorityIncreaseSettings getBatchPriorityIncreaseSettings(const FileCacheSettings & settings);
 
     FileCachePriorityPtr main_priority;
 
