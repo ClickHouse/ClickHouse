@@ -15,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Nothing notifies `replica_seen_cv` when the query is cancelled, so the wait is done in steps.
+/// Nothing notifies `replica_seen_cv` on cancellation, so the wait is done in steps.
 constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
 
 size_t getTaskWeight(const ObjectInfoPtr & object_info)
@@ -56,7 +56,7 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
 {
 }
 
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica, const std::atomic_bool * stop_waiting)
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
 
@@ -69,7 +69,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
         return file;
 
     // 3. Process unprocessed files if iterator is exhausted
-    return getAnyUnprocessedFile(number_of_current_replica);
+    return getAnyUnprocessedFile(number_of_current_replica, stop_waiting);
 }
 
 size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path)
@@ -212,7 +212,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
     return {};
 }
 
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica, const std::atomic_bool * stop_waiting)
 {
     std::unique_lock lock(mutex);
 
@@ -248,7 +248,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     /// - returns nothing when no unprocessed files are left, or when the files that are left will be processed
     ///   by their replicas.
     /// - throws when the query is cancelled or exceeds `max_execution_time`; returns nothing with
-    ///   `timeout_overflow_mode = 'break'`.
+    ///   `timeout_overflow_mode = 'break'`, or when `stop_waiting` is set.
     /// Otherwise, when there are files of replicas that haven't asked for tasks yet, it waits until a new replica
     /// asks for tasks or until `wait_for_owner` passes, and then checks again.
     while (!unprocessed_files.empty())
@@ -318,7 +318,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         if (!should_wait)
             break;
 
-        if (query_status && !query_status->checkTimeLimit())
+        if ((query_status && !query_status->checkTimeLimit()) || (stop_waiting && *stop_waiting))
             break;
 
         replica_seen_cv.wait_until(lock, std::min(*stealing_allowed_since, std::chrono::steady_clock::now() + cancellation_check_interval));

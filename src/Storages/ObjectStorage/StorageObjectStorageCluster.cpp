@@ -608,14 +608,14 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context->getProcessListElementSafe());
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
                 sleepForSeconds(10);
             });
 
-            auto task = task_distributor->getNextTask(number_of_current_replica);
+            auto task = task_distributor->getNextTask(number_of_current_replica, &stop_waiting);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();

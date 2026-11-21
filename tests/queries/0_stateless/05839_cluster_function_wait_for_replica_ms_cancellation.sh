@@ -27,6 +27,16 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
     SETTINGS cluster_function_wait_for_replica_ms = 60000, max_execution_time = 2, timeout_overflow_mode = 'break', log_comment = '05839_break'
     FORMAT Null"
 
+# Another branch of the query fails, or satisfies the LIMIT, while the replica waits.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+    SELECT sum(x) FROM (SELECT x FROM ${SOURCE} UNION ALL SELECT throwIf(number = 9) + sleepEachRow(0.2) FROM numbers(10))
+    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, max_block_size = 1, log_comment = '05839_sibling'" 2>/dev/null
+
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+    SELECT x FROM (SELECT x FROM ${SOURCE} WHERE x > 100 UNION ALL SELECT number + sleepEachRow(0.2) FROM numbers(10)) LIMIT 10
+    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, max_block_size = 1, log_comment = '05839_limit'
+    FORMAT Null"
+
 KILL_QUERY_ID="${CLICKHOUSE_DATABASE}_05839_kill"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query_id "${KILL_QUERY_ID}" --query "
     SELECT count() FROM ${SOURCE} SETTINGS cluster_function_wait_for_replica_ms = 60000, log_comment = '05839_kill'" >/dev/null 2>&1 &
@@ -45,5 +55,5 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT log_comment, exception_code, if(log_comment = '05839_wait', query_duration_ms >= 1000, query_duration_ms < 30000)
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type != 'QueryStart'
-        AND log_comment IN ('05839_wait', '05839_throw', '05839_break', '05839_kill')
+        AND log_comment IN ('05839_wait', '05839_throw', '05839_break', '05839_sibling', '05839_limit', '05839_kill')
     ORDER BY log_comment"
