@@ -559,6 +559,80 @@ struct integer<Bits, Signed>::_impl
         return is_negative(n) ? integer<B, S>(operator_unary_minus(n)) : n;
     }
 
+    /// Whether the value equals its `count` lowest items, sign-extended for a signed type or zero-extended for an unsigned one.
+    template <unsigned count>
+    constexpr static bool fits_in_lowest_items(const integer<Bits, Signed> & n) noexcept
+    {
+        base_type extension = 0;
+        if constexpr (std::is_same_v<Signed, signed>)
+            extension = static_cast<signed_base_type>(n.items[little(count - 1)]) < 0 ? base_type(-1) : base_type(0);
+
+        base_type mismatch = 0;
+        for (unsigned i = count; i < item_count; ++i)
+            mismatch |= n.items[little(i)] ^ extension;
+        return mismatch == 0;
+    }
+
+    /// An x87 extended or IEEE binary128 `long double` holds every 64-bit integer exactly and in one representation, so for a value
+    /// fitting in the lowest item the general conversion equals `static_cast<long double>` of the item and a direct one rounds the same.
+    static constexpr bool lowest_item_converts_directly
+        = std::numeric_limits<long double>::digits == 64 || std::numeric_limits<long double>::digits == 113;
+
+    template <typename T>
+    constexpr static T lowest_item_to_floating_point(const integer<Bits, Signed> & n) noexcept
+    {
+        if constexpr (std::is_same_v<Signed, signed>)
+            return static_cast<T>(static_cast<signed_base_type>(n.items[little(0)]));
+        else
+            return static_cast<T>(n.items[little(0)]);
+    }
+
+    /// With such a `long double`, the general conversion of a two-item value rounds only once, because `res * (2^64 - 1) + res`
+    /// is exactly `res * 2^64` in its loop: the exact sum of both items, rounded to nearest, gives the same result.
+    static constexpr bool two_items_convert_in_one_rounding = item_count == 2 && lowest_item_converts_directly;
+
+    constexpr static long double two_items_to_long_double(const integer<Bits, Signed> & n) noexcept
+    {
+        using HighItem = std::conditional_t<std::is_same_v<Signed, signed>, signed_base_type, base_type>;
+        return static_cast<long double>(static_cast<HighItem>(n.items[little(1)])) * 0x1p64L
+            + static_cast<long double>(n.items[little(0)]);
+    }
+
+    /// x87 converts two items in a few instructions, which costs less than a branch on the value that mixed values mispredict.
+    /// A wider value that fits in two items converts the same way: the higher items of its magnitude are zero, so the general
+    /// conversion rounds it once too.
+    static constexpr bool x87_converts_two_items = item_count >= 2 && std::numeric_limits<long double>::digits == 64;
+
+    /// With x87, every item below the highest nonzero item and the one under it is less than half a unit in the last place of
+    /// the general conversion's result, so an unsigned value converts as those two items rounded once, times 2^64 per lower item.
+    static constexpr double item_weights[] = {0x1p0, 0x1p64, 0x1p128, 0x1p192, 0x1p256, 0x1p320, 0x1p384, 0x1p448};
+
+    static constexpr bool x87_converts_highest_two_items = x87_converts_two_items && item_count > 2
+        && item_count <= sizeof(item_weights) / sizeof(item_weights[0]) + 1 && std::is_same_v<Signed, unsigned>;
+
+    constexpr static long double highest_two_items_to_long_double(const integer<Bits, Signed> & n) noexcept
+    {
+        /// The number of items below the highest two, counted without a branch.
+        unsigned position = 0;
+        base_type higher = 0;
+        for (unsigned i = item_count - 1; i >= 2; --i)
+        {
+            higher |= n.items[little(i)];
+            position += higher != 0;
+        }
+
+        return (static_cast<long double>(n.items[little(position + 1)]) * 0x1p64L + static_cast<long double>(n.items[little(position)]))
+            * static_cast<long double>(item_weights[position]);
+    }
+
+    constexpr static bool use_lowest_item(const integer<Bits, Signed> & n) noexcept
+    {
+        if constexpr (x87_converts_two_items)
+            return false;
+        else
+            return lowest_item_converts_directly && fits_in_lowest_items<1>(n);
+    }
+
     template <typename T>
     constexpr static auto to_Integral(T f) noexcept
     {
@@ -1716,6 +1790,19 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator long double() const noexcept
 {
+    if (_impl::use_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<long double>(*this);
+
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return _impl::two_items_to_long_double(*this);
+
+    if constexpr (_impl::x87_converts_two_items)
+        if (_impl::template fits_in_lowest_items<2>(*this))
+            return _impl::two_items_to_long_double(*this);
+
+    if constexpr (_impl::x87_converts_highest_two_items)
+        return _impl::highest_two_items_to_long_double(*this);
+
     if (_impl::operator_eq(*this, 0))
         return 0;
 
@@ -1741,12 +1828,24 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
+    if (_impl::use_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<double>(*this);
+
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return static_cast<double>(_impl::two_items_to_long_double(*this));
+
     return static_cast<double>(static_cast<long double>(*this));
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
+    if (_impl::use_lowest_item(*this))
+        return _impl::template lowest_item_to_floating_point<float>(*this);
+
+    if constexpr (_impl::two_items_convert_in_one_rounding)
+        return static_cast<float>(_impl::two_items_to_long_double(*this));
+
     return static_cast<float>(static_cast<long double>(*this));
 }
 
