@@ -19,9 +19,18 @@ $CLICKHOUSE_CLIENT $SETTINGS -q "
     WHERE explain ILIKE '%Flush on order key change%'
 "
 
+# The aggregation over an unbounded `STREAM` is allowed only if every group is emitted as soon as the time changes.
+$CLICKHOUSE_CLIENT $SETTINGS -q "
+    SELECT x, count() FROM t_stream_by_time STREAM GROUP BY x; -- { serverError ILLEGAL_STREAM }
+    SELECT toSecond(nowInBlock()) AS t, count() FROM t_stream_by_time STREAM GROUP BY t; -- { serverError ILLEGAL_STREAM }
+    SELECT count() FROM t_stream_by_time STREAM; -- { serverError ILLEGAL_STREAM }
+    SELECT nowInBlock() AS t, count() FROM t_stream_by_time STREAM GROUP BY t WITH TOTALS; -- { serverError ILLEGAL_STREAM }
+    SELECT nowInBlock() AS t, count() FROM t_stream_by_time STREAM GROUP BY t SETTINGS optimize_aggregation_in_order_by_current_time = 0; -- { serverError ILLEGAL_STREAM }
+"
+
 # Two groups are complete after the time changed twice: the query finishes while the rows are being inserted.
 $CLICKHOUSE_CLIENT $SETTINGS --max_threads 8 --max_execution_time 300 -q "
-    SELECT count(), min(c) > 0 FROM (SELECT nowInBlock() AS t, count() AS c FROM t_stream_by_time STREAM GROUP BY t LIMIT 2)
+    SELECT count() > 0 FROM t_stream_by_time STREAM GROUP BY nowInBlock() HAVING count() > 0 LIMIT 2
 " &
 query_pid=$!
 

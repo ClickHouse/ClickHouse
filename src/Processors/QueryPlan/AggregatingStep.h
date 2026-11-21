@@ -136,7 +136,12 @@ public:
         flush_on_order_key_change = true;
         flush_on_order_key_change_single_stream = unbounded_input;
     }
-    bool isFlushOnOrderKeyChange() const { return flush_on_order_key_change; }
+    [[nodiscard]] bool isFlushOnOrderKeyChange() const { return flush_on_order_key_change; }
+    /// Set by the planner of streaming queries: the input never ends, so the aggregation can return anything only
+    /// if every group is emitted at the change of the order key (see `enableFlushOnOrderKeyChange`). If the plan
+    /// optimization did not turn it on, building the pipeline throws an exception instead of running a query that
+    /// accumulates the groups indefinitely and returns nothing.
+    void requireFlushOnOrderKeyChange() { flush_on_order_key_change_required = true; }
     /// Set by the plan optimization when the input is read in order of the argument of the single `uniqExact`.
     void applyUniqExactInOrder(SortDescription sort_description, size_t layer_prefix)
     {
@@ -272,6 +277,8 @@ private:
     /// See `enableFlushOnOrderKeyChange`.
     bool flush_on_order_key_change = false;
     bool flush_on_order_key_change_single_stream = false;
+    /// See `requireFlushOnOrderKeyChange`.
+    bool flush_on_order_key_change_required = false;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     bool should_produce_results_in_order_of_bucket_number;

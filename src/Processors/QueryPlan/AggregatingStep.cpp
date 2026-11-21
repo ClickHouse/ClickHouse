@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STREAM;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -598,6 +599,12 @@ void AggregatingStep::buildRadixUniqExact(
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    if (flush_on_order_key_change_required && !flush_on_order_key_change)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+            "GROUP BY, HAVING or an aggregate function is supported over an unbounded STREAM only if a key of GROUP BY "
+            "is the current time computed for every block (nowInBlock, nowInBlock64, or a monotonic function of them) "
+            "and the setting optimize_aggregation_in_order_by_current_time is enabled");
+
     size_t new_merge_threads = merge_threads;
     size_t new_temporary_data_merge_threads = temporary_data_merge_threads;
     updateThreadsValues(new_merge_threads, new_temporary_data_merge_threads, params, settings);
@@ -1813,6 +1820,7 @@ QueryPlanStepPtr AggregatingStep::clone() const
     step->order_decided_before_projections = order_decided_before_projections;
     step->flush_on_order_key_change = flush_on_order_key_change;
     step->flush_on_order_key_change_single_stream = flush_on_order_key_change_single_stream;
+    step->flush_on_order_key_change_required = flush_on_order_key_change_required;
     return step;
 }
 
