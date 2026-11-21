@@ -275,7 +275,7 @@ public:
 
     /// Return the schema object for a schema-id from the metadata, else the copy registered from a manifest header. It is the verbatim
     /// Avro `schema` header of a written manifest, so its data-file bounds resolve under the schema the files were written with.
-    Poco::JSON::Object::Ptr getSchema(Int32 schema_id) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr getSchema(Int32 schema_id) const;
 
 private:
     Poco::JSON::Array::Ptr partitions_specs;
