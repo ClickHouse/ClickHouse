@@ -257,6 +257,9 @@ private:
     /// question about every value the LUT serves - a pre-1970 `DateTime64` included.
     bool offset_is_whole_number_of_hours_in_lut_range;
     bool offset_is_whole_number_of_minutes_in_lut_range;
+    /// No day that contains a non-negative time changes the offset by a fraction of an hour (unlike
+    /// `Australia/Lord_Howe`), so `toStartOfHour` can round on the grid counted from the local midnight there.
+    bool offset_change_is_whole_number_of_hours_during_epoch;
     bool offset_is_fixed;
 
     /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
@@ -475,8 +478,43 @@ private:
         if (static_cast<Time>(x) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(x, divisor);
 
-        const Time date = find(x).date;
+        return roundDownFromDate(x, find(x).date, divisor);
+    }
+
+    /// Rounds `x` down to a multiple of `divisor` counted from `date`, the start of its local day.
+    template <typename DateOrTime, typename Divisor>
+    static DateOrTime roundDownFromDate(DateOrTime x, Time date, Divisor divisor)
+    {
         Time res = date + (x - date) / divisor * divisor;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+        {
+            if (unlikely(res < 0))
+                return 0;
+            return static_cast<DateOrTime>(res);
+        }
+        else
+            return res;
+    }
+
+    /// Rounds `t` down to the start of its hour on the local clock, on a day when the offset changes by a
+    /// fraction of an hour. The clock after the change reads `time + amount`, so the hour starts at the last
+    /// whole hour on it, but not before the change itself: the result never decreases and is at most an
+    /// hour before `t`, also in the repeated or skipped part of the day. `t` must be inside the LUT range.
+    template <typename DateOrTime>
+    static DateOrTime roundDownToWallClockHour(DateOrTime t, const Values & values)
+    {
+        Time time = t - values.date;
+        if (time >= values.time_at_offset_change())
+        {
+            const Time amount = values.amount_of_offset_change();
+            time = std::max<Time>(roundDownToMultiple(time + amount, 3600) - amount, values.time_at_offset_change());
+        }
+        else
+        {
+            time = time / 3600 * 3600;
+        }
+
+        Time res = addSaturating(values.date, time);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
@@ -1008,7 +1046,42 @@ public:
     template <typename DateOrTime>
     [[nodiscard]] DateOrTime toStartOfTenMinutes(DateOrTime t) const { return toStartOfMinuteInterval(t, 10); }
     template <typename DateOrTime>
-    [[nodiscard]] DateOrTime toStartOfHour(DateOrTime t) const { return roundDown(t, 3600); }
+    [[nodiscard]] DateOrTime toStartOfHour(DateOrTime t) const
+    {
+        /// On a day when the offset changes by a fraction of an hour (Lord Howe shifts by 30 minutes), the
+        /// grid counted from the local midnight does not line up with the clock after the change, so
+        /// `roundDown` would return a `:30` boundary.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(t)))
+            {
+                /// The values of a day outside the lookup table have no offset change, so it is looked up with cctz.
+                return static_cast<DateOrTime>(toStartOfHourOutOfRange(static_cast<Time>(t)));
+            }
+
+        if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDownToMultiple(t, 3600);
+
+        /// No out-of-line call here: a call inside the per-row loop makes the compiler spill registers
+        /// and slows down zones such as `Asia/Kolkata` that take the `roundDownFromDate` path below.
+        const Values & values = find(t);
+        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDownFromDate(t, values.date, 3600);
+
+        /// The amount is stored in quarters of an hour, so it is a whole number of hours when it is a multiple of 4.
+        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0) [[unlikely]]
+            return roundDownToWallClockHour(t, values);
+
+        return roundDownFromDate(t, values.date, 3600);
+    }
+
+    /// The start of a window of `hours` hours that is a fixed number of seconds long. Unlike `toStartOfHourInterval`,
+    /// a one hour window stays on the grid counted from the local midnight on a day when the offset changes by a
+    /// fraction of an hour, so that adding the window length to the start still gives the end of the same window.
+    template <typename DateOrTime>
+    [[nodiscard]] DateOrTime toStartOfHourWindow(DateOrTime t, UInt64 hours) const
+    {
+        return hours == 1 ? roundDown(t, 3600) : toStartOfHourInterval(t, hours);
+    }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
@@ -2044,6 +2117,7 @@ private:
     [[nodiscard]] Time toTimeOutOfRange(Time t) const;
     [[nodiscard]] Time timezoneOffsetOutOfRange(Time t) const;
     [[nodiscard]] Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
+    [[nodiscard]] Time toStartOfHourOutOfRange(Time t) const;
     [[nodiscard]] Time addDaysOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addMonthsOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addYearsOutOfRange(Time t, Int64 delta) const;
