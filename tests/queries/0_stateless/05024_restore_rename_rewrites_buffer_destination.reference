@@ -1,0 +1,15 @@
+BACKUP_CREATED
+RESTORED
+1. a write to the restored buffer lands in the restored destination:
+SRC.t	[1,2,3]
+DST.t	[1,2,3,999]
+2. control, a buffer whose destination is outside the restored set keeps it:
+OUT.dest	[777]
+3. a table-level rename moves the buffer destination with it:
+BACKUP_CREATED
+RESTORED
+SRC.t	[1,2,3]
+SRC.t2	[1,2,3,555]
+4. the restored definitions:
+buf	Buffer(\'DST\', \'t\', 1, 3600, 3600, 1000000, 1000000, 100000000, 100000000)
+buf_out	Buffer(\'OUT\', \'dest\', 1, 3600, 3600, 1000000, 1000000, 100000000, 100000000)
