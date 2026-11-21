@@ -55,7 +55,7 @@ struct DatabaseRenameGuardHint
 
     /// Reads the server-wide `merge_tree` default at call time, the same way the storage itself
     /// would read it, so the answer follows a default changed since the hint was built.
-    bool mayNeedGuard(const ContextPtr & context) const;
+    [[nodiscard]] bool mayNeedGuard(const ContextPtr & context) const;
 };
 
 
