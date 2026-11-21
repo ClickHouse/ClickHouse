@@ -156,6 +156,34 @@ void forEachAtomWithPolarity(Elements & rpn, Apply && apply)
     chassert(positive_stack.empty());
 }
 
+/// Shared by the `match` and `fullMatch` atoms: builds a key range from the fixed prefix of a regular expression.
+bool regexpPrefixToRange(const RegexpFixedPrefix & prefix, KeyCondition::RPNElement & out)
+{
+    /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
+    /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
+    if (prefix.is_exact)
+    {
+        out.function = KeyCondition::RPNElement::FUNCTION_IN_RANGE;
+        out.range = Range(prefix.prefix);
+        return true;
+    }
+
+    if (prefix.prefix.empty())
+        return false;
+
+    if (!prefix.is_perfect)
+        out.relaxed = true;
+
+    String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
+
+    out.function = KeyCondition::RPNElement::FUNCTION_IN_RANGE;
+    out.range = !right_bound.empty()
+        ? Range(prefix.prefix, true, right_bound, false)
+        : Range::createLeftBounded(prefix.prefix, true);
+
+    return true;
+}
+
 }
 
 
@@ -451,30 +479,23 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 const String & expression = value.safeGet<String>();
 
                 auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
-
-                /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
-                /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
-                if (prefix.is_exact)
-                {
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix.prefix);
-                    return true;
-                }
-
-                if (prefix.prefix.empty())
+                return regexpPrefixToRange(prefix, out);
+            }
+        },
+        {
+            "fullMatch",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
                     return false;
 
-                if (!prefix.is_perfect)
-                    out.relaxed = true;
+                /// `fullMatch` is `match` with the pattern anchored at both ends, which is exactly
+                /// what the prefix extraction needs: `fullMatch(key, 'abc.*')` prunes by the prefix 'abc',
+                /// and `fullMatch(key, 'abc')` is an equality.
+                const String anchored_expression = anchorRegexpToMatchWholeString(value.safeGet<String>());
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
-
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = !right_bound.empty()
-                    ? Range(prefix.prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix.prefix, true);
-
-                return true;
+                auto prefix = extractFixedPrefixFromRegularExpression(anchored_expression, /*requires_perfect_prefix*/ false);
+                return regexpPrefixToRange(prefix, out);
             }
         },
         {
@@ -1110,7 +1131,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
 ///
 /// The allowlist is derived from `KeyCondition::atom_map` (the single source of truth for the atoms
 /// `KeyCondition` can actually prune: comparisons, `in`/`notIn`, `has`, `empty`/`notEmpty`, `like`,
-/// `startsWith`/`startsWithUTF8`, `match`, `isNull`/`isNotNull`, `pointInPolygon`), plus the boolean
+/// `startsWith`/`startsWithUTF8`, `match`/`fullMatch`, `isNull`/`isNotNull`, `pointInPolygon`), plus the boolean
 /// connectives and boolean comparisons that are not atoms (`extra_boolean_result_functions`). This
 /// way `startsWith(s, 'ab') IS TRUE` and `has([1, 10], id) IS TRUE` peel to the prunable atom instead
 /// of being left behind.
@@ -6241,7 +6262,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 || func_name == "notLike"
                 || func_name == "startsWith"
                 || func_name == "startsWithUTF8"
-                || func_name == "match");
+                || func_name == "match"
+                || func_name == "fullMatch");
 
             if (!should_keep_original_string_constant)
             {
