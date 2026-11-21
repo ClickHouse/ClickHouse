@@ -606,9 +606,8 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// granules holding `v = 0`, while `WHERE toUInt256(v)` is rejected, so no row-level
             /// filter corresponds to what was skipped.
             const auto & atom_result_type = atom_node_ptr->result_type;
-            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
-                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
-                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            /// `LowCardinality(Nullable(UInt8))` is the type of a comparison of a `LowCardinality(Nullable(...))` column.
+            const bool is_integer_atom = WhichDataType(removeNullable(removeLowCardinality(atom_result_type))).isInteger();
             if (is_integer_atom && atom_result_type->canBeUsedInBooleanContext())
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
