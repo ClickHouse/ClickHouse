@@ -35,10 +35,10 @@ public:
     [[nodiscard]] bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
     /// The preprocessor can turn a non-NULL source value into NULL, e.g. `nullIf(str, '')`.
-    bool producesNull() const { return produces_null; }
+    [[nodiscard]] bool producesNull() const { return produces_null; }
 
     /// The preprocessor strips the source nullability, e.g. `ifNull(str, '')`.
-    bool removesNull() const { return removes_null; }
+    [[nodiscard]] bool removesNull() const { return removes_null; }
 
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
