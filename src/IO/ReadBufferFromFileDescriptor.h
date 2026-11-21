@@ -95,6 +95,10 @@ public:
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const override;
     bool supportsReadAt() override { return use_pread; }
+
+    /// Asks the OS to start reading [offset, offset + n) into the page cache if its first page is not there,
+    /// for a caller that is going to read all of it with `readBigAt`. Best effort.
+    void adviseWillNeedIfNotCached(size_t offset, size_t n) const;
 };
 
 
