@@ -163,7 +163,8 @@ echo "--- 14b: a check denied for the current user still selects the grants of t
 client --user "$caller" -q "SHOW GRANTS FOR $u6 FOR QUERY SELECT * FROM d"
 
 echo "--- 14c: partial revokes are shown as with FINAL"
-client -q "SHOW GRANTS FOR $u8 FOR QUERY SELECT id, v1 FROM d"
+# Without dictGet the Dictionary table also checks SELECT on the whole table.
+client --user "$caller" -q "SHOW GRANTS FOR $u8 FOR QUERY SELECT id, v1 FROM d"
 client -q "SHOW GRANTS FOR $u8 FINAL"
 
 echo "--- 15: dictGet"
