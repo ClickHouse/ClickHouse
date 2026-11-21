@@ -403,8 +403,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     is_oom = False
 
     if Path(result_path / "dmesg.log").is_file():
+        # The kernel logs oom_reaper for any victim, e.g. a runner agent killed in its
+        # own memory cgroup, so only ClickHouse counts; the other two are host-wide OOMs.
         is_oom = Shell.check(
-            "grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' "
+            "grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process [0-9]* (clickhouse' -e 'oom-kill:constraint=CONSTRAINT_NONE' "
             f"{result_path}/dmesg.log"
         )
 
