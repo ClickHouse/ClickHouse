@@ -147,6 +147,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
 - `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has been found in the cache.
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
+- `ProfileEvent_ParquetMetadataCacheOffsetIndexHits` ([UInt64](/reference/data-types/int-uint)) — Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
 - `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
@@ -513,6 +514,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalAggregationMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for aggregation in external memory.
 - `ProfileEvent_ExternalAggregationCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to disk for aggregation in external memory.
 - `ProfileEvent_ExternalAggregationUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.
+- `ProfileEvent_GPUAggregationRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows aggregated on a GPU by the experimental GPU aggregation.
+- `ProfileEvent_GPUAggregationBatches` ([UInt64](/reference/data-types/int-uint)) — Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.
+- `ProfileEvent_GPUAggregationMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent transferring batches of rows to a GPU and aggregating them there.
 - `ProfileEvent_ExternalJoinWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for JOIN in external memory.
 - `ProfileEvent_ExternalJoinMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for JOIN in external memory.
 - `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for JOIN in external memory.

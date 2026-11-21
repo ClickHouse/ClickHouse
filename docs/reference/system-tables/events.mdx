@@ -2772,6 +2772,18 @@ Counts the total number of times the global thread pool has shrunk by removing t
 
 Total time spent waiting for new threads to start.
 
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+Total time spent transferring batches of rows to a GPU and aggregating them there.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Number of rows aggregated on a GPU by the experimental GPU aggregation.
+
 ### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
 
 Number of marks (index granules) excluded from reading a MergeTree table by the partition key and its min-max index during index analysis.
@@ -4851,6 +4863,10 @@ Number of times parquet metadata has been found in the cache.
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 Number of times parquet metadata has not been found in the cache and had to be read from disk.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 

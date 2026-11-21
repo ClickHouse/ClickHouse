@@ -101,8 +101,13 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 **Syntax**
 
 ```sql
+-- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE table_name
+ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -113,6 +118,33 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
+- `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
+
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections). Named collections accept the same `client_id` and `tenant_id` keys.
+
+**Workload identity**
+
+The delta-kernel Azure path also requires environment variables:
+
+- `AZURE_FEDERATED_TOKEN_FILE` — required (the projected token file, e.g. on AKS)
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — required unless passed via `extra_credentials` or a named collection
+- `AZURE_AUTHORITY_HOST` — optional
+
+Workload identity uses the server's own identity, so it is refused by default: each session that creates or queries the table needs `allow_server_credentials_in_user_queries` enabled, either with `SET` or in its settings profile.
+
+```sql
+SET allow_server_credentials_in_user_queries = 1;
+
+CREATE NAMED COLLECTION azure_wi AS
+    storage_account_url = 'https://<account>.blob.core.windows.net',
+    container = 'mycontainer',
+    blob_path = 'path/to/table',
+    client_id = '<client-id>',
+    tenant_id = '<tenant-id>';
+
+CREATE TABLE azureDeltaLake
+ENGINE = DeltaLakeAzure(azure_wi)
+```
 
 </Tab>
 </Tabs>
@@ -133,7 +165,6 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 <Note>
 Writing using the table engine is supported only through delta kernel.
 Writes work for S3 and GCS, and for Azure from version 26.9.
-Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 </Note>
 
 ### Data cache {#data-cache}
