@@ -1241,6 +1241,9 @@ struct HashMethodHashed
         {
             prepared.rows_end = std::min(rows.end, key_columns.empty() ? 0 : key_columns[0]->size());
             prepared.enabled = !rows.skips_rows && prepared.rows_end >= rows.begin + PreparedKeys::min_rows;
+            /// A state that skips rows never scans: a scan would read rows that are never asked about.
+            if (rows.skips_rows)
+                prepared.scan_after = std::numeric_limits<size_t>::max();
         }
     }
 
