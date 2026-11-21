@@ -175,13 +175,12 @@ public:
         const auto * source_null_map_data = source_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
             : nullptr;
-        if (!cast_null_map_data)
+        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
+        if (!cast_null_map_data && !cast_result_nullable)
             return cast_result;
 
         auto result = return_type->createColumn();
         result->reserve(cast_result->size());
-
-        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
 
         Field default_value;
         ColumnPtr default_column;
@@ -209,7 +208,7 @@ public:
         const size_t rows = cast_result->size();
         size_t start_insert_index = 0;
 
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; cast_null_map_data && i < rows; ++i)
         {
             const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
             const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !return_type_can_contain_null);

@@ -361,8 +361,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 ColumnPtr row_numbers = partition_chunk.getColumns()[col_position_index];
                 if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
                 {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                    const auto * null_map = nullable->tryGetNullMapData();
+                    if (null_map && std::any_of(null_map->begin(), null_map->end(), [](UInt8 x) { return x != 0; }))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
                     row_numbers = nullable->getNestedColumnPtr();
                 }

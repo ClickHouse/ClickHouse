@@ -177,8 +177,9 @@ public:
         if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(&array_data))
         {
             auto stemmed_inner = stemmer.stemColumn(
-                nullable_nested->getNestedColumn(), nested_rows, &nullable_nested->getNullMapData());
-            stemmed = ColumnNullable::create(std::move(stemmed_inner), nullable_nested->getNullMapColumn().clone());
+                nullable_nested->getNestedColumn(), nested_rows, nullable_nested->tryGetNullMapData());
+            const auto * null_map_column = nullable_nested->tryGetNullMapColumn();
+            stemmed = ColumnNullable::create(std::move(stemmed_inner), null_map_column ? null_map_column->clone() : MutableColumnPtr{});
         }
         else
         {

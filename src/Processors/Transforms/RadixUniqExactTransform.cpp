@@ -349,7 +349,7 @@ Columns packedTupleColumns(const ColumnTuple & tuple)
         }
 
         const size_t num_rows = nullable->size();
-        const UInt8 * nulls = nullable->getNullMapData().data();
+        const UInt8 * nulls = nullable->getNullMapRawDataOrZeros();
         auto flags = ColumnUInt8::create(num_rows);
         auto & flags_data = flags->getData();
         for (size_t row = 0; row < num_rows; ++row)
@@ -1928,7 +1928,10 @@ void RadixUniqExactRouteTransform::work()
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            state->route(stream, column_nullable->getNestedColumn(), column_nullable->getNullMapData().data());
+        {
+            const auto * null_map = column_nullable->tryGetNullMapData();
+            state->route(stream, column_nullable->getNestedColumn(), null_map ? null_map->data() : nullptr);
+        }
         else
             state->route(stream, *column, nullptr);
     }

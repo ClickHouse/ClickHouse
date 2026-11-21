@@ -85,7 +85,7 @@ ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
 ColumnPtr getOuterNullMap(const IColumn & column)
 {
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
-        return column_nullable->getNullMapColumnPtr();
+        return column_nullable->tryGetNullMapColumnPtr();
     if (const auto * column_dynamic = checkAndGetColumn<ColumnDynamic>(&column))
         return column_dynamic->getVariantColumn().createNullMap();
     if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
@@ -110,7 +110,8 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     {
         if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
         {
-            null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable->getNullMapColumnPtr());
+            /// A column without a null map has no NULLs and contributes nothing.
+            null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable->tryGetNullMapColumnPtr());
 
             /** Only the top-level null map says whether the key of a row is NULL. Folding in the null
               * maps of the elements of a `Nullable(Tuple(Nullable(T), ...))` would make a row whose tuple
@@ -224,28 +225,29 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
-    if (null_map)
+    /// No null map means that the outer column has no NULLs.
+    /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
+    /// itself, mark rows that are NULL in the outer column as NULL in it.
+    if (canContainNull(*prev))
     {
-        const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
-        /// itself, mark rows that are NULL in the outer column as NULL in it.
-        if (canContainNull(*prev))
-        {
-            auto mutable_column = IColumn::mutate(prev);
-            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
-            return mutable_column;
-        }
+        if (!null_map)
+            return prev;
 
-        /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but it can once promoted to
-        /// `LowCardinality(Nullable(T))` -- which is what the type `create(DataTypePtr)` returns. Promote the
-        /// column the same way with `cloneNullable()` before folding in the outer null map, so the extracted
-        /// (type, column) pair stays consistent.
-        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
-        {
-            auto mutable_column = prev_lc->cloneNullable();
-            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
-            return mutable_column;
-        }
+        auto mutable_column = IColumn::mutate(prev);
+        applyParentNullMapToExtractedSubcolumn(*mutable_column, assert_cast<const ColumnUInt8 &>(*null_map).getData(), 0, 0);
+        return mutable_column;
+    }
+
+    /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but it can once promoted to
+    /// `LowCardinality(Nullable(T))` -- which is what the type `create(DataTypePtr)` returns. Promote the
+    /// column the same way with `cloneNullable()` before folding in the outer null map, so the extracted
+    /// (type, column) pair stays consistent. The column is promoted even if there are no NULLs.
+    if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
+    {
+        auto mutable_column = prev_lc->cloneNullable();
+        if (null_map)
+            applyParentNullMapToExtractedSubcolumn(*mutable_column, assert_cast<const ColumnUInt8 &>(*null_map).getData(), 0, 0);
+        return mutable_column;
     }
 
     return prev;

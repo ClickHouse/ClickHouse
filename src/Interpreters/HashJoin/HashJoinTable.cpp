@@ -321,7 +321,8 @@ ColumnPtr probeFixedHashMap(
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col))
     {
         col = &nullable->getNestedColumn();
-        nm_col = &nullable->getNullMapColumn();
+        /// nullptr if the column has no null map, which means it has no NULLs.
+        nm_col = nullable->tryGetNullMapColumn();
     }
 
     const size_t n = col->size();

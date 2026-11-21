@@ -329,18 +329,22 @@ TEST(ColumnArray, InsertManyFromPartiallyAliasedNullableString)
     const auto & destination_nullable = assert_cast<const ColumnNullable &>(destination_array.getData());
     const auto & destination_string = assert_cast<const ColumnString &>(destination_nullable.getNestedColumn());
     ASSERT_EQ(destination_string.size(), 3);
-    ASSERT_EQ(destination_nullable.getNullMapData().size(), 3);
+    const auto * destination_null_map_data = destination_nullable.tryGetNullMapData();
+    ASSERT_NE(destination_null_map_data, nullptr);
+    ASSERT_EQ(destination_null_map_data->size(), 3);
     for (size_t i = 0; i < destination_array.size(); ++i)
     {
         EXPECT_EQ(destination_string.getDataAt(i), std::string_view(value));
-        EXPECT_EQ(destination_nullable.getNullMapData()[i], 0);
+        EXPECT_EQ((*destination_null_map_data)[i], 0);
     }
 
     ASSERT_EQ(source_array.size(), 1);
     ASSERT_EQ(source_string.size(), 1);
-    ASSERT_EQ(source_nullable.getNullMapData().size(), 1);
+    const auto * source_null_map_data = source_nullable.tryGetNullMapData();
+    ASSERT_NE(source_null_map_data, nullptr);
+    ASSERT_EQ(source_null_map_data->size(), 1);
     EXPECT_EQ(source_string.getDataAt(0), std::string_view(value));
-    EXPECT_EQ(source_nullable.getNullMapData()[0], 0);
+    EXPECT_EQ((*source_null_map_data)[0], 0);
 }
 
 TEST(ColumnArray, InsertManyFromNonAliasedString)

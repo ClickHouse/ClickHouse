@@ -73,7 +73,8 @@ namespace
     {
         ColumnPtr column;                   /// The full column, it keeps `data` and `null_map` alive.
         const IColumn * data = nullptr;     /// The column containing values of identifiers (not Nullable).
-        const NullMap * null_map = nullptr; /// The null map if the original column was Nullable.
+        const NullMap * null_map = nullptr; /// The null map if the original column was Nullable and has a null map.
+        bool is_nullable = false;           /// Whether the original column was Nullable.
     };
 
     UnwrappedIDColumn unwrapIDColumn(const ColumnPtr & id_column)
@@ -84,7 +85,8 @@ namespace
         res.null_map = nullptr;
         if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(res.data))
         {
-            res.null_map = &nullable_column->getNullMapData();
+            res.null_map = nullable_column->tryGetNullMapData();
+            res.is_nullable = true;
             res.data = &nullable_column->getNestedColumn();
         }
         return res;
@@ -1336,7 +1338,7 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
 void ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const
 {
     auto unwrapped = unwrapIDColumn(id_column);
-    if (unwrapped.null_map)
+    if (unwrapped.is_nullable)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
     size_t num_rows = unwrapped.data->size();
 
@@ -1428,7 +1430,7 @@ void ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data
 VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const ColumnPtr & id_column) const
 {
     auto unwrapped = unwrapIDColumn(id_column);
-    if (unwrapped.null_map)
+    if (unwrapped.is_nullable)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
     size_t num_rows = unwrapped.data->size();
 

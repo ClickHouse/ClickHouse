@@ -103,7 +103,15 @@ namespace
             if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
             {
                 const auto & nested_column = col_nullable->getNestedColumn();
-                const auto & null_map = col_nullable->getNullMapData();
+                const auto * null_map_ptr = col_nullable->tryGetNullMapData();
+                if (!null_map_ptr)
+                {
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        res_data[i] = parseDuration(std::string_view{nested_column.getDataAt(i)});
+
+                    return ColumnNullable::create(std::move(col_to));
+                }
+                const auto & null_map = *null_map_ptr;
 
                 auto res_null_map = ColumnUInt8::create(input_rows_count);
                 auto & res_null_map_data = res_null_map->getData();

@@ -329,13 +329,13 @@ public:
         if (const auto * n = checkAndGetColumn<ColumnNullable>(source_data))
         {
             source_data = &n->getNestedColumn();
-            source_null_map = &n->getNullMapData();
+            source_null_map = n->tryGetNullMapData();
         }
 
         if (const auto * n = checkAndGetColumn<ColumnNullable>(exclude_data))
         {
             exclude_data = &n->getNestedColumn();
-            exclude_null_map = &n->getNullMapData();
+            exclude_null_map = n->tryGetNullMapData();
         }
         const ColumnArray::Offsets & source_offsets = source_col->getOffsets();
         const ColumnArray::Offsets & exclude_offsets = exclude_col->getOffsets();
@@ -351,8 +351,13 @@ public:
 
         if (ColumnNullable * n = typeid_cast<ColumnNullable *>(result_data))
         {
-            result_data = &n->getNestedColumn();
-            result_null_map = &n->getNullMapData();
+            if (source_null_map)
+            {
+                result_data = &n->getNestedColumn();
+                result_null_map = &n->getNullMapData();
+            }
+            else
+                result_data = &n->getNestedColumnNoMaterialize();
         }
 
         ColumnArray::Offsets & result_offsets = result_col->getOffsets();

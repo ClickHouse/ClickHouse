@@ -274,7 +274,7 @@ public:
             values = &array_column->getData();
             if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(values))
             {
-                null_map = &nullable_column->getNullMapData();
+                null_map = nullable_column->tryGetNullMapData();
                 values = &nullable_column->getNestedColumn();
             }
         }

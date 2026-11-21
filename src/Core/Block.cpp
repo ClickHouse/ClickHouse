@@ -128,13 +128,20 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
         return haveCompatibleColumnStructure(*actual_replicated->getNestedColumn(), *expected_replicated.getNestedColumn());
     }
 
+    /// `Nullable` may or may not have a null map, which is not a property of the type.
+    /// Compare only the nested column.
+    if (const auto * actual_nullable = typeid_cast<const ColumnNullable *>(&actual))
+    {
+        const auto & expected_nullable = assert_cast<const ColumnNullable &>(expected);
+        return haveCompatibleColumnStructure(actual_nullable->getNestedColumn(), expected_nullable.getNestedColumn());
+    }
+
     /// Descend only into the plain container columns whose name is a pure composition of the
     /// nested column names, so that for everything else the comparison stays exactly as strict
     /// as comparing full column names. `Dynamic`/`Object` are deliberately left strict because
     /// their nested structure is not fixed by the type.
     const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
-        || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
-        || typeid_cast<const ColumnConst *>(&actual);
+        || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnConst *>(&actual);
 
     if (!is_compositional)
         return actual.getName() == expected.getName();

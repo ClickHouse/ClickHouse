@@ -223,7 +223,7 @@ std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const ICo
     if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
         /// Bloom filters and dictionaries hold only non-null values, so a NULL can't be looked up in them.
-        if (!memoryIsZero(nullable_column->getNullMapData().data(), 0, nullable_column->size()))
+        if (!memoryIsZero(nullable_column->getNullMapRawDataOrZeros(), 0, nullable_column->size()))
             return std::nullopt;
         column = nullable_column->getNestedColumnPtr().get();
     }

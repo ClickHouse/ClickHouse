@@ -238,7 +238,7 @@ private:
                 const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column);
                 if (!column_nullable)
                     return nullptr;
-                b_null = column_nullable->getNullMapData().data();
+                b_null = column_nullable->getNullMapRawDataOrZeros();
                 column = &column_nullable->getNestedColumn();
             }
             const auto * column_vector = checkAndGetColumn<ColumnVector<T>>(column);

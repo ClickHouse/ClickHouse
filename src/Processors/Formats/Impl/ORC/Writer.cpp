@@ -269,12 +269,14 @@ void addColumn(
 {
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
-        const UInt8 * null_map = nullable->getNullMapData().data() + offset;
-        if (!outer_null_map)
+        const auto * nullable_map = nullable->tryGetNullMapData();
+        if (!nullable_map || !outer_null_map)
         {
+            const UInt8 * null_map = nullable_map ? nullable_map->data() + offset : outer_null_map;
             writer.add(nullable->getNestedColumn(), null_map, offset, num_values, parent_null_map);
             return;
         }
+        const UInt8 * null_map = nullable_map->data() + offset;
         PaddedPODArray<UInt8> merged(num_values);
         for (size_t i = 0; i < num_values; ++i)
             merged[i] = null_map[i] | outer_null_map[i];

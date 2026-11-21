@@ -476,7 +476,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         ColumnPtr null_map = nullptr;
         if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
         {
-            null_map = column_nullable->getNullMapColumnPtr();
+            null_map = column_nullable->tryGetNullMapColumnPtr();
             column = column_nullable->getNestedColumnPtr();
         }
         null_maps.push_back(std::move(null_map));

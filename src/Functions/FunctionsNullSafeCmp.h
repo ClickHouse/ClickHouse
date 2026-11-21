@@ -201,7 +201,7 @@ public:
             ColumnPtr full_column = arg.column->convertToFullColumnIfConst();
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
             {
-                null_map = nullable->getNullMapColumnPtr();
+                null_map = nullable->tryGetNullMapColumnPtr();
                 nested.column = nullable->getNestedColumnPtr();
                 nested.type = removeNullable(arg.type);
             }

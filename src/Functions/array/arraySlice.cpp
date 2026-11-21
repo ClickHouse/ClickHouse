@@ -341,10 +341,12 @@ private:
 
         /// Peel a Nullable wrapper off; NULL rows hold default (all-zero) QBit data whose slice is again all zeros,
         /// so the nested data can be sliced as-is and the null map reattached.
+        bool is_nullable = false;
         ColumnPtr null_map;
         if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
         {
-            null_map = nullable_column->getNullMapColumnPtr();
+            is_nullable = true;
+            null_map = nullable_column->tryGetNullMapColumnPtr();
             column = nullable_column->getNestedColumnPtr();
         }
 
@@ -367,7 +369,7 @@ private:
             sliced = repackQBitSlice(qbit_column, qbit_type, bounds);
         }
 
-        if (null_map)
+        if (is_nullable)
             sliced = ColumnNullable::create(sliced, null_map);
         if (is_const)
             sliced = ColumnConst::create(sliced, input_rows_count);

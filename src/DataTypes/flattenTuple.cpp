@@ -98,7 +98,7 @@ ColumnPtr flattenTuple(const ColumnPtr & column)
     flattenTupleColumnImpl(column_nullable ? column_nullable->getNestedColumnPtr() : column, flattened_columns, offset_columns);
     ColumnPtr result_column = ColumnTuple::create(flattened_columns);
     if (column_nullable)
-        return ColumnNullable::create(result_column, column_nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(result_column, column_nullable->tryGetNullMapColumnPtr());
     return result_column;
 }
 

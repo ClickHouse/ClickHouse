@@ -13,9 +13,9 @@ CREATE TABLE t_04651_no_nulls (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32)
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
 INSERT INTO t_04651_no_nulls SELECT tuple(tuple(number)) FROM numbers(4);
 SELECT dumpColumnStructure(x.a) FROM t_04651_no_nulls LIMIT 1;
-Nullable(Tuple(b LowCardinality(UInt32))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 1, UInt32(size = 1)))), UInt8(size = 1))
+Nullable(Tuple(b LowCardinality(UInt32))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 1, UInt32(size = 1)))))
 SELECT x.a.b, dumpColumnStructure(x.a) FROM t_04651_no_nulls LIMIT 1;
-0	Nullable(Tuple(b LowCardinality(UInt32))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 1, UInt32(size = 1)))), UInt8(size = 1))
+0	Nullable(Tuple(b LowCardinality(UInt32))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 1, UInt32(size = 1)))))
 SELECT x.a.b, x.a FROM t_04651_no_nulls;
 0	(0)
 1	(1)
