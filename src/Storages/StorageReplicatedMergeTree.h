@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -42,6 +43,7 @@
 
 #include <atomic>
 #include <expected>
+#include <span>
 #include <pcg_random.hpp>
 
 
@@ -375,6 +377,18 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+    struct GetReplicasResult
+    {
+        Strings all_replicas;
+        std::span<String> replicas_same_region;
+        std::span<String> replicas_not_same_region;
+    };
+
+    /// Returns the replicas in `zk_path` in random order. With geo replication control and `prefer_same_region`,
+    /// the replicas of this replica's region go first and are also available as `replicas_same_region`.
+    /// With geo replication control but without `prefer_same_region`, `replicas_same_region` is empty and all replicas are in `replicas_not_same_region`.
+    GetReplicasResult getAllReplicasInPath(const String & zk_path, bool prefer_same_region = true);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -399,6 +413,7 @@ private:
     friend class MergeFromLogEntryTask;
     friend class MutateFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class ReplicatedMergeTreeGeoReplicationController;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -445,6 +460,13 @@ private:
     /** /replicas/me/is_active.
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+
+    /** /replicas/me/region, created in the same `multi` as `is_active` when geo replication control is configured
+      * (see `ReplicatedMergeTreeGeoReplicationController::addPublishRegionRequests`). It is released before
+      * `replica_is_active_node`: while this session holds `is_active`, no other server can replace the `region` node,
+      * so removing the path unconditionally removes only our own node.
+      */
+    zkutil::EphemeralNodeHolderPtr replica_region_node;
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
@@ -551,6 +573,9 @@ private:
     std::set<String> last_broken_disks;
 
     std::mutex existing_zero_copy_locks_mutex;
+
+    /// For geo-aware fetching
+    ReplicatedMergeTreeGeoReplicationController geo_replication_controller;
 
     struct ZeroCopyLockDescription
     {
@@ -696,10 +721,24 @@ private:
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
-    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
+    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region);
 
     bool executeReplaceRange(LogEntry & entry);
-    void executeClonePartFromShard(const LogEntry & entry);
+    void executeClonePartFromShard(LogEntry & entry);
+
+    /// Whether fetches for this entry should still prefer (or be restricted to) sources in this replica's region:
+    /// geo replication control is configured and the entry has not exhausted its same-region wait.
+    bool shouldPreferSameRegionSource(const LogEntry & entry) const;
+
+    /// Whether `replica` in `zk_path` belongs to this replica's region (requires geo replication control).
+    bool isReplicaInSameRegion(const String & zk_path, const String & replica) const;
+
+    /// Account the time this entry is spending waiting for a usable source in this replica's region: either no
+    /// replica of the region has the part yet, or a fetch from a replica of the region failed. The wait is measured
+    /// from the first such event and limited by `geo_replication_control_leader_wait_timeout`. Returns true while the
+    /// wait is still in effect (the entry is postponed by `geo_replication_control_leader_wait`), false once it has
+    /// expired: from then on the source of the entry is chosen among all replicas regardless of their region.
+    bool deferEntryForSameRegionSource(LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -768,9 +807,8 @@ private:
 
     /** Returns an empty string if no one has a part.
       */
-    String findReplicaHavingPart(const String & part_name, bool active);
-    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
-
+    String findReplicaHavingPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
+    String findReplicaHavingPart(const String & part_name, bool active = true, bool prefer_same_region = true);
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);
@@ -780,9 +818,9 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
+    String findReplicaHavingCoveringPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
     bool findReplicaHavingCoveringPart(const String & part_name, bool active);
-    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(const std::span<String> & replicas, LogEntry * entry, const String & part_name, String & found_part_name, bool active);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
 
     /** Download the specified part from the specified replica.
@@ -994,7 +1032,6 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
-
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 

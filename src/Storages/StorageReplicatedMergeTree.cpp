@@ -133,6 +133,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <IO/SharedThreadPools.h>
 
 #include <base/types.h>
@@ -226,7 +227,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
+    extern const MergeTreeSettingsBool fetch_covered_part_within_region_only;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsSeconds geo_replication_control_leader_wait;
+    extern const MergeTreeSettingsSeconds geo_replication_control_leader_wait_timeout;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
@@ -466,6 +470,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_moves_between_shards_orchestrator(*this)
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
+    , geo_replication_controller(*this)
 {
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
@@ -2705,7 +2710,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             /// We surely don't have this part locally as we've checked it before, so download it.
             [[fallthrough]];
         case LogEntry::GET_PART:
-            return executeFetch(entry);
+            return executeFetch(entry, true, !geo_replication_controller.isLeader() && entry.wait_for_fetching_from_same_region >= 0);
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
@@ -2724,11 +2729,40 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part)
+bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
-    /// Looking for covering part. After that entry.actual_new_part_name may be filled.
-    String replica = findReplicaHavingCoveringPart(entry, true);
-    const auto storage_settings_ptr = getSettings();
+    /// Only enforce region constraints if geo replication control is configured for this table (some callers
+    /// may not be aware of this) and while the entry has not exhausted its same-region wait:
+    /// `wait_for_fetching_from_same_region == -1` marks an entry whose wait for an in-region source timed out
+    /// and which may be fetched from anywhere from now on. The timeout gate lives here so that it also covers
+    /// merge / mutation fetches, whose callers pass the raw `fetch_merged_part_within_region_only` policy.
+    const bool prefer_same_region = shouldPreferSameRegionSource(entry);
+    only_fetch_within_region = only_fetch_within_region && prefer_same_region;
+    auto zookeeper = getZooKeeper();
+    const auto & storage_settings_ptr = getSettings();
+    bool fetch_cover_part_from_same_region
+        = geo_replication_controller.isConfigured() && (*storage_settings_ptr)[MergeTreeSetting::fetch_covered_part_within_region_only];
+
+    /// Once the same-region wait of the entry has expired (no in-region source had the part, or the in-region sources
+    /// kept failing, for `geo_replication_control_leader_wait_timeout`), the region is no longer preferred: the source is
+    /// chosen among all replicas in random order. Otherwise an in-region replica that advertises the part but cannot
+    /// send it (e.g. `SYSTEM STOP REPLICATED SENDS`, unreachable interserver endpoint) would be selected forever.
+    auto get_result = getAllReplicasInPath(getZooKeeperPath(), prefer_same_region);
+
+    /// First, looking for the largest covered part in current region
+    String replica = findReplicaHavingCoveringPart(get_result.replicas_same_region, entry, true);
+    if (replica.empty() && !only_fetch_within_region)
+    {
+        /// Cannot find a part from current region but we're able to fetch from anywhere,
+        /// so looking for the exact part or covered part from replicas_not_same_region
+        if (fetch_cover_part_from_same_region)
+            replica = findReplicaHavingPart(get_result.replicas_not_same_region, entry, true);
+
+        /// Either fetch_cover_part_from_same_region is false or we cannot find the exact part anywhere
+        if (replica.empty())
+            replica = findReplicaHavingCoveringPart(get_result.replicas_not_same_region, entry, true);
+    }
+
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
     try
@@ -2762,7 +2796,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                   * This will ensure that the replicas do not become active.
                   */
 
-                auto zookeeper = getZooKeeper();
 
                 Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
 
@@ -2782,7 +2815,25 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /// Also during this time a completely new replica could be created.
                 /// But if a part does not appear on the old, then it can not be on the new one either.
 
-                if (replica.empty())
+                /// The check above deliberately spans all replicas: the quorum must not be marked as failed
+                /// while any replica has the part. But it must not turn into a fetch-source selector that
+                /// bypasses the region constraint: if the part exists only on an out-of-region replica, clear
+                /// the found replica and defer the fetch (below) instead of pulling the part cross-region.
+                bool part_exists_only_out_of_region = false;
+                if (!replica.empty() && only_fetch_within_region
+                    && std::find(get_result.replicas_same_region.begin(), get_result.replicas_same_region.end(), replica)
+                        == get_result.replicas_same_region.end())
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Part {} needed for quorum exists only on out-of-region replica {}, will not fetch it cross-region",
+                        entry.new_part_name,
+                        replica);
+                    part_exists_only_out_of_region = true;
+                    replica.clear();
+                }
+
+                if (replica.empty() && !part_exists_only_out_of_region)
                 {
                     Coordination::Stat quorum_stat;
                     const String quorum_unparallel_path = fs::path(zookeeper_path) / "quorum" / "status";
@@ -2857,15 +2908,42 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 }
             }
 
+
             if (replica.empty())
             {
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
 
+                if (only_fetch_within_region)
+                {
+                    /// No in-region replica has the part - it may well exist in another region, so this is not
+                    /// the "no replica has part" situation: defer the entry instead of checking the part or
+                    /// giving up. Installing the wait state below makes the queue postpone the entry by
+                    /// `geo_replication_control_leader_wait` per attempt (see `shouldExecuteLogEntry`). This
+                    /// applies to merge / mutation fetches as well as to `GET_PART` / `ATTACH_PART`: without the
+                    /// wait state a region-constrained merged-part fetch would be reselected immediately in a
+                    /// tight loop, starving the rest of the queue until an in-region replica produces the part.
+                    ///
+                    /// The wait is measured and limited in `deferEntryForSameRegionSource`.
+                    if (deferEntryForSameRegionSource(entry))
+                        LOG_TRACE(
+                            log,
+                            "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}",
+                            geo_replication_controller.getRegion(),
+                            entry.new_part_name,
+                            entry.znode_name,
+                            entry.getDescriptionForLogs(format_version));
+                    return false;
+                }
+
                 if (!need_to_check_missing_part)
                     return false;
 
-                throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "No active replica has part {} or covering part (cannot execute {}: {})",
-                                entry.new_part_name, entry.znode_name, entry.getDescriptionForLogs(format_version));
+                throw Exception(
+                    ErrorCodes::NO_REPLICA_HAS_PART,
+                    "No active replica has part {} or covering part (cannot execute {}: {})",
+                    entry.new_part_name,
+                    entry.znode_name,
+                    entry.getDescriptionForLogs(format_version));
             }
         }
 
@@ -2876,16 +2954,36 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             if (!entry.actual_new_part_name.empty())
                 LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
 
+            /// A failed transfer from a replica of this region counts towards the same-region wait of the entry,
+            /// so that an in-region source that cannot serve the part does not block the entry indefinitely.
+            const bool fetching_from_same_region = prefer_same_region
+                && std::find(get_result.replicas_same_region.begin(), get_result.replicas_same_region.end(), replica)
+                    != get_result.replicas_same_region.end();
+
             String source_replica_path = fs::path(zookeeper_path) / "replicas" / replica;
-            if (!fetchPart(part_name,
-                metadata_snapshot,
-                zookeeper_info.zookeeper_name,
-                source_replica_path,
-                /* to_detached= */ false,
-                entry.quorum,
-                /* zookeeper_ */ nullptr,
-                /* try_fetch_shared= */ true))
+            bool fetched = false;
+            try
             {
+                fetched = fetchPart(part_name,
+                    metadata_snapshot,
+                    zookeeper_info.zookeeper_name,
+                    source_replica_path,
+                    /* to_detached= */ false,
+                    entry.quorum,
+                    /* zookeeper_ */ nullptr,
+                    /* try_fetch_shared= */ true);
+            }
+            catch (...)
+            {
+                if (fetching_from_same_region)
+                    deferEntryForSameRegionSource(entry);
+                throw;
+            }
+
+            if (!fetched)
+            {
+                if (fetching_from_same_region)
+                    deferEntryForSameRegionSource(entry);
                 return false;
             }
         }
@@ -2933,6 +3031,65 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
     }
 
     return true;
+}
+
+
+bool StorageReplicatedMergeTree::shouldPreferSameRegionSource(const LogEntry & entry) const
+{
+    if (!geo_replication_controller.isConfigured())
+        return false;
+    /// The wait state is modified only by the thread executing the entry (under `state_mutex`, because
+    /// `ReplicatedMergeTreeQueue::getEntries` copies it concurrently), which is also the caller, so it can be read without the lock.
+    return entry.wait_for_fetching_from_same_region >= 0;
+}
+
+
+bool StorageReplicatedMergeTree::isReplicaInSameRegion(const String & zk_path, const String & replica) const
+{
+    if (!geo_replication_controller.isConfigured())
+        return false;
+    String region;
+    getZooKeeper()->tryGet(fs::path(zk_path) / "replicas" / replica / "region", region);
+    return region == geo_replication_controller.getRegion();
+}
+
+
+bool StorageReplicatedMergeTree::deferEntryForSameRegionSource(LogEntry & entry)
+{
+    /// Measure how long *this replica* has actually been waiting for a usable source in its region for this entry,
+    /// from the time of its first defer. We deliberately do not use `entry.create_time`: a replica recovering from a
+    /// backlog can pick up an entry whose creation time is already older than the timeout and would then immediately
+    /// fetch from any region, recreating the cross-region fan-out this feature is meant to avoid. Nor do we derive it
+    /// from the number of defers multiplied by `geo_replication_control_leader_wait`: with a zero retry interval that
+    /// product never grows, and the timeout would never fire.
+    const time_t now = time(nullptr);
+    const Int64 timeout_seconds = (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds();
+    Int64 waited_seconds = 0;
+    {
+        std::lock_guard lock(queue.state_mutex);
+        if (entry.wait_for_fetching_from_same_region < 0)
+            return false;
+
+        if (entry.wait_for_fetching_from_same_region == 0)
+            entry.same_region_wait_start_time = now;
+
+        waited_seconds = static_cast<Int64>(now - entry.same_region_wait_start_time);
+        if (waited_seconds < timeout_seconds)
+        {
+            ++entry.wait_for_fetching_from_same_region;
+            return true;
+        }
+
+        entry.wait_for_fetching_from_same_region = -1;
+    }
+
+    LOG_INFO(
+        log,
+        "Entry {} waited for too long ({} seconds) for a usable source in region {}, stop waiting and fetch from any replica",
+        entry.getDescriptionForLogs(format_version),
+        waited_seconds,
+        geo_replication_controller.getRegion());
+    return false;
 }
 
 
@@ -3325,7 +3482,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         }
 
         /// Firstly, try find exact part to produce more accurate part set
-        String replica = findReplicaHavingPart(part_desc->new_part_name, true);
+        String replica = findReplicaHavingPart(part_desc->new_part_name, true, shouldPreferSameRegionSource(entry));
         String found_part_name;
         /// TODO: check version
 
@@ -3334,7 +3491,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             LOG_DEBUG(log, "Part {} is not found on remote replicas", part_desc->new_part_name);
 
             /// Fallback to covering part
-            replica = findReplicaHavingCoveringPartImplLowLevel(&entry, part_desc->new_part_name, found_part_name, true);
+            auto replicas = getAllReplicasInPath(getZooKeeperPath(), shouldPreferSameRegionSource(entry)).all_replicas;
+            replica = findReplicaHavingCoveringPartImplLowLevel(replicas, &entry, part_desc->new_part_name, found_part_name, true);
 
             if (replica.empty())
             {
@@ -3477,12 +3635,25 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, temporary_part_lock] = fetcher.fetchSelectedPart(
-                metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
-                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
-                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX_REPLACE_PARTITION_FROM + "fetch_");
-            part_desc->res_part = fetched_part;
-            part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            /// A failed transfer from a replica of this region counts towards the same-region wait of the entry
+            /// (see `deferEntryForSameRegionSource`), so that after it expires the source is chosen among all replicas.
+            const bool fetching_from_same_region
+                = shouldPreferSameRegionSource(entry) && isReplicaInSameRegion(zookeeper_path, part_desc->replica);
+            try
+            {
+                auto [fetched_part, temporary_part_lock] = fetcher.fetchSelectedPart(
+                    metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
+                    address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
+                    interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX_REPLACE_PARTITION_FROM + "fetch_");
+                part_desc->res_part = fetched_part;
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
+            catch (...)
+            {
+                if (fetching_from_same_region)
+                    deferEntryForSameRegionSource(entry);
+                throw;
+            }
 
             /// TODO: check columns_version of fetched part
 
@@ -3568,19 +3739,39 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     return true;
 }
 
-void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entry)
+void StorageReplicatedMergeTree::executeClonePartFromShard(LogEntry & entry)
 {
     auto zookeeper = getZooKeeper();
-
-    Strings replicas = zookeeper->getChildren(entry.source_shard + "/replicas");
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+    /// With geo replication control the candidates are ordered so that the replicas of the same region come first,
+    /// until the same-region wait of the entry expires (see `deferEntryForSameRegionSource`).
+    const bool prefer_same_region = shouldPreferSameRegionSource(entry);
+    auto replicas = getAllReplicasInPath(entry.source_shard, prefer_same_region).all_replicas;
     String replica;
+
+    /// Prefer an active replica that already has the part: the source shard does not guarantee that every active
+    /// replica has replicated it yet, so a lagging replica (in particular the closest one) must not be selected
+    /// while another replica of the shard can serve the part right away.
     for (const String & candidate : replicas)
     {
-        if (zookeeper->exists(entry.source_shard + "/replicas/" + candidate + "/is_active"))
+        const String candidate_path = entry.source_shard + "/replicas/" + candidate;
+        if (zookeeper->exists(candidate_path + "/is_active") && zookeeper->exists(candidate_path + "/parts/" + entry.new_part_name))
         {
             replica = candidate;
             break;
+        }
+    }
+
+    if (replica.empty())
+    {
+        /// None of the active replicas announces the part (it could have been merged away right after the entry was
+        /// created, for instance). Fall back to any active replica, as it was before.
+        for (const String & candidate : replicas)
+        {
+            if (zookeeper->exists(entry.source_shard + "/replicas/" + candidate + "/is_active"))
+            {
+                replica = candidate;
+                break;
+            }
         }
     }
 
@@ -3616,7 +3807,19 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             return fetched_part;
         };
 
-        part = get_part();
+        /// A failed transfer from a replica of this region counts towards the same-region wait of the entry,
+        /// so that after it expires the source is chosen among all replicas of the shard.
+        const bool fetching_from_same_region = prefer_same_region && isReplicaInSameRegion(entry.source_shard, replica);
+        try
+        {
+            part = get_part();
+        }
+        catch (...)
+        {
+            if (fetching_from_same_region)
+                deferEntryForSameRegionSource(entry);
+            throw;
+        }
         // The fetched part is valuable and should not be cleaned like a temp part.
         part->is_temp = false;
         part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
@@ -5119,16 +5322,12 @@ bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, co
     return zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name);
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
+
+String StorageReplicatedMergeTree::findReplicaHavingPart(const std::span<String> & replicas, LogEntry & entry, bool active)
 {
+    LOG_TRACE(log, "Candidate replicas: {}", fmt::join(replicas, ","));
+
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-
-    /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-
-    LOG_TRACE(log, "Candidate replicas: {}", replicas.size());
-
     for (const String & replica : replicas)
     {
         /// We aren't interested in ourself.
@@ -5136,6 +5335,28 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
             continue;
 
         LOG_TRACE(log, "Candidate replica: {}", replica);
+
+        if (checkReplicaHavePart(replica, entry.new_part_name) &&
+            (!active || zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active")))
+            return replica;
+
+        /// Obviously, replica could become inactive or even vanish after return from this method.
+    }
+
+    return {};
+}
+
+String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active, bool prefer_same_region)
+{
+    auto zookeeper = getZooKeeper();
+    /// With geo replication control and `prefer_same_region`, the replicas of the same region go first.
+    Strings replicas = getAllReplicasInPath(zookeeper_path, prefer_same_region).all_replicas;
+
+    for (const String & replica : replicas)
+    {
+        /// We aren't interested in ourself.
+        if (replica == replica_name)
+            continue;
 
         if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active")))
@@ -5293,24 +5514,24 @@ std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(c
     return our_unique_parts;
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const std::span<String> & replicas, LogEntry & entry, bool active)
 {
     String dummy;
-    return findReplicaHavingCoveringPartImplLowLevel(&entry, entry.new_part_name, dummy, active);
+    return findReplicaHavingCoveringPartImplLowLevel(replicas, &entry, entry.new_part_name, dummy, active);
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(const std::span<String> & replicas, LogEntry * entry, const String & part_name, String & found_part_name, bool active)
 {
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
 
-    /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+    LOG_TRACE(log, "Candidate replicas: {}", fmt::join(replicas, ","));
 
     for (const String & replica : replicas)
     {
         if (replica == replica_name)
             continue;
+
+        LOG_TRACE(log, "Candidate replica: {}", replica);
 
         if (active && !zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
             continue;
@@ -5358,7 +5579,8 @@ bool StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
     const String & part_name, bool active)
 {
     String dummy;
-    return !findReplicaHavingCoveringPartImplLowLevel(/* entry */ nullptr, part_name, dummy, active).empty();
+    auto replicas = getAllReplicasInPath(getZooKeeperPath()).all_replicas;
+    return !findReplicaHavingCoveringPartImplLowLevel(replicas, /* entry */ nullptr, part_name, dummy, active).empty();
 }
 
 
@@ -6164,6 +6386,9 @@ void StorageReplicatedMergeTree::partialShutdown()
     partial_shutdown_called = true;
     partial_shutdown_event.set();
     queue.notifySubscribersOnPartialShutdown();
+    geo_replication_controller.stop();
+    /// Remove the `region` node while this session still holds `is_active`: only then it is guaranteed to be ours.
+    replica_region_node = nullptr;
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -8799,7 +9024,33 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (!literal)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for part name, got: {}", partition->formatForErrorMessage());
         String part_name = literal->value.safeGet<String>();
-        auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
+        Strings replicas = zookeeper->getChildren(fs::path(from) / "replicas");
+        std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+
+        if (geo_replication_controller.isConfigured() && from_zookeeper_name == getZooKeeperName())
+        {
+            /// We're attaching from the same ZooKeeper as the current table, so we can leverage the region information to reduce
+            /// fetching cost if possible by favoring replicas in the same region.
+            /// This logic belongs to a user query, so we can only do the best effort, we cannot force fetching from the leader.
+            std::partition(replicas.begin(), replicas.end(), [&](const auto & replica)
+            {
+                String region;
+                /// `replicas` were enumerated from `from`, so read their region metadata from `from` as well.
+                zookeeper->tryGet(fs::path(from) / "replicas" / replica / "region", region);
+                return region == geo_replication_controller.getRegion();
+            });
+        }
+
+        String part_path;
+        for (const String & replica : replicas)
+        {
+            if (zookeeper->exists(fs::path(from) / "replicas" / replica / "parts" / part_name)
+                && zookeeper->exists(fs::path(from) / "replicas" / replica / "is_active"))
+            {
+                part_path = fs::path(from) / "replicas" / replica;
+                break;
+            }
+        }
 
         if (part_path.empty())
             throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
@@ -8867,6 +9118,83 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (active_replicas.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No active replicas for shard {}", from_);
 
+        /// The replicas that the best one is chosen among. Normally all active replicas, but with geo replication
+        /// control it is narrowed down to the replicas of the same region that can serve the whole partition, if there are any.
+        zkutil::Strings same_region_replicas;
+        std::span<const String> candidate_replicas{active_replicas};
+
+        if (geo_replication_controller.isConfigured() && from_zookeeper_name == getZooKeeperName())
+        {
+            /// We're attaching from the same ZooKeeper as the current table, so we can leverage the region information to reduce
+            /// fetching cost if possible by favoring replicas in the same region.
+            /// This logic belongs to a user query, so we can only do the best effort, we cannot force fetching from the leader.
+
+            /// The parts of the requested partition that every active replica has committed, and the union of them:
+            /// the current state of the partition across the shard. A replica of the same region is a candidate only when
+            /// its own parts cover this whole state. Otherwise a lagging replica of the region (having a stale subset of the
+            /// partition, or nothing at all) would be chosen just because it is close, and the query would fetch an
+            /// incomplete partition or be rejected with `PARTITION_DOESNT_EXIST` below, while an active replica outside
+            /// of the region already has the data.
+            std::unordered_map<String, Strings> partition_parts_by_replica;
+            Strings all_partition_parts;
+            for (const String & replica : active_replicas)
+            {
+                Strings replica_parts;
+                if (zookeeper->tryGetChildren(fs::path(from) / "replicas" / replica / "parts", replica_parts) != Coordination::Error::ZOK)
+                    continue;
+
+                Strings & partition_parts = partition_parts_by_replica[replica];
+                for (const String & part : replica_parts)
+                {
+                    auto part_info = MergeTreePartInfo::tryParsePartName(part, format_version);
+                    if (part_info && part_info->getPartitionId() == partition_id)
+                    {
+                        partition_parts.push_back(part);
+                        all_partition_parts.push_back(part);
+                    }
+                }
+            }
+
+            const ActiveDataPartSet current_partition_state(format_version, all_partition_parts);
+            const Strings current_partition_parts = current_partition_state.getParts();
+
+            for (const String & replica : active_replicas)
+            {
+                String region;
+                /// `active_replicas` were enumerated from `from`, so read their region metadata from `from` as well.
+                zookeeper->tryGet(fs::path(from) / "replicas" / replica / "region", region);
+                if (region != geo_replication_controller.getRegion())
+                    continue;
+
+                auto it = partition_parts_by_replica.find(replica);
+                if (it == partition_parts_by_replica.end() || it->second.empty())
+                    continue;
+
+                /// The replica covers the current state only if it has, for every part of that state, a part containing it
+                /// (as the state is the union of the active replicas' parts, it is that very part). Smaller parts spanning the
+                /// same block range (e.g. not merged yet) are deliberately not accepted: a merge can change the rows
+                /// (`OPTIMIZE ... DEDUPLICATE`, `ReplacingMergeTree`, `CollapsingMergeTree`, TTL, ...) without changing the
+                /// data version, so the unmerged parts are not logically equivalent to the merged one, and copying them would
+                /// restore rows that the merge removed. Such a replica only makes us miss the preference of the region.
+                const ActiveDataPartSet replica_partition_state(format_version, it->second);
+                const bool covers_whole_partition = std::all_of(
+                    current_partition_parts.begin(), current_partition_parts.end(), [&](const String & part)
+                    {
+                        return !replica_partition_state.getContainingPart(part).empty();
+                    });
+
+                if (covers_whole_partition)
+                    same_region_replicas.push_back(replica);
+                else
+                    LOG_DEBUG(log, "Replica {} of the same region has only a part of partition {}, it is not preferred as the fetch source", replica, partition_id);
+            }
+
+            /// Only consider the out-of-region replicas when no replica of the region can serve the whole partition:
+            /// otherwise the best replica could be chosen across the ocean just because it is slightly more up to date.
+            if (!same_region_replicas.empty())
+                candidate_replicas = std::span<const String>{same_region_replicas};
+        }
+
         /** You must select the best (most relevant) replica.
         * This is a replica with the maximum `log_pointer`, then with the minimum `queue` size.
         * NOTE This is not exactly the best criteria. It does not make sense to download old partitions,
@@ -8876,7 +9204,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         Int64 max_log_pointer = -1;
         UInt64 min_queue_size = std::numeric_limits<UInt64>::max();
 
-        for (const String & replica : active_replicas)
+        for (const String & replica : candidate_replicas)
         {
             String current_replica_path = fs::path(from) / "replicas" / replica;
 
@@ -10467,6 +10795,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 void StorageReplicatedMergeTree::movePartitionToShard(
     const ASTPtr & partition, bool move_part, const String & to, ContextPtr /*query_context*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToShard");
+
     /// This is a lightweight operation that only optimistically checks if it could succeed and queues tasks.
 
     if (!move_part)
@@ -12025,24 +12355,6 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     return lock;
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(
-    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_ptr)
-{
-    Strings replicas = zookeeper_ptr->getChildren(fs::path(zookeeper_path_) / "replicas");
-
-    /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-
-    for (const String & replica : replicas)
-    {
-        if (zookeeper_ptr->exists(fs::path(zookeeper_path_) / "replicas" / replica / "parts" / part_name)
-            && zookeeper_ptr->exists(fs::path(zookeeper_path_) / "replicas" / replica / "is_active"))
-            return fs::path(zookeeper_path_) / "replicas" / replica;
-    }
-
-    return {};
-}
-
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
     for (const auto & disk : getStoragePolicy()->getDisks())
@@ -12660,4 +12972,32 @@ void StorageReplicatedMergeTree::attachRestoredParts(
         sink->writeExistingPart(part, /* deduplicate_part */ false);
 }
 
+StorageReplicatedMergeTree::GetReplicasResult StorageReplicatedMergeTree::getAllReplicasInPath(const String & zk_path, bool prefer_same_region)
+{
+    GetReplicasResult res;
+    auto zookeeper = getZooKeeper();
+    res.all_replicas = zookeeper->getChildren(fs::path(zk_path) / "replicas");
+    std::shuffle(res.all_replicas.begin(), res.all_replicas.end(), thread_local_rng);
+    auto it = res.all_replicas.end();
+    if (geo_replication_controller.isConfigured() && !prefer_same_region)
+    {
+        /// The region is not preferred: all replicas are candidates on equal terms, in random order.
+        it = res.all_replicas.begin();
+    }
+    else if (geo_replication_controller.isConfigured())
+    {
+        /// Prefer fetching from node in same region
+        it = std::partition(res.all_replicas.begin(), res.all_replicas.end(), [&](const auto & replica)
+        {
+            String region;
+            /// Region metadata must be read from the same path the replicas were enumerated from (`zk_path`).
+            /// Callers such as fetch-from-shard pass a `zk_path` that differs from this table's `zookeeper_path`.
+            zookeeper->tryGet(fs::path(zk_path) / "replicas" / replica / "region", region);
+            return region == geo_replication_controller.getRegion();
+        });
+    }
+    res.replicas_same_region = std::span<String>(res.all_replicas.begin(), it);
+    res.replicas_not_same_region = std::span<String>(it, res.all_replicas.end());
+    return res;
+}
 }
