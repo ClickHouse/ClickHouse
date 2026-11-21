@@ -7,6 +7,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/FailPoint.h>
 #include <algorithm>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -96,6 +97,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char mt_mutations_interpreter_pause_after_stage_set_resolution[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
@@ -159,6 +165,14 @@ bool isBatchableRowMaskPredicate(QueryTreeNodePtr assignment, const QueryTreeNod
             return true;
         if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
             return false;
+        if (const auto * function = node->as<FunctionNode>(); function && function->getFunctionName() == "in")
+        {
+            const auto & arguments = function->getArguments().getNodes();
+            if (arguments.size() == 2 && arguments[0] && arguments[1]
+                && (arguments[1]->getNodeType() == QueryTreeNodeType::QUERY
+                    || arguments[1]->getNodeType() == QueryTreeNodeType::UNION))
+                return self(arguments[0], self);
+        }
         if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull() == table)
         {
             if (column->getColumnName() == RowExistsColumn::name || !columns.hasPhysical(column->getColumnName()))
@@ -310,8 +324,13 @@ bool tryUniteRowMaskPrecheckSets(
     const PlannerContext & planner_context,
     const MergeTreeData::DataPartPtr & source_part,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context)
+    ContextPtr context,
+    size_t max_input_rows,
+    size_t max_input_bytes)
 {
+    if (!max_input_rows || !max_input_bytes)
+        return false;
+
     const auto & query_settings = context->getSettingsRef();
     const ExpressionActionsSettings actions_settings(context);
     /// Preserve the original per-`Set` and temporary-column limit semantics.
@@ -322,10 +341,8 @@ bool tryUniteRowMaskPrecheckSets(
     constexpr size_t max_actions = 8192;
     constexpr size_t max_nodes = 65536;
     constexpr size_t max_header_columns = 65536;
-    constexpr size_t max_input_rows = 4096;
     constexpr size_t max_key_columns = 4;
     constexpr size_t max_key_bytes = 32;
-    constexpr size_t max_input_bytes = 128 * 1024;
     using Node = ActionsDAG::Node;
     using ActionType = ActionsDAG::ActionType;
 
@@ -660,7 +677,9 @@ IsStorageTouched isStorageTouchedByMutations(
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
     std::function<void()> on_exception,
-    bool unite_row_mask_sets)
+    bool unite_row_mask_sets,
+    size_t max_row_mask_set_union_source_rows,
+    size_t max_row_mask_set_union_source_key_bytes)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -727,7 +746,8 @@ IsStorageTouched isStorageTouchedByMutations(
     {
         auto & plan = interpreter.getQueryPlan();
         united_precheck = tryUniteRowMaskPrecheckSets(
-            plan, select_query_tree, *interpreter.getPlanner().getPlannerContext(), source_part, metadata_snapshot, context);
+            plan, select_query_tree, *interpreter.getPlanner().getPlannerContext(), source_part, metadata_snapshot, context,
+            max_row_mask_set_union_source_rows, max_row_mask_set_union_source_key_bytes);
     }
     BlockIO io = interpreter.execute();
     if (united_precheck)
@@ -2724,6 +2744,10 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 prepared_stages[i - 1].output_columns.insert(col_name);
         }
 
+        /// The next stage is resolved only after this one, so its subquery can see a newer source snapshot.
+        if (!dry_run && i > 0 && stage.new_prepared_sets && stage.new_prepared_sets->hasSubqueries())
+            FailPointInjection::pauseFailPoint(FailPoints::mt_mutations_interpreter_pause_after_stage_set_resolution);
+
     }
 }
 
@@ -2938,8 +2962,21 @@ bool MutationsInterpreter::canBatchRowMaskActions(const std::vector<Stage> & pre
         const auto & stage = prepared_stages[stage_index];
         if (!stage.filters.empty() || !stage.filter_column_names.empty() || stage.is_readonly || stage.affects_all_columns
             || stage.mutation_version != commands.front().mutation_version
-            || (stage.new_prepared_sets && (stage.new_prepared_sets->hasSubqueries() || !stage.new_prepared_sets->getSetsFromTuple().empty())))
+            || (stage.new_prepared_sets && !stage.new_prepared_sets->getSetsFromTuple().empty()))
             return false;
+
+        /// Every admitted Set must belong to this stage and retain its original build gate.
+        std::unordered_set<const FutureSetFromSubquery *> prepared_subqueries;
+        if (stage.new_prepared_sets)
+        {
+            for (const auto & subquery : stage.new_prepared_sets->getSubqueries())
+            {
+                if (!subquery || subquery->hasExternalTable() || subquery->isMutableDuringQuery())
+                    return false;
+                prepared_subqueries.insert(subquery.get());
+            }
+        }
+        std::unordered_set<const FutureSetFromSubquery *> used_subqueries;
         if (!stage.column_to_updated.empty())
         {
             if (stage.column_to_updated.size() != 1 || !stage.column_to_updated.contains(RowExistsColumn::name))
@@ -2953,12 +2990,36 @@ bool MutationsInterpreter::canBatchRowMaskActions(const std::vector<Stage> & pre
         {
             const auto & dag = step->getActions()->dag;
             if (++actions > max_actions || dag.hasArrayJoin() || dag.hasCorrelatedColumns()
-                || dag.hasNonDeterministic() || dag.hasNonDeterministicOrStatefulFunctions())
+                || dag.hasNonDeterministicOrStatefulFunctions())
                 return false;
+
+            std::unordered_set<const ActionsDAG::Node *> set_rhs_nodes;
             for (const auto & node : dag.getNodes())
             {
-                /// Lambda bodies can hide Sets; neither kind is admitted in this first strategy.
-                if (WhichDataType(node.result_type).isSet() || WhichDataType(node.result_type).isFunction())
+                if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base
+                    || node.function_base->getName() != "in" || node.children.size() != 2)
+                    continue;
+
+                const auto * rhs = node.children[1]->getWithoutAlias();
+                if (!WhichDataType(rhs->result_type).isSet())
+                    continue;
+                const auto * set_column = rhs->column ? typeid_cast<const ColumnSet *>(&rhs->column->getDataColumn()) : nullptr;
+                if (rhs->type != ActionsDAG::ActionType::COLUMN || !set_column)
+                    return false;
+                const auto future = set_column->getData();
+                const auto * subquery = dynamic_cast<const FutureSetFromSubquery *>(future.get());
+                if (!subquery || !prepared_subqueries.contains(subquery)
+                    || future->isMutableDuringQuery() || subquery->hasExternalTable())
+                    return false;
+                set_rhs_nodes.insert(rhs);
+                used_subqueries.insert(subquery);
+            }
+            for (const auto & node : dag.getNodes())
+            {
+                /// Only an exact stage-owned subquery Set leaf may be non-deterministic.
+                if (WhichDataType(node.result_type).isFunction()
+                    || (WhichDataType(node.result_type).isSet() && !set_rhs_nodes.contains(&node))
+                    || (!node.isDeterministic() && !set_rhs_nodes.contains(&node)))
                     return false;
             }
 
@@ -2975,6 +3036,8 @@ bool MutationsInterpreter::canBatchRowMaskActions(const std::vector<Stage> & pre
             header_columns += current_columns + next_columns;
             current_columns = next_columns;
         }
+        if (used_subqueries.size() != prepared_subqueries.size())
+            return false;
     }
     return updates == commands.size() && actions > 1;
 }
@@ -2997,12 +3060,30 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
     constexpr size_t max_actions = 8192;
     constexpr size_t max_nodes = 65536;
     constexpr size_t max_header_columns = 65536;
-    constexpr size_t max_input_rows = 4096;
     constexpr size_t max_key_columns = 4;
     constexpr size_t max_key_bytes = 32;
-    constexpr size_t max_input_bytes = 128 * 1024;
+    const size_t max_input_rows = settings.row_mask_set_union_source_rows;
+    const size_t max_input_bytes = settings.row_mask_set_union_source_key_bytes;
+    const size_t max_ready_set_groups = settings.row_mask_set_union_groups;
+    if (!max_input_rows || !max_input_bytes || !max_ready_set_groups)
+        return {};
     using Node = ActionsDAG::Node;
     using ActionType = ActionsDAG::ActionType;
+
+    struct ReadySetGroup
+    {
+        ActionsDAG::NodeRawConstPtrs keys;
+        const Node * in = nullptr;
+        const Node * conditional = nullptr;
+        const Node * tuple = nullptr;
+        const Node * zero = nullptr;
+        const Node * guard_and = nullptr;
+        const Node * guard_equals = nullptr;
+        const Node * guard_input = nullptr;
+        const Node * guard_constant = nullptr;
+        size_t key_bytes = 0;
+        VectorWithMemoryTracking<FutureSetPtr> futures;
+    };
 
     const auto is_function = [](const Node * node, std::string_view name, size_t arguments)
     {
@@ -3027,8 +3108,13 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
     const Node * first_if = nullptr;
     const Node * first_tuple = nullptr;
     const Node * first_zero = nullptr;
+    const Node * first_guard_and = nullptr;
+    const Node * first_guard_equals = nullptr;
+    const Node * first_guard_input = nullptr;
+    const Node * first_guard_constant = nullptr;
     VectorWithMemoryTracking<const FutureSetFromTuple *> literal_sets;
     VectorWithMemoryTracking<FutureSetPtr> subquery_sets;
+    std::vector<ReadySetGroup> ready_set_groups;
     const auto & physical_columns = source.getMergeTreeDataPart()->getColumns();
 
     for (size_t stage_index = 0; stage_index < prepared_stages.size(); ++stage_index)
@@ -3037,6 +3123,17 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
         if (!stage.filters.empty() || !stage.filter_column_names.empty() || stage.is_readonly || stage.affects_all_columns
             || stage.mutation_version != commands.front().mutation_version)
             return {};
+        std::unordered_set<const FutureSetFromSubquery *> prepared_subqueries;
+        if (stage.new_prepared_sets)
+        {
+            for (const auto & subquery : stage.new_prepared_sets->getSubqueries())
+            {
+                if (!subquery || subquery->hasExternalTable() || subquery->isMutableDuringQuery())
+                    return {};
+                prepared_subqueries.insert(subquery.get());
+            }
+        }
+        std::unordered_set<const FutureSetFromSubquery *> used_subqueries;
         if (!stage.column_to_updated.empty())
         {
             if (stage.column_to_updated.size() != 1 || !stage.column_to_updated.contains(RowExistsColumn::name))
@@ -3094,13 +3191,41 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
                 const auto * condition = value->children[0]->getWithoutAlias();
                 const auto * zero = value->children[1]->getWithoutAlias();
                 const auto * old_mask = value->children[2]->getWithoutAlias();
-                if (!is_function(condition, "in", 2) || !condition->result_type->equals(*RowExistsColumn::type)
+                const Node * in_condition = condition;
+                const Node * guard_and = nullptr;
+                const Node * guard_equals = nullptr;
+                const Node * guard_input = nullptr;
+                const Node * guard_constant = nullptr;
+                if (is_function(condition, "and", 2))
+                {
+                    guard_and = condition;
+                    guard_equals = condition->children[0]->getWithoutAlias();
+                    in_condition = condition->children[1]->getWithoutAlias();
+                    if (!is_function(guard_equals, "equals", 2)
+                        || !guard_equals->result_type->equals(*RowExistsColumn::type)
+                        || !guard_and->result_type->equals(*RowExistsColumn::type))
+                        return {};
+                    guard_input = guard_equals->children[0]->getWithoutAlias();
+                    guard_constant = guard_equals->children[1]->getWithoutAlias();
+                    if (guard_input->type != ActionType::INPUT || guard_input->result_name == RowExistsColumn::name
+                        || !WhichDataType(guard_input->result_type).isInteger()
+                        || guard_constant->type != ActionType::COLUMN || !guard_constant->column
+                        || !guard_constant->column->isConst()
+                        || !guard_constant->result_type->equals(*guard_input->result_type))
+                        return {};
+                    const auto physical = physical_columns.tryGetByName(guard_input->result_name);
+                    const auto metadata_column = metadata_snapshot->getColumns().tryGetPhysical(guard_input->result_name);
+                    if (!physical || !metadata_column || !physical->type->equals(*guard_input->result_type)
+                        || !metadata_column->type->equals(*guard_input->result_type))
+                        return {};
+                }
+                if (!is_function(in_condition, "in", 2) || !in_condition->result_type->equals(*RowExistsColumn::type)
                     || zero->type != ActionType::COLUMN || !zero->column
                     || !zero->result_type->equals(*RowExistsColumn::type) || zero->column->getField() != Field(UInt64(0))
                     || !is_mask_input(old_mask))
                     return {};
 
-                const auto * lhs = condition->children[0]->getWithoutAlias();
+                const auto * lhs = in_condition->children[0]->getWithoutAlias();
                 const Node * tuple = nullptr;
                 ActionsDAG::NodeRawConstPtrs current_keys;
                 if (is_function(lhs, "tuple", lhs->children.size()))
@@ -3129,7 +3254,7 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
                 if (current_key_bytes > max_key_bytes)
                     return {};
 
-                const auto * rhs = condition->children[1]->getWithoutAlias();
+                const auto * rhs = in_condition->children[1]->getWithoutAlias();
                 const auto * set_column = rhs->column ? typeid_cast<const ColumnSet *>(&rhs->column->getDataColumn()) : nullptr;
                 if (rhs->type != ActionType::COLUMN || !WhichDataType(rhs->result_type).isSet() || !set_column)
                     return {};
@@ -3161,30 +3286,83 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
                 else
                 {
                     const auto * subquery = dynamic_cast<const FutureSetFromSubquery *>(future.get());
-                    if (!subquery || subquery->hasExternalTable() || !literal_sets.empty() || !tuple || current_keys.size() < 2)
+                    if (!subquery || !prepared_subqueries.contains(subquery) || subquery->hasExternalTable()
+                        || future->isMutableDuringQuery() || !literal_sets.empty() || (tuple && current_keys.size() < 2))
                         return {};
                     subquery_sets.push_back(future);
                     subquery_rhs = rhs;
+                    used_subqueries.insert(subquery);
+
+                    const auto same_group = [&](const ReadySetGroup & group)
+                    {
+                        if (group.keys.size() != current_keys.size() || bool(group.tuple) != bool(tuple)
+                            || bool(group.guard_and) != bool(guard_and))
+                            return false;
+                        if (guard_and && (group.guard_input->result_name != guard_input->result_name
+                            || !group.guard_input->result_type->equals(*guard_input->result_type)
+                            || !group.guard_constant->result_type->equals(*guard_constant->result_type)
+                            || group.guard_constant->column->getField() != guard_constant->column->getField()))
+                            return false;
+                        for (size_t i = 0; i < current_keys.size(); ++i)
+                        {
+                            if (group.keys[i]->result_name != current_keys[i]->result_name
+                                || !group.keys[i]->result_type->equals(*current_keys[i]->result_type))
+                                return false;
+                        }
+                        return true;
+                    };
+                    auto group = std::find_if(ready_set_groups.begin(), ready_set_groups.end(), same_group);
+                    if (group == ready_set_groups.end())
+                    {
+                        if (ready_set_groups.size() == max_ready_set_groups)
+                            return {};
+                        ready_set_groups.emplace_back();
+                        group = ready_set_groups.end() - 1;
+                        group->keys = current_keys;
+                        group->in = in_condition;
+                        group->conditional = value;
+                        group->tuple = tuple;
+                        group->zero = zero;
+                        group->guard_and = guard_and;
+                        group->guard_equals = guard_equals;
+                        group->guard_input = guard_input;
+                        group->guard_constant = guard_constant;
+                        group->key_bytes = current_key_bytes;
+                    }
+                    group->futures.push_back(future);
                 }
                 if (first_in)
                 {
-                    if (keys.size() != current_keys.size() || bool(first_tuple) != bool(tuple))
-                        return {};
-                    for (size_t i = 0; i < keys.size(); ++i)
+                    if (literal || ready_set_groups.size() == 1)
                     {
-                        if (keys[i]->result_name != current_keys[i]->result_name
-                            || !keys[i]->result_type->equals(*current_keys[i]->result_type))
+                        if (keys.size() != current_keys.size() || bool(first_tuple) != bool(tuple)
+                            || bool(first_guard_and) != bool(guard_and))
                             return {};
+                        if (guard_and && (first_guard_input->result_name != guard_input->result_name
+                            || !first_guard_input->result_type->equals(*guard_input->result_type)
+                            || !first_guard_constant->result_type->equals(*guard_constant->result_type)
+                            || first_guard_constant->column->getField() != guard_constant->column->getField()))
+                            return {};
+                        for (size_t i = 0; i < keys.size(); ++i)
+                        {
+                            if (keys[i]->result_name != current_keys[i]->result_name
+                                || !keys[i]->result_type->equals(*current_keys[i]->result_type))
+                                return {};
+                        }
                     }
                 }
                 else
                 {
                     keys = std::move(current_keys);
                     key_bytes = current_key_bytes;
-                    first_in = condition;
+                    first_in = in_condition;
                     first_if = value;
                     first_tuple = tuple;
                     first_zero = zero;
+                    first_guard_and = guard_and;
+                    first_guard_equals = guard_equals;
+                    first_guard_input = guard_input;
+                    first_guard_constant = guard_constant;
                 }
             }
 
@@ -3206,6 +3384,8 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             }
         }
         if (stage_updates != (stage.column_to_updated.empty() ? 0 : 1))
+            return {};
+        if (used_subqueries.size() != prepared_subqueries.size())
             return {};
     }
     if (updates != commands.size() || literal_sets.size() + subquery_sets.size() != updates || !first_in)
@@ -3252,11 +3432,185 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             return {};
         set_header.emplace_back(key->result_type->createColumn(), key->result_type, key->result_name);
     }
+    if (first_guard_input)
+    {
+        const auto * input = input_header.findByName(first_guard_input->result_name);
+        if (!input || !input->type->equals(*first_guard_input->result_type))
+            return {};
+    }
+
+    if (ready_set_groups.size() > 1)
+    {
+        if (std::ranges::none_of(ready_set_groups, [](const auto & group) { return group.futures.size() > 1; }))
+            return {};
+
+        struct ReadySetGroupPlan
+        {
+            ColumnsWithTypeAndName header;
+            VectorWithMemoryTracking<FutureSetPtr> futures;
+            FunctionBasePtr tuple_function;
+            FunctionBasePtr in_function;
+            FunctionBasePtr if_function;
+            FunctionBasePtr guard_and_function;
+            FunctionBasePtr guard_equals_function;
+            String guard_name;
+            ColumnConstPtr guard_column;
+            DataTypePtr guard_type;
+            ColumnConstPtr zero_column;
+            DataTypePtr zero_type;
+            size_t key_bytes = 0;
+        };
+        std::vector<ReadySetGroupPlan> plans;
+        plans.reserve(ready_set_groups.size());
+        for (auto & group : ready_set_groups)
+        {
+            ReadySetGroupPlan group_plan;
+            for (const auto * key : group.keys)
+            {
+                const auto * input = input_header.findByName(key->result_name);
+                if (!input || !input->type->equals(*key->result_type))
+                    return {};
+                group_plan.header.emplace_back(key->result_type->createColumn(), key->result_type, key->result_name);
+            }
+            if (group.guard_input)
+            {
+                const auto * input = input_header.findByName(group.guard_input->result_name);
+                if (!input || !input->type->equals(*group.guard_input->result_type))
+                    return {};
+                group_plan.guard_name = group.guard_input->result_name;
+                group_plan.guard_column = group.guard_constant->column;
+                group_plan.guard_type = group.guard_constant->result_type;
+                group_plan.guard_and_function = group.guard_and->function_base;
+                group_plan.guard_equals_function = group.guard_equals->function_base;
+            }
+            group_plan.futures = std::move(group.futures);
+            group_plan.tuple_function = group.tuple ? group.tuple->function_base : nullptr;
+            group_plan.in_function = group.in->function_base;
+            group_plan.if_function = group.conditional->function_base;
+            group_plan.zero_column = group.zero->column;
+            group_plan.zero_type = group.zero->result_type;
+            group_plan.key_bytes = group.key_bytes;
+            plans.push_back(std::move(group_plan));
+        }
+
+        return {.after_sets = [input_header, output_header = std::move(expected_header), group_plans = std::move(plans),
+            max_rows = max_input_rows, max_bytes = max_input_bytes]() -> std::optional<ActionsDAG>
+        {
+            /// Preflight the aggregate source payload before copying any `Set`. Rejections use all original actions.
+            std::vector<VectorWithMemoryTracking<SetPtr>> source_sets;
+            std::vector<size_t> group_rows;
+            source_sets.reserve(group_plans.size());
+            group_rows.reserve(group_plans.size());
+            size_t remaining_rows = max_rows;
+            size_t remaining_bytes = max_bytes;
+            for (const auto & group : group_plans)
+            {
+                auto & sets = source_sets.emplace_back();
+                sets.reserve(group.futures.size());
+                size_t rows_in_group = 0;
+                for (const auto & future : group.futures)
+                {
+                    auto set = future->get();
+                    if (!set)
+                        return {};
+                    const size_t rows = set->getTotalRowCount();
+                    if (!rows || rows > remaining_rows || rows > remaining_bytes / group.key_bytes)
+                        return {};
+                    remaining_rows -= rows;
+                    remaining_bytes -= rows * group.key_bytes;
+                    rows_in_group += rows;
+                    sets.push_back(std::move(set));
+                }
+                group_rows.push_back(rows_in_group);
+            }
+
+            std::vector<SetPtr> union_sets;
+            union_sets.reserve(group_plans.size());
+            remaining_rows = max_rows;
+            for (size_t i = 0; i < group_plans.size(); ++i)
+            {
+                auto united = Set::tryUniteReadyFixedWidthSets(source_sets[i], group_plans[i].header, remaining_rows);
+                if (!united)
+                    return {};
+                union_sets.push_back(std::move(united));
+                remaining_rows -= group_rows[i];
+            }
+
+            ActionsDAG united;
+            UnorderedMapWithMemoryTracking<std::string_view, const Node *> united_inputs;
+            for (const auto & column : input_header)
+                united_inputs.emplace(column.name, &united.addInput(column));
+
+            size_t name_index = 0;
+            const auto new_name = [&]()
+            {
+                String name;
+                do
+                {
+                    name = "__row_mask_typed_union_" + std::to_string(name_index++);
+                }
+                while (united_inputs.contains(name));
+                return name;
+            };
+
+            const Node * mask = united_inputs.at(RowExistsColumn::name);
+            for (size_t i = 0; i < group_plans.size(); ++i)
+            {
+                const auto & group = group_plans[i];
+                ActionsDAG::NodeRawConstPtrs united_keys;
+                for (const auto & key : group.header)
+                    united_keys.push_back(united_inputs.at(key.name));
+
+                const Node * lhs = united_keys.front();
+                if (group.tuple_function)
+                    lhs = &united.addFunction(group.tuple_function, united_keys, new_name());
+
+                /// A private hash prevents the serialized `Sets` registry from aliasing an original predicate.
+                const auto uuid = UUIDHelpers::generateV4();
+                const FutureSet::Hash hash(UUIDHelpers::getLowBytes(uuid), UUIDHelpers::getHighBytes(uuid));
+                auto future = std::make_shared<FutureSetFromStorage>(hash, nullptr, std::move(union_sets[i]), std::nullopt, false);
+                const auto & rhs = united.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future)), 0),
+                    std::make_shared<DataTypeSet>(), new_name());
+                const Node * condition = &united.addFunction(group.in_function, {lhs, &rhs}, new_name());
+                if (group.guard_and_function)
+                {
+                    const auto & guard_value = united.addColumn(group.guard_column, group.guard_type, new_name());
+                    const auto & guard = united.addFunction(group.guard_equals_function,
+                        {united_inputs.at(group.guard_name), &guard_value}, new_name());
+                    condition = &united.addFunction(group.guard_and_function, {&guard, condition}, new_name());
+                }
+                const auto & zero = united.addColumn(group.zero_column, group.zero_type, new_name());
+                mask = &united.addFunction(group.if_function, {condition, &zero, mask}, new_name());
+            }
+
+            const auto & output_mask = united.addAlias(*mask, RowExistsColumn::name);
+            for (const auto & column : output_header)
+                united.getOutputs().push_back(column.name == RowExistsColumn::name ? &output_mask : united_inputs.at(column.name));
+
+            const auto actual_header = united.updateHeader(input_header);
+            if (!blocksHaveEqualStructure(actual_header, output_header))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouped row-mask expression changed the mutation header");
+            for (size_t i = 0; i < actual_header.columns(); ++i)
+            {
+                const auto * actual = typeid_cast<const ColumnConst *>(actual_header.getByPosition(i).column.get());
+                const auto * expected = typeid_cast<const ColumnConst *>(output_header.getByPosition(i).column.get());
+                if (actual && expected && &actual->getDataColumn() != &expected->getDataColumn()
+                    && (actual_header.getByPosition(i).name != RowExistsColumn::name || actual->getField() != expected->getField()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouped row-mask expression changed a constant mutation output");
+            }
+            return united;
+        }};
+    }
 
     auto make_actions = [input_header, output_header = std::move(expected_header), set_header,
         tuple_function = first_tuple ? first_tuple->function_base : nullptr,
         in_function = first_in->function_base, if_function = first_if->function_base,
-        zero_column = first_zero->column, zero_type = first_zero->result_type](SetPtr union_set)
+        zero_column = first_zero->column, zero_type = first_zero->result_type,
+        guard_and_function = first_guard_and ? first_guard_and->function_base : nullptr,
+        guard_equals_function = first_guard_equals ? first_guard_equals->function_base : nullptr,
+        guard_name = first_guard_input ? first_guard_input->result_name : String{},
+        guard_column = first_guard_constant ? first_guard_constant->column : nullptr,
+        guard_type = first_guard_constant ? first_guard_constant->result_type : nullptr](SetPtr union_set)
     {
         ActionsDAG united;
         UnorderedMapWithMemoryTracking<std::string_view, const Node *> united_inputs;
@@ -3287,9 +3641,16 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             lhs = &united.addFunction(tuple_function, united_keys, new_name());
         const auto & rhs = united.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future)), 0),
             std::make_shared<DataTypeSet>(), new_name());
-        const auto & condition = united.addFunction(in_function, {lhs, &rhs}, new_name());
+        const Node * condition = &united.addFunction(in_function, {lhs, &rhs}, new_name());
+        if (guard_and_function)
+        {
+            const auto & guard_value = united.addColumn(guard_column, guard_type, new_name());
+            const auto & guard = united.addFunction(
+                guard_equals_function, {united_inputs.at(guard_name), &guard_value}, new_name());
+            condition = &united.addFunction(guard_and_function, {&guard, condition}, new_name());
+        }
         const auto & zero = united.addColumn(zero_column, zero_type, new_name());
-        const auto & mask = united.addFunction(if_function, {&condition, &zero, united_inputs.at(RowExistsColumn::name)}, new_name());
+        const auto & mask = united.addFunction(if_function, {condition, &zero, united_inputs.at(RowExistsColumn::name)}, new_name());
         const auto & output_mask = united.addAlias(mask, RowExistsColumn::name);
         for (const auto & column : output_header)
             united.getOutputs().push_back(column.name == RowExistsColumn::name ? &output_mask : united_inputs.at(column.name));
@@ -3310,16 +3671,27 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
 
     if (!subquery_sets.empty())
     {
-        /// Integer keys consume at most max_key_bytes, so the row cap also bounds key payload.
-        chassert(max_input_rows <= max_input_bytes / key_bytes);
         return {.after_sets = [futures = std::move(subquery_sets), header = std::move(set_header),
-            build_actions = std::move(make_actions)]() -> std::optional<ActionsDAG>
+            build_actions = std::move(make_actions), max_rows = max_input_rows,
+            max_bytes = max_input_bytes, key_bytes]() -> std::optional<ActionsDAG>
         {
             VectorWithMemoryTracking<SetPtr> sets;
             sets.reserve(futures.size());
+            size_t remaining_rows = max_rows;
+            size_t remaining_bytes = max_bytes;
             for (const auto & future : futures)
-                sets.push_back(future->get());
-            auto union_set = Set::tryUniteReadyFixedWidthSets(sets, header, max_input_rows);
+            {
+                auto set = future->get();
+                if (!set)
+                    return {};
+                const size_t rows = set->getTotalRowCount();
+                if (!rows || rows > remaining_rows || rows > remaining_bytes / key_bytes)
+                    return {};
+                remaining_rows -= rows;
+                remaining_bytes -= rows * key_bytes;
+                sets.push_back(std::move(set));
+            }
+            auto union_set = Set::tryUniteReadyFixedWidthSets(sets, header, max_rows);
             if (!union_set)
                 return {};
             return build_actions(std::move(union_set));

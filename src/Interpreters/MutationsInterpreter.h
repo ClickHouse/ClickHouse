@@ -49,7 +49,9 @@ IsStorageTouched isStorageTouchedByMutations(
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
     std::function<void()> on_exception,
-    bool unite_row_mask_sets = false
+    bool unite_row_mask_sets,
+    size_t max_row_mask_set_union_source_rows,
+    size_t max_row_mask_set_union_source_key_bytes
 );
 
 /// Build the WHERE-style filter for a mutation command. The parsed
@@ -107,6 +109,10 @@ public:
         bool batch_row_mask_actions = false;
         /// Only the background part-mutation caller may unite ready literal row-mask Sets.
         bool unite_row_mask_sets = false;
+        /// Resource budgets for the additional Sets built by row-mask union.
+        size_t row_mask_set_union_source_rows = 0;
+        size_t row_mask_set_union_source_key_bytes = 0;
+        size_t row_mask_set_union_groups = 0;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };

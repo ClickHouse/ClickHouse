@@ -10,7 +10,12 @@ node = cluster.add_instance(
     main_configs=["configs/background_profile.xml"],
     user_configs=["configs/limited_profile.xml"],
 )
-replicated_node = cluster.add_instance("replicated_node", with_zookeeper=True)
+replicated_node = cluster.add_instance(
+    "replicated_node",
+    with_zookeeper=True,
+    main_configs=["configs/union_background_profile.xml"],
+    user_configs=["configs/union_profile.xml"],
+)
 expanded_ast_node = cluster.add_instance(
     "expanded_ast_node",
     main_configs=["configs/expanded_ast_profile.xml"],
@@ -645,3 +650,154 @@ def test_typed_row_mask_union_respects_background_set_limit():
         )
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@pytest.mark.parametrize("rhs_change", ("insert", "empty"))
+def test_ready_subquery_rhs_replaced_between_main_sets(rhs_change):
+    # This instance has unlimited background `Set` limits, which allow the main-phase union.
+    node = replicated_node
+    stage_pause = "mt_mutations_interpreter_pause_after_stage_set_resolution"
+    results = {}
+
+    for enabled in (0, 1):
+        table = f"typed_union_rhs_between_sets_{rhs_change}_{enabled}"
+        rhs = f"typed_union_rhs_between_sets_source_{rhs_change}_{enabled}"
+        merges_stopped = False
+        try:
+            if rhs_change == "empty":
+                node.query(
+                    f"CREATE TABLE {rhs} (phase UInt8, item_key UInt64, active UInt8) "
+                    "ENGINE = Memory"
+                )
+                node.query(f"INSERT INTO {rhs} VALUES (1, 0, 1), (2, 2, 1)")
+            else:
+                node.query(f"CREATE TABLE {rhs} (phase UInt8, item_key UInt64) ENGINE = Memory")
+                node.query(f"INSERT INTO {rhs} VALUES (1, 0), (2, 2)")
+            node.query(
+                f"CREATE TABLE {table} (n UInt8, item_key UInt64, s AggregateFunction(sum, Int64)) "
+                "ENGINE = AggregatingMergeTree ORDER BY (n, item_key) "
+                "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+                "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+                "number_of_free_entries_in_pool_to_execute_mutation = 0, "
+                "enable_block_number_column = 0, enable_block_offset_column = 0, "
+                "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+                "max_row_mask_update_coalescing_commands = 4096, "
+                "max_row_mask_update_coalescing_ast_bytes = 1048576, "
+                f"enable_row_mask_typed_set_union = {enabled}"
+            )
+            node.query(
+                f"INSERT INTO {table} SELECT toUInt8(number), toUInt64(number), "
+                "sumState(toInt64((number + 1) * 10)) FROM numbers(8) GROUP BY number"
+            )
+            assert node.query(
+                "SELECT part_type, part_storage_type FROM system.parts "
+                f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+            ) == "Wide\tFull\n"
+
+            start = node.query("SELECT toUnixTimestamp64Micro(now64(6))").strip()
+            node.query(f"SYSTEM STOP MERGES {table}")
+            merges_stopped = True
+            rhs_queries = []
+            for phase in (1, 2):
+                rhs_query = (
+                    f"SELECT max(item_key) FROM {rhs} WHERE phase = {phase} "
+                    "GROUP BY phase HAVING countIf(active = 0) = 0"
+                    if rhs_change == "empty"
+                    else f"SELECT max(item_key) FROM {rhs} WHERE phase = {phase}"
+                )
+                rhs_queries.append(rhs_query)
+                node.query(
+                    f"DELETE FROM {table} WHERE item_key IN "
+                    f"({rhs_query}) "
+                    "SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 0"
+                )
+            mutation_ids = node.query(
+                "SELECT arraySort(groupArray(mutation_id)) FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{table}' AND NOT is_done"
+            ).strip()
+            assert node.query(f"SELECT length({mutation_ids})") == "2\n"
+
+            node.query(f"SYSTEM ENABLE FAILPOINT {stage_pause}")
+            node.query(f"SYSTEM START MERGES {table}")
+            merges_stopped = False
+            node.query(f"SYSTEM WAIT FAILPOINT {stage_pause} PAUSE", timeout=60)
+            built_before_main = int(node.query(
+                "SELECT value FROM system.events WHERE event = 'SetsBuiltFromSubquery'"
+            ))
+
+            # One stage has resolved its `Memory` RHS snapshot; the next stage
+            # resolves after the source changes. Appending a suppressor makes
+            # the grouped query return no rows without taking a write lock.
+            if rhs_change == "empty":
+                node.query(f"INSERT INTO {rhs} VALUES (1, 0, 0), (2, 2, 0)")
+                for rhs_query in rhs_queries:
+                    assert node.query(f"SELECT count() FROM ({rhs_query})") == "0\n"
+            else:
+                # `max` keeps each source `Set` at one row.
+                node.query(f"INSERT INTO {rhs} VALUES (1, 6), (2, 7)")
+            node.query(f"SYSTEM DISABLE FAILPOINT {stage_pause}")
+
+            assert_eq_with_retry(
+                node,
+                "SELECT count() = 2 AND countIf(is_done) = 2 "
+                "AND countIf(latest_fail_reason != '') = 0 FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{table}' "
+                f"AND has({mutation_ids}, mutation_id)",
+                "1",
+                retry_count=120,
+                timeout=3,
+            )
+            assert int(node.query(
+                "SELECT value FROM system.events WHERE event = 'SetsBuiltFromSubquery'"
+            )) == built_before_main + 2
+            assert_eq_with_retry(
+                node,
+                "SYSTEM FLUSH LOGS part_log; SELECT count() = 1 AND countIf(error != 0) = 0 "
+                f"AND arraySort(arrayFlatten(groupArray(mutation_ids))) = {mutation_ids} "
+                f"AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = "
+                f"{enabled if rhs_change == 'insert' else 0} "
+                + typed_union_part_log(table, start)
+                + f" AND hasAny(mutation_ids, {mutation_ids}) SETTINGS max_execution_time = 2",
+                "1",
+                retry_count=20,
+                timeout=3,
+            )
+
+            physical = node.query(
+                f"SELECT item_key, _row_exists, sumMerge(s) FROM {table} "
+                "GROUP BY item_key, _row_exists ORDER BY item_key "
+                "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+            )
+            masked = {
+                int(row.split("\t")[0])
+                for row in physical.splitlines()
+                if row.split("\t")[1] == "0"
+            }
+            # Exactly one stage saw the old RHS and the other saw its replacement.
+            if rhs_change == "empty":
+                assert masked in ({0}, {2})
+            else:
+                assert masked in ({0, 7}, {2, 6})
+            assert physical == "".join(
+                f"{key}\t{int(key not in masked)}\t{(key + 1) * 10}\n"
+                for key in range(8)
+            )
+            visible = node.query(
+                f"SELECT item_key, sumMerge(s) FROM {table} "
+                "GROUP BY item_key ORDER BY item_key "
+                "SETTINGS apply_deleted_mask = 1, apply_mutations_on_fly = 0"
+            )
+            assert visible == "".join(
+                f"{key}\t{(key + 1) * 10}\n"
+                for key in range(8)
+                if key not in masked
+            )
+            results[enabled] = (physical, visible)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {stage_pause}")
+            if merges_stopped:
+                node.query(f"SYSTEM START MERGES {table}")
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {rhs} SYNC")
+
+    assert results[0] == results[1]

@@ -171,7 +171,7 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
-    /// Unites ready, resident integer tuple sets with the same key layout into a private set.
+    /// Unites ready, resident integer scalar or tuple sets with the same key layout into a private set.
     /// Returns null if any input cannot be copied within max_rows.
     static std::shared_ptr<Set> tryUniteReadyFixedWidthSets(
         std::span<const std::shared_ptr<Set>> sets,

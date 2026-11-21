@@ -429,7 +429,7 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
     const ColumnsWithTypeAndName & header,
     size_t max_rows)
 {
-    if (sets.empty() || !sets.front() || !max_rows || header.size() < 2)
+    if (sets.empty() || !sets.front() || !max_rows || header.empty())
         return {};
 
     for (const auto & column : header)
@@ -489,7 +489,7 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
             if (expected_type == Type::hashed)
             {
                 /// An IN subquery may return one Tuple column instead of separate key columns.
-                if (set->data_types.size() != 1)
+                if (header.size() < 2 || set->data_types.size() != 1)
                     return {};
                 const auto & type = set->data_types.front();
                 const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
@@ -502,7 +502,9 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
                 }
                 tuple_header.emplace_back(type->createColumn(), type, "");
             }
-            else if (expected_type != Type::keys32 && expected_type != Type::keys64
+            else if (expected_type != Type::key8 && expected_type != Type::key16
+                && expected_type != Type::key32 && expected_type != Type::key64
+                && expected_type != Type::keys32 && expected_type != Type::keys64
                 && expected_type != Type::keys128 && expected_type != Type::keys256)
                 return {};
 
@@ -527,6 +529,7 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
     const auto copy_keys = [&](auto member)
     {
         auto & destination = ((*united->data).*member)->data;
+        size_t copied_keys = 0;
         for (const auto & set : sets)
         {
             std::shared_lock lock(set->rwlock);
@@ -535,7 +538,15 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
 
             const auto & source = ((*set->data).*member)->data;
             for (const auto & cell : source)
-                destination.insert(cell.getValue());
+            {
+                if ((copied_keys++ & 4095) == 0)
+                    CurrentThread::checkIfNotCancelled();
+
+                using HashSet = std::decay_t<decltype(destination)>;
+                typename HashSet::LookupResult lookup;
+                bool inserted;
+                destination.emplace(cell.getValue(), lookup, inserted);
+            }
         }
         return true;
     };
@@ -543,6 +554,10 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
     bool copied;
     switch (expected_type)
     {
+        case Type::key8: copied = copy_keys(&SetVariants::key8); break;
+        case Type::key16: copied = copy_keys(&SetVariants::key16); break;
+        case Type::key32: copied = copy_keys(&SetVariants::key32); break;
+        case Type::key64: copied = copy_keys(&SetVariants::key64); break;
         case Type::keys32: copied = copy_keys(&SetVariants::keys32); break;
         case Type::keys64: copied = copy_keys(&SetVariants::keys64); break;
         case Type::keys128: copied = copy_keys(&SetVariants::keys128); break;

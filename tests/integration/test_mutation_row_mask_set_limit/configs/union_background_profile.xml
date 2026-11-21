@@ -1,0 +1,3 @@
+<clickhouse>
+    <background_profile>row_mask_union_unlimited</background_profile>
+</clickhouse>
