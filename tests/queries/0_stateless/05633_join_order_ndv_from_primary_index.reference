@@ -1,8 +1,10 @@
 The first column of the key
 1
-The second column of the key
+The second column of the key: no estimate, the marks take the first value of each run of the first column
 1
 A unique first column of the key changes in every granule: no estimate
+1
+A unique first column of the key with a last granule of one row, equal to the final mark: no estimate
 1
 The same with ZSTD, which compresses a sorted unique column to a few bits per row: no estimate from the compressed size
 1

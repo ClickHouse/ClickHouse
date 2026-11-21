@@ -74,7 +74,9 @@ RelationStats estimateAggregatingStepStats(const Aggregator::Params & aggregator
         if (input_stats.estimated_rows)
             key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
 
-        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
+        auto & aggregation_key_stats = aggregation_stats.column_stats[key];
+        aggregation_key_stats.num_distinct_values = key_number_of_distinct_values;
+        aggregation_key_stats.num_distinct_values_from_metadata = key_stats->second.num_distinct_values_from_metadata;
 
         /// For now assume that aggregation columns are independent, so multiply their NDVs
         if (total_number_of_distinct_values)
