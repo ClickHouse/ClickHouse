@@ -184,6 +184,10 @@ public:
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
     /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
     /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
     /// `key = value` arguments, and the `wrapper_names` arguments, such as `headers(...)`, at any position. A

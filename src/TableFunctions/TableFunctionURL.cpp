@@ -1,5 +1,8 @@
 #include <TableFunctions/TableFunctionURL.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+
 #include <TableFunctions/registerTableFunctions.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -38,6 +41,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -53,6 +57,13 @@ namespace
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
             "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
+    }
+
+    /// The web object storage behind the index pages follows redirects without the per-hop check of `StorageURL`,
+    /// so a filtered `READ ON URL` cannot bound them: the path needs the grant on the whole source.
+    void checkWholeSourceAccessForURLWildcard(const ContextPtr & context)
+    {
+        context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL));
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -331,9 +342,24 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
 }
 
+bool TableFunctionURL::callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
+{
+    return context->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL))
+        || !context->getCluster(cluster_name)->getSecret().empty();
+}
+
+void TableFunctionURL::checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
+{
+    if (!callerGrantAppliesOnWorkers(context, cluster_name))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant READ ON URL without a filter: "
+            "the cluster workers follow redirects as the cluster user");
+}
+
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const
 {
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -349,7 +375,8 @@ StoragePtr TableFunctionURL::getStorage(
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_wildcard
+        && callerGrantAppliesOnWorkers(context, parallel_replicas_cluster_name);
 
     if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
@@ -368,6 +395,7 @@ StoragePtr TableFunctionURL::getStorage(
     if (use_web_wildcard)
     {
         checkExperimentalURLWildcardFromIndexPages(context);
+        checkWholeSourceAccessForURLWildcard(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
         auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
@@ -410,7 +438,9 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/ false,
+        /*is_replayed_definition=*/ false,
+        /*check_redirect_access=*/ !is_table_definition);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -426,6 +456,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
+            checkWholeSourceAccessForURLWildcard(context);
 
             auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
             auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
@@ -452,7 +483,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                /*check_redirect_access=*/ true).first;
         }
         else
         {
@@ -461,7 +493,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                /*check_redirect_access=*/ true);
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
