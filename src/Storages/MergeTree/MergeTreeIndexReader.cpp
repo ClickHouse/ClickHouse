@@ -58,7 +58,8 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
             file_size,
             /*marks_loader=*/ nullptr,
             ReadBufferFromFileBase::ProfileCallback{},
-            CLOCK_MONOTONIC_COARSE);
+            CLOCK_MONOTONIC_COARSE,
+            data_part_info->getCacheKeySuffix());
     }
 
     auto context = data_part_info->getContext();
@@ -94,7 +95,8 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         file_size,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
-        CLOCK_MONOTONIC_COARSE);
+        CLOCK_MONOTONIC_COARSE,
+        data_part_info->getCacheKeySuffix());
 
     stream->adjustRightMark(getLastMark(all_mark_ranges));
     stream->seekToStart();

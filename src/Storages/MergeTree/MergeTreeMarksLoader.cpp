@@ -312,7 +312,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string() + data_part_reader->getCacheKeySuffix());
 
         if (save_marks_in_cache)
         {
@@ -346,7 +346,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     if (mark_cache)
     {
         auto data_part_storage = data_part_reader->getDataPartStorage();
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string() + data_part_reader->getCacheKeySuffix());
         if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
         {
             ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
@@ -398,7 +398,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string());
+        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string() + part.getCacheKeySuffix());
         mark_cache->set(key, MarksInCompressedFile::create(*marks));
     }
 }

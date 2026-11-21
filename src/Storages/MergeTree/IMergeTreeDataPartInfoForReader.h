@@ -147,6 +147,9 @@ public:
 
     [[nodiscard]] virtual UUID getTableUUID() const { return UUIDHelpers::Nil; }
 
+    /// See `IMergeTreeDataPart::getCacheKeySuffix`.
+    [[nodiscard]] virtual String getCacheKeySuffix() const { return {}; }
+
     virtual void reportBroken() = 0;
 
     [[nodiscard]] virtual size_t getRowCount() const = 0;
