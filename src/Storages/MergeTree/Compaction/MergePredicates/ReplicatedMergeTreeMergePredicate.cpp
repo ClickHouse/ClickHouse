@@ -54,6 +54,27 @@ PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(const
     return MergeCore::getPatchesToApplyOnMerge(range);
 }
 
+Strings ReplicatedMergeTreeBaseMergePredicate::getPatchPartNamesToPinForMutation(const IMergeTreeDataPart & part, Int64 mutation_version) const
+{
+    auto it = patches_by_partition.find(part.info.getPartitionId());
+    if (it == patches_by_partition.end())
+        return {};
+
+    /// Reuse the same selection MERGE_PARTS applies: patches whose data version is in
+    /// (part_data_version, mutation_version]. Sourcing from the virtual-parts snapshot (current_parts +
+    /// queue) instead of the replica's locally visible patch parts guarantees that a replica lagging on
+    /// patch replication still pins the complete set (issue #100493).
+    PartsRange source_range{PartProperties{.name = part.name, .info = part.info}};
+    auto patches = DB::getPatchesToApplyOnMerge(it->second, source_range, mutation_version);
+
+    Strings result;
+    result.reserve(patches.size());
+    for (const auto & patch : patches)
+        result.push_back(patch.name);
+
+    return result;
+}
+
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : ReplicatedMergeTreeBaseMergePredicate(queue_, std::nullopt)
 {
