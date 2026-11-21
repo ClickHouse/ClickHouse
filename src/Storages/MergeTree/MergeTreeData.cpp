@@ -11377,6 +11377,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
                     }
                     auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+                    const auto * inner_cast = first_arg->as<ASTFunction>();
+                    while (isFunctionCast(inner_cast) && inner_cast->arguments && !inner_cast->arguments->children.empty())
+                    {
+                        first_arg = inner_cast->arguments->children.at(0);
+                        inner_cast = first_arg->as<ASTFunction>();
+                    }
                     if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
                     {
                         const auto * arguments_ast = inner_tuple->arguments->as<ASTExpressionList>();
