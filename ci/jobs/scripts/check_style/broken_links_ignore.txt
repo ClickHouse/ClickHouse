@@ -9,3 +9,9 @@ https://oauth2.googleapis.com/token
 
 # XML namespace and relationship type identifiers of Office Open XML (`XLSX`), not web pages.
 http://schemas.openxmlformats.org/
+
+# Not pages: SAX feature and property identifiers in base/poco/XML, which only have the form of a URL.
+http://xml.org/sax/features/
+http://xml.org/sax/properties/
+http://www.appinf.com/features/
+http://www.appinf.com/properties/
