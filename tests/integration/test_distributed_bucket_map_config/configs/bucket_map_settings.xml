@@ -1,0 +1,6 @@
+<clickhouse>
+    <distributed>
+        <bucket_map_zookeeper_path>/clickhouse/bucket_map_from_config</bucket_map_zookeeper_path>
+        <bucket_map_buckets>4</bucket_map_buckets>
+    </distributed>
+</clickhouse>

@@ -102,6 +102,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char distributed_sink_pause_before_push[];
+    extern const char distributed_sink_pause_in_constructor[];
 }
 
 namespace
@@ -205,12 +206,15 @@ DistributedSink::DistributedSink(
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
     , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
+    , slot_to_shard(storage.getSlotToShard(cluster, context_))
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
     , insert_timeout(insert_timeout_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(getLogger("DistributedSink"))
 {
+    FailPointInjection::pauseFailPoint(FailPoints::distributed_sink_pause_in_constructor);
+
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
@@ -785,7 +789,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return storage.createSelector(*slot_to_shard, key_column);
 }
 
 

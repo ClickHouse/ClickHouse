@@ -12,6 +12,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ASTFunction;
+struct DistributedBucketMap;
 
 /// Rewrite `sharding_key IN (...)` for specific shard,
 /// so that it will contain only values that belong to this specific shard.
@@ -35,6 +36,9 @@ struct OptimizeShardingKeyRewriteInMatcher
         const Cluster::ShardInfo & shard_info;
         /// weight -> shard mapping
         const Cluster::SlotToShard & slots;
+        /// The bucket map `slots` come from, if the table has one: a shard also contains the values of the buckets
+        /// that were assigned to it before.
+        const DistributedBucketMap * bucket_map = nullptr;
     };
 
     static bool needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/);

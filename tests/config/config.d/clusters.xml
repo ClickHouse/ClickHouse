@@ -41,6 +41,24 @@
                  </replica>
              </shard>
         </test_cluster_two_shards_different_databases>
+        <test_cluster_two_shards_different_databases_zero_weight>
+             <shard>
+                 <weight>1</weight>
+                 <replica>
+                     <default_database>shard_0</default_database>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <weight>0</weight>
+                 <replica>
+                     <default_database>shard_1</default_database>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+        </test_cluster_two_shards_different_databases_zero_weight>
         <test_cluster_one_shard_two_replicas>
              <shard>
                  <replica>
