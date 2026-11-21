@@ -1755,7 +1755,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                /// Check access before reading the dictionary definition, so that a user without access learns nothing
+                /// about the dictionary.
+                const auto & external_loader = scope.context->getExternalDictionariesLoader();
+                (void)external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {
@@ -3256,7 +3259,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -3387,7 +3391,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
@@ -3619,6 +3624,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto & cached_function = *function_base_cache;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
+            else
+            {
+                /// The cache is shared by all scopes of the query, but the access rights depend on the settings
+                /// of the scope (for example, `allow_introspection_functions` in the `SETTINGS` of a subquery).
+                /// `build` checks them, so check them also when the cached function is reused.
+                function->checkAccessOnBuild();
+            }
 
             function_base = cached_function;
         }

@@ -3,6 +3,7 @@
 
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ByteRangeSet.h>
 
 
 namespace DB
@@ -196,6 +197,12 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         addDiagnostics(e);
         throw;
     }
+}
+
+
+void CompressedReadBufferFromFile::setRequestMap(ByteRangeSet ranges)
+{
+    file_in.setRequestMap(std::move(ranges));
 }
 
 }
