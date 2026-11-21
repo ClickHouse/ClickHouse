@@ -9505,6 +9505,11 @@ SELECT * FROM test_table
 Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(Bool, throw_on_unknown_storage_setting, true, R"(
+Throw an exception when the `SETTINGS` clause of `CREATE TABLE` for the `File`, `URL`, `S3`, `AzureBlobStorage`, `HDFS` engines and the `Log` family contains a name that is neither a setting of the table engine nor a query setting, for example a typo or a `MergeTree` setting. If disabled, such a name is ignored with a warning in the server log, as before version 26.10. The check applies only to new table definitions: tables that already have such a name are loaded regardless of this setting.
+)", 0, \
+        {"26.11", true, true, "New setting to restore the behavior before 26.10 with the `compatibility` setting."}, \
+        {"26.10", false, true, "Reject a name in the `SETTINGS` clause of `File`, `URL`, `S3` and `Log`-family tables that is not a setting at all"}) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
 Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/concepts/features/interfaces/client) or using the [gRPC interface](/concepts/features/interfaces/grpc).
 )", 0) \
