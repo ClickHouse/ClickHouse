@@ -1,5 +1,6 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+SET query_plan_merge_filter_into_join_condition = 1; -- CI may inject False, which leaves `create_time < delete_time` above the join
 SET use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1;
