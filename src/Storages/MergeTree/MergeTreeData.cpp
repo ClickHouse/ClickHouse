@@ -138,6 +138,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -10087,6 +10088,74 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         }
     }
 
+    return result;
+}
+
+NamesAndTypesList MergeTreeData::getColumnsReadableWithoutOtherColumns(
+    const NamesAndTypesList & columns,
+    const ColumnsDescription & table_columns,
+    const RangesInDataParts & parts,
+    const MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & query_context)
+{
+    std::unordered_map<String, bool> cache;
+    NameSet default_reads_columns;
+    for (const auto & column : columns)
+        if (defaultReadsColumns(table_columns, column.getNameInStorage(), cache))
+            default_reads_columns.insert(column.getNameInStorage());
+    if (default_reads_columns.empty())
+        return columns;
+
+    /// Parts with the same columns share one interned set of column positions, and parts with the same pending drops
+    /// and renames share one `AlterConversions`, so each combination is checked once.
+    std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
+    std::map<std::vector<std::tuple<MutationCommand::Type, String, String>>, AlterConversionsPtr> conversions_by_commands;
+    std::set<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
+
+    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    for (const auto & part : parts)
+    {
+        MutationCommands metadata_commands;
+        if (has_metadata_mutations)
+            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
+                if (AlterConversions::isSupportedMetadataMutation(command.type))
+                    metadata_commands.push_back(command);
+
+        if (metadata_commands.empty())
+        {
+            part_columns.insert(&part.data_part->getColumnPositions());
+            continue;
+        }
+
+        std::vector<std::tuple<MutationCommand::Type, String, String>> key;
+        for (const auto & command : metadata_commands)
+            key.emplace_back(command.type, command.column_name, command.rename_to);
+
+        auto & conversions = conversions_by_commands[std::move(key)];
+        if (!conversions)
+            conversions = std::make_shared<AlterConversions>(metadata_commands, PatchPartsForReader{}, query_context);
+        converted_parts.emplace(&part.data_part->getColumnPositions(), conversions);
+    }
+
+    const bool share_nested_offsets
+        = !converted_parts.empty() && (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    /// The same resolution as `injectRequiredColumnsRecursively`.
+    auto is_stored = [&](const String & name_in_storage)
+    {
+        return std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); })
+            && std::ranges::all_of(converted_parts, [&](const auto & part)
+            {
+                const auto & [positions, conversions] = part;
+                const auto name_in_part = conversions->isColumnRenamed(name_in_storage) ? conversions->getColumnOldName(name_in_storage) : name_in_storage;
+                return positions->contains(name_in_part) && !conversions->isColumnDropped(name_in_part, share_nested_offsets);
+            });
+    };
+
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        if (!default_reads_columns.contains(column.getNameInStorage()) || is_stored(column.getNameInStorage()))
+            result.push_back(column);
     return result;
 }
 

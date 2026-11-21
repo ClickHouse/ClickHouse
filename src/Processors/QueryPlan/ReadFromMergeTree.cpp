@@ -4492,11 +4492,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             ? ReadType::InOrder
             : ReadType::InReverseOrder;
 
-    /// A read that needs no column reads the column cheapest on disk, as the planner chooses it.
-    /// The table's column sizes do not describe projection parts.
+    /// A read that needs no column reads the column cheapest on disk among the columns it can read without reading
+    /// others, as the planner chooses it. The table's column sizes do not describe projection parts.
     if (all_column_names.empty() && !result.parts_with_ranges.empty() && !projection_parts_exist)
-        result.column_names_to_read = {ExpressionActions::getCheapestColumnToRead(
-            metadata_snapshot->getColumns().getAllPhysical(), data.getColumnSizes()).name};
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        auto columns = MergeTreeData::getColumnsReadableWithoutOtherColumns(
+            table_columns.getAllPhysical(), table_columns, result.parts_with_ranges, mutations_snapshot, context_);
+        if (!columns.empty())
+            result.column_names_to_read = {ExpressionActions::getCheapestColumnToRead(columns, data.getColumnSizes()).name};
+    }
 
     return std::make_shared<AnalysisResult>(std::move(result));
 }
