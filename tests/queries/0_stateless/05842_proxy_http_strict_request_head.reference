@@ -1,0 +1,34 @@
+request line
+400
+400
+400
+400
+200
+header lines
+400
+400
+400
+400
+400
+200
+decompress
+502
+502
+503
+400
+body framing
+501
+501
+400
+400
+503
+200
+503
+502
+path with compression
+502
+200
+deep recursion
+503
+503
+200

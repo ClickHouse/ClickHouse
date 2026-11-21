@@ -7,6 +7,7 @@
 #include <StatusPage.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -92,6 +93,48 @@ String stripPort(const String & host)
     return colon == String::npos ? host : host.substr(0, colon);
 }
 
+/// Reads one line of the request head or of the chunked framing. The server does not read these as lines:
+/// it splits the request line at any ASCII whitespace, ends a header value at a lone CR, and reads a chunk header
+/// up to the next CR. So a line that is not terminated by exactly CRLF, or has a CR or a NUL inside, could mean
+/// one request to the proxy and another one to the backend, and is reported as @p malformed instead of being interpreted.
+/// Returns false on end of stream.
+bool readStrictLine(RecordingReader & reader, String & line, size_t max_length, bool & malformed)
+{
+    malformed = false;
+    if (!reader.readLine(line, max_length))
+        return false;
+    const String & received = reader.received();
+    const size_t position = reader.position();
+    malformed = position < 2 || received[position - 1] != '\n' || received[position - 2] != '\r'
+        || line.find_first_of(std::string_view("\r\0", 2)) != String::npos;
+    return true;
+}
+
+bool hasWhitespace(std::string_view text)
+{
+    return std::any_of(text.begin(), text.end(), [](char c) { return Poco::Ascii::isSpace(c); });
+}
+
+/// Splits the request line into `method SP request-target SP HTTP-version`. `HTTPServerRequest::readRequest`
+/// separates the three by any run of ASCII whitespace and ignores what follows the version, so anything but
+/// exactly two single spaces is rejected: otherwise the proxy and the backend could see different targets.
+bool parseRequestLine(const String & request_line, String & method, String & target)
+{
+    const size_t method_end = request_line.find(' ');
+    if (method_end == String::npos)
+        return false;
+    const size_t target_end = request_line.find(' ', method_end + 1);
+    if (target_end == String::npos)
+        return false;
+
+    method = request_line.substr(0, method_end);
+    target = request_line.substr(method_end + 1, target_end - method_end - 1);
+    const std::string_view version = std::string_view(request_line).substr(target_end + 1);
+
+    return !method.empty() && !target.empty() && !hasWhitespace(method) && !hasWhitespace(target)
+        && (version == "HTTP/1.0" || version == "HTTP/1.1");
+}
+
 /// The framing of an HTTP request body, from the request headers.
 struct HTTPBodyFraming
 {
@@ -167,13 +210,18 @@ String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, con
     size_t body_bytes = 0;
     for (size_t chunk = 0; chunk < max_chunks; ++chunk)
     {
+        /// As in `HTTPChunkedReadBuffer::readChunkHeader`: the size is the leading hexadecimal digits of the line,
+        /// and the rest of the line (a chunk extension) is ignored.
         String chunk_header;
-        if (!reader.readLine(chunk_header, 1024))
+        bool malformed = false;
+        if (!readStrictLine(reader, chunk_header, 1024, malformed) || malformed)
             return "";
-        const String hex = Poco::trim(chunk_header.substr(0, chunk_header.find(';')));
-        if (hex.empty() || hex.size() > 15 || hex.find_first_not_of("0123456789abcdefABCDEF") != String::npos)
+        size_t digits = 0;
+        while (digits < chunk_header.size() && isHexDigit(chunk_header[digits]))
+            ++digits;
+        if (digits == 0 || digits > 15)
             return "";
-        const UInt64 size = std::stoull(hex, nullptr, 16);
+        const UInt64 size = std::stoull(chunk_header.substr(0, digits), nullptr, 16);
         if (size == 0)
             return classifyQuery(query, /*is_prefix=*/ false);     /// The last chunk: the whole body is read.
 
@@ -186,7 +234,7 @@ String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, con
             return *query_type;
 
         String chunk_end;
-        if (!reader.readLine(chunk_end, 1024) || !chunk_end.empty())
+        if (!readStrictLine(reader, chunk_end, 1024, malformed) || malformed || !chunk_end.empty())
             return "";
     }
     return "";
@@ -239,26 +287,21 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
 
     RecordingReader reader(client);
 
+    auto bad_request = [&](const String & message)
+    {
+        sendResponse(client, 400, "Bad Request", "text/plain; charset=UTF-8", message + "\n");
+    };
+
     String request_line;
-    if (!reader.readLine(request_line, 64 * 1024) || request_line.empty())
+    bool malformed = false;
+    if (!readStrictLine(reader, request_line, 64 * 1024, malformed) || request_line.empty())
         return;
 
-    /// Method SP request-target SP HTTP-version.
-    const size_t method_end = request_line.find(' ');
-    const String method = request_line.substr(0, method_end);
+    String method;
     String target;
-    if (method_end != String::npos)
+    if (malformed || !parseRequestLine(request_line, method, target))
     {
-        const size_t target_begin = request_line.find_first_not_of(' ', method_end);
-        if (target_begin != String::npos)
-        {
-            const size_t target_end = request_line.find(' ', target_begin);
-            target = request_line.substr(target_begin, target_end - target_begin);
-        }
-    }
-    if (method.empty() || target.empty())
-    {
-        sendResponse(client, 400, "Bad Request", "text/plain; charset=UTF-8", "Bad request\n");
+        bad_request("Bad request: the request line must be `method SP request-target SP HTTP-version CRLF`");
         return;
     }
 
@@ -281,7 +324,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     std::optional<String> param_database;
     std::optional<String> param_session_id;
     std::optional<String> param_query;
-    bool param_decompress = false;
+    std::optional<String> param_decompress_value;
 
     /// The server looks up `user`, `password`, `session_id`, `query` and `decompress` in an `HTMLForm`,
     /// whose `NameValueCollection` compares names case-insensitively, so `?Query=INSERT...&query=SELECT...`
@@ -304,7 +347,24 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         else if (is_param(key, "query"))
             assign_first(param_query, value);
         else if (is_param(key, "decompress"))
-            param_decompress |= value != "0" && !value.empty();
+            param_decompress_value = value;
+    }
+
+    /// The server reads `decompress` as `HTMLForm::getParsedLast<bool>`: the last occurrence, parsed as a boolean,
+    /// so that `decompress=false` and `decompress=1&decompress=0` leave the body a plain query.
+    /// It rejects a value that is not a boolean, and so does the proxy.
+    bool param_decompress = false;
+    if (param_decompress_value)
+    {
+        try
+        {
+            param_decompress = parse<bool>(*param_decompress_value);
+        }
+        catch (...)
+        {
+            bad_request("Bad request: the value of the `decompress` parameter is not a boolean");
+            return;
+        }
     }
 
     /// Read the request headers.
@@ -317,11 +377,25 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     std::optional<String> header_database;
     std::optional<String> header_authorization;
     bool seen_content_type = false;
+    bool seen_transfer_encoding = false;
     bool multipart_form_data = false;
     HTTPBodyFraming body_framing;
     String header;
-    while (reader.readLine(header, 64 * 1024) && !header.empty())
+    while (true)
     {
+        /// The request head is parsed as strictly as `readHeaders` of the server allows, and what the server
+        /// would read differently is rejected. For example, it takes a line that begins with whitespace
+        /// for a field without a name, so ` X-ClickHouse-User: alice` must not be routed as the user `alice`.
+        if (!readStrictLine(reader, header, 64 * 1024, malformed))
+            return;
+        if (malformed)
+        {
+            bad_request("Bad request: a header line must end with CRLF and must not contain CR or NUL");
+            return;
+        }
+        if (header.empty())
+            break;
+
         if (reader.received().size() > max_request_head_bytes)
         {
             sendResponse(client, 431, "Request Header Fields Too Large", "text/plain; charset=UTF-8",
@@ -330,22 +404,49 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         }
 
         const size_t colon = header.find(':');
-        if (colon == String::npos)
-            continue;
-        const String name = Poco::toLower(Poco::trim(header.substr(0, colon)));
+        if (colon == String::npos || colon == 0 || hasWhitespace(std::string_view(header).substr(0, colon)))
+        {
+            bad_request("Bad request: a header line must be `field-name: value`, without whitespace in or around the name");
+            return;
+        }
+        const String name = Poco::toLower(header.substr(0, colon));
         /// The server decodes RFC 2047 encoded words in every header value (`readHeaders`), so that
         /// `X-ClickHouse-User: =?UTF-8?Q?alice?=` authenticates as `alice`, and the proxy has to route by the same value.
-        /// Like the server, it trims the raw value and does not trim the decoded one: `=?UTF-8?Q?_alice_?=` is ` alice `.
-        const String value = Poco::Net::MessageHeader::decodeWord(Poco::trim(header.substr(colon + 1)));
+        /// Like the server, it skips the spaces and tabs before the raw value and the whitespace after it,
+        /// and does not trim the decoded one: `=?UTF-8?Q?_alice_?=` is ` alice `.
+        size_t value_begin = colon + 1;
+        while (value_begin < header.size() && isWhitespaceASCIIOneLine(header[value_begin]))
+            ++value_begin;
+        const String value = Poco::Net::MessageHeader::decodeWord(Poco::trimRight(header.substr(value_begin)));
 
         if (name == "content-length")
         {
+            /// The server takes the first `Content-Length` and parses it leniently (a sign, thousands separators).
+            /// Only a plain number is accepted here, and repeated headers have to agree.
             UInt64 content_length = 0;
-            if (!body_framing.content_length && tryParse(content_length, value))
-                body_framing.content_length = content_length;
+            if (value.empty() || value.size() > 18 || !std::all_of(value.begin(), value.end(), isNumericASCII)
+                || !tryParse(content_length, value)
+                || (body_framing.content_length && *body_framing.content_length != content_length))
+            {
+                bad_request("Bad request: invalid or conflicting `Content-Length`");
+                return;
+            }
+            body_framing.content_length = content_length;
         }
         else if (name == "transfer-encoding")
-            body_framing.chunked |= Poco::toLower(value).contains("chunked");
+        {
+            /// The server reads a chunked body only if the first `Transfer-Encoding` header is exactly `chunked`
+            /// (`HTTPMessage::getChunkedTransferEncoding`), and otherwise takes the bytes of the body as they are.
+            /// Any other or repeated transfer coding is rejected, so that both sides frame the body the same way.
+            if (seen_transfer_encoding || Poco::icompare(value, "chunked") != 0)
+            {
+                sendResponse(client, 501, "Not Implemented", "text/plain; charset=UTF-8",
+                    "The only supported `Transfer-Encoding` is a single `chunked`\n");
+                return;
+            }
+            seen_transfer_encoding = true;
+            body_framing.chunked = true;
+        }
         else if (name == "content-encoding")
             body_framing.encoded |= !value.empty() && Poco::icompare(value, "identity") != 0;
         else if (name == "expect")
@@ -425,6 +526,8 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
             {
                 /// Not a `database/table` path: the server does not take a database from it either,
                 /// and it is a path of another handler or the server rejects the request. Ok to ignore.
+                /// The formats are registered in the proxy (see `ProxyApplication::main`), so a path
+                /// with a format and a compression suffix, such as `/db/table.CSV.gz`, is parsed as by the server.
             }
         }
     }
@@ -443,12 +546,17 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// and then the request body (`ConcatReadBuffer`), so the parameter and the body are classified together.
     /// With `multipart/form-data`, the query is concatenated from all the `query` parameters of the URL
     /// and of the form, so it is not classified.
-    const bool has_body = body_framing.chunked || body_framing.content_length.value_or(0) > 0;
+    /// Without `Content-Length` and chunked encoding, `HTTPServerRequest` takes everything up to the end of the stream
+    /// as the body of a request whose method is not `GET`, `HEAD` or `DELETE`. Such a body cannot be inspected
+    /// (the client may wait for the response before closing its side), so the query type is known only
+    /// if the `query` parameter already establishes it.
+    const bool body_until_end_of_stream = !body_framing.chunked && !body_framing.content_length
+        && method != "GET" && method != "HEAD" && method != "DELETE";
+    const bool has_body = body_framing.chunked || body_framing.content_length.value_or(0) > 0 || body_until_end_of_stream;
     if (ctx.router.needsQueryType(ListenerProtocol::HTTP) && !path_info.table.empty() && is_path_table_upload)
     {
         /// The body is the data of the generated `INSERT`, not a query. With filters or without a body, the server
-        /// rejects the upload. The format is not checked: the proxy does not register the formats of the server,
-        /// so the format stays a part of the table name, and the server rejects an upload with an unknown format.
+        /// rejects the upload, and it also rejects an upload without a known format.
         if (path_info.path_filters.empty() && has_body)
             attributes.query_type = "insert";
     }

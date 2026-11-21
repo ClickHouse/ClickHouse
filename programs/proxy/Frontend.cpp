@@ -3,6 +3,7 @@
 #if USE_SILK
 
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 
 #include <Core/Defines.h>
@@ -15,6 +16,8 @@
 #include <Parsers/parseQuery.h>
 
 #include <Poco/Net/SocketAddress.h>
+
+#include <silk/fibers/fiber.h>
 
 #include <algorithm>
 #include <cctype>
@@ -30,6 +33,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_AST;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
 }
 }
 
@@ -41,7 +47,7 @@ namespace
 
 /// A `WITH` clause may introduce a `SELECT` or an `INSERT`, and `select` and `insert` may also be names within it
 /// (`WITH 1 AS select, 1 + select AS x INSERT ...`), so the type of such a query is determined with the server's grammar.
-String classifyWithQuery(std::string_view query, bool is_prefix)
+String parseAndClassifyWithQuery(std::string_view query, bool is_prefix)
 {
     const char * begin = query.data();
     const char * end = query.data() + query.size();
@@ -69,6 +75,47 @@ String classifyWithQuery(std::string_view query, bool is_prefix)
     if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectIntersectExceptQuery>())
         return "select";
     return "other";
+}
+
+/// The parser is recursive, and the query comes from a client that is not authenticated yet. The parser bounds
+/// its recursion with `checkStackSize`, which does nothing on the small stack of a fiber, where a deeply nested
+/// expression would overflow the stack and terminate the proxy. So the query is parsed on a thread of the global pool,
+/// with the stack and the stack check that the server parses queries with, while the fiber waits outside of
+/// the cooperative scheduler.
+String classifyWithQuery(std::string_view query, bool is_prefix)
+{
+    String result;
+    std::exception_ptr exception;
+    {
+        silk::FiberScheduler::ThreadModeScope thread_mode;
+        /// Joined before `result` and `exception` go out of scope.
+        ThreadFromGlobalPool thread([&]
+        {
+            try
+            {
+                result = parseAndClassifyWithQuery(query, is_prefix);
+            }
+            catch (...)
+            {
+                exception = std::current_exception();
+            }
+        });
+        thread.join();
+    }
+
+    try
+    {
+        if (exception)
+            std::rethrow_exception(exception);
+    }
+    catch (const Exception & e)
+    {
+        /// A query that exceeds the limits of the parser is not parsed by the server either: its type is not known.
+        if (e.code() != ErrorCodes::TOO_DEEP_RECURSION && e.code() != ErrorCodes::TOO_DEEP_AST && e.code() != ErrorCodes::TOO_SLOW_PARSING)
+            throw;
+        return "";
+    }
+    return result;
 }
 
 }

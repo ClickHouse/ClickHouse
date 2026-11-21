@@ -8,6 +8,7 @@
 #include <iostream>
 
 #if USE_SILK
+#include <Formats/registerFormats.h>
 #include <ProxyServer.h>
 #endif
 
@@ -48,6 +49,10 @@ try
 {
 #if USE_SILK
     auto log = getLogger("Proxy");
+
+    /// The HTTP frontend parses URL paths such as `/database/table.CSV.gz` as the server does,
+    /// which needs the names of the formats.
+    registerFormats();
 
     server = std::make_unique<Proxy::ProxyServer>(config(), log);
     server->start(config());
