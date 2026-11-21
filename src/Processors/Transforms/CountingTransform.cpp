@@ -26,8 +26,11 @@ void CountingTransform::onConsume(Chunk chunk)
 
     Progress local_progress{WriteProgress(written_rows, written_bytes)};
 
-    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-    ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
+    if (count_profile_events)
+    {
+        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
+        ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
+    }
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);
