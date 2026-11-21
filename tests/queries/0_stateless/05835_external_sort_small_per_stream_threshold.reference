@@ -1,0 +1,4 @@
+tiny threshold spills	1
+narrow file count	1
+wide spilled sort uses less memory	1
+replicated sort key merge block size	1

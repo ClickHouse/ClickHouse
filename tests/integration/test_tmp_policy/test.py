@@ -78,9 +78,9 @@ def test_multiple_local_disk_distinct():
 
 
 def test_multiple_local_disk_full_disk():
-    # With `disk1` nearly full, every spill of the external sort reserves its bytes on `disk2`. The threshold
-    # of the external sort is split among the 16 sorting threads: 32 KiB each, less than a block, so every
-    # thread spills every block it sorts. The threads reserve at the same time, and a reservation must try
+    # With `disk1` nearly full, every spill of the external sort reserves its bytes on `disk2`. Each of the
+    # 16 sorting threads spills at the 32 KiB threshold, less than a block, so every thread spills every
+    # block it sorts. The threads reserve at the same time, and a reservation must try
     # every disk of the volume even when the other threads reserve between its attempts.
     filler = "/test_tmp_policy_disk1/filler"
     node_local.exec_in_container(
@@ -97,7 +97,7 @@ def test_multiple_local_disk_full_disk():
             "max_threads_min_free_memory_per_thread": 0,
             "max_block_size": 8192,
             "max_bytes_ratio_before_external_sort": 0,
-            "max_bytes_before_external_sort": 1 << 19,
+            "max_bytes_before_external_sort": 1 << 15,
         }
         node_local.query(
             "SELECT number FROM numbers_mt(2000000) ORDER BY number DESC FORMAT Null",

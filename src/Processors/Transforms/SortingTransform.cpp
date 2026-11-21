@@ -60,18 +60,14 @@ MergeSorter::MergeSorter(
 
     chunks.swap(nonempty_chunks);
 
-    if (preferred_block_bytes && !chunks.empty())
+    for (const auto & chunk : chunks)
     {
-        size_t total_rows = 0;
-        size_t total_bytes = 0;
-        for (const auto & chunk : chunks)
-        {
-            total_rows += chunk.getNumRows();
-            total_bytes += chunk.allocatedBytes();
-        }
-
-        max_merged_block_size = calculateMaxMergedBlockSize(max_merged_block_size, preferred_block_bytes, total_rows, total_bytes);
+        input_rows += chunk.getNumRows();
+        input_bytes += chunk.allocatedBytes();
     }
+
+    if (preferred_block_bytes && input_rows)
+        max_merged_block_size = calculateMaxMergedBlockSize(max_merged_block_size, preferred_block_bytes, input_rows, input_bytes);
 
     queue_variants.callOnBatchVariant([&](auto & queue)
     {

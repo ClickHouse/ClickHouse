@@ -39,9 +39,15 @@ public:
     /// Returns the row limit, reduced by the optional byte target using the input's average row size.
     [[nodiscard]] size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
 
+    /// Totals of the inputs after sparse columns and replicated sort columns are materialized.
+    [[nodiscard]] size_t getInputRows() const { return input_rows; }
+    [[nodiscard]] size_t getInputBytes() const { return input_bytes; }
+
 private:
     Chunks chunks;
     size_t max_merged_block_size;
+    size_t input_rows = 0;
+    size_t input_bytes = 0;
     UInt64 limit;
     const Mode mode;
     SortQueueVariants queue_variants;
