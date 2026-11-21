@@ -1,0 +1,85 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "678a858e-00dd-4c0e-9a05-9e012ffe6b09",
+  "location" : "/tmp/iceberg-test-tables/v2/orders",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1647995894606,
+  "last-column-id" : 5,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "order_year",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "order_date",
+      "required" : true,
+      "type" : "timestamp"
+    }, {
+      "id" : 4,
+      "name" : "product_name",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 5,
+      "name" : "amount",
+      "required" : true,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "order_year",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 4315161413060702424,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4315161413060702424,
+    "timestamp-ms" : 1647995894551,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "4",
+      "added-records" : "400",
+      "added-files-size" : "14297",
+      "changed-partition-count" : "2",
+      "total-records" : "400",
+      "total-files-size" : "14297",
+      "total-data-files" : "4",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/tmp/iceberg-test-tables/v2/orders/metadata/snap-4315161413060702424-1-a03fcb33-89e2-485d-99ac-10e565de3039.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1647995894551,
+    "snapshot-id" : 4315161413060702424
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1647995893471,
+    "metadata-file" : "/tmp/iceberg-test-tables/v2/orders/metadata/v1.metadata.json"
+  } ]
+}

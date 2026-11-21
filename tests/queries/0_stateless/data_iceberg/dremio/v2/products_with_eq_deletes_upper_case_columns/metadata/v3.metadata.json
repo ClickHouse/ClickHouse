@@ -1,0 +1,135 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "624d1d14-4ce2-47e9-afea-9853c768bc43",
+  "location" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes_upper_case_columns",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1747264406401,
+  "last-column-id" : 7,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "PRODUCT_ID",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "NAME",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "category",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "color",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 5,
+      "name" : "created_date",
+      "required" : true,
+      "type" : "date"
+    }, {
+      "id" : 6,
+      "name" : "weight",
+      "required" : true,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "quantity",
+      "required" : true,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "category",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.row-group-size-bytes" : "1",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 7293972350984954892,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7293972350984954892,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 5121755717074686812,
+    "timestamp-ms" : 1747264406093,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "200",
+      "added-files-size" : "7665",
+      "changed-partition-count" : "1",
+      "total-records" : "200",
+      "total-files-size" : "7665",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "iceberg-version" : "Apache Iceberg 1.8.0 (commit c277c2014a1b37fe755cfe37f173b6465bb8cb73)"
+    },
+    "manifest-list" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes_upper_case_columns/metadata/snap-5121755717074686812-1-f88c880b-15af-44fe-b106-dd0c4a30c18b.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 7293972350984954892,
+    "parent-snapshot-id" : 5121755717074686812,
+    "timestamp-ms" : 1747264406401,
+    "summary" : {
+      "operation" : "delete",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-files-size" : "2945",
+      "added-equality-deletes" : "30",
+      "changed-partition-count" : "1",
+      "total-records" : "200",
+      "total-files-size" : "10610",
+      "total-data-files" : "1",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "30",
+      "iceberg-version" : "Apache Iceberg 1.8.0 (commit c277c2014a1b37fe755cfe37f173b6465bb8cb73)"
+    },
+    "manifest-list" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes_upper_case_columns/metadata/snap-7293972350984954892-1-9514b320-ddca-4228-83e0-5a9d54b29c9a.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1747264406093,
+    "snapshot-id" : 5121755717074686812
+  }, {
+    "timestamp-ms" : 1747264406401,
+    "snapshot-id" : 7293972350984954892
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1747264405061,
+    "metadata-file" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes_upper_case_columns/metadata/v1.metadata.json"
+  }, {
+    "timestamp-ms" : 1747264406093,
+    "metadata-file" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes_upper_case_columns/metadata/v2.metadata.json"
+  } ]
+}

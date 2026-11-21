@@ -1,0 +1,41 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "3c120f86-7ce3-4659-ae11-95c932b548c3",
+  "location" : "file:///tmp/iceberg",
+  "last-updated-ms" : 1570127432482,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "n_nationkey",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "n_name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "n_regionkey",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "n_comment",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ]
+}

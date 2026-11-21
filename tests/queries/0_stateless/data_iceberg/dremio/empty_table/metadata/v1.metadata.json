@@ -1,0 +1,55 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "d0e95278-0cf6-4f91-8457-874d742e67ce",
+  "location" : "/tmp/empty_iceberg",
+  "last-updated-ms" : 1626948645618,
+  "last-column-id" : 5,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "elements",
+      "required" : true,
+      "type" : {
+        "type" : "list",
+        "element-id" : 4,
+        "element" : "string",
+        "element-required" : true
+      }
+    }, {
+      "id" : 3,
+      "name" : "data",
+      "required" : true,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 5,
+          "name" : "struct",
+          "required" : true,
+          "type" : "string"
+        } ]
+      }
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}
