@@ -101,19 +101,6 @@ $CLICKHOUSE_CLIENT -q "
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0 order by x, y"
 
-# echo "> filter is split, one part is filtered before Aggregating and Cube"
-# $CLICKHOUSE_CLIENT -q "
-#     explain actions = 1 select * from (
-#         select sum(x) as s, x, y from (select number as x, number + 1 as y from numbers(10)) group by x, y　with cube
-#     ) where y != 0 and s != 4
-#     settings enable_optimize_predicate_expression=0" |
-#     grep -o "Cube\|Aggregating\|Filter column: notEquals(y, 0)"
-# $CLICKHOUSE_CLIENT -q "
-#     select s, x, y from (
-#         select sum(x) as s, x, y from (select number as x, number + 1 as y from numbers(10)) group by x, y　with cube
-#     ) where y != 0 and s != 4 order by s, x, y
-#     settings enable_optimize_predicate_expression=0"
-
 echo "> (analyzer) filter is pushed down before Distinct"
 $CLICKHOUSE_CLIENT -q "
     explain actions = 1 select x, y from (

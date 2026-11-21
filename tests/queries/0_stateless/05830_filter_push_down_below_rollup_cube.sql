@@ -1,0 +1,112 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN indexes = 1 shows the key condition of a local read only
+
+SET query_plan_filter_push_down = 1;
+-- a separate filter is not pushed through the filter of HAVING
+SET query_plan_merge_filters = 1;
+
+DROP TABLE IF EXISTS t_rollup_filter;
+CREATE TABLE t_rollup_filter (id UInt32, k UInt32, s String, v UInt64) ENGINE = MergeTree ORDER BY (id, k, s);
+-- the real groups id = 0, k = 0 and s = '' have the same key value as the subtotal rows
+INSERT INTO t_rollup_filter SELECT number % 10, number % 3, if(number % 4 = 0, '', 'a'), number FROM numbers(60);
+
+SELECT 'rollup, first key';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 ORDER BY ALL;
+
+SELECT 'cube, first key';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY CUBE(id, k)) WHERE id = 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY CUBE(id, k)) WHERE id = 4 ORDER BY ALL;
+
+SELECT 'cube, second key';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY CUBE(id, k)) WHERE k = 2) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY CUBE(id, k)) WHERE k = 2 ORDER BY ALL;
+
+SELECT 'range';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id BETWEEN 3 AND 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id BETWEEN 3 AND 4 ORDER BY ALL;
+
+SELECT 'string key';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT s, id, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(s, id)) WHERE s = 'a' AND id = 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT s, id, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(s, id)) WHERE s = 'a' AND id = 4 ORDER BY ALL;
+
+SELECT 'having with grouping';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, grouping(id, k) AS g, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND g = 1) WHERE explain LIKE '%Condition:%';
+SELECT id, k, grouping(id, k) AS g, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND g = 1 ORDER BY ALL;
+
+SELECT 'disjunction with an aggregate';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE (id = 4 AND sv > 100) OR (id = 5 AND sv > 150)) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE (id = 4 AND sv > 100) OR (id = 5 AND sv > 150) ORDER BY ALL;
+
+SELECT 'having, then where';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 2) WHERE id = 4) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 2) WHERE id = 4 ORDER BY ALL;
+
+SELECT 'the condition has the name of a column below the step';
+SELECT id % 3 AS a, count() FROM t_rollup_filter GROUP BY a WITH ROLLUP HAVING a ORDER BY ALL;
+SELECT * FROM (SELECT id, k, count() FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING k = 1) WHERE id ORDER BY ALL LIMIT 3;
+SELECT * FROM (SELECT id % 5 > 2 AS f, id % 5 AS a, count() FROM t_rollup_filter GROUP BY f, a WITH CUBE) WHERE a > 2 ORDER BY ALL;
+SELECT * FROM (SELECT id = 1 AND k = 1 AS f, id, k, count() FROM t_rollup_filter GROUP BY f, id, k WITH ROLLUP) WHERE id = 1 AND k = 1 ORDER BY ALL;
+
+SELECT 'only the conjunct that rejects the subtotal value';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 ORDER BY ALL;
+
+SELECT 'with totals';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY id, k WITH ROLLUP WITH TOTALS) WHERE id = 4 ORDER BY ALL;
+
+SELECT 'not pushed: the filter keeps the subtotal value';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 0) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 0 ORDER BY ALL;
+SELECT * FROM (SELECT s, id, sum(v) FROM t_rollup_filter GROUP BY CUBE(s, id)) WHERE s = '' AND id < 2 ORDER BY ALL;
+
+SELECT 'not pushed: two keys in one conjunct';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id + k = 5) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id + k = 5 ORDER BY ALL;
+
+SELECT 'not pushed: group_by_use_nulls';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4) WHERE explain LIKE '%Condition:%' SETTINGS group_by_use_nulls = 1;
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+
+SELECT 'only the conditions that cannot throw, the whole filter is on the keys';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0) WHERE explain LIKE '%Condition:%';
+SELECT * FROM (SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k)) WHERE id = 4 AND k != 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+
+SELECT 'not pushed: a condition that can throw after a condition on an aggregate';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0) WHERE explain LIKE '%Condition:%';
+SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT id, k, sum(v) AS sv FROM t_rollup_filter GROUP BY CUBE(id, k) HAVING sv > 50 AND id = 4 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY ROLLUP(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT if(number < 2, 1, 2) AS k FROM numbers(3)) GROUP BY CUBE(k) HAVING c = 1 AND intDiv(10, toInt64(k) - 1) > 0 ORDER BY ALL;
+
+SELECT 'not pushed: a condition that can throw on a constant key';
+-- below the aggregation the key is a constant, and the constant folding of a copy does not short-circuit
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING if(k != 1, intDiv(10, k - 1), 0) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING if(k != 1, intDiv(10, k - 1), 0) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toNullable(toInt64(1)) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toNullable(toInt64(1)) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 1 AND intDiv(10, k - 1) > 0 ORDER BY ALL;
+-- no group has the key 1, so the filter does not divide by zero
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY ROLLUP(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
+SELECT k, count() AS c FROM (SELECT toInt64(1) AS k FROM numbers(0)) GROUP BY CUBE(k) HAVING intDiv(10, k - 1) > 0 ORDER BY ALL;
+
+SELECT 'not pushed: a filter with side effects';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id, k, sum(v) FROM t_rollup_filter GROUP BY ROLLUP(id, k) HAVING id = 4 AND id + sleepEachRow(0) = 4) WHERE explain LIKE '%Condition:%';
+-- a copy below the step sleeps 4 seconds in one block and throws
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k = 1 AND k + sleepEachRow(0.1) = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000;
+-- the filter sleeps 4 seconds in the block of 40 groups and throws; a copy of `k = 1` below the step leaves 1 group
+SELECT k, count() FROM (SELECT number + 1 AS k FROM numbers(40)) GROUP BY ROLLUP(k) HAVING k + sleepEachRow(0.1) > 0 AND k = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000, function_sleep_max_microseconds_per_block = 3000000; -- { serverError TOO_SLOW }
+SELECT k, count() FROM (SELECT number + 1 AS k FROM numbers(40)) GROUP BY CUBE(k) HAVING k + sleepEachRow(0.1) > 0 AND k = 1 ORDER BY ALL SETTINGS max_threads = 1, max_block_size = 1000, function_sleep_max_microseconds_per_block = 3000000; -- { serverError TOO_SLOW }
+
+SELECT 'not pushed: a condition that reads the representation of a key';
+-- below the aggregation the key is a constant, above it the key is a full column
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND arrayAll(x -> NOT isConstant(k), [1]) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toUInt64(1) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND arrayAll(x -> NOT isConstant(k), [1]) ORDER BY ALL;
+SELECT k, count() FROM (SELECT toNullable(toUInt64(1)) AS k FROM numbers(10)) GROUP BY ROLLUP(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+SELECT k, count() FROM (SELECT toNullable(toUInt64(1)) AS k FROM numbers(10)) GROUP BY CUBE(k) HAVING k != 0 AND NOT isConstant(k) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+
+DROP TABLE t_rollup_filter;

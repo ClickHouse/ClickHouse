@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -34,11 +35,13 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -47,6 +50,11 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
+
+#include <algorithm>
+#include <concepts>
+#include <iterator>
+#include <ranges>
 
 namespace DB::ErrorCodes
 {
@@ -1229,6 +1237,88 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
+template <typename Step>
+concept RollupOrCubeStep = std::same_as<Step, RollupStep> || std::same_as<Step, CubeStep>;
+
+/// true if no row with the default value in `column` passes the filter
+static bool rejectsDefaultOf(const ColumnWithTypeAndName & column, const FilterStep & filter)
+{
+    return filterResultForNotMatchedRows(filter.getExpression(), filter.getFilterColumnName(), Block{column}, /*allow_unknown_function_arguments=*/ true)
+        == FilterResult::FALSE;
+}
+
+/// the keys that the filter rejects at the default value; a subtotal row has this value in each key that its level removes
+static Names keysWithRejectedSubtotals(const RollupOrCubeStep auto & step, const FilterStep & filter)
+{
+    const auto & input_header = *step.getInputHeaders().front();
+    const auto & output_header = *step.getOutputHeader();
+
+    auto has_rejected_subtotals = [&](const String & key)
+    {
+        const auto & column = output_header.getByName(key);
+        /// `group_by_use_nulls` changes the type of a key
+        return column.type->equals(*input_header.getByName(key).type) && rejectsDefaultOf(column, filter);
+    };
+
+    return step.getParams().keys | std::views::filter(has_rejected_subtotals) | std::ranges::to<Names>();
+}
+
+/// `and` and `or` do not throw, but they do not describe it in `canThrowIfKnown`
+static bool cannotThrow(const ActionsDAG::Node * condition)
+{
+    const bool is_logical = condition->type == ActionsDAG::ActionType::FUNCTION
+        && (condition->function_base->getName() == "and" || condition->function_base->getName() == "or");
+    if (is_logical)
+        return std::ranges::all_of(condition->children, cannotThrow);
+    return prewhereConditionCannotThrow(condition);
+}
+
+/// the conditions of the filter on `keys` that do not have a copy below the step; the optimizer visits the same filter again
+static std::optional<ActionsDAG::ActionsForFilterPushDown> takeNewConditionsOn(const Names & keys, const FilterStep & filter, RollupOrCubeStep auto & step)
+{
+    if (keys.empty())
+        return {};
+
+    auto conditions = tryToExtractPartialPredicate(filter.getExpression(), filter.getFilterColumnName(), keys);
+    if (!conditions)
+        return {};
+
+    ActionsDAG::NodeRawConstPtrs new_conditions;
+    std::ranges::copy_if(
+        ActionsDAG::extractConjunctionAtoms(conditions->getOutputs().front()) | std::views::reverse, /// back to the order of the filter
+        std::back_inserter(new_conditions),
+        [&](const ActionsDAG::Node * condition)
+        {
+            /// below the step a copy runs for each row, also for the rows that the other conditions reject, and folds a constant key without short-circuit
+            return cannotThrow(condition) && ActionsDAG::getInputsReadByRepresentation(*condition).empty()
+                && step.getConditionsCopiedBelow().insert(condition->result_name).second;
+        });
+
+    return ActionsDAG::createActionsForConjunction(new_conditions, step.getInputHeaders().front()->getColumnsWithTypeAndName());
+}
+
+/// a row that passes the filter has all these keys, so the conditions on them also apply below the step; the filter stays to reject the subtotals
+template <RollupOrCubeStep Step>
+static size_t tryCopyKeyConditionsBelow(QueryPlan::Node * filter_node, QueryPlan::Nodes & nodes)
+{
+    auto & step_node = *filter_node->children.front();
+    auto * step = typeid_cast<Step *>(step_node.step.get());
+    /// a filter below the step changes the totals
+    if (!step || canProduceTotals(step_node))
+        return 0;
+
+    const auto & filter = assert_cast<const FilterStep &>(*filter_node->step);
+    /// with a copy below the step the filter runs on fewer rows
+    if (isSensitiveToEvaluationCount(filter.getExpression()))
+        return 0;
+
+    auto key_conditions = takeNewConditionsOn(keysWithRejectedSubtotals(*step, filter), filter, *step);
+    if (!key_conditions)
+        return 0;
+
+    return addNewFilterStepOrThrow(filter_node, nodes, std::move(*key_conditions), 0, /*update_parent_filter=*/ false);
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1417,10 +1507,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    /// Same reason for Cube
-    // if (auto * cube = typeid_cast<CubeStep *>(child.get()))
-    // {
-    // }
+    if (auto updated_steps = tryCopyKeyConditionsBelow<RollupStep>(parent_node, nodes))
+        return updated_steps;
+
+    if (auto updated_steps = tryCopyKeyConditionsBelow<CubeStep>(parent_node, nodes))
+        return updated_steps;
 
     if (typeid_cast<SortingStep *>(child.get()))
     {
