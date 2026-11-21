@@ -28,6 +28,7 @@ protected:
     void consume(Chunk chunk) override;
     bool canGenerate() override;
     Chunk generate() override;
+    void onCancel() noexcept override;
 
 private:
     ArrayJoinActionPtr array_join;
