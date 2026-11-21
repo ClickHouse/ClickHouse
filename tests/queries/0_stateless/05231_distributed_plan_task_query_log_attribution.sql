@@ -60,7 +60,8 @@ WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
 -- A dispatched task's row carries the worker's own default database, so the task rows of a query are
 -- found through the initiator's id, never through current_database.
 -- How a task's rows are divided between its own reads is not fixed, so the columns below are the
--- parts it was assigned: one row per reader bucket, each holding the two parts of the fixture.
+-- parts it was assigned: one row per reader bucket. A task analyzes only the marks it was assigned, so
+-- the parts it reports as selected are those parts.
 WITH (
     SELECT query_id
     FROM system.query_log
@@ -72,7 +73,8 @@ WITH (
 ) AS initiator
 SELECT 'dispatched tasks', uniqExact(query_id) = count(),
     countIf(ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0),
-    arraySort(groupArrayIf(ProfileEvents['SelectedParts'], ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0)),
+    sumIf(ProfileEvents['SelectedParts'], ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0)
+        = sum(ProfileEvents['DistributedPlanWorkerPartsReceived']),
     sum(ProfileEvents['DistributedPlanWorkerPartsReceived']),
     sum(ProfileEvents['DistributedPlanWorkerPartsScanned']),
     sum(ProfileEvents['DistributedPlanWorkerPartsPruned'])
@@ -103,7 +105,8 @@ WITH (
 ) AS initiator
 SELECT 'in-process tasks', uniqExact(query_id) = count(),
     countIf(ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0),
-    arraySort(groupArrayIf(ProfileEvents['SelectedParts'], ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0)),
+    sumIf(ProfileEvents['SelectedParts'], ProfileEvents['DistributedPlanWorkerPartsReceived'] > 0)
+        = sum(ProfileEvents['DistributedPlanWorkerPartsReceived']),
     sum(ProfileEvents['DistributedPlanWorkerPartsReceived']),
     sum(ProfileEvents['DistributedPlanWorkerPartsScanned']),
     sum(ProfileEvents['DistributedPlanWorkerPartsPruned'])

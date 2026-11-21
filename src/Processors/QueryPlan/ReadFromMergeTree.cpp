@@ -35,6 +35,7 @@
 #include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
@@ -400,6 +401,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
@@ -434,6 +436,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -3136,7 +3139,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         /*check_row_limits=*/true,
         skip_ranges_analysis,
         /*report_index_usage=*/true,
-        /*stop_at_first_match=*/false);
+        /*stop_at_first_match=*/false,
+        index_analysis_done_by_coordinator);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -3943,7 +3947,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool check_row_limits,
     bool skip_ranges_analysis,
     bool report_index_usage,
-    bool stop_at_first_match)
+    bool stop_at_first_match,
+    bool index_analysis_already_done)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -4138,6 +4143,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .result = result,
     };
 
+    /// A distributed worker: the coordinator selected its marks with the same analysis the worker would run.
+    if (index_analysis_already_done)
+    {
+        result.parts_with_ranges = std::move(res_parts);
+    }
     /// Only a read the coordinator actually drives may skip its own analysis, because the coordinator is
     /// what assigns its ranges, off the analysis done on the initiator. `canUseParallelReplicasOnFollower`
     /// alone does not say that: with plan-based parallel replicas the whole fragment is rebuilt on the
@@ -4147,7 +4157,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// the initiator's parts, which are not the parts this replica reads.
     /// The initiator must also run a local plan: without one nobody analyzes the indexes or checks the
     /// partition limit for the followers.
-    if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
+    else if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
         && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
@@ -5688,8 +5698,190 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
+void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineSettings & settings)
+{
+    /// Read this task's lanes from this read's own bucket parameter, in the layout
+    /// `serializeDistributedReadBuckets` wrote.
+    String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
+    ReadBufferFromString buf(blob);
+    const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+    DB::FormatSettings format_settings;
+    size_t num_lanes = 0;
+    readVarUInt(num_lanes, buf);
+    /// The coordinator sends one lane per bucket of the task, an empty bucket included, and a read
+    /// without FINAL has one bucket per task.
+    if (num_lanes == 0 || (!isQueryWithFinal() && num_lanes != 1))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: the task has {} lanes, expected {}", num_lanes, isQueryWithFinal() ? "at least 1" : "1");
+    distributed_read_task_buckets.clear();
+    distributed_read_task_buckets.reserve(num_lanes);
+    for (size_t lane = 0; lane < num_lanes; ++lane)
+    {
+        DistributedReadBucket bucket;
+        bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+        readBinary(bucket.needs_merge, buf);
+        if (bucket.needs_merge)
+        {
+            size_t border_arity = 0;
+            readVarUInt(border_arity, buf);
+            if (border_arity > primary_key.data_types.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Distributed read: the layer borders have {} columns, the primary key has {}",
+                    border_arity, primary_key.data_types.size());
+            size_t num_borders = 0;
+            readVarUInt(num_borders, buf);
+            bucket.borders.assign(num_borders, VectorWithMemoryTracking<Field>(border_arity));
+            for (auto & border : bucket.borders)
+                for (size_t i = 0; i < border_arity; ++i)
+                    primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
+            readVarUInt(bucket.index, buf);
+        }
+        distributed_read_task_buckets.push_back(std::move(bucket));
+    }
+
+    /// Every range is installed as it is, so it must lie within its part. A part this replica does not have
+    /// is reported where the marks are matched to the local parts.
+    UnorderedMapWithMemoryTracking<String, size_t> marks_count_by_part;
+    if (prepared_parts)
+        for (const auto & part : *prepared_parts)
+            marks_count_by_part.emplace(part.data_part->info.getPartNameV1(), part.data_part->index_granularity->getMarksCountWithoutFinal());
+    for (const auto & bucket : distributed_read_task_buckets)
+        for (const auto & part_desc : bucket.marks)
+        {
+            auto it = marks_count_by_part.find(part_desc.info.getPartNameV1());
+            if (it == marks_count_by_part.end())
+                continue;
+            for (const auto & range : part_desc.ranges)
+                if (range.begin >= range.end || range.end > it->second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Distributed read: mark range [{}, {}) of part {} is not within its {} marks",
+                        range.begin, range.end, it->first, it->second);
+        }
+}
+
+bool ReadFromMergeTree::pinPartsToReceivedMarks()
+{
+    /// `getSampling` turns an absolute sample size into a ratio of the rows of the parts it is given, so
+    /// it must see the whole snapshot, as on the coordinator. The ranges are pinned after the analysis.
+    if (isQueryWithSampling())
+        return false;
+
+    /// `AnalysisResult::checkLimits` admits a read to `max_concurrent_queries` by the number of marks it
+    /// selects, which must be those of the whole read, not of this task's bucket. Until the replicas get
+    /// the admission decision of the whole read, such a table keeps the analysis of the whole snapshot.
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0)
+        return false;
+
+    /// `AnalysisResult::checkLimits` counts the partitions of the analysis result against
+    /// `max_partitions_to_read`. A FINAL replica kept the whole selection there, so the limit held for the
+    /// whole read; pinned, it would count only the partitions of this task's lanes.
+    if (isQueryWithFinal() && getMaxPartitionsToRead(context->getSettingsRef(), *data_settings) > 0)
+        return false;
+
+    /// The coordinator has already analyzed the whole table and this task reads only its share, so the
+    /// analysis here starts from the received marks instead of from every part of the snapshot.
+    /// A non-FINAL read has one bucket, which names each part once. The lanes of a FINAL read can name
+    /// one part several times, and the primary-key-range layers can share a boundary granule, so the
+    /// ranges of a part are merged. `MarkRange::operator<` rejects intersecting ranges, so they are
+    /// sorted by their beginning.
+    UnorderedMapWithMemoryTracking<String, MarkRanges> received_ranges;
+    for (const auto & bucket : distributed_read_task_buckets)
+        for (const auto & part_desc : bucket.marks)
+        {
+            auto & ranges = received_ranges[part_desc.info.getPartNameV1()];
+            ranges.insert(ranges.end(), part_desc.ranges.begin(), part_desc.ranges.end());
+        }
+
+    for (auto & [part_name, ranges] : received_ranges)
+    {
+        std::sort(ranges.begin(), ranges.end(), [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; });
+        MarkRanges merged;
+        for (const auto & range : ranges)
+        {
+            if (!merged.empty() && range.begin <= merged.back().end)
+                merged.back().end = std::max(merged.back().end, range.end);
+            else
+                merged.push_back(range);
+        }
+        ranges = std::move(merged);
+    }
+
+    /// Keeps the snapshot order, which the analysis relies on (it matches its result to its input by
+    /// `part_index_in_query`), and each part's offsets in the query, which `_part_starting_offset` reads.
+    auto task_parts = std::make_shared<RangesInDataParts>();
+    task_parts->reserve(received_ranges.size());
+    for (const auto & part : *prepared_parts)
+    {
+        auto it = received_ranges.find(part.data_part->info.getPartNameV1());
+        if (it == received_ranges.end())
+            continue;
+
+        RangesInDataPart task_part = part;
+        task_part.ranges = std::move(it->second);
+        task_parts->push_back(std::move(task_part));
+        received_ranges.erase(it);
+    }
+
+    if (!received_ranges.empty())
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+            "Distributed read: part {} selected by the coordinator is not available on this replica "
+            "(diverged by merge or replication lag); retry the query", received_ranges.begin()->first);
+
+    prepared_parts = std::move(task_parts);
+    return true;
+}
+
+bool ReadFromMergeTree::workerIndexAnalysisCanPruneReceivedMarks() const
+{
+    /// The worker analyzes the same parts with the same filter as the coordinator, except for the `IN`
+    /// subquery sets. The coordinator builds them for its index analysis only if
+    /// `use_index_for_in_with_subqueries` allows it, while the worker receives them as values, i.e. as
+    /// sets from tuples, which the index analysis uses regardless of the setting. A worker cannot tell
+    /// such a set from a literal `IN` list, which the coordinator used too, so it counts both.
+    if (context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
+        return false;
+
+    auto has_set_from_tuple = [](const ActionsDAG & dag)
+    {
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+                continue;
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+            const auto * column_set = typeid_cast<const ColumnSet *>(column);
+            if (column_set && typeid_cast<const FutureSetFromTuple *>(column_set->getData().get()))
+                return true;
+        }
+        return false;
+    };
+
+    return (query_info.filter_actions_dag && has_set_from_tuple(*query_info.filter_actions_dag))
+        || (query_info.prewhere_info && has_set_from_tuple(query_info.prewhere_info->prewhere_actions))
+        || (query_info.row_level_filter && has_set_from_tuple(query_info.row_level_filter->actions));
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
+    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
+    /// needs a FINAL merge, and (for a merge layer) the borders + index. It is read before the index
+    /// analysis, which then does not repeat the coordinator's, except for a read with sampling (see
+    /// `pinPartsToReceivedMarks`). An optimization of the worker's plan may have run the analysis already,
+    /// over the whole snapshot; then it stays as it is.
+    bool pinned_parts_to_received_marks = false;
+    if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
+    {
+        readDistributedReadTaskBuckets(settings);
+        if (!analyzed_result_ptr)
+        {
+            pinned_parts_to_received_marks = pinPartsToReceivedMarks();
+            if (pinned_parts_to_received_marks)
+                index_analysis_done_by_coordinator = !workerIndexAnalysisCanPruneReceivedMarks();
+        }
+    }
+
     auto & result = getAnalysisResult();
 
     /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
@@ -5705,41 +5897,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
-    /// needs a FINAL merge, and (for a merge layer) the borders + index. Marks are matched to local parts by
-    /// name, and a part this replica no longer has is a retryable error (it diverged by merge or lag).
+    /// A distributed worker matches the coordinator's marks (read above, in `readDistributedReadTaskBuckets`)
+    /// to local parts by name, and a part this replica no longer has is a retryable error (it diverged by
+    /// merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
-        /// Read this task's lanes from this read's own bucket parameter, in the layout
-        /// `serializeDistributedReadBuckets` wrote.
-        String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
-        ReadBufferFromString buf(blob);
-        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-        DB::FormatSettings format_settings;
-        size_t num_lanes = 0;
-        readVarUInt(num_lanes, buf);
-        distributed_read_task_buckets.clear();
-        distributed_read_task_buckets.reserve(num_lanes);
-        for (size_t lane = 0; lane < num_lanes; ++lane)
-        {
-            DistributedReadBucket bucket;
-            bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-            readBinary(bucket.needs_merge, buf);
-            if (bucket.needs_merge)
-            {
-                size_t border_arity = 0;
-                readVarUInt(border_arity, buf);
-                size_t num_borders = 0;
-                readVarUInt(num_borders, buf);
-                bucket.borders.assign(num_borders, VectorWithMemoryTracking<Field>(border_arity));
-                for (auto & border : bucket.borders)
-                    for (size_t i = 0; i < border_arity; ++i)
-                        primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
-                readVarUInt(bucket.index, buf);
-            }
-            distributed_read_task_buckets.push_back(std::move(bucket));
-        }
-
         /// The coordinator selects parts without this worker's index analysis, so its marks can name a part
         /// this read pruned. Such a part holds no row the query can match (the worker filters rows with the
         /// same shipped IN set it prunes with), so drop it; a name the snapshot lacks too is really gone.
@@ -5780,7 +5942,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsPruned, received_parts.size() - scanned_parts.size());
         }
 
-        /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
+        /// A FINAL worker resolves each lane's marks against its parts in
         /// `spreadMarkRangesAmongStreamsFinal`. A non-FINAL read has one bucket: pin its marks here so the
         /// plain read path reads exactly them.
         if (!isQueryWithFinal())
@@ -5798,8 +5960,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
                         "Distributed read: part {} selected by the coordinator is not available on this replica "
                         "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+                /// The analysis of pinned parts ran over these marks, so its ranges are the marks of this bucket
+                /// it did not prune. An analysis that ran before pinning covered the whole snapshot.
                 RangesInDataPart part = std::move(it->second);
-                part.ranges = part_desc.ranges;
+                if (!pinned_parts_to_received_marks)
+                    part.ranges = part_desc.ranges;
                 bucket_parts.push_back(std::move(part));
             }
             result.parts_with_ranges = std::move(bucket_parts);
