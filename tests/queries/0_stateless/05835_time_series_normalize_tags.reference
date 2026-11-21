@@ -1,0 +1,29 @@
+Sorted by name, __name__ included:
+[('__name__','http_requests_count'),('env','dev'),('region','eu')]	Array(Tuple(String, String))
+Only the tags array, no separate pairs:
+[('a','1'),('b','2')]
+Empty and NULL tags array:
+[]	[]	[]
+[('__name__','http_requests_total')]	[('__name__','http_requests_total'),('region','us')]
+An empty value or a NULL value means the tag is absent:
+[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[('__name__','x')]	[('region','eu')]
+An empty separate value does not conflict with the same tag in the array:
+[('__name__','bar'),('x','1')]
+A duplicate tag with the same value is removed, with a different value is an error:
+[('job','api')]
+[('job','api')]
+Map:
+[('__name__','http_requests_count'),('env','dev'),('region','eu')]
+FixedString, LowCardinality and Nullable:
+1	[('a','x')]
+[('a','x'),('b','y'),('c','z')]
+[('a','x'),('b','y')]
+Constant and non-constant arguments:
+0	[('n','0'),('region','eu')]	[('n','0'),('region','eu')]	1
+1	[('n','1'),('region','eu'),('skip','v')]	[('n','1'),('region','eu'),('skip','v')]	1
+2	[('n','2'),('region','eu')]	[('n','2'),('region','eu')]	1
+3	[('n','3'),('region','eu'),('skip','v')]	[('n','3'),('region','eu'),('skip','v')]	1
+Wrong arguments:
+Equivalent to timeSeriesGroupToTags(timeSeriesTagsToGroup(...)):
+30	30
+1
