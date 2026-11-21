@@ -3455,7 +3455,7 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
     ReadFromMergeTree::Indexes & indexes,
     const IndexAnalysisFilter & filter,
     const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettings & data_settings,
+    const MergeTreeSettingsPtr & data_settings,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & query_context,
@@ -3493,12 +3493,18 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
 
     UsefulSkipIndexes skip_indexes;
 
+    /// The columns of the part-level minmax index of the partition key, by position. `PARTITION_KEY_ONLY` leaves out
+    /// `_block_number` and `_block_offset`, which follow them.
+    const Names partition_minmax_columns = metadata_snapshot->hasPartitionKey()
+        ? MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames()
+        : Names{};
+
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, data_settings);
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data_settings);
 
         /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
         /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
@@ -3530,7 +3536,19 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+        {
+            auto & useful_index = skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+            for (const auto & column : index.column_names)
+            {
+                const auto it = std::ranges::find(partition_minmax_columns, column);
+                if (it == partition_minmax_columns.end())
+                {
+                    useful_index.partition_minmax_positions.clear();
+                    break;
+                }
+                useful_index.partition_minmax_positions.push_back(it - partition_minmax_columns.begin());
+            }
+        }
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
@@ -3616,7 +3634,7 @@ void ReadFromMergeTree::buildIndexes(
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter.dag->predicate, query_context);
 
     buildOffsetAndSkipIndexConditions(
-        *indexes, filter, metadata_snapshot, *data.getSettings(), vector_search_parameters, top_k_filter_info, query_context,
+        *indexes, filter, metadata_snapshot, data.getSettings(), vector_search_parameters, top_k_filter_info, query_context,
         query_info_.isFinal());
 }
 

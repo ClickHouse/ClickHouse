@@ -63,12 +63,15 @@ public:
 
     [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
+    [[nodiscard]] bool alwaysTrueOnHyperrectangle(const Hyperrectangle & hyperrectangle) const override;
+
     [[nodiscard]] std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
     KeyCondition condition;
+    bool condition_is_conjunction_of_atoms = false;
 };
 
 

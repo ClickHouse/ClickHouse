@@ -214,6 +214,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
 {
     /// The granule bound comes from `getExtremes`, which skips NaN.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+    condition_is_conjunction_of_atoms = condition.isConjunctionOfAtoms();
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -236,6 +237,16 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
+}
+
+bool MergeTreeIndexConditionMinMax::alwaysTrueOnHyperrectangle(const Hyperrectangle & hyperrectangle) const
+{
+    /// With `OR` or `NOT`, an unknown atom (a condition on another column) cannot be taken as true, so the
+    /// condition is proven only if it holds whatever the unknown atoms are.
+    if (hyperrectangle.size() != index_data_types.size())
+        return false;
+    const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {}, condition_is_conjunction_of_atoms);
+    return mask.can_be_true && !mask.can_be_false;
 }
 
 std::string MergeTreeIndexConditionMinMax::getDescription() const

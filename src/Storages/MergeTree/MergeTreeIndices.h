@@ -175,6 +175,12 @@ public:
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
     [[nodiscard]] virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 
+    /// Whether the condition holds for every value in the hyperrectangle, whose axes are the index columns in declared order.
+    [[nodiscard]] virtual bool alwaysTrueOnHyperrectangle(const Hyperrectangle & /*hyperrectangle*/) const
+    {
+        return false;
+    }
+
     using FilteredGranules = std::vector<size_t>;
     [[nodiscard]] virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
     {
@@ -393,6 +399,9 @@ struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
     ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
+    /// Positions of the index columns in the part-level minmax index of the partition key, if all of them are
+    /// there; empty otherwise. See `MergeTreeDataSelectExecutor::isSkipIndexConditionTrueOnWholePart`.
+    std::vector<size_t> partition_minmax_positions;
 
     MergeTreeIndexWithCondition(
         MergeTreeIndexPtr index_,

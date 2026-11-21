@@ -8032,6 +8032,15 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+bool KeyCondition::isConjunctionOfAtoms() const
+{
+    return std::ranges::none_of(rpn, [](const RPNElement & e)
+    {
+        return e.function == RPNElement::FUNCTION_NOT || e.function == RPNElement::FUNCTION_OR
+            || e.function == RPNElement::FUNCTION_ATOM_GROUP;
+    });
+}
+
 /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`
 /// (an unbounded side of a `Range` is represented by a null-like Field), so map it to infinity.
 static Float64 coordinateBoundToFloat64(const Field & field, bool is_left_bound)
@@ -8257,8 +8266,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
+    bool optimistic_unknowns) const
 {
+    /// Treating `UNKNOWN` as `(true, false)` is sound only in a conjunction of atoms, see `isConjunctionOfAtoms`.
+    chassert(!optimistic_unknowns || isConjunctionOfAtoms());
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
@@ -8284,7 +8296,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, !optimistic_unknowns);
             return false;
         }
 

@@ -420,6 +420,12 @@ public:
         IndexAnalysisStats & stats,
         std::span<IndexAnalysisStat> skip_index_stats);
 
+    /// Whether the part-level minmax index of the partition key proves the condition of the skip index for every row
+    /// of the part, so evaluating the index on its granules cannot drop any. Used both by the index analysis and by
+    /// the evaluation of skip indexes on data read.
+    static bool isSkipIndexConditionTrueOnWholePart(
+        const MergeTreeIndexWithCondition & index_and_condition, const IMergeTreeDataPartInfoForReader & part, const LoggerPtr & log);
+
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);

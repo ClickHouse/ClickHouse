@@ -93,6 +93,7 @@ namespace ProfileEvents
 extern const Event FilteringMarksWithPrimaryKeyProcessedMarks;
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+extern const Event SkipIndexEvaluationsAvoidedByPartMinMax;
 extern const Event GranulesDroppedByPrimaryKey;
 extern const Event GranulesDroppedBySkipIndexes;
 extern const Event IndexBinarySearchAlgorithm;
@@ -1377,6 +1378,33 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
     return index_order;
 }
 
+bool MergeTreeDataSelectExecutor::isSkipIndexConditionTrueOnWholePart(
+    const MergeTreeIndexWithCondition & index_and_condition, const IMergeTreeDataPartInfoForReader & part, const LoggerPtr & log)
+{
+    const auto & positions = index_and_condition.partition_minmax_positions;
+    if (positions.empty())
+        return false;
+
+    /// `getMinMaxIndex` may load the index from disk, so it is called only for an index over partition key columns.
+    const auto part_minmax_index = part.getMinMaxIndex();
+    if (!part_minmax_index || !part_minmax_index->initialized)
+        return false;
+
+    Hyperrectangle hyperrectangle;
+    hyperrectangle.reserve(positions.size());
+    for (size_t position : positions)
+        hyperrectangle.push_back(part_minmax_index->hyperrectangle.at(position));
+
+    const auto & condition = index_and_condition.condition_template->generateForPart(part);
+    if (!condition || !condition->alwaysTrueOnHyperrectangle(hyperrectangle))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::SkipIndexEvaluationsAvoidedByPartMinMax);
+    LOG_TRACE(log, "Skip index {} is not evaluated for part {}: the part-level minmax index proves its condition for every row",
+        backQuote(index_and_condition.index->index.name), part.getPartName());
+    return true;
+}
+
 bool MergeTreeDataSelectExecutor::analyzeSinglePart(
     const SinglePartIndexAnalysisParams & params,
     const IMergeTreeDataPartInfoForReader & part,
@@ -1522,8 +1550,15 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
                 continue;
             }
 
+            /// An index evaluated on data read is bypassed there, in `MergeTreeSkipIndexReader::read`.
             if (!is_index_supported_on_data_read(index_and_condition.index))
             {
+                if (isSkipIndexConditionTrueOnWholePart(index_and_condition, part, log))
+                {
+                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    continue;
+                }
+
                 std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition_template->generateForPart(part),
