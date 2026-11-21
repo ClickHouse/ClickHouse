@@ -109,4 +109,8 @@ DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePa
 /// a patch that can be neither applied nor skipped for that part. See 'patchHasHigherDataVersion'.
 std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data_versions, const String & partition_id, Int64 from, Int64 to);
 
+/// A patch row must match one row only. A second match means that the part has duplicate
+/// `(_block_number, _block_offset)` pairs, and applying the patch would change rows the update did not match.
+[[noreturn]] void throwDuplicateRowIdentity(UInt64 block_number, UInt64 block_offset);
+
 }

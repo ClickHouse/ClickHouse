@@ -428,6 +428,8 @@ struct EqualRunScratch
 {
     absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> run_map;
     PaddedPODArray<RunEntry> run_entries;
+    /// One flag per row identity in `run_map`: whether a result row already matched it.
+    PaddedPODArray<UInt8> run_matched;
 };
 
 /// Emits a matched pair of a result row and a patch row into `patch`.
@@ -468,8 +470,11 @@ void processEqualKeyCursors(
     auto & run_map = scratch.run_map;
     auto & run_entries = scratch.run_entries;
 
+    auto & run_matched = scratch.run_matched;
+
     run_map.clear();
     run_entries.clear();
+    run_matched.clear();
     run_map.reserve(num_patch_rows_in_run);
 
     for (size_t cursor_idx : equal_cursors)
@@ -482,7 +487,10 @@ void processEqualKeyCursors(
             auto [it, inserted] = run_map.try_emplace(identity, static_cast<UInt32>(run_entries.size()));
 
             if (inserted)
+            {
                 run_entries.resize_fill(run_entries.size() + num_groups, RunEntry{});
+                run_matched.push_back(static_cast<UInt8>(0));
+            }
 
             /// Keep the row with the highest data version within each group. Conflicts
             /// across groups are resolved by row versions at application time.
@@ -503,6 +511,11 @@ void processEqualKeyCursors(
 
         if (it == run_map.end())
             continue;
+
+        auto & matched = run_matched[it->second / num_groups];
+        if (matched)
+            throwDuplicateRowIdentity((*result_cursor.block_number)[i], (*result_cursor.block_offset)[i]);
+        matched = 1;
 
         for (size_t group_idx = 0; group_idx < num_groups; ++group_idx)
         {

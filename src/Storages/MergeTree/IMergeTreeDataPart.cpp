@@ -139,6 +139,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsBool use_block_offset_only_with_block_number;
 }
 
 namespace Setting
@@ -177,6 +178,14 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
+        /// `_block_offset` of such part reads either as stored or as the row position, depending on
+        /// `use_block_offset_only_with_block_number`, which can change after the index is loaded.
+        if (column_name == BlockOffsetColumn::name && part.storesBlockOffsetWithoutBlockNumber())
+        {
+            hyperrectangle.emplace_back(Range::createWholeUniverse());
+            continue;
+        }
+
         const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
         const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
 
@@ -2090,7 +2099,34 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
 bool IMergeTreeDataPart::isSystemColumnInvalidated(const String & column_name) const
 {
-    return invalidated_system_columns.contains(column_name);
+    if (invalidated_system_columns.contains(column_name))
+        return true;
+
+    return column_name == BlockOffsetColumn::name && ignoresStoredBlockOffset();
+}
+
+bool IMergeTreeDataPart::hasInvalidatedSystemColumns() const
+{
+    return !invalidated_system_columns.empty() || ignoresStoredBlockOffset();
+}
+
+bool IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber() const
+{
+    /// Projection parts store `_block_offset` of commit-order projections on their own.
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (parent_part || info.isPatch())
+        return false;
+
+    /// The rows of a part of one block have unique stored offsets, and `min_block` is their exact block number.
+    if (info.min_block == info.max_block)
+        return false;
+
+    return getColumnPosition(BlockOffsetColumn::name).has_value() && !getColumnPosition(BlockNumberColumn::name).has_value();
+}
+
+bool IMergeTreeDataPart::ignoresStoredBlockOffset() const
+{
+    return storesBlockOffsetWithoutBlockNumber() && (*storage.getSettings())[MergeTreeSetting::use_block_offset_only_with_block_number];
 }
 
 NameSet IMergeTreeDataPart::getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info)

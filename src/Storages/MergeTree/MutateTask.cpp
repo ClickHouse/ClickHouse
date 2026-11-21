@@ -108,7 +108,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
-    extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
@@ -1428,10 +1427,15 @@ static void splitAndModifyMutationCommands(
     {
         const auto data_settings = part->storage.getSettings();
 
-        if ((*data_settings)[MergeTreeSetting::enable_block_number_column] && !part_columns.has(BlockNumberColumn::name))
+        const bool materialize_block_number = MergeTreeData::shouldPersistBlockNumberColumn(*data_settings) && !part_columns.has(BlockNumberColumn::name);
+        if (materialize_block_number)
             for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockNumberColumn::name, .data_type = BlockNumberColumn::type});
 
-        if ((*data_settings)[MergeTreeSetting::enable_block_offset_column] && !part_columns.has(BlockOffsetColumn::name))
+        /// If the stored `_block_offset` is ignored, it reads as the row position (see `IMergeTreeDataPart::ignoresStoredBlockOffset`).
+        /// When `_block_number` is materialized here, rewrite `_block_offset` too, even with `enable_block_offset_column = 0`,
+        /// otherwise the part stores both columns, and the ignored stored offsets become valid again.
+        const bool materialize_block_offset = (*data_settings)[MergeTreeSetting::enable_block_offset_column] && !part_columns.has(BlockOffsetColumn::name);
+        if (materialize_block_offset || (materialize_block_number && part->ignoresStoredBlockOffset()))
             for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockOffsetColumn::name, .data_type = BlockOffsetColumn::type});
     }
 }

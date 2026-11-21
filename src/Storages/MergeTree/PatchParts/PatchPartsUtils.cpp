@@ -24,7 +24,19 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+void throwDuplicateRowIdentity(UInt64 block_number, UInt64 block_offset)
+{
+    throw Exception(ErrorCodes::INCORRECT_DATA,
+        "A patch part matches more than one row with _block_number = {} and _block_offset = {}. "
+        "The data part has duplicate (_block_number, _block_offset) pairs. "
+        "It was probably merged by an older version with enable_block_offset_column = 1 and enable_block_number_column = 0. "
+        "The patch is not applied, because it would change rows that the lightweight update did not match. "
+        "To read the data without patches, use the setting apply_patch_parts = 0",
+        block_number, block_offset);
 }
 
 PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPartPtr & patch_part)
