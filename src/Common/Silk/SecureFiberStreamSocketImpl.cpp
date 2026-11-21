@@ -5,17 +5,13 @@
 #include <Common/Silk/FiberStreamSocketImpl.h>
 
 #include <base/MemorySanitizer.h>
-#include <base/defines.h>
 
 #include <silk/fibers/fiber.h>
-#include <silk/fibers/mutex.h>
 
 #include <openssl/bio.h>
 
-#include <atomic>
 #include <cerrno>
 #include <cstddef>
-#include <memory>
 
 #include <poll.h>
 #include <sys/socket.h>
@@ -135,47 +131,12 @@ const BIO_METHOD * silkBioMethod()
     return method;
 }
 
-class SilkRecursiveMutex final : public Poco::Net::SecureSocketImpl::RecursiveMutex
-{
-public:
-    void lock() override
-    {
-        auto * self = silk::FiberScheduler::getCurrentFiber();
-        if (owner.load(std::memory_order_relaxed) == self)
-        {
-            chassert(count > 0);
-            ++count;
-            return;
-        }
-        mutex.lock();
-        owner.store(self, std::memory_order_relaxed);
-        chassert(count == 0);
-        count = 1;
-    }
-
-    void unlock() override
-    {
-        chassert(owner.load(std::memory_order_relaxed) == silk::FiberScheduler::getCurrentFiber());
-        if (--count == 0)
-        {
-            owner.store(nullptr, std::memory_order_relaxed);
-            mutex.unlock();
-        }
-    }
-
-private:
-    silk::FiberMutex mutex;
-    std::atomic<silk::Fiber *> owner{nullptr};
-    std::size_t count = 0;
-};
-
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
     : Poco::Net::SecureStreamSocketImpl(Poco::AutoPtr<Poco::Net::StreamSocketImpl>(new FiberStreamSocketImpl), context)
 {
     setBioMethod(silkBioMethod());
-    setMutex(std::make_unique<SilkRecursiveMutex>());
 }
 
 bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
