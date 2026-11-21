@@ -1445,7 +1445,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 Introduced in: v21.6.0
 
-Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also scans the table's data directory again and loads the data parts that appeared there since the last scan, so that the parts written to the same storage by another writer become visible without re-attaching the table. Parts removed from the storage are not detected. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
+Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also scans the table's data directory again and loads the data parts that appeared there since the last scan, so that the parts written to the same storage by another writer become visible without re-attaching the table. The parts removed from the storage are removed from the table. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
 
 ```sql
 SYSTEM RESTART DISK [ON CLUSTER cluster_name] disk_name
