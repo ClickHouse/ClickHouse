@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/FailPoint.h>
 
 #include <unistd.h> /// for ::getpid
 
@@ -23,6 +24,11 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+
+namespace DB::FailPoints
+{
+    extern const char local_object_storage_pause_before_staging_file_lock[];
+}
 
 namespace
 {
@@ -896,3 +902,186 @@ TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
 
     EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"counter.text"});
 }
+
+/// An atomic write must leave the object with its previous contents until it is finalized, however much of the new
+/// contents is already flushed, so that a writer killed in the middle never leaves a torn object.
+TEST(LocalObjectStorage, AtomicWritePublishesOnlyCompleteContents)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_atomic_write");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "__meta" / "directory" / "prefix.path";
+
+    writeObject(storage, path, "previous", DB::WriteSettings{});
+
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
+    {
+        auto buffer = storage->writeObject(
+            DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, /*buf_size=*/ 4096, atomic_settings);
+        const std::string chunk(4096, 'x');
+        for (size_t i = 0; i < 256; ++i)
+            buffer->write(chunk.data(), chunk.size());
+        buffer->next();
+
+        EXPECT_EQ(readObject(storage, path).data, "previous") << "a partially written object must not be visible";
+
+        /// Like a writer that is interrupted before it publishes the object.
+        buffer->cancel();
+    }
+
+    EXPECT_EQ(readObject(storage, path).data, "previous");
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"prefix.path"})
+        << "the staging file of the interrupted write must be cleaned up";
+
+    writeObject(storage, path, "new", atomic_settings);
+    EXPECT_EQ(readObject(storage, path).data, "new") << "an atomic write must replace an existing object";
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"prefix.path"});
+
+    const auto new_path = root / "__meta" / "other" / "prefix.path";
+    writeObject(storage, new_path, "created", atomic_settings);
+    EXPECT_EQ(readObject(storage, new_path).data, "created") << "an atomic write must create a missing object";
+}
+
+/// A process killed while it writes an object atomically leaves the staging file of the write behind, and nothing else
+/// refers to it. The next startup removes such a file, but not the staging file of a write that is still in progress.
+#if defined(OS_LINUX)
+TEST(LocalObjectStorage, StartupRemovesAbandonedStagingFiles)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_abandoned_staging");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto directory = root / "__meta" / "directory";
+    const auto path = directory / "prefix.path";
+
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
+    writeObject(storage, path, "previous", DB::WriteSettings{});
+
+    /// What a killed writer leaves: a marked staging file, whose lock is gone with the process.
+    {
+        std::ofstream abandoned(directory / ".tmp_prefix.path_abcdefgh");
+        abandoned << "partial";
+    }
+    fs::permissions(directory / ".tmp_prefix.path_abcdefgh", fs::perms::sticky_bit, fs::perm_options::add);
+
+    /// Files of the same look that are not staging files: without the mark, or with another suffix.
+    {
+        std::ofstream unmarked(directory / ".tmp_prefix.path_bcdefghi");
+        unmarked << "unmarked";
+    }
+    {
+        std::ofstream other(directory / ".tmp_prefix.path_ABCDEFGH");
+        other << "other";
+    }
+
+    /// Objects whose keys look like staging files, published by a direct and by an atomic write.
+    writeObject(storage, directory / ".tmp_user_abcdefgh", "published", DB::WriteSettings{});
+    writeObject(storage, directory / ".tmp_user_bcdefghi", "published atomically", atomic_settings);
+
+    auto buffer = storage->writeObject(
+        DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, /*buf_size=*/ 4096, atomic_settings);
+    buffer->write("new", 3);
+    buffer->next();
+
+    EXPECT_EQ(listDirectory(directory).size(), 7u);
+
+    storage->startup();
+
+    const auto remaining = listDirectory(directory);
+    EXPECT_EQ(remaining.size(), 6u) << "only the abandoned staging file must be removed";
+    EXPECT_TRUE(std::find(remaining.begin(), remaining.end(), ".tmp_prefix.path_abcdefgh") == remaining.end());
+
+    buffer->finalize();
+    buffer.reset();
+
+    EXPECT_EQ(readObject(storage, path).data, "new") << "the write in progress must not be disturbed";
+    EXPECT_EQ(readObject(storage, directory / ".tmp_user_abcdefgh").data, "published");
+    EXPECT_EQ(readObject(storage, directory / ".tmp_user_bcdefghi").data, "published atomically");
+    EXPECT_EQ(fs::status(path).permissions() & fs::perms::sticky_bit, fs::perms::none)
+        << "a published object must not carry the mark of a staging file";
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{
+        ".tmp_prefix.path_ABCDEFGH", ".tmp_prefix.path_bcdefghi", ".tmp_user_abcdefgh", ".tmp_user_bcdefghi", "prefix.path"}));
+
+    /// A restart does not remove published objects either.
+    storage->startup();
+    EXPECT_EQ(listDirectory(directory).size(), 5u);
+}
+
+/// A disk attached with `read_only` keeps a writable object storage, see `ReadOnlyDiskWrapper`. Its startup must not
+/// remove the abandoned staging files: the reader may have no permission to, or the directory may be mounted read-only.
+TEST(LocalObjectStorage, StartupOfReadOnlyDiskKeepsAbandonedStagingFiles)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_read_only_disk_staging");
+    const auto & root = tmp.path;
+
+    const auto directory = root / "__meta" / "directory";
+    writeObject(makeLocalObjectStorage(root.string()), directory / "prefix.path", "previous", DB::WriteSettings{});
+
+    {
+        std::ofstream abandoned(directory / ".tmp_prefix.path_abcdefgh");
+        abandoned << "partial";
+    }
+    fs::permissions(directory / ".tmp_prefix.path_abcdefgh", fs::perms::sticky_bit, fs::perm_options::add);
+
+    DB::LocalObjectStorageSettings settings(/*disk_name_=*/"test_local", /*key_prefix_=*/root.string(), /*read_only_=*/false);
+    settings.read_only_disk = true;
+    auto storage = std::make_shared<DB::LocalObjectStorage>(std::move(settings));
+    storage->startup();
+
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{".tmp_prefix.path_abcdefgh", "prefix.path"}))
+        << "the startup of a read-only disk must not remove anything";
+
+    /// The writer of the directory removes the file on its own startup.
+    makeLocalObjectStorage(root.string())->startup();
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{"prefix.path"}));
+}
+
+/// A writer creates its staging file before it locks and marks it. A startup that runs in between must leave the file
+/// alone: if it took the lock of the unmarked file, the writer would fail to take its own lock and abort the write.
+TEST(LocalObjectStorage, StartupDoesNotDisturbStagingFileBeforeItIsLocked)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_staging_before_lock");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto directory = root / "__meta" / "directory";
+    const auto path = directory / "prefix.path";
+
+    writeObject(storage, path, "previous", DB::WriteSettings{});
+
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    std::exception_ptr writer_error;
+    std::thread writer([&]
+    {
+        try
+        {
+            writeObject(storage, path, "new", atomic_settings);
+        }
+        catch (...)
+        {
+            writer_error = std::current_exception();
+        }
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    EXPECT_EQ(listDirectory(directory).size(), 2u) << "the writer must have created its staging file";
+
+    storage->startup();
+    EXPECT_EQ(listDirectory(directory).size(), 2u) << "the staging file of the paused writer must not be removed";
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    writer.join();
+
+    EXPECT_FALSE(writer_error) << "the write must not be disturbed by the startup";
+    EXPECT_EQ(readObject(storage, path).data, "new");
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{"prefix.path"}));
+}
+#endif
