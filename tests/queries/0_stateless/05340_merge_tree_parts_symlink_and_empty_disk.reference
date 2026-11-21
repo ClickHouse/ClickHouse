@@ -1,0 +1,8 @@
+-- the parts read from the disk they are on
+2000	1999000
+-- the parts reached through a symlink that leads outside the root of the disk
+BAD_ARGUMENTS
+-- a query without marks to read does not create the disk
+0	0
+0	0
+no directory

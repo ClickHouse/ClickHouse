@@ -1,0 +1,38 @@
+--- min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0
+Wide	Full
+4000	3998000	2
+4000	3998000	2
+4000	3998000	2
+2000	1998000
+42
+42
+2000	2000000
+2000	2000000
+--- min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 1000000000
+Wide	Packed
+4000	3998000	2
+4000	3998000	2
+4000	3998000	2
+2000	1998000
+42
+42
+--- min_bytes_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0
+Compact	Full
+4000	3998000	2
+4000	3998000	2
+4000	3998000	2
+2000	1998000
+42
+42
+2000	2000000
+2000	2000000
+--- min_bytes_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 1000000000
+Compact	Packed
+4000	3998000	2
+4000	3998000	2
+4000	3998000	2
+2000	1998000
+42
+42
+--- no parts
+0	0

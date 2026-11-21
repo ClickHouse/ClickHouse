@@ -1,0 +1,5 @@
+--- neither column is stored in the part
+2000	2000	1	2
+2000	2000	1	2
+--- both columns are stored in the part
+1800	1800	1	2

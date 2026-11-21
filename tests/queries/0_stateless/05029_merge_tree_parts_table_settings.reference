@@ -1,0 +1,7 @@
+--- non-adaptive wide parts: index_granularity_bytes = 0
+10000	24995000	2
+10000	24995000	2
+512
+--- share_nested_offsets = 0
+5000	12497500	25000000	5000
+5000	12497500	25000000	5000
