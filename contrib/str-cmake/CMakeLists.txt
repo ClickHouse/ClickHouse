@@ -55,7 +55,7 @@ foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
     # Whole-program vtables require LTO; override the inherited release flag too.
     # Regenerate unwind rows after rewriting; retain the compiler's frame effects.
     target_compile_options (str_${unit} PRIVATE
-        -O3 -fno-builtin -fno-stack-protector -fno-lto -fno-whole-program-vtables -g0 -fPIC
+        -O3 -fno-builtin -fno-lto -fno-whole-program-vtables -g0 -fPIC
         -ffunction-sections -fdata-sections
         -fno-omit-frame-pointer -momit-leaf-frame-pointer -fasynchronous-unwind-tables)
     if (unit STREQUAL "sse2" OR unit STREQUAL "dispatch")
