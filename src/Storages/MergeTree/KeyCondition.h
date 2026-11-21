@@ -267,6 +267,10 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
+    /// Whether the expression below `root` calls a function such as `rand` or `blockSize`, also inside a lambda body.
+    /// A key expression never does, so such an expression is not computed by a key column with the same name.
+    static bool hasNonDeterministicFunction(const ActionsDAG::Node & root);
+
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,

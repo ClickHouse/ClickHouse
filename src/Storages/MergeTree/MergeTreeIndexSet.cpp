@@ -673,8 +673,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
+    /// A deterministic function like `plus(blockSize(), 1)` passes the check above, but its name still does not
+    /// make it the key column with the same name.
     auto column_name = tree_node.getColumnName();
-    if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
+    if (auto key_column_it = key_columns.find(column_name);
+        key_column_it != key_columns.end() && !KeyCondition::hasNonDeterministicFunction(*node_to_check))
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
         /// granule does not.
@@ -843,7 +846,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
-        if (key_columns.contains(column_name))
+        if (key_columns.contains(column_name) && !KeyCondition::hasNonDeterministicFunction(*node_to_check))
             return false;
 
         auto function_name = node.function_base->getName();
