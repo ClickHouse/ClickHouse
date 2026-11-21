@@ -1,0 +1,5 @@
+1
+0
+hash is not NULL
+hash is the same after a reattachment with the same configuration
+hash changed with the Hive partitioning

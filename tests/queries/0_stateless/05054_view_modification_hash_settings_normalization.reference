@@ -1,0 +1,4 @@
+hash is computed
+log_comment does not change the hash
+result limits do not change the hash
+an insert into the source changes the hash

@@ -1,0 +1,4 @@
+exposed target column	inner_mv_05402	0
+exposed target column	outer_mv_05402	0
+every target column	inner_mv_05402	1
+every target column	outer_mv_05402	1

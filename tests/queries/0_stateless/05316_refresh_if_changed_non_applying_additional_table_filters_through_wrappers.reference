@@ -1,0 +1,3 @@
+non-applying filters keep the watermark: yes
+a filter of the view definer invalidates the watermark: yes
+a filter for the materialized view invalidates the watermark: yes
