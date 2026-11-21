@@ -70,15 +70,15 @@ public:
     virtual void customizeInheritedQueryParams(NameToNameMap & /* query_parameters */) {}
 
     /// Whether the value of this decoded URL parameter becomes part of the query: the query text or a bound query parameter.
-    virtual bool isQueryTextParameter(const std::string & name) const = 0;
+    [[nodiscard]] virtual bool isQueryTextParameter(const std::string & name) const = 0;
 
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
-    virtual bool parsesHTTPPath() const { return false; }
+    [[nodiscard]] virtual bool parsesHTTPPath() const { return false; }
 
     /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
     /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
-    virtual bool allowMutatingIdempotentMethods(
+    [[nodiscard]] virtual bool allowMutatingIdempotentMethods(
         const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
     {
         return false;
@@ -113,7 +113,7 @@ protected:
     }
 
 private:
-    String getURIForLogging(const HTTPServerRequest & request) const;
+    [[nodiscard]] String getURIForLogging(const HTTPServerRequest & request) const;
 
     String introspection_handler_name;
 
@@ -280,14 +280,14 @@ public:
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool isQueryTextParameter(const std::string & name) const override;
+    [[nodiscard]] bool isQueryTextParameter(const std::string & name) const override;
 
     /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
-    bool parsesHTTPPath() const override { return parse_http_path; }
+    [[nodiscard]] bool parsesHTTPPath() const override { return parse_http_path; }
 
-    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
+    [[nodiscard]] bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -323,7 +323,7 @@ public:
 
     void customizeInheritedQueryParams(NameToNameMap & query_parameters) override;
 
-    bool isQueryTextParameter(const std::string & name) const override;
+    [[nodiscard]] bool isQueryTextParameter(const std::string & name) const override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/SecretString.h>
 #include <optional>
 
 namespace DB
@@ -22,12 +23,12 @@ struct OneTimePasswordParams
 
     bool operator==(const OneTimePasswordParams &) const = default;
 
-    std::string_view getAlgorithmName() const;
+    [[nodiscard]] std::string_view getAlgorithmName() const;
 };
 
 struct OneTimePasswordSecret
 {
-    String key;
+    SecretString key;
     OneTimePasswordParams params;
 
     explicit OneTimePasswordSecret(

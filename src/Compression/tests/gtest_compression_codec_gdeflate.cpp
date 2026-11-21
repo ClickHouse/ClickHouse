@@ -97,5 +97,5 @@ TEST(CompressionCodecGDeflate, CompressedReserveSizeFitsInUInt32)
 {
     const CompressionCodecGDeflate codec(CompressionCodecGDeflate::DEFAULT_LEVEL);
     EXPECT_GT(codec.getCompressedReserveSize(1u << 30), 1u << 30);
-    EXPECT_THROW(codec.getCompressedReserveSize(std::numeric_limits<UInt32>::max()), Exception);
+    EXPECT_THROW((void)codec.getCompressedReserveSize(std::numeric_limits<UInt32>::max()), Exception);
 }

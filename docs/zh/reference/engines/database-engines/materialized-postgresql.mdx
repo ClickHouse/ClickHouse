@@ -31,9 +31,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
   ```
 </Note>
 
-<div id="creating-a-database">
-  ## 创建数据库
-</div>
+## 创建数据库 {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -47,9 +45,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 * `user` — PostgreSQL 用户。
 * `password` — 用户密码。
 
-<div id="example-of-use">
-  ## 使用示例
-</div>
+## 使用示例 {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -64,9 +60,7 @@ SHOW TABLES FROM postgres_db;
 SELECT * FROM postgres_db.postgres_table;
 ```
 
-<div id="dynamically-adding-table-to-replication">
-  ## 动态将新表添加到复制范围中
-</div>
+## 动态将新表添加到复制范围中 {#dynamically-adding-table-to-replication}
 
 创建 `MaterializedPostgreSQL` 数据库后，它不会自动检测对应 PostgreSQL 数据库中的新表。此类表可以手动添加：
 
@@ -78,9 +72,7 @@ ATTACH TABLE postgres_database.new_table;
   在 22.1 之前的版本中，将表加入复制时会遗留一个未删除的临时 replication slot (名为 `{db_name}_ch_replication_slot_tmp`) 。如果在 22.1 之前的 ClickHouse 版本中 Attach 表，请务必手动删除该 slot (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`) 。否则，磁盘占用会持续增长。此问题已在 22.1 中修复。
 </Warning>
 
-<div id="dynamically-removing-table-from-replication">
-  ## 动态将表从复制中移除
-</div>
+## 动态将表从复制中移除 {#dynamically-removing-table-from-replication}
 
 可以将特定表从复制中移除：
 
@@ -88,9 +80,7 @@ ATTACH TABLE postgres_database.new_table;
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
-<div id="schema">
-  ## PostgreSQL schema
-</div>
+## PostgreSQL schema {#schema}
 
 PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) 可通过 3 种方式进行配置 (自 21.12 版本起) 。
 
@@ -137,9 +127,7 @@ SELECT * FROM database1.`schema2.table2`;
 
 警告：在这种情况下，表名中不能包含点号。
 
-<div id="requirements">
-  ## 要求
-</div>
+## 要求 {#requirements}
 
 1. 在 PostgreSQL 配置文件中，[wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) 设置的值必须为 `logical`，并且 `max_replication_slots` 参数的值必须至少为 `2`。
 
@@ -174,13 +162,9 @@ WHERE oid = 'postgres_table'::regclass;
   [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) 值会被复制。当 PostgreSQL 在更新时发送未更改的 TOAST 引用，现有值将被保留。对于未更改的 TOAST 副本标识列，PostgreSQL 必须发送旧键 Tuple，否则无法识别该行。
 </Note>
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
-<div id="materialized-postgresql-tables-list">
-  ### `materialized_postgresql_tables_list`
-</div>
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
 设置一个以逗号分隔的 PostgreSQL 数据库表列表，这些表将通过 [MaterializedPostgreSQL](/zh/reference/engines/database-engines/materialized-postgresql) 数据库引擎进行复制。
 
@@ -192,21 +176,15 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 默认值：空列表——表示将复制整个 PostgreSQL 数据库。
 
-<div id="materialized-postgresql-schema">
-  ### `materialized_postgresql_schema`
-</div>
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
 默认值：空字符串。 (使用默认 schema)
 
-<div id="materialized-postgresql-schema-list">
-  ### `materialized_postgresql_schema_list`
-</div>
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
 默认值：空列表。 (将使用默认 schema)
 
-<div id="materialized-postgresql-max-block-size">
-  ### `materialized_postgresql_max_block_size`
-</div>
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
 设置在将数据刷新到 PostgreSQL 数据库表之前，可在内存中收集的行数。
 
@@ -216,15 +194,12 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 默认值：`65536`。
 
-<div id="materialized-postgresql-replication-slot">
-  ### `materialized_postgresql_replication_slot`
-</div>
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 用户创建的 replication slot。必须与 `materialized_postgresql_snapshot` 搭配使用。
+不能与 `materialized_postgresql_use_unique_replication_consumer_identifier` 同时使用。
 
-<div id="materialized-postgresql-snapshot">
-  ### `materialized_postgresql_snapshot`
-</div>
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
 用于标识快照的文本字符串，[PostgreSQL 表的初始转储](/zh/reference/engines/database-engines/materialized-postgresql) 将基于该快照执行。必须与 `materialized_postgresql_replication_slot` 一起使用。
 
@@ -242,25 +217,20 @@ SELECT * FROM database1.table1;
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
-<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
-  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
-</div>
+### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
 在复制中使用唯一的复制消费者标识符。默认值：`0`。
 如果设置为 `1`，则允许将多个 `MaterializedPostgreSQL` 表配置为指向同一个 `PostgreSQL` 表。
+不能与 `materialized_postgresql_replication_slot` 同时使用：用户管理的 replication slot 只有一个固定名称，无法为每个消费者保持唯一。执行 `CREATE` 或使用完整定义执行 `ATTACH` 时，这种组合会被拒绝；但已使用该组合创建的数据库或表仍可正常加载。
 
-<div id="materialized-postgresql-use-extended-date-and-time-types">
-  ### `materialized_postgresql_use_extended_date_and_time_types`
-</div>
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 将 PostgreSQL 的 `date` 和 `timestamp`/`timestamptz` 类型映射到 ClickHouse 的 `Date32` 和 `DateTime64`，以覆盖 PostgreSQL 这些类型更宽的取值范围。默认值：`1`。
 如果将其设为 `0`，则改用范围更窄的 `Date` 和 `DateTime` 类型 (超出其范围的值，或带有子秒级精度的值，将无法表示) 。
 
 此设置仅控制创建嵌套表时，类型推断所选择的列类型，因此必须在 `CREATE DATABASE` 时指定。之后无法通过 `ALTER DATABASE ... MODIFY SETTING` 修改它 (已创建的嵌套表会保留其固定的列类型，因此此类更改会被拒绝) ；如需更改，只能重新创建数据库。它不适用于 `MaterializedPostgreSQL` 表引擎，因为该引擎中的列类型是显式声明的。
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 TLS/SSL 参数会传递给 `libpq`，可通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)提供，也可作为引擎的末尾键值参数提供：`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`；未设置时，使用 `libpq` 的默认值 `prefer`) ，以及证书和密钥 (可采用以下两种形式之一) 。`sslrootcert` (CA 证书) 、`sslcert` (客户端证书) 和 `sslkey` (客户端私钥) 为服务器本地文件的路径，仅可通过服务器配置文件中定义的命名集合提供。`sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 则接受相应文件的原始内容，可在 SQL 中指定，并会像密码一样在日志和 `SHOW` 查询中被掩码处理。
 
@@ -276,13 +246,9 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 
 TLS/SSL 参数属于 PostgreSQL 连接参数，创建数据库时即已确定；如需更改，请重新创建数据库。
 
-<div id="notes">
-  ## 注意事项
-</div>
+## 注意事项 {#notes}
 
-<div id="logical-replication-slot-failover">
-  ### logical replication slot 的故障转移
-</div>
+### logical replication slot 的故障转移 {#logical-replication-slot-failover}
 
 存在于主节点上的 logical replication slot 在 standby 副本上不可用。
 因此，如果发生故障转移，新的主节点 (原来的物理 standby) 将不知道旧主节点上存在哪些 slot。这会导致 PostgreSQL 复制中断。
@@ -336,9 +302,7 @@ TLS/SSL 参数属于 PostgreSQL 连接参数，创建数据库时即已确定；
    kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
    ```
 
-<div id="required-permissions">
-  ### 所需权限
-</div>
+### 所需权限 {#required-permissions}
 
 1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- CREATE 查询权限。
 
@@ -358,9 +322,7 @@ TLS/SSL 参数属于 PostgreSQL 连接参数，创建数据库时即已确定；
 
 3. pg&#95;publication&#95;tables
 
-<div id="backup-and-restore">
-  ### 备份和恢复
-</div>
+### 备份和恢复 {#backup-and-restore}
 
 `MaterializedPostgreSQL` 数据库可以备份。每个被复制的表的数据都存放在一个嵌套的 `ReplacingMergeTree` 表中，因此 `BACKUP DATABASE` 会通过委托给该嵌套表来备份这些数据。
 

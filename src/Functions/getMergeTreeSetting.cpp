@@ -32,42 +32,46 @@ public:
     /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context_)
     {
-        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
         return std::make_shared<FunctionGetMergeTreeSetting>(context_);
     }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isDeterministic() const override { return false; }
+    void checkAccessOnBuild() const override
+    {
+        getContext()->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
+    }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 1 ; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1 ; }
+
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     /// Documentation-only — the result type is the dynamic type of the
     /// MergeTree setting value resolved at query time from its const-string name.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String) -> Any";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
         return applyVisitor(FieldToDataType{}, value);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = getValue(arguments);
         return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 
 private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)
             throw Exception(

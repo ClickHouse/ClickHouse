@@ -5,6 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Without `--path` or `--tmp`, `clickhouse local` locks a persistent data directory inside the home directory.
+# Point HOME (and XDG_DATA_HOME) at a private directory, so that concurrent tests do not fight over that lock.
+home_dir="${CLICKHOUSE_TMP}/home-${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "${home_dir}"
+mkdir -p "${home_dir}"
+export HOME="${home_dir}"
+export XDG_DATA_HOME=""
+
 FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_without_extension
 echo "SELECT 'Hello from a file'" > ${FILE}
 
@@ -31,3 +39,5 @@ ${CLICKHOUSE_BINARY} ${FILE} --max-local-read-bandwidth 100
 ${CLICKHOUSE_BINARY} --max-local-read-bandwidth 200 ${FILE}
 
 rm ${FILE}
+
+rm -rf "${home_dir}"
