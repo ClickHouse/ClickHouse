@@ -1267,6 +1267,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
+    const WriteSettings & write_settings,
     bool merge_is_needed,
     bool try_adaptive_codec,
     ContextPtr context,
@@ -1424,8 +1425,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /// single one is installed as the projection of the resulting part by renaming, so it is a part of what
         /// replicas compare. Projections written on insert are not compared - other replicas fetch them.
         is_temp
-            ? getWriteSettingsForMergeOrMutation(data.getContext()->getWriteSettings(), data.supportsReplication())
-            : data.getContext()->getWriteSettings(),
+            ? getWriteSettingsForMergeOrMutation(write_settings, data.supportsReplication())
+            : write_settings,
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec,
         /// A separate instance: `<name>.proj/` is its own part directory.
@@ -1471,6 +1472,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(compression_codec),
         std::move(indices),
+        context->getWriteSettings(),
         merge_is_needed,
         /*try_adaptive_codec=*/ false,
         context);
@@ -1507,6 +1509,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(compression_codec),
         std::move(indices),
+        context->getWriteSettings(),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
         context,
