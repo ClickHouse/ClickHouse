@@ -1377,6 +1377,12 @@ Used to regulate how resources are utilized and shared between mutations and oth
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(String, move_workload, "default", R"(
+Used to regulate how resources are utilized and shared between part moves between disks/volumes and other workloads. Specified value is used as `workload` setting value for all background moves. Can be overridden by a merge tree setting.
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
     DECLARE(Bool, throw_on_unknown_workload, false, R"(
 Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 
@@ -3992,6 +3998,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"move_workload", {context->getMoveWorkload(), ChangeableWithoutRestart::Yes}},
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
