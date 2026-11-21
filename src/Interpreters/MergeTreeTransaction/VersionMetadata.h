@@ -115,6 +115,9 @@ public:
     /// Sets `creation_csn` when a transaction commits.
     void setAndStoreCreationCSN(CSN csn);
 
+    /// Sets `creation_csn` to `Tx::RolledBackCSN` in memory only, for a rollback whose `setAndStoreCreationCSN` failed.
+    void markCreationRolledBackInMemory() noexcept;
+
     /// Sets `removal_csn` when a transaction commits.
     void setAndStoreRemovalCSN(CSN csn);
 
