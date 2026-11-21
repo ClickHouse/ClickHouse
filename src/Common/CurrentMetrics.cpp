@@ -329,9 +329,11 @@
     M(AddressToLineCacheEntries, "Number of code addresses in the cache of resolved source locations (file:line:column) used for symbolizing stack traces in system.trace_log, system.errors and system.error_log.") \
     M(AddressToLineCacheBytes, "Approximate memory used by the cache of resolved source locations (file:line:column) used for symbolizing stack traces, in bytes.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
+    M(RemoveDistributedBytesToInsert, "Number of files removed for maximum number of retries inserted asynchronously into a distributed table. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
     M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. Number of files for every shard is summed.") \
+    M(RemoveDistributedFilesToInsert, "Number of files removed for maximum number of retries inserted asynchronously into a distributed table. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
     M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \

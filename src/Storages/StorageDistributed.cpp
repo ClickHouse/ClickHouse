@@ -174,6 +174,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool distributed_background_insert_batch;
     extern const SettingsUInt64 distributed_background_insert_timeout;
+    extern const SettingsUInt64 distributed_background_insert_max_retries;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
     extern const SettingsBool distributed_background_insert_split_batch_on_failure;
@@ -203,6 +204,7 @@ namespace DistributedSetting
 {
     extern const DistributedSettingsUInt64 background_insert_batch;
     extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
+    extern const DistributedSettingsUInt64 background_insert_max_retries;
     extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
     extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
@@ -2481,6 +2483,9 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
     if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
         distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
             = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+    if (!distributed_settings[DistributedSetting::background_insert_max_retries].changed)
+        distributed_settings[DistributedSetting::background_insert_max_retries]
+            = context->getSettingsRef()[Setting::distributed_background_insert_max_retries];
 }
 
 namespace
@@ -2779,6 +2784,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_split_batch_on_failure` | The same as [`distributed_background_insert_split_batch_on_failure`](/reference/settings/session-settings/distributed-background#distributed_background_insert_split_batch_on_failure)                                                                   | `0`           |
 | `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
+| `background_insert_max_retries`            | The same as [`distributed_background_insert_max_retries`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_retries) | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 
 <Note>

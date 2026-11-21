@@ -1192,6 +1192,10 @@ This setting also affects broken batches (that may appears because of abnormal s
 You should not rely on automatic batch splitting, since this may hurt performance.
 </Note>
 )", 0, distributed_directory_monitor_split_batch_on_failure) \
+    DECLARE(UInt64, distributed_background_insert_max_retries, 0, R"(
+Controls how many times the [Distributed](/reference/engines/table-engines/special/distributed) table engine retries to send files. `0` means no retries.
+)", 0, \
+        {"26.11", 0, 0, "New setting."}) \
     \
     DECLARE(Bool, optimize_trivial_view_pushdown_to_distributed, true, R"(
 When enabled, for views over [Distributed](/reference/engines/table-engines/special/distributed) tables whose `SELECT` list contains only column references, `*`,

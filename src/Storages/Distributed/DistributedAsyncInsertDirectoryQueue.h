@@ -102,11 +102,13 @@ private:
     bool hasPendingFiles() const;
 
     void initializeFilesFromDisk();
+    void incrementFilesRetryNum(const std::string & file_path);
     /// Set `force = true` if processing of files must be finished fully despite cancellation flag being set
     void processFiles(bool force, const SettingsChanges & settings_changes = {});
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
     void processFilesWithBatching(bool force, const SettingsChanges & settings_changes);
 
+    void markAsRemove(const std::string & file_path);
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
 
@@ -156,6 +158,8 @@ private:
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
+    const size_t max_retries = 0;
+    std::map<std::string, size_t> files_retry;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
     LoggerPtr log;
@@ -167,6 +171,9 @@ private:
     CurrentMetrics::Increment metric_pending_files;
     CurrentMetrics::Increment metric_broken_bytes;
     CurrentMetrics::Increment metric_broken_files;
+    CurrentMetrics::Increment metric_remove_bytes;
+    CurrentMetrics::Increment metric_remove_files;
+
 };
 
 }
