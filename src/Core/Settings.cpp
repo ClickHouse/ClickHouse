@@ -5389,6 +5389,15 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
     DECLARE(UInt64, read_in_order_two_level_merge_threshold, 100, R"(
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \
+    DECLARE(UInt64, read_in_order_in_set_max_streams, 8, R"(
+Allows reading in order of the sorting key when its first column is in a set of constants, like `WHERE k IN (1, 2) ORDER BY t LIMIT 10` for a table with `ORDER BY (k, t)`. Every value is read from every part by its own stream, and the streams are merged, so that the `LIMIT` stops the read early. This is the maximum number of such streams: with more of them, with more than 1000 values in the set, or if a stream would read less than 32 granules on average, the rows are read and sorted as usual. The same if not the whole `ORDER BY` is read in order, if the query has a condition that the primary key cannot use exactly (one on a function of a key column or on a key column after the second one, a set of values of the second key column, or `OR`), if rows are deleted or changed when read (lightweight deletes, mutations applied on the fly, patch parts, masking policies), or if `ARRAY JOIN` can drop rows before the sorting. Used only for a query with `LIMIT` and without `exact_rows_before_limit`.
+
+Possible values:
+
+- 0 - Disabled.
+- Positive integer - the maximum number of streams.
+)", 0, \
+        {"26.12", 0, 8, "New setting to read in order when the first sorting key column is in a set of constants."}) \
     DECLARE(Bool, low_cardinality_allow_in_native_format, true, R"(
 Allows or restricts using the [LowCardinality](/reference/data-types/lowcardinality) data type with the [Native](/reference/formats/Native) format.
 

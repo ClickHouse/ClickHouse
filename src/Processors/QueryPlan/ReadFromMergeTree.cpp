@@ -39,6 +39,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -397,6 +398,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsUInt64 merge_tree_read_end_tasks_per_stream;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsUInt64 read_in_order_in_set_max_streams;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
@@ -1094,6 +1096,158 @@ static std::optional<Block> tightenFinalMergeVirtualRow(
     return virtual_row;
 }
 
+static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size);
+
+/// The marks of a part whose granules can contain `value` of the first primary key column. The rows of the granule `g`
+/// have the key between index[g] and index[g + 1], where index[num_granules] is the final mark (the last row), if any.
+static MarkRange getGranulesOfFirstKeyColumnValue(const IColumn & key_index, size_t num_granules, const IColumn & value)
+{
+    /// The index is in ascending order with NULLs last, as in `virtualRowPrecedes`.
+    auto compare = [&](size_t mark) { return key_index.compareAt(mark, 0, value, /*nan_direction_hint=*/ 1); };
+    const size_t index_size = std::min(key_index.size(), num_granules + 1);
+
+    /// The first granule which can contain the value precedes the first mark after mark 0 with a key not less than it.
+    size_t begin = 1;
+    size_t end = index_size;
+    while (begin < end)
+    {
+        const size_t middle = begin + (end - begin) / 2;
+        if (compare(middle) < 0)
+            begin = middle + 1;
+        else
+            end = middle;
+    }
+    const size_t first_granule = std::min(begin - 1, num_granules);
+
+    begin = 0;
+    end = num_granules;
+    while (begin < end)
+    {
+        const size_t middle = begin + (end - begin) / 2;
+        if (compare(middle) > 0)
+            end = middle;
+        else
+            begin = middle + 1;
+    }
+    return {first_granule, std::max(first_granule, begin)};
+}
+
+/// Calls `callback(value_idx, ranges)` with the selected marks of the part that can contain each value, until it returns false.
+template <typename Callback>
+static void forEachFirstKeyColumnValueRanges(const RangesInDataPart & part_with_ranges, const IColumn & values, Callback && callback)
+{
+    const auto & part = *part_with_ranges.data_part;
+    const size_t num_granules = part.index_granularity->getMarksCountWithoutFinal();
+    const auto index = part.getIndex();
+    const IColumn * key_index = index && !index->empty() && index->front()->size() >= num_granules ? index->front().get() : nullptr;
+
+    for (size_t value_idx = 0; value_idx < values.size(); ++value_idx)
+    {
+        MarkRange granules{0, num_granules};
+        if (key_index)
+        {
+            /// Insert via `Field`: the index may have another type than the key, see `getVirtualRowBound`.
+            auto value = key_index->cloneEmpty();
+            value->insert(values[value_idx]);
+            granules = getGranulesOfFirstKeyColumnValue(*key_index, num_granules, *value);
+        }
+
+        MarkRanges ranges;
+        for (const auto & range : part_with_ranges.ranges)
+        {
+            const size_t begin = std::max(range.begin, granules.begin);
+            const size_t end = std::min(range.end, granules.end);
+            if (begin < end)
+                ranges.emplace_back(begin, end);
+        }
+
+        if (!ranges.empty() && !callback(value_idx, std::move(ranges)))
+            return;
+    }
+}
+
+/// One part for every value of every part, with the marks that can contain the value; `value_of_part` gets its index.
+static RangesInDataParts splitPartsByFirstKeyColumnValues(
+    const RangesInDataParts & parts_with_ranges, const IColumn & values, VectorWithMemoryTracking<size_t> & value_of_part)
+{
+    RangesInDataParts result;
+    for (const auto & part_with_ranges : parts_with_ranges)
+    {
+        forEachFirstKeyColumnValueRanges(part_with_ranges, values, [&](size_t value_idx, MarkRanges ranges)
+        {
+            result.emplace_back(
+                part_with_ranges.data_part,
+                part_with_ranges.parent_part,
+                part_with_ranges.part_index_in_query,
+                part_with_ranges.part_starting_offset_in_query,
+                std::move(ranges),
+                part_with_ranges.read_hints);
+            value_of_part.push_back(value_idx);
+            return true;
+        });
+    }
+    return result;
+}
+
+/// A stream costs much more to start than reading a granule of a few columns, which is mostly what the top-K filter
+/// of a usual read does, so reading by values pays off only with few streams of many granules each.
+static bool isReadingByFirstKeyColumnValuesCheap(const RangesInDataParts & parts, const IColumn & values, size_t max_streams)
+{
+    static constexpr size_t min_marks_per_stream = 32;
+
+    size_t streams = 0;
+    size_t marks = 0;
+    for (const auto & part_with_ranges : parts)
+    {
+        forEachFirstKeyColumnValueRanges(part_with_ranges, values, [&](size_t, MarkRanges ranges)
+        {
+            ++streams;
+            marks += ranges.getNumberOfMarks();
+            return streams <= max_streams;
+        });
+
+        if (streams > max_streams)
+            return false;
+    }
+
+    return streams && marks / streams >= min_marks_per_stream;
+}
+
+/// Whether the rows of the granules that `element` selects pass it, apart from a set of the first key column: a set or an inexact
+/// atom on another column, e.g. a sparse `ts IN (...)`, or a disjunction may select granules with few matching rows.
+static bool isExactForReadingByFirstKeyColumnValues(const KeyCondition::RPNElement & element)
+{
+    using Element = KeyCondition::RPNElement;
+    switch (element.function)
+    {
+        case Element::FUNCTION_IN_RANGE:
+        case Element::FUNCTION_NOT_IN_RANGE:
+            return !element.relaxed;
+        case Element::FUNCTION_IN_SET:
+        case Element::FUNCTION_NOT_IN_SET:
+            return element.key_columns.size() == 1 && element.key_columns.front() == 0;
+        case Element::FUNCTION_AND:
+        case Element::FUNCTION_NOT:
+        case Element::ALWAYS_TRUE:
+        case Element::ALWAYS_FALSE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static ExpressionActionsPtr makeFirstKeyColumnValueFilter(
+    const Block & header, const String & key_column, const Field & value, const String & filter_column, const ContextPtr & context)
+{
+    ActionsDAG dag(header.getNamesAndTypesList());
+    const auto & key = dag.findInOutputs(key_column);
+    const auto value_type = removeLowCardinality(key.result_type);
+    const auto & value_node = dag.addColumn(value_type->createColumnConst(1, value), value_type, "__read_in_order_key_value");
+    const auto & filter = dag.addFunction(FunctionFactory::instance().get("equals", context), {&key, &value_node}, filter_column);
+    dag.getOutputs().push_back(&filter);
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
+}
+
 Pipe ReadFromMergeTree::readInOrder(
     RangesInDataParts parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1101,8 +1255,27 @@ Pipe ReadFromMergeTree::readInOrder(
     PoolSettings pool_settings,
     ReadType read_type,
     UInt64 read_limit,
-    std::optional<size_t> split_index)
+    std::optional<size_t> split_index,
+    bool split_by_values)
 {
+    VectorWithMemoryTracking<size_t> value_of_part;
+    VectorWithMemoryTracking<ExpressionActionsPtr> value_filters;
+    String value_filter_column;
+    if (split_by_values)
+    {
+        parts_with_ranges = splitPartsByFirstKeyColumnValues(parts_with_ranges, *read_in_order_split_values, value_of_part);
+        if (parts_with_ranges.empty())
+            return {};
+        value_filters.resize(read_in_order_split_values->size());
+
+        for (auto & part_with_ranges : parts_with_ranges)
+            part_with_ranges.ranges = splitRangesToAvoidLargeReads(
+                part_with_ranges.ranges,
+                read_type == ReadType::InReverseOrder ? -1 : 1,
+                (*data_settings)[MergeTreeSetting::index_granularity],
+                block_size.max_block_size_rows);
+    }
+
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
@@ -1305,6 +1478,30 @@ Pipe ReadFromMergeTree::readInOrder(
                 source->addTotalRowsApprox(total_rows);
 
             pipe = Pipe(std::move(source));
+        }
+
+        if (split_by_values)
+        {
+            /// A granule at the border of two values is read by the streams of both, each keeps only its own rows.
+            if (value_filter_column.empty())
+            {
+                value_filter_column = "__read_in_order_key_value_filter";
+                while (pipe.getHeader().has(value_filter_column))
+                    value_filter_column = "_" + value_filter_column;
+            }
+            const size_t value_idx = value_of_part[i];
+            auto & filter = value_filters[value_idx];
+            if (!filter)
+                filter = makeFirstKeyColumnValueFilter(
+                    pipe.getHeader(),
+                    storage_snapshot->metadata->getSortingKey().column_names.front(),
+                    (*read_in_order_split_values)[value_idx],
+                    value_filter_column,
+                    context);
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header, filter, value_filter_column, /*remove_filter_column=*/ true);
+            });
         }
 
         if (use_virtual_row)
@@ -2311,6 +2508,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
         need_preliminary_merge = false;
 
+    /// A preliminary merge by the whole key prefix would not keep the order by the rest of the key across the values.
+    const bool split_by_values = read_in_order_split_values != nullptr;
+    if (split_by_values)
+    {
+        need_preliminary_merge = false;
+        if (is_parallel_reading_from_replicas)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading values of the first key column by separate streams is not supported with parallel replicas");
+    }
+
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
     const size_t total_query_nodes = is_parallel_reading_from_replicas
@@ -2345,7 +2551,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// Genuine range splitting runs only for the initiator and for purely-local reads.
     /// Followers use all parts for every split and only need `num_streams` as the split count,
     /// since the initiator is the authority on split topology.
-    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+    const bool need_split = (is_local_plan_initiator || !is_parallel_reading_from_replicas) && !split_by_values;
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
@@ -2488,6 +2694,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         pipes.emplace_back(readInOrder(
             std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type,
             input_order_info->limit));
+    }
+    else if (split_by_values)
+    {
+        pipes.emplace_back(readInOrder(
+            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type, input_order_info->limit,
+            /*split_index=*/ std::nullopt, /*split_by_values=*/ true));
     }
     else /* local reading case */
     {
@@ -4573,7 +4785,7 @@ bool ReadFromMergeTree::canReadInReverseOrder() const
             && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit, ColumnPtr split_values)
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -4586,6 +4798,40 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
         return false;
+
+    /// Only a first request may split; a later one keeps the split, as the streams of a value are ordered by the whole key too.
+    if (split_values)
+    {
+        if (!query_limit || query_info.input_order_info || prefix_size < 2 || isQueryWithFinal() || is_parallel_reading_from_replicas
+            || output_each_partition_through_separate_port || context->getSettingsRef()[Setting::make_distributed_plan]
+            || !context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]
+            || storage_snapshot->metadata->getPrimaryKey().column_names.empty() || !projection_index_read_desc.read_ranges.empty())
+            return false;
+
+        const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
+        if (!analysis
+            || !isReadingByFirstKeyColumnValuesCheap(
+                analysis->parts_with_ranges, *split_values, context->getSettingsRef()[Setting::read_in_order_in_set_max_streams]))
+            return false;
+
+        /// The streams stop early only if the primary key uses the whole filter exactly: another selective condition makes them scan.
+        if (!indexes || !indexes->key_condition)
+            return false;
+        const auto & key_condition = indexes->key_condition->generateUnsubstituted();
+        if (key_condition.alwaysUnknownOrTrue() || key_condition.hasMonotonicFunctionsChain() || key_condition.getUsedKeyPrefixSize() > 2
+            || !std::ranges::all_of(key_condition.getRPN(), isExactForReadingByFirstKeyColumnValues))
+            return false;
+
+        /// Nor if the read drops or changes rows that the condition does not describe: deleted rows, mutations, patch parts or
+        /// masking policies applied on the fly.
+        if ((mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            || data.hasEnabledMaskingPolicies(context)
+            || std::ranges::any_of(
+                analysis->parts_with_ranges, [](const RangesInDataPart & part) { return part.data_part->hasLightweightDelete(); }))
+            return false;
+
+        read_in_order_split_values = std::move(split_values);
+    }
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
     /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
@@ -4919,7 +5165,7 @@ void ReadFromMergeTree::addReadColumn(const String & column)
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
 {
-    if (isQueryWithFinal())
+    if (isQueryWithFinal() || read_in_order_split_values)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -4940,7 +5186,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
 /// such cases the main cost is in LIMIT BY, so any parallelism at all in LIMIT BY is a win.
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
 {
-    if (isQueryWithFinal())
+    if (isQueryWithFinal() || read_in_order_split_values)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -4962,7 +5208,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
 /// loses is heavy partition skew, checked below.
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
 {
-    if (isQueryWithFinal())
+    if (isQueryWithFinal() || read_in_order_split_values)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5011,7 +5257,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreating
 /// a parallel preliminary `DistinctTransform` per stream.
 void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
 {
-    if (isQueryWithFinal())
+    if (isQueryWithFinal() || read_in_order_split_values)
         return;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5032,7 +5278,7 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 /// parallelism (enough partitions, no dominant partition) to make skipping the scatter worthwhile.
 bool ReadFromMergeTree::canOutputEachPartitionThroughSeparatePortForWindow() const
 {
-    if (isQueryWithFinal())
+    if (isQueryWithFinal() || read_in_order_split_values)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5259,6 +5505,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
+    cloned_step->read_in_order_split_values = read_in_order_split_values;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
     /// with several lanes per task would serialize misaligned lanes and lose rows.
@@ -6577,6 +6824,9 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     if (output_each_partition_through_separate_port)
         format_settings.out << prefix << "Read each partition through separate port: 1\n";
 
+    if (read_in_order_split_values)
+        format_settings.out << prefix << "Read in order by values of the first key column: " << read_in_order_split_values->size() << '\n';
+
     if (format_settings.pretty)
         QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
@@ -6699,6 +6949,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (output_each_partition_through_separate_port)
         map.add("Read each partition through separate port", true);
+
+    if (read_in_order_split_values)
+        map.add("Read in order by values of the first key column", read_in_order_split_values->size());
 
     std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
     if (query_info.prewhere_info || query_info.row_level_filter)

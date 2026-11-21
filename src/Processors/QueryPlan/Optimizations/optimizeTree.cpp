@@ -542,8 +542,9 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
+            /// The values of a literal set are read by separate streams only after the projections are chosen, see below.
             if (optimization_settings.read_in_order && !make_distributed_plan)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings, /*allow_split_by_values=*/ false);
 
             if (optimization_settings.distinct_in_order && !make_distributed_plan)
                 optimizeDistinctInOrder(stack, nodes, optimization_settings);
@@ -698,7 +699,7 @@ void optimizeTreeSecondPass(
             /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
             /// `FinishSorting` first.
             if (optimization_settings.read_in_order && !cascades_active)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings, /*allow_split_by_values=*/ true);
 
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
             /// `query_plan_reuse_storage_ordering_for_window_functions`) merges the streams read in order

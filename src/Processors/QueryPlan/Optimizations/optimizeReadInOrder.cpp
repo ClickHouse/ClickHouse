@@ -50,6 +50,7 @@
 #include <stack>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
@@ -147,6 +148,9 @@ struct FindReadingStepContext
     /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
     /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards.
     VectorWithMemoryTracking<const IJoin *> traversed_joins = {};
+
+    /// Whether the traversal descended through an `ARRAY JOIN` or `arrayJoin` that drops the rows of empty arrays.
+    bool traversed_row_dropping_array_join = false;
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -185,7 +189,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         return nullptr;
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    {
+        if (const auto * array_join = typeid_cast<ArrayJoinStep *>(step))
+            data.traversed_row_dropping_array_join |= !array_join->isLeft() || array_join->hasElementFilter();
+        else if (const auto * expression = typeid_cast<ExpressionStep *>(step))
+            data.traversed_row_dropping_array_join |= expression->getExpression().hasArrayJoin();
+        else if (const auto * filter = typeid_cast<FilterStep *>(step))
+            data.traversed_row_dropping_array_join |= filter->getExpression().hasArrayJoin();
         return findReadingStep(*node.children.front(), data);
+    }
 
     /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
     /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
@@ -258,6 +270,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
+
+/// Columns in a literal set of several values, mapped to the set node: for 'x IN (1, 2) AND y = 3', 'x' to (1, 2).
+using ColumnsFixedToSets = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 /// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
 /// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
@@ -339,37 +354,47 @@ bool equalsMatchesSeveralValues(
     return false;
 }
 
-/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
-/// so that `probe IN set` fixes `probe` to a single value.
+/// The set of `probe IN set_node` if `set_node` is a ready set from a literal list, like the right side of `x IN ('a', 'b')`.
 /// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
 /// A `FutureSetFromTuple` may also be a shipped subquery set that kept the subquery's type,
 /// e.g. `d IN (SELECT 1.0)` for `d Decimal`. `Set::execute` converts the probe to the set key type,
 /// and this conversion may be non-injective, so require the key type to be the probe type
 /// (up to `LowCardinality` and `Nullable`), so that the conversion is an identity.
-bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
+const FutureSetFromTuple * tryGetLiteralSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
 {
     if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
-        return false;
+        return nullptr;
 
     const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
     if (!column_set)
-        return false;
+        return nullptr;
 
     const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
     if (!set_from_tuple)
-        return false;
+        return nullptr;
 
     auto set = set_from_tuple->get();
-    if (!set || !set->isCreated() || set->getTotalRowCount() != 1)
-        return false;
+    if (!set || !set->isCreated())
+        return nullptr;
 
     const auto & set_types = set->getDataTypes();
     if (set_types.size() != 1)
-        return false;
+        return nullptr;
 
     auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
     auto set_type = removeLowCardinalityAndNullable(set_types.front());
-    return probe_type->equals(*set_type);
+    if (!probe_type->equals(*set_type))
+        return nullptr;
+
+    return set_from_tuple;
+}
+
+/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
+/// so that `probe IN set` fixes `probe` to a single value.
+bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
+{
+    const auto * set_from_tuple = tryGetLiteralSetForProbe(set_node, probe);
+    return set_from_tuple && set_from_tuple->get()->getTotalRowCount() == 1;
 }
 
 void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
@@ -390,7 +415,8 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+void appendFixedColumnsFromFilterExpression(
+    const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns, ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -431,9 +457,14 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
-                if (node->children.size() == 2 && !node->children[0]->column
-                    && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
-                    addFixedColumn(node->children[0], fixed_columns);
+                if (node->children.size() == 2 && !node->children[0]->column)
+                {
+                    if (isSingleElementSetForProbe(*node->children[1], *node->children[0]))
+                        addFixedColumn(node->children[0], fixed_columns);
+                    else if (columns_fixed_to_sets && (name == "in" || name == "globalIn")
+                        && tryGetLiteralSetForProbe(*node->children[1], *node->children[0]))
+                        columns_fixed_to_sets->emplace(node->children[0], node->children[1]);
+                }
             }
         }
     }
@@ -449,7 +480,12 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(
+    const QueryPlan::Node & node,
+    std::optional<ActionsDAG> & dag,
+    FixedColumns & fixed_columns,
+    size_t & limit,
+    ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -461,7 +497,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns, columns_fixed_to_sets);
 
         }
         if (const auto row_level_filter = reading->getRowLevelFilter())
@@ -471,7 +507,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, row_level_filter->actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
-                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns, columns_fixed_to_sets);
 
         }
         return;
@@ -485,7 +521,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, columns_fixed_to_sets);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
@@ -510,7 +546,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
-            appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+            appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns, columns_fixed_to_sets);
     }
 
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
@@ -649,6 +685,9 @@ struct SortingInputOrder
     /// Convert the PR values to ORDER BY key.
     /// If empty, the optimization cannot be applied.
     std::optional<ActionsDAG> virtual_row_conversion{};
+    /// If set, the first sorting key column is in this literal set, like 'x' in 'WHERE x IN (1, 2) ORDER BY y' for the key (x, y),
+    /// and the order holds only within the rows of every value, so the storage reads each value by its own streams.
+    ColumnPtr split_values{};
 };
 
 /// For the case when the order of keys is important (ORDER BY keys).
@@ -658,7 +697,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     const KeyDescription & sorting_key,
     const Names & pk_column_names,
-    size_t limit)
+    size_t limit,
+    const ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
     SortDescription order_key_prefix_descr;
@@ -686,6 +726,30 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
         enrichFixedColumns(sorting_key_dag, fixed_key_columns);
     }
+
+    const FutureSetFromTuple * first_key_column_set = nullptr;
+    if (dag && columns_fixed_to_sets && !sorting_key.column_names.empty())
+    {
+        /// A column of the table, not an expression: the storage filters the rows of each value by it.
+        const ActionsDAG::Node * first_key_column = sorting_key_dag.tryFindInOutputs(sorting_key.column_names.front());
+        if (first_key_column && first_key_column->type != ActionsDAG::ActionType::INPUT)
+            first_key_column = nullptr;
+        for (const auto & [column, set_node] : *columns_fixed_to_sets)
+        {
+            auto it = matches.find(column);
+            if (first_key_column && it != matches.end() && it->second.node == first_key_column && !it->second.monotonicity)
+            {
+                static constexpr size_t max_values_to_read_separately = 1000;
+                const auto * set = tryGetLiteralSetForProbe(*set_node, *column);
+                if (set && set->get()->getTotalRowCount() <= max_values_to_read_separately)
+                {
+                    first_key_column_set = set;
+                    break;
+                }
+            }
+        }
+    }
+    ColumnPtr split_values;
 
     /// This is a result direction we will read from MergeTree
     ///  1 - in same order of keys,
@@ -846,6 +910,19 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
             }
+            else if (next_sort_key == 0 && first_key_column_set && !sort_node->column && !fixed_columns.contains(sort_node)
+                && isSafePrimaryDataKeyType(*sorting_key.data_types[0]) && reverse_indicator == 1)
+            {
+                /// The rows with one value of the first key column are ordered by the rest of the key, so it is skipped
+                /// like a fixed one, and the storage reads every value of its set by its own streams.
+                auto values = first_key_column_set->getKeyColumns();
+                if (values.size() != 1 || values.front()->empty())
+                    break;
+
+                split_values = values.front();
+                can_optimize_virtual_row = false;
+                ++next_sort_key;
+            }
             else
             {
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
@@ -907,6 +984,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (order_key_prefix_descr.empty())
         return {};
 
+    /// The streams of the values are merged only by the read prefix, so it has to be the whole ORDER BY: otherwise `FinishSorting`
+    /// sorts whole groups of rows with an equal prefix, read by these few streams, e.g. for `ORDER BY intDiv(ts, 1000), ts DESC`.
+    if (split_values && (read_direction == 0 || order_key_prefix_descr.size() < description.size()))
+        return {};
+
     /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
     /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
     /// But only if we actually matched some key columns (next_sort_key > 0).
@@ -960,7 +1042,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         virtual_row_conversion = std::move(virtual_row_dag);
     }
 
-    return {std::move(order_info), std::move(virtual_row_conversion)};
+    return {std::move(order_info), std::move(virtual_row_conversion), std::move(split_values)};
 }
 
 /// We may need a few different sort descriptions here.
@@ -1197,7 +1279,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
-    size_t limit)
+    size_t limit,
+    const ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
     const auto & pk_column_names = reading->getStorageMetadata()->getPrimaryKey().column_names;
@@ -1207,7 +1290,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
         dag, description,
         sorting_key,
         pk_column_names,
-        limit);
+        limit,
+        columns_fixed_to_sets);
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
@@ -1423,12 +1507,14 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
+/// The values of a literal set are read by separate streams only if `reads_by_values` is passed; it is set to true then.
 InputOrderInfoPtr buildInputOrderInfo(
     SortingStep & sorting,
     bool & apply_virtual_row,
     ReadFromMergeTree *& virtual_row_reader,
     QueryPlan::Node & node,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool * reads_by_values = nullptr)
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
@@ -1445,7 +1531,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    ColumnsFixedToSets columns_fixed_to_sets;
+    buildSortingDAG(node, dag, fixed_columns, limit, &columns_fixed_to_sets);
 
     /// A function of the query is matched with a function of the sorting key by its name, arguments and type, which
     /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
@@ -1486,11 +1573,16 @@ InputOrderInfoPtr buildInputOrderInfo(
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return nullptr;
 
+        /// The streams of the values stop at the limit, so no step may drop rows the key condition does not describe,
+        /// and `exact_rows_before_limit`, which counts every row, is not supported.
+        const bool allow_split_by_values = reads_by_values && find_reading_ctx.traversed_joins.empty()
+            && !find_reading_ctx.traversed_row_dropping_array_join && !optimization_settings.exact_rows_before_limit;
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
             dag, description,
-            limit);
+            limit,
+            allow_split_by_values ? &columns_fixed_to_sets : nullptr);
 
         if (order_info.input_order)
         {
@@ -1530,7 +1622,8 @@ InputOrderInfoPtr buildInputOrderInfo(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                query_limit);
+                query_limit,
+                order_info.split_values);
 
             if (!can_read)
             {
@@ -1538,6 +1631,9 @@ InputOrderInfoPtr buildInputOrderInfo(
                 reading->resetVirtualRowConversions();
                 return nullptr;
             }
+
+            if (reads_by_values && order_info.split_values)
+                *reads_by_values = true;
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -2030,7 +2126,8 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     return order_info.input_order;
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeReadInOrder(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_split_by_values)
 {
     if (node.children.size() != 1)
         return;
@@ -2076,10 +2173,19 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         }
 
         VectorWithMemoryTracking<ReadFromMergeTree *> virtual_row_readers;
+        bool any_child_reads_by_values = false;
         for (auto * child : union_node->children)
         {
             ReadFromMergeTree * child_virtual_row_reader = nullptr;
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings));
+            bool child_reads_by_values = false;
+            infos.push_back(buildInputOrderInfo(
+                *sorting,
+                apply_virtual_row,
+                child_virtual_row_reader,
+                *child,
+                optimization_settings,
+                allow_split_by_values ? &child_reads_by_values : nullptr));
+            any_child_reads_by_values |= child_reads_by_values;
             if (child_virtual_row_reader)
                 virtual_row_readers.push_back(child_virtual_row_reader);
 
@@ -2148,12 +2254,21 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
+        /// Each stream of a set value would buffer a block ahead, while a LIMIT takes rows from a few streams.
+        if (any_child_reads_by_values)
+            use_buffering = false;
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
+    else if (bool reads_by_values = false; auto order_info = buildInputOrderInfo(
+                 *sorting,
+                 apply_virtual_row,
+                 virtual_row_reader,
+                 *node.children.front(),
+                 optimization_settings,
+                 allow_split_by_values ? &reads_by_values : nullptr))
     {
         /// Use buffering only if have filter or don't have limit.
-        bool use_buffering = order_info->limit == 0;
+        bool use_buffering = order_info->limit == 0 && !reads_by_values;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
 }

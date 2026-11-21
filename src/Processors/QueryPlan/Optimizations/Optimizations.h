@@ -339,7 +339,8 @@ void processAndOptimizeTextIndexFunctions(
     bool direct_read_from_text_index,
     const FindSingleNodeRead & find_single_node_read,
     const Optimization::ExtraSettings & settings);
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeReadInOrder(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_split_by_values);
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
