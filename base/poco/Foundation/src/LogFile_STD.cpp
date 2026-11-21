@@ -81,4 +81,11 @@ const std::string& LogFileImpl::pathImpl() const
 }
 
 
+void LogFileImpl::renameToImpl(const std::string& path)
+{
+	File(_path).renameTo(path);
+	_path = path;
+}
+
+
 } // namespace Poco

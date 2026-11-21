@@ -56,7 +56,10 @@ public:
     /// Returns the date and time the log file was created.
 
     const std::string & path() const;
-    /// Returns the path given in the constructor.
+    /// Returns the path given in the constructor or to `renameTo`.
+
+    void renameTo(const std::string & path);
+    /// Renames the open log file.
 };
 
 
@@ -90,6 +93,12 @@ inline Timestamp LogFile::creationDate() const
 inline const std::string & LogFile::path() const
 {
     return pathImpl();
+}
+
+
+inline void LogFile::renameTo(const std::string & path)
+{
+    renameToImpl(path);
 }
 
 
