@@ -68,6 +68,7 @@ private:
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
     std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
+    bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const override;
 
     /// The sum of the per-column read sizes.
     ColumnSize calculateTotalColumnsReadSize() const override;

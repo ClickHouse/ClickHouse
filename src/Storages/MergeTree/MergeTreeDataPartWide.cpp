@@ -286,6 +286,12 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
     return sizes;
 }
 
+bool MergeTreeDataPartWide::canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const
+{
+    /// As calculateSubcolumnSizes, whose reader reads files only for the prefixes.
+    return checksums.empty() || isEmpty() || !MergeTreeReaderWide::streamsDependOnPrefixes(subcolumn, getSerializationInfos());
+}
+
 ColumnSize MergeTreeDataPartWide::calculateTotalColumnsReadSize() const
 {
     ColumnSize size;
