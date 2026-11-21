@@ -1,0 +1,285 @@
+# The queries of the assistant are ClickHouse SQL, so the client pins `dialect = 'clickhouse'` while
+# it runs one in a session of another dialect, and takes the pin away afterwards. A confirmed
+# `run_query` that changes the dialect itself must keep its change, like a statement the user typed:
+# here the session is in `kusto`, the user confirms `SET dialect = 'clickhouse'`, and the session
+# must stay in `clickhouse` afterwards. It used to be put back into `kusto`, because a cleanup guard
+# cleared the record of the change before the guard that removes the pin had read it.
+import json
+import os
+import pty
+import select
+import shlex
+import termios
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# How long a retry of a statement waits, see `run_statement`.
+STATEMENT_RETRY_TIMEOUT_SECONDS = 30
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone.
+client_gone = False
+
+FINAL_ANSWER = "MOCK-DONE"
+
+# Prints the dialect of the session when it is ClickHouse SQL; the KQL parser rejects it.
+CHECK = "SELECT concat('dialect', '=', getSetting('dialect'))"
+
+CASES = [("set_dialect", "SET dialect = 'clickhouse'")]
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider. It answers with one `run_query` call per case, in order,
+    and finishes with a plain text message."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        request = json.loads(self.rfile.read(length))
+        self.server.last_request = request
+
+        # The number of tool calls already made is the number of tool results in the history.
+        done = sum(1 for m in request["messages"] if m.get("role") == "tool")
+        if done < len(CASES):
+            name, query = CASES[done]
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call_{name}",
+                        "type": "function",
+                        "function": {"name": "run_query", "arguments": json.dumps({"query": query})},
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": FINAL_ANSWER}
+            finish_reason = "stop"
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials come
+    from the configuration and not from the environment, so the agent does not ask for the
+    confirmation of using an API key found there."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            f"<max_steps>{len(CASES) + 5}</max_steps>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def wait_for_line_editor(master, timeout=TIMEOUT_SECONDS):
+    """Wait until the client is reading a line, which is the only state in which a control
+    character typed into its terminal reaches it: `replxx` sets `VMIN` to 1 and `VTIME` to 0 with
+    `ICANON` off, while the interceptor of the keystrokes of a running query and the canonical mode
+    both swallow a backspace (see `05137_client_ai_query_log_excludes_own_queries`)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        attributes = termios.tcgetattr(master)
+        reading = not attributes[3] & termios.ICANON
+        reading = reading and attributes[6][termios.VMIN] == 1 and attributes[6][termios.VTIME] == 0
+        if reading:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def run_statement(master, debug_log_fd, statement):
+    """Type a statement in the SQL mode, wait for it to run, and return the output it produced.
+
+    A `?` turn leaves the client in AI chat mode, and a backspace on the empty line switches back;
+    on an empty SQL line it does nothing. If the line reached the model anyway, the statement is
+    typed again."""
+    for attempt in range(3):
+        wait_for_line_editor(master)
+        os.write(master, b"\x7f")
+        os.write(master, statement.encode() + b"\n")
+        output = read_until(
+            master,
+            debug_log_fd,
+            lambda o: "Elapsed:" in o or "Code: " in o or FINAL_ANSWER in o,
+            TIMEOUT_SECONDS if attempt == 0 else STATEMENT_RETRY_TIMEOUT_SECONDS,
+        )
+        if "Elapsed:" in output or "Code: " in output:
+            return output
+        if client_gone:
+            break
+    return ""
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone. The expected output has no such line, so it
+    shows up in the diff of the failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+def main():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    server.last_request = {}
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
+    argv = base + [
+        "--config-file",
+        make_config(server.server_port),
+        "--history_file=/dev/null",
+    ]
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(base[0], argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        run_statement(master, debug_log_fd, "SET allow_experimental_kusto_dialect = 1")
+        run_statement(master, debug_log_fd, "SET dialect = 'kusto'")
+
+        # The positive control: the session really parses KQL, so the check below is not vacuous.
+        # The KQL parser reads the statement as something else entirely, which fails or prints
+        # nothing like the line the check is looking for. The echo of the statement is highlighted,
+        # so it never contains that line either.
+        output = run_statement(master, debug_log_fd, CHECK)
+        drain(master, debug_log_fd, 1.0)
+        if "dialect=clickhouse" not in output:
+            print("control: kusto session does not run the check")
+        else:
+            print(f"control: UNEXPECTED {output[-300:]!r}")
+
+        wait_for_line_editor(master)
+        os.write(master, b"? switch to ClickHouse SQL\n")
+        read_until(master, debug_log_fd, lambda o: "Run this query?" in o, TIMEOUT_SECONDS)
+        os.write(master, b"y\n")
+        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
+
+        results = {}
+        for message in server.last_request.get("messages", []):
+            if message.get("role") == "tool":
+                results[message.get("tool_call_id")] = str(message.get("content"))
+        for name, _ in CASES:
+            answer = results.get(f"call_{name}")
+            if answer is None:
+                print(f"{name}: NO RESULT")
+            elif '"success":true' in answer.replace(" ", ""):
+                print(f"{name}: RAN")
+            else:
+                print(f"{name}: UNEXPECTED {answer[:200]}")
+
+        # The confirmed change stays: the session parses ClickHouse SQL again.
+        output = run_statement(master, debug_log_fd, CHECK)
+        if "dialect=clickhouse" in output:
+            print("after: dialect=clickhouse")
+        else:
+            print(f"after: UNEXPECTED {output[-300:]!r}")
+    finally:
+        os.write(master, b"\x7f")
+        os.write(master, b"exit\n")
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()

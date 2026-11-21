@@ -1,0 +1,7 @@
+batch_question_exit_code_is_nonzero: 1
+warm_up: OK
+row_policy_subquery_settings: OK
+policy_calls_user_defined_function: OK
+view_shadowed_by_temporary_table: OK
+show_create_table_is_whole: OK
+udf_probe_ignores_session_offset: OK

@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: the AI agent of the client is not compiled in the fast test build.
+
+# The `/`-commands of the client are offered by the line editor as as-you-type hints in the AI-chat
+# (`:?`) mode too, where they run as commands rather than being sent to the agent.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# The instant hints need color (the highlighter), which the harness disables, so enable it here.
+spawn bash -c "source $basedir/../shell_config.sh ; unset OPENAI_API_KEY ANTHROPIC_API_KEY ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+expect ":) "
+
+# A leading `?` switches the line editor into the AI-chat mode instead of being inserted.
+# (`-ex`: a `?` in a glob pattern would match any character.)
+send -- "?"
+expect -ex ":?"
+send -- "/"
+expect "/man"
+# The command runs as the command itself, no AI provider involved.
+send -- "help"
+expect -ex "help"
+send -- "\r"
+expect "Usage: help <name>"
+
+# Quit: `Ctrl-C` abandons the line, and `Ctrl-D` then exits from the empty prompt it redraws (the
+# echo of the `^C` separates that prompt from the earlier ones). The smiley of the AI-chat prompt is
+# colored - the reset sequence sits between the `?` and the space that follows it - so the wait is
+# for the smiley alone.
+send -- "\3"
+expect {
+    eof      {}
+    -ex "^C" {
+        expect {
+            eof          {}
+            -re {:[)?]}  { send -- "\4" ; expect eof }
+        }
+    }
+}

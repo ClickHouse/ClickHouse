@@ -1017,6 +1017,9 @@ void Client::connect()
     if (server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
 
+    /// This is a new session, possibly on another server, so nothing learned about the previous one applies.
+    resetServerSessionCaches();
+
     if (is_interactive)
     {
         output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
