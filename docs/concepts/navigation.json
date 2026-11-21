@@ -250,7 +250,8 @@
                   "group": "Compatibility protocols",
                   "pages": [
                     "concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
-                    "concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
+                    "concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql",
+                    "concepts/features/connect-to-clickhouse/protocols/compatibility/kafka"
                   ]
                 },
                 "concepts/features/connect-to-clickhouse/protocols/ssh"

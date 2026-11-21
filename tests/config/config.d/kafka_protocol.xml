@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- The Kafka-compatible interface, see `src/Server/Kafka`. -->
+    <kafka_port>9092</kafka_port>
+    <!-- The Kafka protocol over TLS, `kafka_port_secure`, is in `secure_ports.xml`. -->
+    <kafka_protocol>
+        <!-- Do not wait for more members before the first rebalance of a consumer group. -->
+        <group_initial_rebalance_delay_ms>0</group_initial_rebalance_delay_ms>
+    </kafka_protocol>
+</clickhouse>

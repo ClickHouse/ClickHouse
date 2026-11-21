@@ -1,0 +1,206 @@
+---
+description: 'Documentation for the Kafka-compatible interface of ClickHouse, which lets Kafka producers and consumers work with MergeTree tables as topics'
+sidebarTitle: 'Kafka interface'
+slug: /concepts/features/connect-to-clickhouse/protocols/compatibility/kafka
+title: 'Kafka interface'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge/>
+
+## Overview {#overview}
+
+ClickHouse can pretend to be an [Apache Kafka](https://kafka.apache.org/) broker. Kafka producers and consumers, Kafka Connect, and other applications that use a Kafka client library connect to ClickHouse as to a Kafka cluster, and work with `MergeTree` tables as with Kafka topics:
+
+- a topic is a `MergeTree` table with the persistent virtual columns `_block_number` and `_block_offset`;
+- a partition of a topic is a partition of the table;
+- a record batch sent by a producer is inserted into the table as one block;
+- the offset of a record is derived from its `_block_number` and `_block_offset`, so the records are consumed in the order of commit;
+- consumers read the table with a streaming query (`SELECT ... FROM table STREAM`, see [enable_streaming_queries](/reference/settings/session-settings/enable#enable_streaming_queries)), which waits for new records;
+- consumer groups commit their offsets into a table.
+
+The same data is available both to Kafka clients and to SQL queries: the records written by a Kafka producer can be queried with SQL right away, and the rows inserted with `INSERT` are delivered to Kafka consumers. `ReplicatedMergeTree` provides redundancy of the topics.
+
+## Enabling the interface {#enabling}
+
+Add the `kafka_port` setting to the server configuration, for example in a new file in the `config.d` directory:
+
+```xml
+<clickhouse>
+    <kafka_port>9092</kafka_port>
+</clickhouse>
+```
+
+The server writes a message like this to the log at startup:
+
+```response
+{} <Information> Application: Listening for Kafka compatibility protocol: 127.0.0.1:9092
+```
+
+The interface is configured in the `kafka_protocol` section:
+
+```xml
+<clickhouse>
+    <kafka_protocol>
+        <!-- The database of the topics with unqualified names. -->
+        <database>default</database>
+        <!-- The host and port returned to clients in the cluster metadata.
+             By default, the address of the server the client is connected to. -->
+        <advertised_host>clickhouse.example.com</advertised_host>
+        <advertised_port>9092</advertised_port>
+        <!-- The port returned to the clients connected to kafka_port_secure. -->
+        <advertised_port_secure>9093</advertised_port_secure>
+        <!-- The cluster id returned in the metadata. -->
+        <cluster_id>ClickHouse</cluster_id>
+        <!-- Whether to write the queries made for Kafka requests to system.query_log. -->
+        <log_queries>false</log_queries>
+        <!-- The maximum size of a request in bytes. -->
+        <max_request_size>104857600</max_request_size>
+        <!-- The delay of the first rebalance of a new consumer group, as group.initial.rebalance.delay.ms of Kafka. -->
+        <group_initial_rebalance_delay_ms>3000</group_initial_rebalance_delay_ms>
+        <!-- The table with the committed offsets of consumer groups, in the database above. -->
+        <offsets_table>__consumer_offsets</offsets_table>
+        <!-- The format of the messages of the tables without the setting kafka_format and without a column value. -->
+        <format>JSONEachRow</format>
+        <!-- The table engine of the topics created by clients. -->
+        <topic_engine>MergeTree</topic_engine>
+        <!-- Whether a metadata request of a client creates the missing topics, as auto.create.topics.enable of Kafka. -->
+        <auto_create_topics>false</auto_create_topics>
+        <default_num_partitions>1</default_num_partitions>
+    </kafka_protocol>
+</clickhouse>
+```
+
+## Topics {#topics}
+
+A topic is a table of the `MergeTree` family with the settings `enable_block_number_column = 1` and `enable_block_offset_column = 1`. The table can have any structure: every row is a message, and the columns are serialized into the message in a format. The columns `key`, `timestamp`, and `headers`, if the table has them, are not a part of the message, but the key, the timestamp, and the headers of the record:
+
+| Column      | Kafka record field | Type                                                    |
+|-------------|--------------------|---------------------------------------------------------|
+| `key`       | key                | `String` or `Nullable(String)`, optional                |
+| `timestamp` | timestamp          | `DateTime64` or `DateTime`, optional                    |
+| `headers`   | headers            | `Map(String, String)`, optional                         |
+
+The format of the messages is set by the table setting `kafka_format`, for example `JSONEachRow`, `CSV`, `TSV`, `RowBinary`, `MsgPack`, `ProtobufSingle` (with `format_schema`), or `AvroConfluent`. Without this setting, the format is taken from the server setting `kafka_protocol.format`, `JSONEachRow` by default. A consumer receives the rows serialized with the function `formatRow` (without the trailing newline of the text formats), and the messages of a producer are parsed one by one, as by the `Kafka` table engine; a message may contain any number of rows. The format settings of the user apply. The columns missing in a message get the default values of their types.
+
+```sql
+CREATE TABLE orders
+(
+    order_id UInt64,
+    customer String,
+    amount Decimal(18, 2),
+    items Array(String),
+    timestamp DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY order_id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, kafka_format = 'JSONEachRow';
+```
+
+A table with a column `value` of a string type and without the setting `kafka_format` stores every message as is: the column `value` is the value of the record, which can be any bytes or `NULL`.
+
+A table without a partition key is a topic with one partition. A table partitioned by a single integer column is a topic with the partitions numbered by the values of this column. The number of partitions is given by a constraint `CHECK column < N`, or is one more than the largest existing partition, if there is no such constraint.
+
+The table with the raw messages, as created by the `CreateTopics` request:
+
+```sql
+CREATE TABLE events
+(
+    partition UInt32,
+    key Nullable(String),
+    value Nullable(String),
+    timestamp DateTime64(3),
+    headers Map(String, String),
+    CONSTRAINT partition_count CHECK partition < 8
+)
+ENGINE = MergeTree
+PARTITION BY partition
+ORDER BY tuple()
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+    add_minmax_index_for_block_number_column = 1, add_minmax_index_for_block_offset_column = 1,
+    part_minmax_index_columns = 'with_block_number_offset';
+```
+
+The topic name is the name of the table in the database set by `kafka_protocol.database`, or `database.table` for a table in another database. A client can create and delete topics with the `CreateTopics` and `DeleteTopics` requests, which run `CREATE TABLE` and `DROP TABLE` queries. A table created this way has the structure shown above, and the `retention.ms` config of a topic becomes the table `TTL`.
+
+If the table does not have the columns `key`, `timestamp`, or `headers`, these fields of the records written by producers are not stored, and the records read by consumers have no key, the timestamp `-1`, and no headers.
+
+## Offsets {#offsets}
+
+The offset of a record is `_block_number * 2^32 + _block_offset`. The offsets increase in the order of commit of the inserted blocks, and have gaps between blocks, like in a compacted Kafka topic. The clients handle such gaps. The records are read with a streaming query, which returns only the committed prefix of blocks of every partition, so a consumer never skips a block that is still being inserted, even with concurrent inserts into a `ReplicatedMergeTree` table.
+
+Because of the gaps, the difference between two offsets is not the number of records between them: a consumer lag reported by monitoring tools is zero when the consumer is at the end of a partition, but it is large when the consumer is behind by one or more blocks.
+
+The offsets are stable across merges, because the `_block_number` and `_block_offset` columns are persisted. With `ORDER BY tuple()`, a merge keeps the rows in the order of offsets, so reading is the most efficient.
+
+## Authentication and access control {#authentication}
+
+Clients authenticate with SASL `PLAIN` as ClickHouse users. A client without SASL authentication connects as the user set by the `default_session_user` server setting, with an empty password. The requests are executed as queries of the user, so the user needs the `SELECT` privilege on a topic to consume it, the `INSERT` privilege to produce into it, `CREATE TABLE` and `DROP TABLE` to create and delete topics, and `INSERT` and `SELECT` on the table of committed offsets to use consumer groups. The logins are shown with `interface = 'Kafka'` in `system.session_log`.
+
+## TLS {#tls}
+
+To protect the passwords and the data on the network, enable the `kafka_port_secure` port, which accepts the Kafka protocol over TLS. The server uses its `openSSL.server` configuration, as for `tcp_port_secure` and `https_port`. The clients connect to it with the `SSL` security protocol, or `SASL_SSL` to authenticate with SASL `PLAIN`:
+
+```xml
+<clickhouse>
+    <kafka_port_secure>9093</kafka_port_secure>
+</clickhouse>
+```
+
+Both ports can be enabled at the same time. The cluster metadata returned to a client contains the port it is connected to, so a client stays on the secure port.
+
+## Consumer groups {#consumer-groups}
+
+The server is the coordinator of consumer groups of the classic Kafka protocol (`JoinGroup`, `SyncGroup`, `Heartbeat`, `LeaveGroup`). The state of the groups is in memory, so all the members of a group must connect to the same server. The committed offsets are stored in the table `kafka_protocol.offsets_table`, which is created as a `ReplacingMergeTree` table on the first commit. You can create it in advance with another engine, for example `ReplicatedReplacingMergeTree`, with the same structure:
+
+```sql
+CREATE TABLE __consumer_offsets
+(
+    group_id String,
+    topic String,
+    partition Int32,
+    committed_offset Int64,
+    metadata String,
+    commit_time DateTime64(6)
+)
+ENGINE = ReplacingMergeTree(commit_time)
+ORDER BY (group_id, topic, partition);
+```
+
+## Producers {#producers}
+
+The records of a batch are inserted with one `INSERT` query, so the settings of the user apply. For example, with `async_insert = 1` in the settings profile of the user, the batches of many producers are combined into one part. A batch of an idempotent producer is deduplicated by its producer id and sequence number with `insert_deduplication_token`, so a retried batch is not inserted twice, as long as the deduplication of inserts is enabled for the table (`non_replicated_deduplication_window` for non-replicated tables). All compression types (`gzip`, `snappy`, `lz4`, `zstd`) are supported. The response to a producer does not contain the offsets of the written records.
+
+## Supported requests {#supported-requests}
+
+| Request            | Versions |
+|--------------------|----------|
+| `Produce`          | 3–9      |
+| `Fetch`            | 4–12     |
+| `ListOffsets`      | 1–6      |
+| `Metadata`         | 0–12     |
+| `OffsetCommit`     | 2–8      |
+| `OffsetFetch`      | 1–7      |
+| `FindCoordinator`  | 0–3      |
+| `JoinGroup`        | 0–7      |
+| `Heartbeat`        | 0–4      |
+| `LeaveGroup`       | 0–4      |
+| `SyncGroup`        | 0–5      |
+| `DescribeGroups`   | 0–5      |
+| `ListGroups`       | 0–3      |
+| `SaslHandshake`    | 0–1      |
+| `ApiVersions`      | 0–4      |
+| `CreateTopics`     | 2–5      |
+| `DeleteTopics`     | 1–4      |
+| `InitProducerId`   | 0–4      |
+| `SaslAuthenticate` | 0–2      |
+
+## Limitations {#limitations}
+
+- Every server is a single-broker cluster: it is the leader of all partitions and the coordinator of all groups.
+- Transactions and the `read_committed` isolation level are not supported; all records are committed.
+- Fetch sessions are not supported: the clients send full fetch requests.
+- Topic ids, the consumer group protocol of KIP-848, share groups, and the `DescribeConfigs` and `CreatePartitions` requests are not supported.
+- A consumer waiting for new records holds a streaming subscription on the table, which rejects schema-changing `ALTER` queries, as for other streaming queries.

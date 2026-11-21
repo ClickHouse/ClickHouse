@@ -30,6 +30,9 @@ public:
         QUERIES_CUSTOM,
         CLOUD,
         ICEBERG_REST_CATALOG,
+        /// Before `KAFKA`: the parser of `SYSTEM START LISTEN` takes the first type whose name matches.
+        KAFKA_SECURE,
+        KAFKA,
         END
     };
 

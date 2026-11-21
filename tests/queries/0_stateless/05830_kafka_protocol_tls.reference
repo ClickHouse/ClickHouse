@@ -1,0 +1,5 @@
+plaintext api versions: 0 True
+plaintext advertises its own port: True
+tls api versions: 0 True
+tls advertises its own port: True
+plaintext request to the TLS port: rejected
