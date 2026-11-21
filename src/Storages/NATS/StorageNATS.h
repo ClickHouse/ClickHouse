@@ -129,7 +129,7 @@ private:
     /// and claimed via the CAS overload of `StreamingBackgroundControl::claimCycle`.
     std::atomic<UInt64> last_seen_refresh_epoch = 0;
 
-    mutable bool drop_table = false;
+    mutable std::atomic<bool> drop_table = false;
     bool throw_on_startup_failure;
     bool fresh_definition;
 
