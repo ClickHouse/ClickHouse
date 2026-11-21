@@ -219,7 +219,7 @@ struct IdentifierResolveScope
 
     /// The key of `nullable_group_by_keys` that `node` is equal to (ignoring aliases), or nullptr.
     /// The same as a lookup in `nullable_group_by_keys`, but it does not compute the tree hash of `node`.
-    const QueryTreeNodePtr * findNullableGroupByKey(const QueryTreeNodePtr & node) const;
+    [[nodiscard]] const QueryTreeNodePtr * findNullableGroupByKey(const QueryTreeNodePtr & node) const;
 
     /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
@@ -281,7 +281,7 @@ struct IdentifierResolveScope
     /// so that a function call with this name may resolve to the lambda instead of an ordinary function.
     /// This is an over-approximation: the aliases of short identifiers and the aliases of the outer scopes
     /// that are not visible are counted as well. See `QueryAnalyzer::isLambdaCall` for the exact check.
-    bool hasFunctionAlias(const std::string & name) const;
+    [[nodiscard]] bool hasFunctionAlias(const std::string & name) const;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.

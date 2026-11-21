@@ -125,7 +125,7 @@ public:
     }
 
     /// Returns true if matcher match column name, false otherwise
-    bool isMatchingColumn(const std::string & column_name) const;
+    [[nodiscard]] bool isMatchingColumn(const std::string & column_name) const;
 
     [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
