@@ -95,7 +95,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -659,24 +658,8 @@ void StorageBuffer::read(
         auto query_tree = query_info.query_tree->clone();
         removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
 
-        /// The printed query loses the table alias the additional filter may be keyed by, so key it by the table name first.
-        auto buffers_context = local_context;
-        if (query_info.additional_filter_ast)
-        {
-            Settings buffers_settings = local_context->getSettingsCopy();
-            auto & additional_filters = buffers_settings[Setting::additional_table_filters].value;
-            Tuple filter;
-            filter.push_back(query_storage_id.getFullNameNotQuoted());
-            filter.push_back(query_info.additional_filter_ast->formatWithSecretsOneLine());
-            additional_filters.insert(additional_filters.begin(), std::move(filter));
-
-            auto mutable_buffers_context = Context::createCopy(local_context);
-            mutable_buffers_context->setSettings(buffers_settings);
-            buffers_context = std::move(mutable_buffers_context);
-        }
-
         auto interpreter
-            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), buffers_context, buffers_select_query_options, storage);
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
         interpreter.addStorageLimits(*query_info.storage_limits);
         buffers_plan = std::move(interpreter).extractQueryPlan();
     }
