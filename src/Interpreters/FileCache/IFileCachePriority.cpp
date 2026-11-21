@@ -167,6 +167,11 @@ IFileCachePriority::observeFilesystemCache(
     if (walk.isCancelled())
         return {};
 
+    /// The reservoir is not in a random order: the entries which were not replaced stay in the walk order.
+    /// After the shuffle, `query_max_total_size` cuts a random prefix of it, as for the other orders.
+    if (query_order == IterationOrder::RANDOM)
+        std::shuffle(walk.entries.begin(), walk.entries.end(), thread_local_rng);
+
     /// Read the file segments of the copied entries without the priority lock, so that waiting for a key lock does not block the queue.
     /// The entries whose segments are gone by now are skipped, so the result can have fewer than `query_max_elements` rows.
     FileSegmentSummaryInfoList result;
@@ -189,8 +194,8 @@ IFileCachePriority::observeFilesystemCache(
         if (!info)
             continue;
 
-        /// coldest/hottest: stop before the segment which would push over the limit
-        if (query_order != IterationOrder::RANDOM && info->size > query_max_total_size - total_size)
+        /// Stop before the segment which would push over the limit
+        if (info->size > query_max_total_size - total_size)
             break;
 
         returned_segments.emplace(entry.key, entry.offset);
@@ -199,19 +204,6 @@ IFileCachePriority::observeFilesystemCache(
         result.push_back(std::move(*info));
     }
 
-    if (query_order != IterationOrder::RANDOM)
-        return result;
-
-    /// We ignore query_max_total_size in the sampling process because we would favor elements at the start of the default iteration order (hereby coldest)
-    /// That's why we shuffle so we don't always remove same segments
-    std::shuffle(result.begin(), result.end(), thread_local_rng);
-
-    /// Keep dropping segments from the end so we respect in the end query_max_total_size for RANDOM order
-    while (total_size > query_max_total_size)
-    {
-        total_size -= result.back().size;
-        result.pop_back();
-    }
     return result;
 }
 }
