@@ -132,6 +132,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        bool is_not_materialized = false;
     };
 
     [[nodiscard]] QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -342,6 +343,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setIsNotMaterialized(cte_data.is_not_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
     auto union_context = union_node->getContext();
@@ -409,6 +411,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setIsNotMaterialized(cte_data.is_not_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
     auto union_context = union_node->getContext();
@@ -455,6 +458,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
     current_query_tree->setCTEName(std::string(cte_data.cte_name));
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
+    current_query_tree->setIsNotMaterialized(cte_data.is_not_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
@@ -862,6 +866,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .is_not_materialized = with_element->is_not_materialized,
         };
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
 

@@ -145,6 +145,16 @@ void TableNode::adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const
     updateStorage(materialized_cte->storage, context_);
 }
 
+void TableNode::detachMaterializedCTE()
+{
+    chassert(isMaterializedCTE());
+    auto detached = std::make_shared<MaterializedCTE>(materialized_cte->cte_name);
+    detached->is_automatic = materialized_cte->is_automatic;
+    detached->is_referenced_from_recursive_cte_member = materialized_cte->is_referenced_from_recursive_cte_member;
+    materialized_cte = std::move(detached);
+    setTemporaryTableName(materialized_cte->temporary_table_name);
+}
+
 void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
 {
     storage = std::move(storage_value);

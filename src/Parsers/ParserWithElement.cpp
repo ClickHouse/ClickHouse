@@ -16,6 +16,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier s_ident;
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_materialized(Keyword::MATERIALIZED);
+    ParserKeyword s_not(Keyword::NOT);
     ParserSubquery s_subquery;
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
@@ -60,7 +61,20 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ) &&
         s_as.ignore(pos, expected))
     {
-        bool has_materialized_keyword = s_materialized.ignore(pos, expected);
+        /// `AS NOT MATERIALIZED` forbids the automatic materialization of the CTE.
+        bool has_not_materialized_keywords = false;
+        bool has_materialized_keyword = false;
+        if (auto before_not = pos; s_not.ignore(pos, expected))
+        {
+            if (s_materialized.ignore(pos, expected))
+                has_not_materialized_keywords = true;
+            else
+                pos = before_not;
+        }
+        else
+        {
+            has_materialized_keyword = s_materialized.ignore(pos, expected);
+        }
 
         if (ASTPtr subquery; s_subquery.parse(pos, subquery, expected))
         {
@@ -69,6 +83,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);
             with_element->is_materialized = has_materialized_keyword;
+            with_element->is_not_materialized = has_not_materialized_keywords;
             with_element->subquery = std::move(subquery);
             with_element->children.push_back(with_element->subquery);
 
@@ -101,15 +116,15 @@ Common Table Expressions represent named subqueries.
 They can be referenced by name anywhere in a `SELECT` query where a table expression is allowed.
 Named subqueries can be referenced by name in the scope of the current query or in the scopes of child subqueries.
 
-Every reference to a Common Table Expression in `SELECT` queries is always replaced by the subquery from it's definition if the CTE is not explicitly defined as materialized (see [Materialized Common Table Expressions](#materialized-common-table-expressions)).
+Every reference to a Common Table Expression in `SELECT` queries is replaced by the subquery from its definition, unless the CTE is materialized: explicitly (see [Materialized Common Table Expressions](#materialized-common-table-expressions)) or automatically (see [Automatic materialization](#automatic-cte-materialization)).
 Recursion is prevented by hiding the current CTE from the identifier resolution process.
 
-Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
+Please note that CTEs that are not materialized do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
 
 ### Syntax {#common-table-expressions-syntax}
 
 ```sql
-WITH <identifier> AS [MATERIALIZED] <subquery expression>
+WITH <identifier> AS [MATERIALIZED | NOT MATERIALIZED] <subquery expression>
 ```
 
 ### Example {#common-table-expressions-example}
@@ -131,6 +146,29 @@ WHERE num IN (SELECT num FROM cte_numbers)
 If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
+
+### Automatic materialization {#automatic-cte-materialization}
+
+A non-recursive CTE that is referenced more than once is materialized automatically, as if it was declared `AS MATERIALIZED`, when recomputing it at each reference is likely more expensive than storing its result: when its subquery (or each branch of a `UNION` in it) contains `GROUP BY`, an aggregate function, `DISTINCT`, or a window function, and does not use `WITH TOTALS`.
+A CTE that only filters or projects rows is inlined at each reference, so that each reference can use the indexes of the tables and read only the columns it needs.
+
+```sql
+WITH top_pages AS (SELECT page, count() AS c FROM hits GROUP BY page ORDER BY c DESC LIMIT 10)
+SELECT tp.page, tp.c, o.n
+FROM top_pages AS tp
+LEFT JOIN (SELECT referer, count() AS n FROM hits WHERE referer IN (SELECT page FROM top_pages) GROUP BY referer) AS o
+    ON o.referer = tp.page;
+```
+
+Here the aggregation of `top_pages` runs once, and both references read its result.
+
+Automatic materialization does not apply to:
+- a CTE declared as `AS NOT MATERIALIZED`, which is always inlined;
+- a CTE referenced only once;
+- a CTE defined in a `WITH RECURSIVE` clause;
+- a CTE whose subquery is correlated or reads a recursive CTE from its recursive member, or resolves differently at different references (for example, because a name in it refers to another CTE at one of the references): such a CTE is inlined at those references.
+
+It is controlled by the setting [enable_automatic_cte_materialization](/reference/settings/session-settings#enable_automatic_cte_materialization), which is enabled by default and does not require the setting `enable_materialized_cte`.
 
 ## Materialized Common Table Expressions {#materialized-common-table-expressions}
 

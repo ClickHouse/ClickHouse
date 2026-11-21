@@ -18,6 +18,7 @@ SET query_plan_reuse_storage_ordering_for_window_functions = 1; -- when False, p
 SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0, causing chooseJoinOrder to be skipped, leaving intermediate unnamed Expression steps un-eliminated
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; "Discarding unused columns" step before GROUP BY is omitted, changing the Expression step label in EXPLAIN output
 SET query_plan_join_swap_table = 'auto'; -- CI may pin it, which keeps whichever sides the join order search reached first
+SET enable_automatic_cte_materialization = 0; -- `view_2` is referenced twice, its materialization changes the plan
 EXPLAIN PLAN
 WITH
     view_1 AS
