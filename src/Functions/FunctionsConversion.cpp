@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -1981,6 +1982,45 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
     }
 }
 
+namespace
+{
+
+/// The text of a `DateTime` has no time zone, so a cast between two JSON types writes and parses the `DateTime`s that pair up
+/// in UTC: returns `type` with them in UTC, which does not change its column. The pairs are the same seen from either type.
+/// A typed path overlapping another typed path is kept, because an object at either one can be written or read whole.
+DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTypeObject & other)
+{
+    auto to_utc = [](const DataTypePtr & leaf, const DataTypePtr & other_leaf) -> DataTypePtr
+    {
+        if (isObject(leaf) && isObject(other_leaf))
+            return withPairedDateTimesInUTC(assert_cast<const DataTypeObject &>(*leaf), assert_cast<const DataTypeObject &>(*other_leaf));
+        if (!isDateTimeOrDateTime64(other_leaf))
+            return leaf;
+        if (isDateTime(leaf))
+            return std::make_shared<DataTypeDateTime>("UTC");
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(leaf.get()))
+            return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
+        return leaf;
+    };
+    const auto & other_paths = other.getTypedPaths();
+    auto typed_paths = object.getTypedPaths();
+    for (auto & [path, path_type] : typed_paths)
+    {
+        auto it = other_paths.find(path);
+        auto overlaps = [&](const auto & typed_path)
+        { return path.starts_with(typed_path.first + ".") || typed_path.first.starts_with(path + "."); };
+        if (it == other_paths.end() || std::ranges::any_of(object.getTypedPaths(), overlaps) || std::ranges::any_of(other_paths, overlaps))
+            continue;
+        auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
+        if (relabeled)
+            path_type = std::move(relabeled);
+    }
+    return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+        object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
@@ -2015,13 +2055,20 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        DataTypePtr text_from_type;
+        DataTypePtr text_to_type;
+        if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
+        {
+            text_from_type = withPairedDateTimesInUTC(*from_object, *to_object);
+            text_to_type = withPairedDateTimesInUTC(*to_object, *from_object);
+        }
+        return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
             auto & write_buffer = write_helper.getWriteBuffer();
             FormatSettings format_settings = settings.format_settings;
-            auto serialization = arguments[0].type->getDefaultSerialization();
+            auto serialization = (text_from_type ? text_from_type : arguments[0].type)->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
             /// JSON has no number for inf and nan, unquoted they would be written as null.
             format_settings.json.quote_denormals = true;
@@ -2033,10 +2080,11 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+            const auto & parse_type = text_to_type ? text_to_type : result_type;
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(parse_type), nullable_source, input_rows_count, settings);
 
-            return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
+            return ConvertImplGenericFromString<true>::execute(args_with_json_string, parse_type, nullable_source, input_rows_count, settings);
         };
     }
 

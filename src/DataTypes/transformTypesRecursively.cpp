@@ -207,19 +207,22 @@ DataTypePtr replaceNestedTypesInPairImpl(
     const DataTypePtr & right,
     const PairedLeafCallback & on_leaf,
     bool skip_custom_name,
-    bool left_is_common_type)
+    bool left_is_common_type,
+    bool as_json_text)
 {
     const WhichDataType left_which(left);
     const WhichDataType right_which(right);
 
     /// Neither wrapper hides a leaf, so a pair differing only by one of them still has to be walked.
     if (right_which.isLowCardinality() && !left_which.isLowCardinality())
-        return replaceNestedTypesInPairImpl(left, removeLowCardinality(right), on_leaf, skip_custom_name, left_is_common_type);
+        return replaceNestedTypesInPairImpl(
+            left, removeLowCardinality(right), on_leaf, skip_custom_name, left_is_common_type, as_json_text);
     if (right_which.isNullable() && !left_which.isNullable())
-        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name, left_is_common_type);
+        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name, left_is_common_type, as_json_text);
 
     const bool descendable = left_which.isNullable() || left_which.isLowCardinality() || left_which.isArray()
-        || left_which.isMap() || left_which.isTuple() || left_which.isVariant() || (left_is_common_type && left_which.isObject());
+        || left_which.isMap() || left_which.isTuple() || (left_which.isVariant() && !as_json_text)
+        || (left_is_common_type && left_which.isObject());
 
     if (!descendable)
         return on_leaf(left, right);
@@ -229,18 +232,22 @@ DataTypePtr replaceNestedTypesInPairImpl(
 
     /// Rebuilding below cannot keep the name, so hand back `right` whole, and only once the children clear:
     /// restoring a customization over children that did not is how a relabel changes what a level means.
-    if (!skip_custom_name && (left->hasCustomName() || (right->hasCustomName() && !left_is_common_type))
+    if (!skip_custom_name && !as_json_text && (left->hasCustomName() || (right->hasCustomName() && !left_is_common_type))
         && left->getName() != right->getName())
     {
         if (!left->equals(*right))
             return nullptr;
-        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true, left_is_common_type) ? right : nullptr;
+        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true, left_is_common_type, as_json_text)
+            ? right
+            : nullptr;
     }
+
+    auto mismatch = [&]() -> DataTypePtr { return as_json_text ? left : nullptr; };
 
     if (left_which.isNullable())
     {
         const DataTypePtr left_nested = removeNullable(left);
-        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false, left_is_common_type);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false, left_is_common_type, as_json_text);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : makeNullable(nested);
@@ -249,7 +256,8 @@ DataTypePtr replaceNestedTypesInPairImpl(
     if (left_which.isLowCardinality())
     {
         const DataTypePtr left_nested = removeLowCardinality(left);
-        auto nested = replaceNestedTypesInPairImpl(left_nested, removeLowCardinality(right), on_leaf, false, left_is_common_type);
+        auto nested = replaceNestedTypesInPairImpl(
+            left_nested, removeLowCardinality(right), on_leaf, false, left_is_common_type, as_json_text);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeLowCardinality>(nested);
@@ -259,9 +267,10 @@ DataTypePtr replaceNestedTypesInPairImpl(
     {
         const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
         if (!right_array)
-            return nullptr;
+            return mismatch();
         const DataTypePtr left_nested = assert_cast<const DataTypeArray &>(*left).getNestedType();
-        auto nested = replaceNestedTypesInPairImpl(left_nested, right_array->getNestedType(), on_leaf, false, left_is_common_type);
+        auto nested = replaceNestedTypesInPairImpl(
+            left_nested, right_array->getNestedType(), on_leaf, false, left_is_common_type, as_json_text);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeArray>(nested);
@@ -271,10 +280,12 @@ DataTypePtr replaceNestedTypesInPairImpl(
     {
         const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
         if (!right_map)
-            return nullptr;
+            return mismatch();
         const auto & left_map = assert_cast<const DataTypeMap &>(*left);
-        auto key = replaceNestedTypesInPairImpl(left_map.getKeyType(), right_map->getKeyType(), on_leaf, false, left_is_common_type);
-        auto value = replaceNestedTypesInPairImpl(left_map.getValueType(), right_map->getValueType(), on_leaf, false, left_is_common_type);
+        auto key = replaceNestedTypesInPairImpl(
+            left_map.getKeyType(), right_map->getKeyType(), on_leaf, false, left_is_common_type, as_json_text);
+        auto value = replaceNestedTypesInPairImpl(
+            left_map.getValueType(), right_map->getValueType(), on_leaf, false, left_is_common_type, as_json_text);
         if (!key || !value)
             return nullptr;
         if (key.get() == left_map.getKeyType().get() && value.get() == left_map.getValueType().get())
@@ -287,19 +298,21 @@ DataTypePtr replaceNestedTypesInPairImpl(
         const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
         const auto & left_tuple = assert_cast<const DataTypeTuple &>(*left);
         if (!right_tuple || right_tuple->getElements().size() != left_tuple.getElements().size())
-            return nullptr;
+            return mismatch();
         /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
         /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
         /// disagrees on it is not interchangeable whether or not a child moves.
         if (!left_is_common_type && right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
-            return nullptr;
+            return mismatch();
+        if (as_json_text && left_tuple.getElementNames() != right_tuple->getElementNames())
+            return mismatch();
         DataTypes elements;
         elements.reserve(left_tuple.getElements().size());
         bool moved = false;
         for (size_t i = 0; i < left_tuple.getElements().size(); ++i)
         {
             auto nested = replaceNestedTypesInPairImpl(
-                left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false, left_is_common_type);
+                left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false, left_is_common_type, as_json_text);
             if (!nested)
                 return nullptr;
             moved |= nested.get() != left_tuple.getElements()[i].get();
@@ -325,7 +338,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
             auto it = right_object->getTypedPaths().find(path);
             if (it == right_object->getTypedPaths().end())
                 return nullptr;
-            auto nested = replaceNestedTypesInPairImpl(type, it->second, on_leaf, false, left_is_common_type);
+            auto nested = replaceNestedTypesInPairImpl(type, it->second, on_leaf, false, left_is_common_type, as_json_text);
             if (!nested)
                 return nullptr;
             moved |= nested.get() != type.get();
@@ -354,7 +367,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
     for (size_t i = 0; i < left_variant.getVariants().size(); ++i)
     {
         auto nested = replaceNestedTypesInPairImpl(
-            left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false, left_is_common_type);
+            left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false, left_is_common_type, as_json_text);
         if (!nested)
             return nullptr;
         /// A Variant holding one type twice has no unambiguous discriminator for it, and a replacement can
@@ -381,9 +394,9 @@ DataTypePtr replaceNestedTypesInPairImpl(
 }
 
 DataTypePtr replaceNestedTypesInPair(
-    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type)
+    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type, bool as_json_text)
 {
-    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false, left_is_common_type);
+    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false, left_is_common_type, as_json_text);
 }
 
 }
