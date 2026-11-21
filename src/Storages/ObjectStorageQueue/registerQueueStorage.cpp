@@ -120,7 +120,9 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
 
         Settings settings = args.getContext()->getSettingsCopy();
-        settings.applyChanges(args.storage_def->settings->changes);
+        /// Normalize the legacy `s3queue_` prefix so prefixed format settings reach the parser
+        /// (loadFromQuery strips it only on a local copy of the changes).
+        settings.applyChanges(ObjectStorageQueueSettings::normalizeChanges(args.storage_def->settings->changes));
         format_settings = getFormatSettings(args.getContext(), settings);
     }
     else
