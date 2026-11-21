@@ -23,9 +23,10 @@ indexOfAssumeSorted
 1	3	0
 a FixedString needle
 1	0	2
+0	0	0
 the same over a materialized array
-1	0	2
+0	0	0
 a Nullable(FixedString) needle
-1	0	2
+0	0	0
 a NULL element
 1	3	2	2

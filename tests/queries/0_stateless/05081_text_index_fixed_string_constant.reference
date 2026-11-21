@@ -75,11 +75,15 @@ Bloom Filter Index
 2
 2
 Functions
--- hasAny and hasAll ignore the padding
-2
-2
-2
-2
+-- hasAny and hasAll keep the padding
+0
+0
+0
+0
+0
+0
+0
+0
 2
 2
 2

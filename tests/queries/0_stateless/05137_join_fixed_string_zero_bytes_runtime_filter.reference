@@ -26,6 +26,6 @@
 6
 -- the runtime filter is built and applied on the normalized keys
 Filter column: RF1(trimRight(y, \'\\0\'), CAST(x AS String))
-BuildRuntimeFilter (Build runtime join filter on _CAST(x, \'String\'_String))
+BuildRuntimeFilter (Build runtime join filter on _CAST_strip_trailing_zeros(x, \'String\'))
 Filter column: RF1(tuple(trimRight(tuple(y).1, \'\\0\')), CAST(tuple(x) AS Tuple(String)))
-BuildRuntimeFilter (Build runtime join filter on _CAST(tuple(x), \'Tuple(String)\'_String))
+BuildRuntimeFilter (Build runtime join filter on _CAST_strip_trailing_zeros(tuple(x), \'Tuple(String)\'))

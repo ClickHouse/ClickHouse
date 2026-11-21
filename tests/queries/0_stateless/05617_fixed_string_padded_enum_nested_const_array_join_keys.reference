@@ -1,0 +1,31 @@
+padded constant, tuple key
+61
+61
+padded constant, rewrites
+['61','62']
+['61','62']
+['61']
+['6100','7A']
+enum name with a trailing zero byte against a FixedString key
+6100
+6100
+6100
+6200
+6100
+6200
+6100
+nested constant array
+0
+0
+0
+[0,0,1,0,0,1]
+[0,0,1,0,0,1]
+[0,0,1,0,0,1]
+[0,0,1,0,0,1]
+array join keys
+2
+2
+2
+2
+6100	['61','6100']
+6200	['']

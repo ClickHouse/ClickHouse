@@ -16,7 +16,11 @@ SELECT 'Nullable';
 WITH CAST('a', 'Nullable(Enum8(\'a\' = 1, \'b\' = 2))') AS e
 SELECT has(['a', NULL], e), has(CAST(['a'], 'Array(Nullable(String))'), e), has(['a', NULL], CAST(NULL, 'Nullable(Enum8(\'a\' = 1, \'b\' = 2))')), has(['a'], CAST(NULL, 'Nullable(Enum8(\'a\' = 1, \'b\' = 2))'));
 
+-- The cast to the common type `String` keeps the zero padding of a `FixedString`, so only an element
+-- without padding matches the name.
 SELECT 'FixedString elements';
+WITH CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') AS e
+SELECT has([toFixedString('a', 1)], e), indexOf([toFixedString('b', 1), toFixedString('a', 1)], e);
 WITH CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') AS e
 SELECT has([toFixedString('a', 3)], e), indexOf([toFixedString('b', 1), toFixedString('a', 2)], e);
 
@@ -41,10 +45,13 @@ SELECT count() FROM t_enum_needle WHERE has(['a'], e) SETTINGS use_skip_indexes 
 SELECT count() FROM t_enum_needle WHERE has(['a'], e) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_enum_needle WHERE has(['zzz'], e) SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_enum_needle WHERE has(['zzz'], e) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 1)], e) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 1)], e) SETTINGS use_skip_indexes = 0;
+-- The padded name is not in the `Enum`, so it matches nothing.
 SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 2)], e) SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_enum_needle WHERE has([toFixedString('b', 2)], e) SETTINGS use_skip_indexes = 0;
 -- The index is used and keeps only the granules that hold the name.
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_enum_needle WHERE has(['a'], e)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_enum_needle WHERE has([toFixedString('b', 2)], e)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_enum_needle WHERE has([toFixedString('b', 1)], e)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE t_enum_needle;

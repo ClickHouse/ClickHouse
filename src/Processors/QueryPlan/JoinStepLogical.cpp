@@ -1010,7 +1010,15 @@ static void predicateOperandsToCommonType(
         /// By name: a cast into Bool equals one into UInt8, but it maps 2 to true.
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->getName() == common_type->getName())
             return mapped_it->second;
-        return &dag.addCast(*arg, common_type, {}, nullptr);
+        /// The comparison of `FixedString` with `String` is zero-padded (see `FunctionComparison`): `toFixedString('a', 2) = 'a'`.
+        /// The join keys follow it whatever `cast_fixed_string_to_string_strip_trailing_zeros` is, so the conversion of
+        /// a `FixedString` key to `String` removes the trailing zero bytes, as it always did.
+        /// Such a cast may differ from a `_CAST` written in the query over the same argument, which would get the same
+        /// generated name, and the join keys are looked up by name, so it gets a distinct one.
+        String result_name;
+        if (anyInTypeTree(*arg->result_type, [](const IDataType & type) { return isFixedString(type); }))
+            result_name = fmt::format("_CAST_strip_trailing_zeros({}, '{}')", arg->result_name, common_type->getName());
+        return &dag.addCast(*arg, common_type, std::move(result_name), nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
     };
 
     /// The trim goes before the cast: it rebuilds a tuple without its element names, and the cast restores them.
@@ -2989,7 +2997,14 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
                 operand = JoinActionRef::transform({operand}, [&](ActionsDAG & dag, auto && nodes)
                 {
                     const auto * node = addTrimZeroBytes(dag, nodes.at(0), other_type);
-                    return node->result_type->equals(*common_type) ? node : &dag.addCast(*node, common_type, {}, nullptr);
+                    if (node->result_type->equals(*common_type))
+                        return node;
+                    /// The `FixedString` keys are converted as in `predicateOperandsToCommonType`: without the trailing zero
+                    /// bytes, whatever `cast_fixed_string_to_string_strip_trailing_zeros` is, and under a distinct name.
+                    String result_name;
+                    if (anyInTypeTree(*node->result_type, [](const IDataType & type) { return isFixedString(type); }))
+                        result_name = fmt::format("_CAST_strip_trailing_zeros({}, '{}')", node->result_name, common_type->getName());
+                    return &dag.addCast(*node, common_type, std::move(result_name), nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
                 });
             };
             normalize(lhs, rhs_type);
