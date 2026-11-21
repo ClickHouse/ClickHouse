@@ -1,0 +1,31 @@
+--- a database engine needs TABLE ENGINE, to create and to restore
+denied: TABLE ENGINE ON Filesystem
+denied: TABLE ENGINE ON Filesystem
+0
+--- a database created without an engine is Atomic, which is not checked
+allowed
+denied: TABLE ENGINE ON Memory
+allowed
+--- also when the database exists
+denied: TABLE ENGINE ON Filesystem
+--- on the cluster, a session value of restore_replace_external_engines_to_null skips nothing
+denied: TABLE ENGINE ON Filesystem
+--- nor does a value in the query: an older host would create the database
+denied: TABLE ENGINE ON Filesystem
+0
+--- without ON CLUSTER a value in the query skips the database, which is not created
+allowed
+0
+--- READ and WRITE ON FILE grant the Filesystem engine
+allowed
+1
+--- on the cluster, a session value does not lift the other checks either
+denied: READ ON FILE
+denied: SELECT, INSERT ON db.dst
+denied: WRITE ON S3
+--- nor does a value in the query lift the checks of a database
+denied: READ ON FILE
+denied: SELECT, INSERT ON db.dst
+--- a value in the query lifts the export settings of a table, as every host replaces its engine by Null
+allowed
+Null

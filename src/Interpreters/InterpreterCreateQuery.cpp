@@ -992,14 +992,15 @@ bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const Database
                     "are allowed in a Replicated database");
 }
 
-/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so it is reported as unknown if that is the first missing grant.
-void throwIfEngineIsUnknownAndNotGranted(
-    const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & context)
+}
+
+void InterpreterCreateQuery::throwIfEngineIsUnknownAndNotGranted(
+    const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & local_context)
 {
     if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
                            : StorageFactory::instance().getAllStorages().contains(engine_name))
         return;
-    const auto access = context->getAccess();
+    const auto access = local_context->getAccess();
     if (access->isGranted(AccessType::TABLE_ENGINE, engine_name) || !access->isGranted(required_before))
         return;
     if (is_database_engine)
@@ -1007,8 +1008,6 @@ void throwIfEngineIsUnknownAndNotGranted(
                         engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
                     engine_name, StorageFactory::instance().getHintsMessage(engine_name));
-}
-
 }
 
 /// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
@@ -1057,6 +1056,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         throwIfEngineIsUnknownAndNotGranted(
             create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
+        if (create.isTemporary() && create.storage->engine->name != "Memory")
+            getContext()->checkAccess(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
