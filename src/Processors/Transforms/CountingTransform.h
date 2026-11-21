@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Core/InsertProfileEventsSource.h>
 #include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Access/EnabledQuota.h>
+
+#include <optional>
 
 
 namespace DB
@@ -18,9 +21,11 @@ class CountingTransform final : public ExceptionKeepingTransform
 public:
     explicit CountingTransform(
         SharedHeader header,
+        std::optional<InsertSource> source_,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr,
         UInt64 normalized_query_hash_ = 0)
         : ExceptionKeepingTransform(header, header)
+        , source(source_)
         , quota(std::move(quota_))
         , normalized_query_hash(normalized_query_hash_) {}
 
@@ -47,6 +52,7 @@ public:
 protected:
     ProgressCallback progress_callback;
     QueryStatusPtr process_elem;
+    std::optional<InsertSource> source;
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
