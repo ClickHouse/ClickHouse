@@ -1,0 +1,13 @@
+insert	4	0
+1
+5
+insert, merged	1	8	['p_count','p_errors']
+p_count	1
+p_errors	2
+materialize	2	0
+materialize, column sets	p_count	1
+materialize, column sets	p_errors	1
+materialize, merged	1	4	['p_count','p_errors']
+delete	2	0
+delete, merged	1	5	['p_errors']
+5
