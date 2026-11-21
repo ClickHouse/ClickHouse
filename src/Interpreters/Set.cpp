@@ -1193,7 +1193,7 @@ BoolMask MergeTreeSetIndex::checkInRange(
             }
             return false;
         }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+    auto not_above = [&](size_t row)
         {
             /// Return false if set[row] is above the key range.
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1206,9 +1206,13 @@ BoolMask MergeTreeSetIndex::checkInRange(
                     return true;
             }
             return true;
-        }) - indices.begin();
+        };
 
-    if (begin > end)
+    /// The set is sorted: set[begin] decides whether an element lies in the range, and set[begin - 1], which is below
+    /// the range, can be above it as well only when the range is inverted.
+    bool can_be_true = begin < size() && not_above(begin);
+
+    if (!can_be_true && begin > 0 && !not_above(begin - 1))
     {
         /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
         for (const auto & mapping : indexes_mapping)
@@ -1228,8 +1232,6 @@ BoolMask MergeTreeSetIndex::checkInRange(
         return {true, true};
 #endif
     }
-
-    bool can_be_true = begin < end;
 
     /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool at_most_one_element_range = true;
@@ -1352,7 +1354,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
             }
             return false;
         }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+    auto not_above = [&](size_t row)
         {
             /// Return false if set[row] is above the key range.
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1365,9 +1367,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
                     return true;
             }
             return true;
-        }) - indices.begin();
+        };
 
-    if (begin > end)
+    /// The set is sorted: set[begin] decides whether an element lies in the range, and set[begin - 1], which is below
+    /// the range, can be above it as well only when the range is inverted.
+    bool can_be_true = begin < size() && not_above(begin);
+
+    if (!can_be_true && begin > 0 && !not_above(begin - 1))
     {
         /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
         for (const auto & mapping : indexes_mapping)
@@ -1386,8 +1392,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         return {true, true};
 #endif
     }
-
-    bool can_be_true = begin < end;
 
     /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool at_most_one_element_range = true;
