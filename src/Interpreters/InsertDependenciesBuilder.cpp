@@ -1970,8 +1970,21 @@ bool InsertDependenciesBuilder::insertReachesSerialDestination(
         const auto * materialized_view = view ? dynamic_cast<const StorageMaterializedView *>(view.get()) : nullptr;
         if (!materialized_view)
             return true;
-        auto target = materialized_view->tryGetTargetTable();
-        if (!target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1))
+
+        /// Resolve the target through the context of the INSERT, as `observePath` does: the view's own
+        /// context can retain a stale entry after `DROP TABLE`. A view whose target is dropped is pruned
+        /// from the graph of the nested `INSERT` under these settings and creates no sink there, so it
+        /// must not serialize the outer fan-out either, like in `dependentViewMayWriteToReplicatedTable`.
+        auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+        if (!target)
+        {
+            const auto & settings = context->getSettingsRef();
+            if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                || settings[Setting::materialized_views_ignore_errors])
+                continue;
+            return true;
+        }
+        if (insertReachesSerialDestination(target, context, preserve_input_order, depth + 1))
             return true;
     }
 

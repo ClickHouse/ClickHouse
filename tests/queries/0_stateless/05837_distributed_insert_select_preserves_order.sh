@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Every `DistributedSink` sends its blocks to the shard in a separate insert, so with parallel sinks the table
 # on the shard can get the blocks in another order. An `INSERT SELECT` with one stream into a `Distributed`
-# table must keep a single sink. A `SELECT` with several streams has no input order and keeps parallel sinks.
+# table must keep a single sink. A `SELECT` with several streams has no input order to preserve, but the sink of
+# a `Distributed` table forwards the write through separate inserts that hide the dependent views and the
+# deduplication of the tables on the shards, so such an `INSERT SELECT` is kept single-stream as well, like a
+# plain `INSERT` (see `insertDeduplicationNeedsSingleStream` and `serial_hidden_views` in `InterpreterInsertQuery`).
 
 set -euo pipefail
 
