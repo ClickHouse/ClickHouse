@@ -89,3 +89,19 @@ def test_follower_metrics_decrease_on_stop(started_cluster):
     result = wait_for_follower_count(cluster, leader, expected=2, timeout=30)
     assert int(result["zk_followers"]) == 2
     assert int(result["zk_synced_followers"]) == 2
+
+
+def test_leader_yields_leadership_on_shutdown(started_cluster):
+    """A leader that is shut down hands leadership over to a follower before it
+    stops, so the remaining nodes have a leader right away. Without the handover
+    they could elect one only after an election timeout, which is 5-10 s here."""
+    leader = keeper_utils.get_leader(cluster, ALL_NODES)
+    others = [node for node in ALL_NODES if node != leader]
+
+    leader.stop_clickhouse()
+    try:
+        new_leader = keeper_utils.get_leader(cluster, others)
+        assert new_leader != leader
+    finally:
+        leader.start_clickhouse()
+        keeper_utils.wait_until_connected(cluster, leader)

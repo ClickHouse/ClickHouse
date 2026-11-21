@@ -104,6 +104,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 reserved_log_items;
     extern const CoordinationSettingsMilliseconds shutdown_timeout;
     extern const CoordinationSettingsUInt64 snapshot_distance;
+    extern const CoordinationSettingsMilliseconds yield_leadership_on_shutdown_timeout_ms;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
@@ -1126,6 +1127,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     ///  here could come from the dispatcher on another node.)
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
+    /// A follower learns the new leader from its append entries requests (sent at least once per heartbeat).
+    if (waiting_for_new_leader.load(std::memory_order_relaxed)
+        && (type == nuraft::cb_func::BecomeFollower || type == nuraft::cb_func::GotAppendEntryReqFromLeader))
+    {
+        std::lock_guard lock(new_leader_mutex);
+        new_leader_cv.notify_all();
+    }
+
     if (type == nuraft::cb_func::BecomeLeader)
     {
         startLeaderUptimeMetrics();
@@ -1856,6 +1865,40 @@ void KeeperServer::yieldLeadership()
 {
     if (isLeader())
         raft_instance->yield_leadership();
+}
+
+void KeeperServer::yieldLeadershipBeforeShutdown()
+{
+    const auto timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::yield_leadership_on_shutdown_timeout_ms].totalMilliseconds();
+    if (timeout_ms == 0 || !raft_instance || !checkInit() || is_recovering || !isLeader())
+        return;
+
+    if (raft_instance->getRespondingCounts().synced_followers == 0)
+    {
+        LOG_INFO(log, "Not yielding leadership before shutdown because no follower is in sync");
+        return;
+    }
+
+    auto has_new_leader = [this]
+    {
+        const auto leader_id = raft_instance->get_leader();
+        return leader_id != -1 && leader_id != server_id;
+    };
+
+    LOG_INFO(log, "Yielding leadership before shutdown");
+
+    waiting_for_new_leader = true;
+    SCOPE_EXIT(waiting_for_new_leader = false);
+
+    /// Not immediate: the leader pauses writes and resigns once the successor has caught up with its log,
+    /// or after `election_timeout_upper_bound_ms` if it does not.
+    raft_instance->yield_leadership();
+
+    std::unique_lock lock(new_leader_mutex);
+    if (new_leader_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), has_new_leader))
+        LOG_INFO(log, "Leadership was transferred to server {} before shutdown", raft_instance->get_leader());
+    else
+        LOG_WARNING(log, "No new leader was elected in {} ms after yielding leadership, shutting down anyway", timeout_ms);
 }
 
 void KeeperServer::recalculateStorageStats()
