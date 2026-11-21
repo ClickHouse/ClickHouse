@@ -22,6 +22,9 @@ TABLE_NAME = "promqltest_scenario"
 FLOAT_FRACTION = 0.00001
 FLOAT_MARGIN = 0.0001
 
+# Prometheus marks a stale sample with this exact NaN payload.
+STALE_NAN_SQL = "reinterpretAsFloat64(0x7FF0000000000002)"
+
 _DURATION_TOKEN = re.compile(r"([0-9]*\.?[0-9]+)(ms|s|m|h|d|w|y)")
 _UNITS_NS = {
     "ms": 1_000_000,
@@ -98,15 +101,12 @@ class EvalCase:
     expected_scalar: Optional[float] = None
     has_scalar: bool = False
     native_histogram: bool = False
-    load_with_nhcb: bool = False
     native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
     unparsed_expected: bool = False
     stale_markers: bool = False
 
     def exclusion_reason(self) -> Optional[str]:
-        if self.load_with_nhcb:
-            return "load_with_nhcb"
         if self.native_histogram:
             return "native_histogram_expected_or_loaded"
         if self.stale_markers:
@@ -149,7 +149,6 @@ class Scenario:
     commands: list[LoadBlock | EvalCase]
     native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
-    load_with_nhcb: bool = False
 
     @property
     def loads(self) -> list[LoadBlock]:
@@ -422,6 +421,18 @@ def parse_series_line(line: str) -> SeriesSpec:
     )
 
 
+def nhcb_series_labels(series: SeriesSpec) -> Optional[dict[str, str]]:
+    """Labels of the native histogram that ``load_with_nhcb`` builds from a classic series."""
+    labels = series.label_map()
+    name = labels.get("__name__", "")
+    base = re.sub(r"_(bucket|count|sum)$", "", name)
+    if base == name:
+        return None
+    labels.pop("le", None)
+    labels["__name__"] = base
+    return labels
+
+
 def parse_expected_scalar_line(line: str) -> Optional[float]:
     token = line.strip()
     if not token or token.startswith("#") or token.startswith("expect "):
@@ -482,15 +493,9 @@ def parse_test_file(path: Path) -> list[Scenario]:
             return
         pending_eval.native_hist_series = list(current.native_hist_series)
         pending_eval.start_ts_metric_names = set(current.start_ts_metric_names)
-        pending_eval.load_with_nhcb = current.load_with_nhcb
         if any(s.native_histogram for s in pending_eval.expected_series):
             pending_eval.native_histogram = True
         pending_eval.stale_markers = any(
-            sample.stale
-            for block in current.loads
-            for series in block.series
-            for sample in series.samples
-        ) or any(
             sample.stale
             for series in pending_eval.expected_series
             for sample in series.samples
@@ -546,12 +551,14 @@ def parse_test_file(path: Path) -> list[Scenario]:
                     block.series.append(series)
                     if series.native_histogram:
                         current.native_hist_series.append(series.label_map())
+                    elif with_nhcb:
+                        nhcb = nhcb_series_labels(series)
+                        if nhcb is not None:
+                            current.native_hist_series.append(nhcb)
                     if series.start_timestamp:
                         current.start_ts_metric_names.add(series.metric)
                     i += 1
                 current.commands.append(block)
-                if with_nhcb:
-                    current.load_with_nhcb = True
                 continue
             if name == "clear":
                 finish_scenario()
@@ -676,7 +683,7 @@ def series_insert_values(interval_ns: int, series: SeriesSpec) -> Optional[str]:
             continue
         ts = sample.offset_index * interval_ns
         if sample.stale or (sample.value is not None and math.isnan(sample.value)):
-            val = "nan"
+            val = STALE_NAN_SQL if sample.stale else "nan"
         elif sample.value is None:
             continue
         elif math.isinf(sample.value):
@@ -951,7 +958,6 @@ def update_suite_record(record: dict[str, Any], status: str, reason: str = "") -
 def classify_eval(case: EvalCase) -> Optional[str]:
     reason = case.exclusion_reason()
     if reason in {
-        "load_with_nhcb",
         "native_histogram_expected_or_loaded",
         "query_uses_native_histogram_metric",
     }:
