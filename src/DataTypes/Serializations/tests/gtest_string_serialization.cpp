@@ -8,9 +8,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/StringValueFilter.h>
 #include <Common/ThreadStatus.h>
 
 #include <gtest/gtest.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -116,6 +120,139 @@ auto makeSizeStreamGetter(SizesBuf & sizes_buffer, DataBuf & data_buffer)
     };
 }
 
+class ChunkedStringReadBuffer : public ReadBuffer
+{
+public:
+    ChunkedStringReadBuffer(const String & data_, size_t chunk_size_)
+        : ReadBuffer(nullptr, 0)
+        , data(data_)
+        , chunk_size(chunk_size_)
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        if (offset == data.size())
+            return false;
+
+        const size_t size = std::min(chunk_size, data.size() - offset);
+        auto * begin = const_cast<char *>(data.data() + offset);
+        working_buffer = Buffer(begin, begin + size);
+        offset += size;
+        return true;
+    }
+
+    const String & data;
+    const size_t chunk_size;
+    size_t offset = 0;
+};
+
+/// Decodes values of the given sizes with only the decoding charged to a tracker limited to `memory_limit` bytes.
+void deserializeStringsWithinMemoryLimit(
+    MergeTreeStringSerializationVersion version,
+    std::optional<StringValueFilter::Condition::Type> filter_type,
+    size_t chunk_size,
+    const std::vector<size_t> & value_sizes,
+    Int64 memory_limit,
+    bool shrink_to_fit)
+{
+    MainThreadStatus::getInstance();
+    auto source = ColumnString::create();
+    for (size_t value_size : value_sizes)
+    {
+        const String value(value_size, 'x');
+        source->insertData(value.data(), value.size());
+    }
+    auto serialization = SerializationString::create(version);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    ISerialization::SerializeBinaryBulkSettings write_settings;
+    ISerialization::SerializeBinaryBulkStatePtr write_state;
+    write_settings.position_independent_encoding = false;
+    write_settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+    serialization->serializeBinaryBulkWithMultipleStreams(*source, 0, source->size(), write_settings, write_state);
+
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ChunkedStringReadBuffer data_in(data_out.str(), chunk_size);
+
+    /// Prepare the serialized input before entering the tracker so only decoding is charged.
+    MemoryTracker tracker(&total_memory_tracker, VariableContext::Process, false);
+    tracker.setHardLimit(memory_limit);
+    MemoryTrackerSwitcher switcher(&tracker);
+
+    ISerialization::DeserializeBinaryBulkSettings read_settings;
+    ISerialization::DeserializeBinaryBulkStatePtr read_state;
+    read_settings.position_independent_encoding = false;
+    read_settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    if (filter_type)
+        read_settings.string_value_filter
+            = std::make_shared<StringValueFilter>(std::vector<StringValueFilter::Condition>{{*filter_type, "x"}});
+    serialization->deserializeBinaryBulkStatePrefix(read_settings, read_state, nullptr);
+
+    auto result = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*result, source->size(), read_settings, read_state, nullptr);
+    if (shrink_to_fit)
+        result->shrinkToFit();
+    ASSERT_EQ(result->size(), source->size());
+    for (size_t i = 0; i < source->size(); ++i)
+        EXPECT_EQ(result->getDataAt(i), source->getDataAt(i));
+}
+
+/// A 9 MiB value must fit without allocating a 16 MiB intermediate buffer, and shrinking the column must not copy it.
+void deserializeLargeStringWithinMemoryLimit(
+    MergeTreeStringSerializationVersion version, std::optional<StringValueFilter::Condition::Type> filter_type, size_t chunk_size)
+{
+    deserializeStringsWithinMemoryLimit(version, filter_type, chunk_size, {9 * 1024 * 1024}, 12 * 1024 * 1024, true);
+}
+
+/// A small value after a 9 MiB one must fit into the slack of the first allocation (16 MiB in total)
+/// instead of doubling an exactly sized 9 MiB buffer, which would need 27 MiB while the old buffer is copied.
+void deserializeSmallStringAfterLargeWithinMemoryLimit(
+    MergeTreeStringSerializationVersion version, std::optional<StringValueFilter::Condition::Type> filter_type, size_t chunk_size)
+{
+    deserializeStringsWithinMemoryLimit(version, filter_type, chunk_size, {9 * 1024 * 1024, 1}, 20 * 1024 * 1024, false);
+}
+
+}
+
+TEST(StringSerialization, LargeValueDoesNotRoundAllocationToPowerOfTwo)
+{
+    deserializeLargeStringWithinMemoryLimit(MergeTreeStringSerializationVersion::SINGLE_STREAM, std::nullopt, 16 * 1024 * 1024);
+}
+
+TEST(StringSerialization, FilteredLargeValueDoesNotRoundAllocationToPowerOfTwo)
+{
+    for (auto version : {MergeTreeStringSerializationVersion::SINGLE_STREAM, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM})
+    {
+        SCOPED_TRACE(static_cast<int>(version));
+        /// Exercise values fully in the read buffer and values crossing buffer boundaries.
+        for (size_t chunk_size : {4096, 16 * 1024 * 1024})
+        {
+            SCOPED_TRACE(chunk_size);
+            deserializeLargeStringWithinMemoryLimit(version, StringValueFilter::Condition::Type::Prefix, chunk_size);
+        }
+    }
+    /// WITH_SIZE_STREAM also has a bulk substring-scanning path.
+    deserializeLargeStringWithinMemoryLimit(
+        MergeTreeStringSerializationVersion::WITH_SIZE_STREAM, StringValueFilter::Condition::Type::Substring, 16 * 1024 * 1024);
+}
+
+TEST(StringSerialization, SmallValueAfterLargeValueDoesNotDoubleBuffer)
+{
+    deserializeSmallStringAfterLargeWithinMemoryLimit(MergeTreeStringSerializationVersion::SINGLE_STREAM, std::nullopt, 16 * 1024 * 1024);
+    for (auto version : {MergeTreeStringSerializationVersion::SINGLE_STREAM, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM})
+    {
+        SCOPED_TRACE(static_cast<int>(version));
+        for (size_t chunk_size : {4096, 16 * 1024 * 1024})
+        {
+            SCOPED_TRACE(chunk_size);
+            deserializeSmallStringAfterLargeWithinMemoryLimit(version, StringValueFilter::Condition::Type::Prefix, chunk_size);
+        }
+    }
+    deserializeSmallStringAfterLargeWithinMemoryLimit(
+        MergeTreeStringSerializationVersion::WITH_SIZE_STREAM, StringValueFilter::Condition::Type::Substring, 16 * 1024 * 1024);
 }
 
 /// A faithful WITH_SIZE_STREAM round-trip must keep the reconstructed column internally consistent:
