@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionLowCardinalityFastPath.h>
@@ -3642,6 +3643,118 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     return res;
 }
 
+
+/** arrayElementOrDefault(arr, n, default) - same as arrayElement, but returns the third argument
+  * when the index is out of range (or the key is missing, for maps).
+  * Built on top of arrayElementOrNull: take its result and replace NULLs with the default.
+  */
+class FunctionArrayElementOrDefault : public IFunction
+{
+public:
+    static constexpr auto name = "arrayElementOrDefault";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayElementOrDefault>(context_); }
+
+    explicit FunctionArrayElementOrDefault(ContextPtr context_)
+        : array_element_or_null(context_)
+    {
+    }
+
+    String getName() const override { return name; }
+
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 3; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        DataTypePtr element_type;
+        if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
+        {
+            element_type = map_type->getValueType();
+        }
+        else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get()))
+        {
+            if (!isNativeInteger(arguments[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function '{}' must be integer, got '{}' instead",
+                    getName(),
+                    arguments[1]->getName());
+            element_type = array_type->getNestedType();
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function '{}' must be an array or a map, got '{}' instead",
+                getName(),
+                arguments[0]->getName());
+        }
+
+        /// We detect absent elements via arrayElementOrNull, so the element type must fit into Nullable.
+        const DataTypePtr element_not_null = removeNullable(element_type);
+        if (!element_not_null->canBeInsideNullable())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function '{}' does not support the element type '{}' because it cannot be wrapped in Nullable",
+                getName(),
+                element_type->getName());
+
+        return getLeastSupertype(DataTypes{element_not_null, arguments[2]});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        /// arrayElementOrNull returns NULL where the index is out of range or the key is missing.
+        const DataTypePtr nullable_type = array_element_or_null.getReturnTypeImpl({arguments[0].type, arguments[1].type});
+
+        /// arrayElement handles a constant array (or map) with a full index column, and a full array with a constant index,
+        /// without copying the constant. Only the all-constant case is left to the default implementation for constants,
+        /// which is not used when calling it directly. In that case materialize the index, which is cheap,
+        /// but never the array, to avoid one copy of the whole array per row.
+        ColumnsWithTypeAndName element_arguments{arguments[0], arguments[1]};
+        if (isColumnConst(*arguments[0].column) && isColumnConst(*arguments[1].column))
+            element_arguments[1].column = arguments[1].column->convertToFullColumnIfConst();
+
+        ColumnPtr nullable_column = array_element_or_null.executeImpl(element_arguments, nullable_type, input_rows_count);
+        nullable_column = nullable_column->convertToFullColumnIfConst();
+
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(*nullable_column);
+        const auto & null_map = column_nullable.getNullMapData();
+
+        /// Bring the elements to the common result type. Only the present elements are converted:
+        /// an absent element holds a placeholder value that is not necessarily valid for the element type
+        /// (e.g. zero for an Enum without such a value), and its conversion could throw.
+        IColumn::Filter present(input_rows_count);
+        size_t num_present = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            present[row] = !null_map[row];
+            num_present += present[row];
+        }
+
+        const ColumnPtr present_column = column_nullable.getNestedColumn().filter(present, static_cast<ssize_t>(num_present));
+        const ColumnPtr present_elements = castColumn({present_column, removeNullable(nullable_type), ""}, result_type);
+        const ColumnPtr defaults = castColumn({arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, ""}, result_type);
+
+        auto result = result_type->createColumn();
+        result->reserve(input_rows_count);
+        size_t present_row = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+                result->insertFrom(*defaults, row);
+            else
+                result->insertFrom(*present_elements, present_row++);
+        }
+
+        return result;
+    }
+
+private:
+    const FunctionArrayElement<ArrayElementExceptionMode::Null> array_element_or_null;
+};
 }
 
 REGISTER_FUNCTION(ArrayElement)
@@ -3730,5 +3843,44 @@ The first argument may also be a [`Map`](/reference/data-types/map): an absent k
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+
+    FunctionDocumentation::Description description_or_default = R"(
+Gets the element of an array by index, or the value of a map by key.
+If the index falls outside of the bounds of the array, or the key is not present in the map, the provided default value is returned instead.
+
+This function is the counterpart of [`arrayElementOrNull`](#arrayElementOrNull): it behaves like `arrayElementOrNull` but substitutes the provided default value wherever `arrayElementOrNull` would return `NULL` (including when the looked-up element itself is `NULL`).
+
+The result type is the least common supertype of the array element (or map value) type and the default value type.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
+
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+)";
+    FunctionDocumentation::Syntax syntax_or_default = "arrayElementOrDefault(arr, n, default)";
+    FunctionDocumentation::Arguments arguments_or_default
+        = {{"arr", "The array or map to search.", {"Array(T)", "Map(K, V)"}},
+           {"n", "The index of the array element, or the key of the map value, to get.", {"(U)Int*", "Any"}},
+           {"default", "The value to return when the index is out of bounds or the key is not found.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue returned_value_or_default
+        = {"Returns the element at index `n` (or the value for key `n`), or `default` if it is absent.", {"Any"}};
+    FunctionDocumentation::Examples examples_or_default
+        = {{"Index in bounds", "SELECT arrayElementOrDefault([1, 2, 3], 2, 10)", "2"},
+           {"Index out of bounds", "SELECT arrayElementOrDefault([1, 2, 3], 4, 10)", "10"},
+           {"Missing map key", "SELECT arrayElementOrDefault(map('a', 1), 'b', -1)", "-1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_or_default = {26, 6};
+    FunctionDocumentation::Category category_or_default = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_or_default
+        = {description_or_default,
+           syntax_or_default,
+           arguments_or_default,
+           {},
+           returned_value_or_default,
+           examples_or_default,
+           introduced_in_or_default,
+           category_or_default};
+
+    factory.registerFunction<FunctionArrayElementOrDefault>(documentation_or_default);
 }
 }
