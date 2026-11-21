@@ -1587,6 +1587,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+    assertNotImmutable("Lightweight UPDATE");
     auto context_copy = Context::createCopy(query_context);
 
     /// Unlike `StorageReplicatedMergeTree::updateLightweight`, the partitions of the scoped commands are
@@ -3878,6 +3879,7 @@ void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, Conte
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     assertNotReadonly();
+    assertNotImmutable("TRUNCATE");
 
     {
         /// Asks to complete merges and does not allow them to start.
