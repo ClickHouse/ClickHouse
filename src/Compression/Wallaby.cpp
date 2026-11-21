@@ -1648,6 +1648,7 @@ struct StreamEncoder
     static constexpr double DICT_HEADER_BITS = 26;
     static constexpr UInt32 STRIPE = 256;
     static constexpr UInt32 DICT_SAMPLE = 512;
+    static constexpr double RUNS_MARGIN = 1.02;
     static constexpr UInt32 PROV_RUN = 1u << 29;
     static constexpr UInt16 NO_TOKEN = 0xffff;
 
@@ -1964,6 +1965,7 @@ struct StreamEncoder
         };
         Choice best;
         const bool long_runs = zeros >= 256 * std::max<UInt32>(zero_runs, 1);
+        const bool token_saving = UInt64(zeros - std::min(zeros, zero_runs)) * 4 >= sampled;
         /// `zero_bin_extra` is the number of non-zero values in the bin that the zeros would join when they are
         /// ordinary tokens (~0u when they get a bin of their own); `zero_raw` is the raw bits per such zero.
         auto consider = [&](double sum_xlx, double raw_bits, UInt32 used, UInt32 zero_bin_extra, double zero_raw, Choice c)
@@ -1999,6 +2001,10 @@ struct StreamEncoder
                 /// Very long runs make few tokens, which are much faster to code in both directions than a token
                 /// per zero, and need a smaller table: they are preferred when the size is about the same.
                 double key = long_runs ? bits - 64 - 2.0 * zero_runs * scale : bits;
+                /// Runs that save few tokens save little time in the encoder and cost time in the decoder, which
+                /// takes a slower path for them: they have to pay with a smaller size.
+                if (!token_saving)
+                    key = bits * RUNS_MARGIN;
                 if (key < best.key)
                 {
                     best = c;
