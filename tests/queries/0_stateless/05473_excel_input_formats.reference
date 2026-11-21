@@ -1,0 +1,148 @@
+--- XLSX: schema inference
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+note	Nullable(String)					
+--- XLSX: data
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00.000	true	bold part
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59.000	false	x
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01.000	\N	  spaced  
+4	line1\nline2	100000000000000000000	\N	\N	true	\N
+5	tab\there	123456789012	1900-01-01	1900-03-01 12:00:00.000	false	A literal
+--- XLSX: sheet by name with an offset range
+10	x	\N	\N
+30	z	\N	\N
+\N	\N	\N	far
+--- XLSX: sheet by index
+10	x	\N	\N
+30	z	\N	\N
+\N	\N	\N	far
+--- XLSX: keep empty rows
+10	x	\N	\N
+\N	\N	\N	\N
+30	z	\N	\N
+\N	\N	\N	\N
+\N	\N	\N	\N
+\N	\N	\N	\N
+\N	\N	\N	far
+--- XLSX: no header
+a	b	\N	\N
+10	x	\N	\N
+30	z	\N	\N
+\N	\N	\N	far
+--- XLSX: range
+apple	1.5
+banana & <co>	0.25
+Ünïcödé 日本	-3
+--- XLSX: open-ended range
+Ünïcödé 日本	-3
+line1\nline2	100000000000000000000
+tab\there	123456789012
+--- XLSX: explicit structure
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00	true
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59	false
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01	\N
+--- XLSX: everything as String
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00	true
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59	false
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01	
+4	line1\nline2	100000000000000000000			true
+5	tab\there	123456789012	1900-01-01	1900-03-01 12:00:00	false
+--- XLS: schema inference
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+time	Nullable(String)					
+--- XLS: data
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00.000	true	12:30:00
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59.000	false	00:15:00
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01.000	\N	\N
+4	line1\nline2	100000000000000000000	\N	\N	true	\N
+5	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	123456789012	1900-01-01	1900-03-01 12:00:00.000	false	\N
+--- XLS: sheet by name with an offset range
+10	x
+30	z
+--- XLS: sheet by index
+10	x
+30	z
+--- XLS: keep empty rows
+10	x
+\N	\N
+30	z
+--- XLS: no header
+a	b
+10	x
+30	z
+--- XLS: range
+apple	1.5
+banana & <co>	0.25
+Ünïcödé 日本	-3
+--- XLS: open-ended range
+Ünïcödé 日本	-3
+line1\nline2	100000000000000000000
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	123456789012
+--- XLS: explicit structure
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00	true
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59	false
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01	\N
+--- XLS: everything as String
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00	true
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59	false
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01	
+4	line1\nline2	100000000000000000000			true
+5	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	123456789012	1900-01-01	1900-03-01 12:00:00	false
+--- XLSX: numbers with a non-integer value in one column
+1	2.5	3
+4	5	6
+--- XLSX: the first visible sheet
+visible
+--- XLSX: a hidden sheet by name
+hidden
+--- XLSX: formulas
+1	2	3	x1	\N	true
+3.5	4	7.5	y3.5	0.875	false
+10	20	200		\N	true
+--- XLS: formulas
+1	2	3	x1	\N	true
+3.5	4	7.5	y3.5	0.875	false
+10	20	200		\N	true
+--- XLS: written by LibreOffice
+1	apple	1.5	2024-01-15	2024-01-15 10:30:00.000	true	bold part
+2	banana & <co>	0.25	1965-07-04	2000-02-29 23:59:59.000	false	x
+3	Ünïcödé 日本	-3	2100-12-31	1999-12-31 00:00:01.000	\N	  spaced  
+4	line1\nline2	100000000000000000000	\N	\N	true	\N
+5	tab\there	123456789012	1900-01-01	1900-03-01 12:00:00.000	false	A literal
+--- XLS: many shared strings
+1000	500500	22396	string number 999 üüüüü
+--- XLS: BIFF5
+name	Nullable(String)					
+value	Nullable(String)					
+day	Nullable(Date32)					
+--- XLS: BIFF5 data
+café €	-7	2024-01-15
+Grüße	2.5	\N
+end	true	\N
+--- XLS: time format
+12:30:00
+00:15:00
+\N
+\N
+\N
+--- XLSX: from stdin
+1	apple
+2	banana & <co>
+3	Ünïcödé 日本
+4	line1\nline2
+5	tab\there
+--- errors
+does not have a sheet 'Missing'
+Invalid cell range
+while reading the column 'name'
+CANNOT_UNPACK_ARCHIVE
+it does not have the signature of the Compound File Binary format

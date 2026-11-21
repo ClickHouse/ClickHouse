@@ -7,6 +7,9 @@ https://storage.azure.com
 https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 https://oauth2.googleapis.com/token
 
+# XML namespace and relationship type identifiers of Office Open XML (`XLSX`), not web pages.
+http://schemas.openxmlformats.org/
+
 # Not pages: SAX feature and property identifiers in base/poco/XML, which only have the form of a URL.
 http://xml.org/sax/features/
 http://xml.org/sax/properties/

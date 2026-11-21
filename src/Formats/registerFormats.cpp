@@ -85,6 +85,8 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+void registerInputFormatExcel(FormatFactory & factory);
+void registerOutputFormatXLSX(FormatFactory & factory);
 #if USE_SQLITE
 void registerInputFormatSQLite(FormatFactory & factory);
 void registerOutputFormatSQLite(FormatFactory & factory);
@@ -171,6 +173,7 @@ void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+void registerExcelSchemaReaders(FormatFactory & factory);
 #if USE_SQLITE
 void registerSQLiteSchemaReader(FormatFactory & factory);
 #endif
@@ -261,6 +264,10 @@ void registerFormats()
     registerOutputFormatVortex(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
+    /// The output format is registered first, because `registerInputFormatExcel` attaches the documentation of `XLSX`,
+    /// and the input format of `XLSX` is not available in builds without `minizip`.
+    registerOutputFormatXLSX(factory);
+    registerInputFormatExcel(factory);
 #if USE_SQLITE
     registerInputFormatSQLite(factory);
     registerOutputFormatSQLite(factory);
@@ -348,6 +355,7 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+    registerExcelSchemaReaders(factory);
 #if USE_SQLITE
     registerSQLiteSchemaReader(factory);
 #endif
