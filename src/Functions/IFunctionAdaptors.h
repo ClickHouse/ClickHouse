@@ -27,6 +27,11 @@ protected:
     [[nodiscard]] bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
     [[nodiscard]] bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
+    [[nodiscard]] ColumnPtr executeForLowCardinalityResultImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
+    {
+        return function->executeForLowCardinalityResultImpl(arguments, result_type, input_rows_count);
+    }
     [[nodiscard]] bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
     [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
 

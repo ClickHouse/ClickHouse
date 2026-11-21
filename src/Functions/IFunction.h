@@ -110,6 +110,18 @@ protected:
       */
     [[nodiscard]] virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** Called before the default implementation for LowCardinality when the result type is LowCardinality.
+      * The default implementation computes the result as a full column and then inserts every row into a new
+      * dictionary, which costs a hash table lookup per row. A function whose result is drawn from a small set
+      * of values known in advance (e.g. `if` with constant branches) can build the dictionary indexes directly.
+      * Returns nullptr to use the default implementation.
+      */
+    [[nodiscard]] virtual ColumnPtr executeForLowCardinalityResultImpl(
+        const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
+    {
+        return nullptr;
+    }
+
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
@@ -721,6 +733,18 @@ public:
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
     [[nodiscard]] virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+
+    /** Called before the default implementation for LowCardinality when the result type is LowCardinality.
+      * The default implementation computes the result as a full column and then inserts every row into a new
+      * dictionary, which costs a hash table lookup per row. A function whose result is drawn from a small set
+      * of values known in advance (e.g. `if` with constant branches) can build the dictionary indexes directly.
+      * Returns nullptr to use the default implementation.
+      */
+    [[nodiscard]] virtual ColumnPtr executeForLowCardinalityResultImpl(
+        const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
+    {
+        return nullptr;
+    }
 
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
