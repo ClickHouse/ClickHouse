@@ -1369,17 +1369,8 @@ bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UI
     return true;
 }
 
-/// Whether the first rows of a chunk share one cell, which predicts long runs of equal keys in the chunk.
-bool directIndexChunkStartsWithRun(const UInt32 * __restrict cells, size_t size)
-{
-    static constexpr size_t probe_rows = 32;
-    if (size < probe_rows)
-        return false;
-    UInt32 diff = 0;
-    for (size_t i = 1; i < probe_rows; ++i)
-        diff |= cells[i] ^ cells[0];
-    return diff == 0;
-}
+/// Rows of a group that a lone `count` adds at once when they share one cell.
+constexpr size_t direct_index_count_group_rows = 16;
 
 template <typename T>
 void addDirectIndexKey(const T * __restrict data, size_t rows, UInt64 min_value, UInt32 stride, UInt32 * __restrict row_cells, bool first)
@@ -1511,24 +1502,31 @@ bool NO_INLINE Aggregator::executeDirectIndexBlock(
                 }
             }
         }
-        else if (directIndexChunkStartsWithRun(row_cells + chunk_begin, chunk_size))
-        {
-            /// A run of equal keys is counted at once: counting it row by row makes each row wait for the previous store.
-            for (size_t i = chunk_begin; i < chunk_end;)
-            {
-                const UInt32 cell = row_cells[i];
-                size_t run_end = i + 1;
-                while (run_end < chunk_end && row_cells[run_end] == cell)
-                    ++run_end;
-                if (counts[cell] == 0 && !use_cell(cell, i))
-                    return give_up();
-                counts[cell] += static_cast<UInt32>(run_end - i);
-                i = run_end;
-            }
-        }
         else
         {
-            for (size_t i = chunk_begin; i < chunk_end; ++i)
+            /// A group of rows of one cell is added at once: counting it row by row makes each row wait for the previous store.
+            size_t i = chunk_begin;
+            for (; i + direct_index_count_group_rows <= chunk_end; i += direct_index_count_group_rows)
+            {
+                const UInt32 cell = row_cells[i];
+                UInt32 diff = 0;
+                for (size_t k = 1; k < direct_index_count_group_rows; ++k)
+                    diff |= row_cells[i + k] ^ cell;
+                if (diff == 0)
+                {
+                    if (counts[cell] == 0 && !use_cell(cell, i))
+                        return give_up();
+                    counts[cell] += static_cast<UInt32>(direct_index_count_group_rows);
+                    continue;
+                }
+                for (size_t k = i; k < i + direct_index_count_group_rows; ++k)
+                {
+                    const UInt32 row_cell = row_cells[k];
+                    if (counts[row_cell]++ == 0 && !use_cell(row_cell, k))
+                        return give_up();
+                }
+            }
+            for (; i < chunk_end; ++i)
             {
                 const UInt32 cell = row_cells[i];
                 if (counts[cell]++ == 0 && !use_cell(cell, i))
