@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # A FileLog read that fails (here a line that does not parse, with the default handle_error_mode)
-# must not leave the table locked: the next read works and later lines are consumed.
+# must not leave the table locked, and must not consume the lines it read: the next read fails the same way,
+# and once the line is fixed, all lines are read.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,9 +18,10 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log (a UInt64) ENGINE = FileLog('${lo
 
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log" 2>&1 \
     | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT count() FROM file_log"
+${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log" 2>&1 \
+    | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
 
-printf '{"a":3}\n' >> "${logs_dir}/a.jsonl"
+printf '{"a":1}\n{"a":2}\n{"a":3}\n' > "${logs_dir}/a.jsonl"
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
