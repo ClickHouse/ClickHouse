@@ -31,6 +31,11 @@ SELECT 's lc', count() FROM file(currentDatabase() || '_05839.orc', ORC, 's LowC
 SELECT 's lc', count() FROM file(currentDatabase() || '_05839.orc', ORC, 's LowCardinality(String)') WHERE NOT startsWith(s, 'abc')
     SETTINGS input_format_orc_filter_push_down = 0;
 
-SELECT 't.x', count() FROM file(currentDatabase() || '_05839.orc', ORC, 't Tuple(x Float64)') WHERE NOT (t.x > 0.5);
+SELECT 't.x', count() FROM file(currentDatabase() || '_05839.orc', ORC, 't Tuple(x Float64)') WHERE NOT (t.x > 0.5) SETTINGS log_comment = '05839_tx';
 SELECT 't.x', count() FROM file(currentDatabase() || '_05839.orc', ORC, 't Tuple(x Float64)') WHERE NOT (t.x > 0.5)
     SETTINGS input_format_orc_filter_push_down = 0;
+
+-- Under `NOT` a struct element prunes no row group, so all 40000 rows are read.
+SYSTEM FLUSH LOGS query_log;
+SELECT 't.x rows read', read_rows FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05839_tx';
