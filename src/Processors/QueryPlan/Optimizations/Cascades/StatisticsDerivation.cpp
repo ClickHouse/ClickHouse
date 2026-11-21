@@ -306,7 +306,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
                 key_distinct_values.add(
                     column_statistics->second.num_distinct_values,
                     column_statistics->second.num_distinct_values,
-                    column_statistics->second.num_distinct_values_from_metadata);
+                    column_statistics->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata);
             else
                 key_distinct_values.add(std::nullopt, row_count, false);
         };
@@ -430,7 +430,7 @@ void addDistinctValuesFromMetadata(
     {
         auto & column_stats = statistics.column_statistics[column_name];
         column_stats.num_distinct_values = distinct_values;
-        column_stats.num_distinct_values_from_metadata = true;
+        column_stats.ndv_provenance = {.origin = ColumnStatsOrigin::EstimatedFromMetadata};
     }
 }
 
@@ -751,8 +751,9 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
         auto & key_statistics = aggregation_statistics.column_statistics[key];
         key_statistics.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
         if (auto input_key_statistics = input_statistics.column_statistics.find(key);
-            input_key_statistics != input_statistics.column_statistics.end() && input_key_statistics->second.num_distinct_values > 0)
-            key_statistics.num_distinct_values_from_metadata = input_key_statistics->second.num_distinct_values_from_metadata;
+            input_key_statistics != input_statistics.column_statistics.end() && input_key_statistics->second.num_distinct_values > 0
+            && input_key_statistics->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata)
+            key_statistics.ndv_provenance.origin = ColumnStatsOrigin::EstimatedFromMetadata;
     }
 
     aggregation_statistics.min_row_count = 0;

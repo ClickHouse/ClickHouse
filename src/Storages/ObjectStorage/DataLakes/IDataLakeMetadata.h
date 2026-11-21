@@ -67,7 +67,7 @@ struct DataLakeReadEstimate
     /// conditions on them; nullptr if no requested column has statistics.
     std::shared_ptr<const ConditionSelectivityEstimator> estimator;
     /// The columns whose numbers of distinct values in `estimator` are estimated from the sizes of the column in the
-    /// files rather than measured, see `ColumnStats::num_distinct_values_from_metadata`.
+    /// files rather than measured, see `ColumnStatsOrigin::EstimatedFromMetadata`.
     NameSet distinct_values_from_metadata;
 };
 
