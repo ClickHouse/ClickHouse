@@ -492,9 +492,24 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
+        if (!getSettings()[Setting::optimize_inverse_dictionary_lookup] || !node->as<FunctionNode>())
             return;
 
+        /// A node referenced from several places (an alias shared by `GROUP BY` and `ORDER BY`) is visited once per
+        /// reference: rewrite it on the first visit only, and give every later reference the same result.
+        if (auto it = rewritten_nodes.find(node); it != rewritten_nodes.end())
+        {
+            node = it->second;
+            return;
+        }
+
+        QueryTreeNodePtr original_node = node;
+        rewrite(node);
+        rewritten_nodes.emplace(std::move(original_node), node);
+    }
+
+    void rewrite(QueryTreeNodePtr & node)
+    {
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
@@ -650,6 +665,8 @@ public:
                     equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
                     resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
 
+                    /// Final, also when the key is a `dictGet`: the node is visited again inside the cast or via a shared parent.
+                    rewritten_nodes.emplace(equals_node, equals_node);
                     node = preserveResultType(equals_node, original_result_type);
                     return;
                 }
@@ -669,6 +686,8 @@ public:
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
                 resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
+                /// Final for the same reason as `equals` above: `rewriteIn` would rewrite it again.
+                rewritten_nodes.emplace(in_function_node, in_function_node);
                 node = preserveResultType(in_function_node, original_result_type);
                 return;
             }
@@ -1041,6 +1060,7 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> rewritten_nodes;
 };
 
 }
