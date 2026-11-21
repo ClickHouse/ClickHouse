@@ -4288,6 +4288,7 @@ String ClientBase::getPrompt() const
     }
 
     boost::replace_all(pattern, "{display_name}", display_name);
+    boost::replace_all(pattern, "{database}", default_database.empty() ? "default" : default_database);
 
     /// A custom prompt does not have to contain the display name (e.g. `--prompt '{user}@{host}'`),
     /// but the active dialect still has to be visible - append it before the trailing smiley, if any.
@@ -4444,6 +4445,7 @@ void ClientBase::initAIProvider()
         LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
     }
 }
+#endif
 
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
@@ -4539,7 +4541,6 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         return "";
     }
 }
-#endif
 
 Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
@@ -4755,6 +4756,22 @@ bool ClientBase::processHelpCommand(const String & word_arg)
     }
 
     return true;
+}
+
+void ClientBase::syncDefaultDatabase()
+{
+    try
+    {
+        const auto db = executeQueryForSingleString("SELECT currentDatabase()");
+        if (!db.empty())
+            default_database = db;
+        else
+            LOG_WARNING(getLogger("ClientBase"), "syncDefaultDatabase: server returned empty result for SELECT currentDatabase()");
+    }
+    catch (...)
+    {
+        LOG_WARNING(getLogger("ClientBase"), "syncDefaultDatabase: failed to query current database from server: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 #if USE_CLIENT_AI
