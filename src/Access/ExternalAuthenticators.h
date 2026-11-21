@@ -46,10 +46,9 @@ public:
     bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
-
-private:
     HTTPAuthClientParams getHTTPAuthenticationParams(const String& server) const;
 
+private:
     struct LDAPCacheEntry
     {
         UInt128 last_successful_params_hash = 0;

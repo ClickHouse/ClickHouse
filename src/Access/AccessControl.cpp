@@ -8,6 +8,7 @@
 #include <Access/EnabledSettings.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPAccessStorage.h>
+#include <Access/HTTPAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/OneTimePasswordUsageTracker.h>
@@ -563,6 +564,10 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
             addLDAPStorage(name, config, prefix);
+        }
+        else if (type == HTTPAccessStorage::STORAGE_TYPE)
+        {
+            addStorage(std::make_shared<HTTPAccessStorage>(name, *this, config, prefix));
         }
         else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
         {

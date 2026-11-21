@@ -1,0 +1,9 @@
+--- a reattached named session
+1	1
+ACCESS_DENIED
+--- a distributed query with the interserver secret
+2
+--- background queries
+ACCESS_DENIED
+ACCESS_DENIED
+inserted by background queries

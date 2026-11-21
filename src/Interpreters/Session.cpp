@@ -1,6 +1,7 @@
 #include <Interpreters/Session.h>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
@@ -23,6 +24,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -60,6 +62,8 @@ struct NamedSessionData
     std::chrono::steady_clock::duration timeout;
     std::chrono::steady_clock::time_point close_time_bucket{};
     NamedSessionsStorage & parent;
+    /// The roles and settings of the authentication which created the session: `EXECUTE AS` changes the roles of `context`.
+    std::pair<std::set<UUID>, SettingsChanges> authentication;
 
     NamedSessionData(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessionsStorage & parent_)
         : key(std::move(key_)), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
@@ -397,6 +401,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
                       toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
         }
+
+        /// Roles returned by the access storage for this authentication (e.g. by `HTTPAccessStorage`).
+        external_roles.insert(external_roles.end(), auth_result.external_roles.begin(), auth_result.external_roles.end());
     }
     catch (const Exception & e)
     {
@@ -637,6 +644,29 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     std::tie(new_named_session, new_named_session_created)
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
+    /// Until `named_session` owns it, a failure must not leave the session acquired: a reused session is released,
+    /// a created one (maybe half-initialized) is removed. Its context is kept here to be destroyed outside the storage lock.
+    SCOPE_EXIT(
+    {
+        if (named_session)
+            return;
+        if (!new_named_session_created)
+        {
+            new_named_session->release();
+            return;
+        }
+        auto context_to_destroy = new_named_session->context;
+        NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+    });
+
+    /// Roles are per authentication, but sessions are keyed by user: another authentication must not inherit the roles of the session.
+    /// The settings are copied before `checkSettingsConstraints` drops the changes equal to the current values.
+    auto authentication = std::pair{std::set<UUID>(external_roles.begin(), external_roles.end()), settings_from_auth_server};
+    if (new_named_session_created)
+        new_named_session->authentication = std::move(authentication);
+    else if (new_named_session->authentication != authentication)
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Session {} cannot be reused: the roles or settings of this authentication differ from those of the session", session_name_);
+
     auto new_session_context = new_named_session->context;
     new_session_context->makeSessionContext();
 
@@ -653,6 +683,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     {
         new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+        new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+        new_session_context->applySettingsChanges(settings_from_auth_server);
     }
     else
     {
@@ -754,6 +786,12 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setCurrentAddress(*prepared_client_info->current_address);
     }
 
+    /// `EXECUTE AS` may have switched the session context to another user, but the client info names the login user
+    /// (e.g. a reattached named session, or gRPC). Name the user of the session context, so that `currentUser`
+    /// and the initial user sent to other servers (set below for an initial query) match its access rights.
+    if (session_context && session_context->getUserID() != user_id)
+        query_context->setCurrentUserName(session_context->getUserName());
+
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
     {
@@ -788,15 +826,25 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !query_context->getAccess()->tryGetUser())
+    /// A detached query runs as the user of the session context, which `EXECUTE AS` may have switched.
+    if (detached && session_context)
+        query_context->setUser(*session_context->getUserID(), session_context->getExternalRoles(),
+            session_context->getAuthenticationGrants(), session_context->getAuthenticationValidUntil());
+    else if (user_id && !query_context->getAccess()->tryGetUser())
+    {
         query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        /// Without a session context (e.g. gRPC without `session_id`, Prometheus) apply them as `makeSessionContext` does.
+        query_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_from_auth_server);
+    }
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
 
     if (detached && session_context)
     {
-        query_context->setCurrentRoles(session_context->getCurrentRoles());
+        /// Without the grant check: the current roles include the external ones, which are not granted but set by `setUser` above.
+        query_context->setCurrentRoles(session_context->getCurrentRoles(), /* check_grants= */ false);
         query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
         query_context->setSettings(session_context->getSettingsRef());
         if (const String database = session_context->getCurrentDatabase(); !database.empty())
