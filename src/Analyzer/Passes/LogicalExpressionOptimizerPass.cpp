@@ -416,6 +416,9 @@ struct ComparisonFilterInfo
     /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
+    /// A merge into `notIn` rebuilds the constant from a `Field`, which carries no discriminator, so a
+    /// comparison whose operand order comes from the discriminator stays a plain comparison.
+    bool orders_type_before_value = false;
 };
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
@@ -460,6 +463,15 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     default:
         return result;
     }
+}
+
+/// `IColumn::compareAt` orders a value that carries its own type by that type's place in the
+/// name-sorted alternative list before it looks at the value, while this analysis orders a `Field` by
+/// its own type tag; for `Variant(Float64, Int64)` the two are reversed.
+static bool comparisonOrdersTypeBeforeValue(const DataTypePtr & type)
+{
+    /// `hasDynamicStructure` is false for a `Variant` of static alternatives.
+    return type->hasDynamicStructure() || anyInTypeTree(*type, [](const IDataType & child) { return isVariant(child); });
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -903,6 +915,11 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
+    /// A comparison is evaluated at the operands' supertype, which carries its own type iff an operand does.
+    new_filter.orders_type_before_value
+        = comparisonOrdersTypeBeforeValue(getComparisonFilterExpressionNode(expression)->getResultType())
+        || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType());
+
     /// A comparison with a nullable result is ambiguous under NULL and must not be pruned or folded;
     /// keep it as-is. Test the comparison node's result type, not the raw operand type, so nested and
     /// carrier-hidden nullability (e.g. `LowCardinality(Nullable)`, `Dynamic`, `Variant`) is caught.
@@ -916,9 +933,9 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = getComparisonFilterExpressionNode(expression)->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
-    /// A converted constant is not an exact orderable point for a `Variant` expression, so it must not
-    /// drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
-    if (anyInTypeTree(*expr_type, [](const IDataType & type) { return isVariant(type); }))
+    /// A converted constant is not an exact orderable point for a value that carries its own type, so it
+    /// must not drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
+    if (new_filter.orders_type_before_value)
     {
         filter_map[expression].opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
@@ -2271,7 +2288,7 @@ private:
 
             for (auto & filter : filters.opaque_filters)
             {
-                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS && !filter.orders_type_before_value)
                     not_equals_infos.push_back(&filter);
                 else
                     all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
