@@ -5659,7 +5659,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     QueryTreeNodes result_table_function_arguments;
 
-    auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    auto arguments_indexes_to_skip = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    /// Positions in result_table_function_arguments, which differ from the argument indexes once an argument expands into a list.
+    VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes;
 
     bool previous_table_function_arguments_in_resolve_process = table_function_arguments_in_resolve_process;
     table_function_arguments_in_resolve_process = true;
@@ -5671,12 +5673,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
         auto & table_function_argument = table_function_arguments[table_function_argument_index];
+        const size_t argument_position = result_table_function_arguments.size();
 
-        auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(),
-            skip_analysis_arguments_indexes.end(),
-            table_function_argument_index);
-        if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+        auto skip_argument_index_it = std::find(arguments_indexes_to_skip.begin(),
+            arguments_indexes_to_skip.end(),
+            argument_position);
+        if (skip_argument_index_it != arguments_indexes_to_skip.end())
         {
+            skip_analysis_arguments_indexes.push_back(argument_position);
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -5703,7 +5707,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
             if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
                 != previous_unresolved_indexes.end())
-                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                skip_analysis_arguments_indexes.push_back(argument_position);
 
             result_table_function_arguments.push_back(table_function_argument);
             continue;
@@ -5729,7 +5733,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// on the initiator, because it pattern-matches tables that may only exist
                     /// on the remote server.
                     /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
-                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                    skip_analysis_arguments_indexes.push_back(argument_position);
                 }
                 else
                 {
@@ -5776,7 +5780,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                   * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
                   * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
                   */
-                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                skip_analysis_arguments_indexes.push_back(argument_position);
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
@@ -5796,6 +5800,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             for (auto & expression_list_node : expression_list->getNodes())
                 result_table_function_arguments.push_back(expression_list_node);
+
+            /// The next arguments moved, so ask again which of them to skip, at their new positions.
+            auto expanded_table_function_node = std::make_shared<TableFunctionNode>(table_function_name);
+            auto & expanded_arguments = expanded_table_function_node->getArguments().getNodes();
+            expanded_arguments = result_table_function_arguments;
+            expanded_arguments.insert(expanded_arguments.end(),
+                table_function_arguments.begin() + table_function_argument_index + 1, table_function_arguments.end());
+            arguments_indexes_to_skip = table_function_ptr->skipAnalysisForArguments(expanded_table_function_node, scope_context);
         }
         else
         {
