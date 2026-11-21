@@ -37,16 +37,17 @@ check "SELECT * FROM mysql('127.0.0.1:1', 'db', 't', 'u', 'p')"
 $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('127.0.0.1:0', 'db', 't', 'u', 'p')" 2>&1 \
     | grep -q -F "MySQL port 0" && echo "port 0: rejected" || echo "port 0: connection failed"
 
-# A dictionary socket is used only for `localhost`; for another host it is ignored and port 0 is rejected.
+# A dictionary created with a DDL query cannot set `socket` (see 05229_mysql_dictionary_socket), so port 0 is rejected
+# for `localhost` too.
 function check_dictionary()
 {
     $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "
         CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_mysql (x UInt64, y String) PRIMARY KEY x
-        SOURCE(MYSQL(HOST '$1' PORT 0 SOCKET '$2' USER 'u' PASSWORD 'p' DB 'db' TABLE 't'))
+        SOURCE(MYSQL(HOST '$1' PORT 0 USER 'u' PASSWORD 'p' DB 'db' TABLE 't'))
         LAYOUT(FLAT()) LIFETIME(0)"
     local output
     output=$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM ${CLICKHOUSE_DATABASE}.d_mysql" 2>&1)
-    if grep -q -E "MySQL port 0|MySQL socket" <<< "$output"; then
+    if grep -q -F "MySQL port 0" <<< "$output"; then
         echo "dictionary $1 port 0: rejected"
     elif grep -q -F "through socket" <<< "$output"; then
         echo "dictionary $1 port 0: unix socket"
@@ -55,10 +56,8 @@ function check_dictionary()
     fi
     $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.d_mysql"
 }
-check_dictionary "127.0.0.1" "/nonexistent/mysqld.sock"
-check_dictionary "localhost" "/nonexistent/mysqld.sock"
-# The client library would read a socket starting with NUL as no socket and connect over TCP.
-check_dictionary "localhost" "\\0"
+check_dictionary "127.0.0.1"
+check_dictionary "localhost"
 
 # `localhost` uses TCP to the given port, not the client library's default Unix socket.
 output=$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1)
