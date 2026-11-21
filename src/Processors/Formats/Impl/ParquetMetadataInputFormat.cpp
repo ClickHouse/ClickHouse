@@ -167,8 +167,8 @@ std::string_view compressionName(const CompressionCodec::type & codec)
         case CompressionCodec::LZ4: return "LZ4_HADOOP";
         case CompressionCodec::ZSTD: return "ZSTD";
         case CompressionCodec::LZ4_RAW: return "LZ4";
+        default: return "UNCOMPRESSED";
     }
-    return "UNCOMPRESSED";
 }
 
 std::string_view encodingName(const Parquet::parq::Encoding::type & encoding)

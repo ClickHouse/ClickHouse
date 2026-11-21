@@ -8,14 +8,18 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
+#include <charconv>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace DB::Parquet
@@ -65,9 +69,9 @@ struct LogicalType
     std::optional<parq::EdgeInterpolationAlgorithm::type> algorithm;
     Int32 variant_specification_version = 1;
 
-    bool isNested() const { return kind == Kind::Map || kind == Kind::List || kind == Kind::Variant; }
+    [[nodiscard]] bool isNested() const { return kind == Kind::Map || kind == Kind::List || kind == Kind::Variant; }
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         static constexpr std::string_view units[] = {"milliseconds", "microseconds", "nanoseconds"};
         auto bool_string = [](bool value) { return value ? "true" : "false"; };
@@ -119,16 +123,38 @@ struct LogicalType
 /// parquet-cpp's converted types are the Thrift ones shifted by one, with `NONE` in front.
 enum class ConvertedType : int
 {
-    NONE = 0, UTF8, MAP, MAP_KEY_VALUE, LIST, ENUM, DECIMAL, DATE, TIME_MILLIS, TIME_MICROS, TIMESTAMP_MILLIS,
-    TIMESTAMP_MICROS, UINT_8, UINT_16, UINT_32, UINT_64, INT_8, INT_16, INT_32, INT_64, JSON, BSON, INTERVAL,
-    NA = 25, UNDEFINED = 26,
+    NONE = 0,
+    UTF8 = 1,
+    MAP = 2,
+    MAP_KEY_VALUE = 3,
+    LIST = 4,
+    ENUM = 5,
+    DECIMAL = 6,
+    DATE = 7,
+    TIME_MILLIS = 8,
+    TIME_MICROS = 9,
+    TIMESTAMP_MILLIS = 10,
+    TIMESTAMP_MICROS = 11,
+    UINT_8 = 12,
+    UINT_16 = 13,
+    UINT_32 = 14,
+    UINT_64 = 15,
+    INT_8 = 16,
+    INT_16 = 17,
+    INT_32 = 18,
+    INT_64 = 19,
+    JSON = 20,
+    BSON = 21,
+    INTERVAL = 22,
+    NA = 25,
+    UNDEFINED = 26,
 };
 
 ConvertedType loadConvertedType(const parq::SchemaElement & element)
 {
     if (!element.__isset.converted_type)
         return ConvertedType::NONE;
-    const int raw = static_cast<int>(element.converted_type);
+    const int raw = thriftEnumToInt(element.converted_type);
     if (raw < 0 || raw >= static_cast<int>(ConvertedType::UNDEFINED))
         return ConvertedType::UNDEFINED;
     return static_cast<ConvertedType>(raw + 1);
@@ -166,12 +192,14 @@ std::string_view convertedTypeName(ConvertedType type)
     }
 }
 
-std::optional<parq::Type::type> loadPhysicalType(const parq::SchemaElement & element)
+/// The enums of a footer are read with `thriftEnumToInt`, never directly: Thrift stores the raw integer of
+/// a malformed file into the enum field, and loading a value out of the range of the enum is undefined behavior.
+std::optional<parq::Type::type> loadPhysicalType(const parq::Type::type & type)
 {
-    const int raw = static_cast<int>(element.type);
+    const int raw = thriftEnumToInt(type);
     if (raw < parq::Type::BOOLEAN || raw > parq::Type::FIXED_LEN_BYTE_ARRAY)
         return std::nullopt;
-    return element.type;
+    return static_cast<parq::Type::type>(raw);
 }
 
 std::string_view physicalTypeName(std::optional<parq::Type::type> type)
@@ -282,7 +310,8 @@ LogicalType fromThrift(const parq::LogicalType & type)
     }
     else if (isset.INTEGER)
     {
-        const int bit_width = static_cast<int>(type.INTEGER.bitWidth);
+        /// A negative width, read as unsigned, is as invalid as it was.
+        const int bit_width = static_cast<UInt8>(type.INTEGER.bitWidth);
         if (bit_width != 8 && bit_width != 16 && bit_width != 32 && bit_width != 64)
             throwMalformed("Bit width must be exactly 8, 16, 32, or 64 for Int logical type");
         result.kind = Kind::Int;
@@ -313,18 +342,18 @@ LogicalType fromThrift(const parq::LogicalType & type)
         result.algorithm = parq::EdgeInterpolationAlgorithm::SPHERICAL;
         if (type.GEOGRAPHY.__isset.algorithm)
         {
-            const int raw = static_cast<int>(type.GEOGRAPHY.algorithm);
+            const int raw = thriftEnumToInt(type.GEOGRAPHY.algorithm);
             if (raw < parq::EdgeInterpolationAlgorithm::SPHERICAL || raw > parq::EdgeInterpolationAlgorithm::KARNEY)
                 result.algorithm.reset();
             else
-                result.algorithm = type.GEOGRAPHY.algorithm;
+                result.algorithm = static_cast<parq::EdgeInterpolationAlgorithm::type>(raw);
         }
     }
     else if (isset.VARIANT)
     {
         result.kind = Kind::Variant;
         if (type.VARIANT.__isset.specification_version)
-            result.variant_specification_version = type.VARIANT.specification_version;
+            result.variant_specification_version = type.VARIANT.specification_version; /// NOLINT(bugprone-signed-char-misuse,cert-str34-c): a number, not a character
     }
     else
         result.kind = Kind::Undefined;
@@ -508,8 +537,8 @@ void checkGroup(const parq::SchemaElement & element)
 class SchemaWalker
 {
 public:
-    SchemaWalker(const parq::FileMetaData & metadata_, VectorWithMemoryTracking<FooterMetadata::Column> & columns_)
-        : schema(metadata_.schema), columns(columns_)
+    SchemaWalker(const parq::FileMetaData & metadata_, VectorWithMemoryTracking<FooterMetadata::Column> & columns_, size_t max_depth_)
+        : schema(metadata_.schema), columns(columns_), max_depth(max_depth_)
     {
     }
 
@@ -527,46 +556,66 @@ public:
         checkGroup(root);
         pos = 1;
         for (Int32 i = 0; i < root.num_children; ++i)
-            visit(0, 0, "");
+            visit(0, 0, 1);
     }
 
 private:
-    void visit(Int16 definition_level, Int16 repetition_level, const String & parent_path)
+    void visit(Int16 definition_level, Int16 repetition_level, size_t depth)
     {
+        /// The schema is a flat list in the footer, so nothing has limited its nesting so far, and a chain of
+        /// `REQUIRED` groups does not even increase the levels. The limit is the one of the native Parquet reader
+        /// (`max_parser_depth`, 0 means unlimited), with `checkStackSize` as the backstop.
+        checkStackSize();
+        if (max_depth != 0 && depth > max_depth)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+                "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+                max_depth);
+
         if (pos >= schema.size())
             throwMalformed("Malformed schema: not enough elements");
         const auto & element = schema[pos++];
 
-        /// An unset repetition reads as 0, that is REQUIRED.
-        if (element.repetition_type == parq::FieldRepetitionType::OPTIONAL)
-            ++definition_level;
-        else if (element.repetition_type == parq::FieldRepetitionType::REPEATED)
+        /// An unset repetition reads as 0, that is REQUIRED, and so does a value out of the range of the enum.
+        const int repetition_type = thriftEnumToInt(element.repetition_type);
+        const bool is_repeated = repetition_type == parq::FieldRepetitionType::REPEATED;
+        if (is_repeated || repetition_type == parq::FieldRepetitionType::OPTIONAL)
         {
+            if (definition_level == std::numeric_limits<Int16>::max())
+                throwMalformed("Too many nested optional or repeated fields");
             ++definition_level;
-            ++repetition_level;
+            if (is_repeated)
+                ++repetition_level;
         }
 
-        const String path = parent_path.empty() ? element.name : parent_path + "." + element.name;
+        /// One path for the whole walk, so that a deep schema does not hold a copy of the path at every level.
+        const size_t parent_path_size = path.size();
+        if (parent_path_size != 0)
+            path += '.';
+        path += element.name;
 
         if (element.num_children == 0 && element.__isset.type)
         {
-            addLeaf(element, definition_level, repetition_level, path);
-            return;
+            addLeaf(element, definition_level, repetition_level);
         }
-
-        checkGroup(element);
-        for (Int32 i = 0; i < element.num_children; ++i)
-            visit(definition_level, repetition_level, path);
+        else
+        {
+            checkGroup(element);
+            for (Int32 i = 0; i < element.num_children; ++i)
+                visit(definition_level, repetition_level, depth + 1);
+        }
+        path.resize(parent_path_size);
     }
 
-    void addLeaf(const parq::SchemaElement & element, Int16 definition_level, Int16 repetition_level, const String & path)
+    void addLeaf(const parq::SchemaElement & element, Int16 definition_level, Int16 repetition_level)
     {
         FooterMetadata::Column column;
         column.name = element.name;
         column.path = path;
         column.max_definition_level = definition_level;
         column.max_repetition_level = repetition_level;
-        column.physical_type = loadPhysicalType(element);
+        column.physical_type = loadPhysicalType(element.type);
         column.type_length = element.type_length;
 
         LogicalType logical_type;
@@ -595,7 +644,9 @@ private:
 
     const decltype(parq::FileMetaData::schema) & schema;
     VectorWithMemoryTracking<FooterMetadata::Column> & columns;
+    const size_t max_depth;
     size_t pos = 0;
+    String path;
 };
 
 }
@@ -628,22 +679,22 @@ FooterMetadata FooterMetadata::read(ReadBuffer & in, const FormatSettings & form
 
     PODArray<char> serialized(metadata_length);
     prefetcher.readSync(serialized.data(), metadata_length, file_size - 8 - metadata_length);
-    return parse(serialized.data(), serialized.size());
+    return parse(serialized.data(), serialized.size(), format_settings.max_parser_depth);
 }
 
-FooterMetadata FooterMetadata::parse(const char * data, size_t size)
+FooterMetadata FooterMetadata::parse(const char * data, size_t size, size_t max_schema_depth)
 {
     FooterMetadata result;
     /// Like parquet-cpp, the size is the part of the footer that the metadata occupies: the signature of a
     /// plaintext footer of an encrypted file follows it.
     result.metadata_size = deserializeThriftStruct(result.file_metadata, data, size);
-    result.initialize();
+    result.initialize(max_schema_depth);
     return result;
 }
 
-void FooterMetadata::initialize()
+void FooterMetadata::initialize(size_t max_schema_depth)
 {
-    SchemaWalker(file_metadata, leaf_columns).walk();
+    SchemaWalker(file_metadata, leaf_columns, max_schema_depth).walk();
 
     if (file_metadata.__isset.column_orders)
     {
@@ -686,7 +737,13 @@ void FooterMetadata::initialize()
     if (version.empty())
         return;
 
-    auto parse_number = [](std::string_view s) { return s.empty() ? 0 : atoi(String(s).c_str()); };
+    /// The strings are of digits only. A number that does not fit reads as 0.
+    auto parse_number = [](std::string_view s)
+    {
+        int value = 0;
+        std::from_chars(s.data(), s.data() + s.size(), value);
+        return value;
+    };
     auto digits_end = [](std::string_view s)
     {
         size_t i = 0;
@@ -773,7 +830,8 @@ bool FooterMetadata::hasCorrectStatistics(
         const bool max_equals_min = has_min && has_max && min == max;
         if (column.sort_order != SortOrder::Signed && !max_equals_min)
             return false;
-        if (chunk.type != parq::Type::FIXED_LEN_BYTE_ARRAY && chunk.type != parq::Type::BYTE_ARRAY)
+        const int chunk_type = thriftEnumToInt(chunk.type);
+        if (chunk_type != parq::Type::FIXED_LEN_BYTE_ARRAY && chunk_type != parq::Type::BYTE_ARRAY)
             return true;
     }
     /// An unset `created_by` may come from parquet-mr at the time of PARQUET-251, see PARQUET-297.
@@ -829,9 +887,7 @@ std::optional<FooterMetadata::Statistics> FooterMetadata::statistics(size_t row_
     if (!hasCorrectStatistics(chunk, column, has_min, has_max, min, max))
         return std::nullopt;
 
-    const int chunk_type = static_cast<int>(chunk.type);
-    const auto chunk_physical_type = chunk_type < parq::Type::BOOLEAN || chunk_type > parq::Type::FIXED_LEN_BYTE_ARRAY
-        ? std::nullopt : std::optional<parq::Type::type>(chunk.type);
+    const auto chunk_physical_type = loadPhysicalType(chunk.type);
     if (chunk_physical_type != column.physical_type)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -897,7 +953,7 @@ String FooterMetadata::formatStatisticsValue(size_t column_index, std::string_vi
     switch (*column.physical_type)
     {
         case parq::Type::BOOLEAN:
-            return std::to_string(static_cast<int>(static_cast<UInt8>(encoded.at(0)) & 1));
+            return std::to_string(static_cast<UInt8>(encoded.at(0)) & 1);
         case parq::Type::INT32:
             return std::to_string(decodeStatisticsValue<Int32>(encoded));
         case parq::Type::INT64:

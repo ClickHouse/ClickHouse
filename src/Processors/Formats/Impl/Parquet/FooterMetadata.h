@@ -64,25 +64,25 @@ public:
 
     /// Reads the footer of the Parquet file `in`.
     static FooterMetadata read(ReadBuffer & in, const FormatSettings & format_settings);
-    /// Parses a serialized `FileMetaData`.
-    static FooterMetadata parse(const char * data, size_t size);
+    /// Parses a serialized `FileMetaData`. The schema can be nested up to `max_schema_depth` deep, 0 means unlimited.
+    static FooterMetadata parse(const char * data, size_t size, size_t max_schema_depth);
 
-    const parq::FileMetaData & metadata() const { return file_metadata; }
+    [[nodiscard]] const parq::FileMetaData & metadata() const { return file_metadata; }
     /// The number of bytes of the serialized `FileMetaData`.
-    size_t metadataSize() const { return metadata_size; }
-    const VectorWithMemoryTracking<Column> & columns() const { return leaf_columns; }
+    [[nodiscard]] size_t metadataSize() const { return metadata_size; }
+    [[nodiscard]] const VectorWithMemoryTracking<Column> & columns() const { return leaf_columns; }
 
     /// The metadata of the chunk of column `column` in row group `row_group`. Throws if the row group has no such
     /// chunk, if the chunk is encrypted with a column key, or if its size statistics are inconsistent with the schema.
-    const parq::ColumnMetaData & columnChunk(size_t row_group, size_t column) const;
+    [[nodiscard]] const parq::ColumnMetaData & columnChunk(size_t row_group, size_t column) const;
 
     /// The statistics of a column chunk, or `std::nullopt` when it has none or when they cannot be trusted.
-    std::optional<Statistics> statistics(size_t row_group, size_t column) const;
+    [[nodiscard]] std::optional<Statistics> statistics(size_t row_group, size_t column) const;
 
     /// Decodes a PLAIN-encoded statistics bound of a column into its text form: a number, the bytes of a
     /// `BYTE_ARRAY`, or the decimal values of the bytes of an `INT96` (as 32-bit words) or a `FIXED_LEN_BYTE_ARRAY`,
     /// each followed by a space.
-    String formatStatisticsValue(size_t column, std::string_view encoded) const;
+    [[nodiscard]] String formatStatisticsValue(size_t column, std::string_view encoded) const;
 
     /// Decodes a PLAIN-encoded statistics bound of a column of a fixed-width physical type. Throws if it is too short.
     template <typename T>
@@ -104,8 +104,8 @@ private:
         Unknown,
     };
 
-    void initialize();
-    bool hasCorrectStatistics(const parq::ColumnMetaData & chunk, const Column & column, bool has_min, bool has_max,
+    void initialize(size_t max_schema_depth);
+    [[nodiscard]] bool hasCorrectStatistics(const parq::ColumnMetaData & chunk, const Column & column, bool has_min, bool has_max,
         std::string_view min, std::string_view max) const;
 
     parq::FileMetaData file_metadata;
