@@ -333,7 +333,8 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         {
             /// Only user databases: enumerating a predefined one can materialize a lazily created
             /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-            if (isPredefinedDatabase(database.first))
+            /// Not external ones either: they hold no `Buffer` table, and listing one is a request to its remote side.
+            if (isPredefinedDatabase(database.first) || database.second->isExternal())
                 continue;
 
             try
