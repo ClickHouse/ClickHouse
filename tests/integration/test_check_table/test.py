@@ -10,7 +10,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", with_zookeeper=True)
+node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
 node2 = cluster.add_instance("node2", with_zookeeper=True)
 
 
@@ -440,3 +440,91 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+NAMED_COLLECTION_CONFIG = """<clickhouse>
+    <named_collections>
+        <nc_check_table>
+            <url>http://127.0.0.1:1/x</url>
+            <format>CSV</format>
+        </nc_check_table>
+    </named_collections>
+</clickhouse>"""
+
+
+def test_check_table_access_before_table_load(started_cluster):
+    # A table whose load fails at startup: its `URL` engine refers to a named collection that is
+    # removed from the config before the restart. A user without `CHECK` on it must get `ACCESS_DENIED`
+    # and not the load error, which carries the `ATTACH` DDL of the table. The same holds when the
+    # table is only reachable through an `Alias` table or an `Overlay` database the user may check.
+    config_path = "/etc/clickhouse-server/config.d/named_collection_check_table.xml"
+    node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.named_collections WHERE name = 'nc_check_table'",
+        "1",
+    )
+    node1.query("CREATE DATABASE db_load")
+    node1.query("CREATE TABLE db_load.t_broken (s String) ENGINE = URL(nc_check_table)")
+    node1.query("CREATE TABLE db_load.t_ok (s String) ENGINE = MergeTree ORDER BY s")
+    node1.query("INSERT INTO db_load.t_ok VALUES ('x')")
+    node1.query("CREATE TABLE db_load.a_broken ENGINE = Alias(db_load, t_broken)")
+    node1.query("CREATE TABLE db_load.a_ok ENGINE = Alias(db_load, t_ok)")
+    node1.query("CREATE DATABASE overlay_db ENGINE = Overlay(db_load)")
+
+    node1.query("CREATE USER u_no_check")
+    node1.query("CREATE USER u_check_t_ok")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_t_ok")
+    node1.query("GRANT CHECK ON db_load.t_ok TO u_check_t_ok")
+    node1.query("GRANT CHECK ON db_load.a_ok TO u_check_t_ok")
+    # May check the alias, but not its target.
+    node1.query("CREATE USER u_check_alias")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_alias")
+    node1.query("GRANT CHECK ON db_load.a_broken TO u_check_alias")
+    # May check everything in the overlay, but sees only `t_ok` in its source.
+    node1.query("CREATE USER u_check_overlay")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_overlay")
+    node1.query("GRANT CHECK ON overlay_db.* TO u_check_overlay")
+    node1.query("GRANT CHECK ON db_load.t_ok TO u_check_overlay")
+
+    node1.exec_in_container(["rm", config_path])
+    node1.restart_clickhouse()
+
+    assert "ASYNC_LOAD_WAIT_FAILED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.t_broken"
+    )
+    assert "ACCESS_DENIED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.t_broken", user="u_no_check"
+    )
+    assert "ACCESS_DENIED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.a_broken", user="u_check_alias"
+    )
+
+    def check_all_tables(user):
+        result = node1.query(
+            "CHECK ALL TABLES",
+            user=user,
+            settings={"check_query_single_value_result": 0},
+        )
+        return sorted(result.splitlines())
+
+    assert check_all_tables("u_check_t_ok") == [
+        "db_load\ta_ok\tall_1_1_0\t1\t",
+        "db_load\tt_ok\tall_1_1_0\t1\t",
+    ]
+    # The alias is skipped without resolving its target, which would wait for the failed load.
+    assert check_all_tables("u_check_alias") == []
+    # The overlay lists `t_broken` for nobody who cannot see it in the source, so the source must not
+    # wait for it either.
+    assert check_all_tables("u_check_overlay") == [
+        "db_load\tt_ok\tall_1_1_0\t1\t",
+        "overlay_db\tt_ok\tall_1_1_0\t1\t",
+    ]
+
+    # The table cannot be dropped while its load has failed: bring the collection back first.
+    node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
+    node1.restart_clickhouse()
+    node1.exec_in_container(["rm", config_path])
+    node1.query("DROP DATABASE overlay_db")
+    node1.query("DROP DATABASE db_load SYNC")
+    node1.query("DROP USER u_no_check, u_check_t_ok, u_check_alias, u_check_overlay")
