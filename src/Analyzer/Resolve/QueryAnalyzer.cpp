@@ -61,7 +61,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
-#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -1312,7 +1312,7 @@ bool isStateOf(const DataTypes & argument_types, const String & name, NullsActio
 
     AggregateFunctionProperties properties;
     auto function = AggregateFunctionFactory::instance().get(name, action, state_type->getArgumentsDataTypes(), parameters, properties);
-    return AggregateFunctionMerge::canMergeStatesOf(*function, *state_type->getFunction());
+    return function->haveSameStateRepresentation(*state_type->getFunction());
 }
 
 }
