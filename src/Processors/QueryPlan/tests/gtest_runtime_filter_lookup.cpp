@@ -296,10 +296,44 @@ TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
     checkDenseBitsetFindsExactlyTheKeys<Int16>();
 }
 
+TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
+{
+    /// Duplicates at the limit stay in the exact set. The first new key switches it to a dense bitset, which takes the
+    /// whole block.
+    tryRegisterFunctions();
+    const auto type = std::make_shared<DataTypeUInt16>();
+    auto make_keys = [](std::initializer_list<UInt16> keys)
+    {
+        auto column = ColumnUInt16::create();
+        for (const UInt16 key : keys)
+            column->insertValue(key);
+        return column;
+    };
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+
+    filter.insert(make_keys({0}));
+    filter.insert(make_keys({0, 5, 0, 5}));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
+    filter.insert(make_keys({5, 0, 7, 5, 8, 0}));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 1);
+    filter.finishInsert();
+
+    const auto description = filter.describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::DenseBitset);
+    ASSERT_TRUE(description.keys.has_value());
+    EXPECT_EQ(*description.keys, 4);
+    expectMask(filter.find(ColumnWithTypeAndName(make_keys({0, 1, 5, 7, 8, 9}), type, "k")), {1, 0, 1, 1, 1, 0});
+}
+
 TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItThrew)
 {
-    /// The full exact set switches to an 8 MiB Bloom filter, which the memory limit refuses. The set keeps its keys, and
-    /// the next block retries the switch, as after `ISimpleTransform` passed the exception downstream.
+    /// The exact set at its limit switches to an 8 MiB Bloom filter at the new key 7, which the memory limit refuses. The
+    /// set keeps the keys before it, and the next block retries the switch, as after `ISimpleTransform` passed the
+    /// exception downstream.
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
@@ -312,9 +346,37 @@ TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItTh
 
     filter.insert(makeUInt64Column({6}));
     filter.finishInsert();
-    /// No key is lost, and the probe is checked rather than skipped as for a dropped key set. Other values may pass
-    /// the Bloom filter.
-    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7}, type)), {1, 1, 1, 1});
+    /// The keys before the refused key are kept, and the probe is checked rather than skipped as for a dropped key set.
+    /// Other values may pass the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6}, type)), {1, 1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 3);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsBeforeTheFirstNewKeyWhenItsSwitchThrows)
+{
+    /// The exact set reaches its limit at key 5 and takes the duplicate 0 after it. At the new key 7 it switches to an
+    /// 8 MiB Bloom filter, which the memory limit refuses, so the set keeps only the rows before that key.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.enableIndexAnalysis();
+    filter.insert(makeUInt64Column({0}));
+
+    ColumnPtr block = makeUInt64Column({0, 5, 0, 7, 5, 8});
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+    filter.finishInsert();
+
+    const auto description = filter.describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::ExactSet);
+    ASSERT_TRUE(description.keys.has_value());
+    EXPECT_EQ(*description.keys, 2);
+    const auto recorded_values = filter.getRecordedKeyValues();
+    ASSERT_TRUE(recorded_values);
+    EXPECT_EQ(recorded_values->size(), 2);
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 0, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
     EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
 }

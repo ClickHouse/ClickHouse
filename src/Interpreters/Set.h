@@ -117,7 +117,8 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromColumns(const Columns & columns);
+    /// With `max_keys`, also stops at the first row with a new key once the set holds `max_keys` keys (for a set that does not spill).
+    bool insertFromColumns(const Columns & columns, size_t max_keys = std::numeric_limits<size_t>::max());
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -246,7 +247,7 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, bool & all_rows);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
@@ -256,13 +257,24 @@ private:
     ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
-    void insertFromBlockImpl(
+    bool insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
+
+    template <typename Method>
+    bool insertFromBlockImplUpToKeys(
+        Method & method,
+        const ColumnRawPtrs & key_columns,
+        size_t rows,
+        SetVariants & variants,
+        ConstNullMapPtr null_map,
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
 
     template <typename Method, bool has_null_map, bool build_filter>
     void insertFromBlockImplCase(

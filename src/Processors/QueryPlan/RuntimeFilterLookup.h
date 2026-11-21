@@ -204,6 +204,9 @@ public:
     void boundKeyBytes() { bound_key_bytes = true; }
 
     void insert(ColumnPtr values);
+    /// Like insert, but stops at the first new key past exact_values_limit keys, so the set never holds more. Returns
+    /// whether it took every row.
+    [[nodiscard]] bool insertUntilKeyLimit(const ColumnPtr & values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
@@ -237,6 +240,7 @@ private:
     Set & getExactValues();
     [[nodiscard]] const Set & getExactValues() const;
     [[nodiscard]] ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
+    bool insertKeys(const ColumnPtr & values, size_t max_keys);
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
@@ -372,9 +376,9 @@ private:
 
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter, RuntimeFilterDisabledReason reason);
-    void switchFromExactFilter(Filter & filter);
-    void switchToDenseBitset(Filter & filter);
-    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
+    void switchFromExactFilter(Filter & filter, const ColumnPtr & block);
+    void switchToDenseBitset(Filter & filter, const ColumnPtr & block);
+    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter, const ColumnPtr & block = nullptr);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
