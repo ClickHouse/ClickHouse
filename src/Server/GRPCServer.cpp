@@ -2197,6 +2197,10 @@ private:
     {
         std::lock_guard lock{mutex};
         responders_for_new_calls.resize(CALL_MAX);
+        /// After `stop` the accepts are not rearmed, so at most one responder per call type can be retained.
+        /// Reserve the space now, so that retaining them in `onNewCall` never allocates: an exception there
+        /// would escape from `run` and leave the remaining calls without the thread which delivers their tags.
+        cancelled_responders.reserve(CALL_MAX);
         for (CallType call_type : collections::range(CALL_MAX))
             makeResponderForNewCall(call_type);
     }
@@ -2222,6 +2226,7 @@ private:
             if (responder_started_ok)
             {
                 responder->cancel();
+                chassert(cancelled_responders.size() < cancelled_responders.capacity());
                 cancelled_responders.push_back(std::move(responder));
             }
             return;
