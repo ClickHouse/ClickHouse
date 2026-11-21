@@ -63,6 +63,10 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/TokenIterator.h>
+#include <Parsers/parseIntervalKind.h>
 
 
 namespace DB
@@ -107,6 +111,41 @@ namespace Setting
 
 namespace
 {
+
+/** Build the interval expression for a string like '30 days' or '1 day 2 hours', the same way the parser
+  * handles `INTERVAL '30 days'`: one `toInterval*` function for a single `<number> <interval kind>` pair, or
+  * a tuple of them for several pairs. Returns nullptr if the string is not such a sequence of pairs.
+  */
+QueryTreeNodePtr tryBuildIntervalFromString(std::string_view value)
+{
+    Tokens tokens(value.data(), value.data() + value.size());
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+
+    QueryTreeNodes intervals;
+    while (pos.isValid())
+    {
+        ASTPtr number;
+        IntervalKind interval_kind;
+        if (!ParserNumber{}.parse(pos, number, expected) || !parseIntervalKind(pos, expected, interval_kind))
+            return nullptr;
+
+        auto interval = std::make_shared<FunctionNode>(interval_kind.toNameOfFunctionToIntervalDataType());
+        interval->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(number->as<ASTLiteral &>().value));
+        intervals.push_back(std::move(interval));
+    }
+
+    if (intervals.empty())
+        return nullptr;
+
+    if (intervals.size() == 1)
+        return intervals.front();
+
+    auto tuple = std::make_shared<FunctionNode>("tuple");
+    tuple->getArguments().getNodes() = std::move(intervals);
+    return tuple;
+}
+
 void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 {
     if (node.getNullsAction() != NullsAction::EMPTY)
@@ -3045,6 +3084,40 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         validateInColumnsCountMatch(in_first_argument, in_second_argument);
+    }
+
+    /** Interval written as a string without the `INTERVAL` keyword, as in PostgreSQL: `date_time + '30 days'`.
+      * If one argument of `plus` or `minus` is a date or time and the other one is a string literal that
+      * consists of `<number> <interval kind>` pairs, replace the string with the interval it describes, exactly
+      * as for `date_time + INTERVAL '30 days'`. Any other string is left as is, so the query fails as before.
+      *
+      * `arguments_projection_names` is already calculated at this point, so the column name of the
+      * expression stays exactly as it was written by the user.
+      */
+    if (function_name == "plus" || function_name == "minus")
+    {
+        auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (arguments.size() == 2)
+        {
+            for (size_t i = 0; i < 2; ++i)
+            {
+                const auto * constant = arguments[i]->as<ConstantNode>();
+                if (!constant || constant->hasSourceExpression() || !isString(constant->getResultType()))
+                    continue;
+
+                const auto & other_type = arguments[1 - i]->getResultType();
+                if (!isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(other_type))))
+                    continue;
+
+                auto interval = tryBuildIntervalFromString(constant->getValue().safeGet<String>());
+                if (!interval)
+                    continue;
+
+                arguments[i] = std::move(interval);
+                resolveExpressionNode(arguments[i], scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                break;
+            }
+        }
     }
 
     /// Initialize function argument columns
