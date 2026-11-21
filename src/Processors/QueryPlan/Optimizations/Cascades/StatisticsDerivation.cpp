@@ -37,6 +37,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool estimate_distinct_values_from_metadata;
+    extern const SettingsBool use_statistics;
 }
 
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
@@ -295,17 +297,28 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         auto left_column_statistics = left_statistics.column_statistics.find(left_column);
         auto right_column_statistics = right_statistics.column_statistics.find(right_column);
 
-        UInt64 left_number_of_distinct_values = 1;
-        UInt64 right_number_of_distinct_values = 1;
-        if (left_column_statistics != left_statistics.column_statistics.end())
-            left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
-        if (right_column_statistics != right_statistics.column_statistics.end())
-            right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
+        /// A key without statistics, or with NDV 0 (a read records it for a column without statistics), has no known
+        /// number of distinct values; its row count bounds it.
+        KeyDistinctValues key_distinct_values;
+        const auto add_key = [&](auto column_statistics, const ExpressionStatistics & side_statistics, UInt64 row_count)
+        {
+            if (column_statistics != side_statistics.column_statistics.end() && column_statistics->second.num_distinct_values > 0)
+                key_distinct_values.add(
+                    column_statistics->second.num_distinct_values,
+                    column_statistics->second.num_distinct_values,
+                    column_statistics->second.num_distinct_values_from_metadata);
+            else
+                key_distinct_values.add(std::nullopt, row_count, false);
+        };
+        add_key(left_column_statistics, left_statistics, left_row_count);
+        add_key(right_column_statistics, right_statistics, right_row_count);
 
         /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
+        /// A number of distinct values estimated from metadata also takes the row count of a key without a known one,
+        /// see `KeyDistinctValues::getNumberOfDistinctValues`.
         /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
         /// would produce an infinite selectivity that poisons every cost downstream.
-        UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
+        UInt64 max_number_of_distinct_values = std::max<UInt64>(key_distinct_values.getNumberOfDistinctValues(), 1);
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
         /// An input's key NDV is bounded by its own row count. The shared update then narrows only
@@ -391,6 +404,39 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     return statistics;
 }
 
+namespace
+{
+
+/// The numbers of distinct values of the columns of the read that have none measured by statistics, estimated from the
+/// metadata of the parts, see the setting `estimate_distinct_values_from_metadata`.
+void addDistinctValuesFromMetadata(
+    ExpressionStatistics & statistics,
+    const ReadFromMergeTree & read_step,
+    const ReadFromMergeTree::AnalysisResultPtr & analyzed_result,
+    const ConditionSelectivityEstimator * estimator)
+{
+    const auto & settings = read_step.getContext()->getSettingsRef();
+    if (!settings[Setting::use_statistics] || !settings[Setting::estimate_distinct_values_from_metadata])
+        return;
+
+    Names column_names;
+    for (const auto & column_name : read_step.getAllColumnNames())
+        if (!statistics.column_statistics.contains(column_name) || (estimator && !estimator->hasCardinality(column_name)))
+            column_names.push_back(column_name);
+    if (column_names.empty())
+        return;
+
+    for (const auto & [column_name, distinct_values] : read_step.estimateDistinctValuesFromMetadata(column_names, analyzed_result))
+    {
+        auto & column_stats = statistics.column_statistics[column_name];
+        column_stats.num_distinct_values = distinct_values;
+        column_stats.num_distinct_values_from_metadata = true;
+        column_stats.ndv_provenance = {.origin = ColumnStatsOrigin::SyntheticFallback};
+    }
+}
+
+}
+
 ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMergeTree & read_step)
 {
     ExpressionStatistics statistics;
@@ -431,6 +477,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     : Float64(relation_profile.rows);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+            addDistinctValuesFromMetadata(statistics, read_step, analyzed_result, estimator.get());
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
@@ -448,6 +495,8 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
         if (column_ndv)
             statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
     }
+
+    addDistinctValuesFromMetadata(statistics, read_step, analyzed_result, nullptr);
 
     auto cardinality_hint = statistics_lookup.getCardinality(table_name);
     if (cardinality_hint)
@@ -699,8 +748,13 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     ExpressionStatistics aggregation_statistics;
     for (const auto & key : aggregator_params.keys)
-        aggregation_statistics.column_statistics[key].num_distinct_values
-            = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
+    {
+        auto & key_statistics = aggregation_statistics.column_statistics[key];
+        key_statistics.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
+        if (auto input_key_statistics = input_statistics.column_statistics.find(key);
+            input_key_statistics != input_statistics.column_statistics.end() && input_key_statistics->second.num_distinct_values > 0)
+            key_statistics.num_distinct_values_from_metadata = input_key_statistics->second.num_distinct_values_from_metadata;
+    }
 
     aggregation_statistics.min_row_count = 0;
     std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
