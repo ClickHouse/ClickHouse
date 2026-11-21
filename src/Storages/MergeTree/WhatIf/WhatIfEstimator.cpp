@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -271,7 +272,12 @@ WhatIfCandidateResult evaluateIndex(
     ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context, /* boolean_context */ true);
     const ActionsDAG::Node * predicate = predicate_dag.predicate;
 
-    auto condition = index_helper->createIndexCondition(predicate, context);
+    /// Use the same rewrite-aware entry point as the read path, so a hypothetical `minmax`
+    /// index on an expression the query analyzer renames is estimated the way it would really
+    /// be used (issue #103128). The predicate was analyzed against the table without the
+    /// hypothetical index, so its alternative form is computed the same way.
+    auto condition = RewriteAwareIndexConditionFactory(index_helper, metadata, /* index_is_in_table = */ false)
+                         .create(predicate, context);
 
     /// Let the condition decide first, a standalone conjunct can still be usable inside a mixed
     /// OR. Only fall through to the disjunction case when it can't prune on its own

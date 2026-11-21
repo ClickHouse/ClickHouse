@@ -65,10 +65,16 @@ public:
 
     bool supportsReplication() const override { return supports_replication; }
 
+    bool hasBucketedMapSerialization() const override { return bucketed_map_serialization; }
+    /// Lets the query tree passes rewrite `m['key']` to the key subcolumn `m.key_<key>` of a `Map`
+    /// column of this storage, as they do for a storage with bucketed map serialization.
+    void setHasBucketedMapSerialization(bool value) { bucketed_map_serialization = value; }
+
 private:
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
     const bool supports_replication;
+    bool bucketed_map_serialization = false;
 };
 
 class ReadFromDummy final : public SourceStepWithFilter
