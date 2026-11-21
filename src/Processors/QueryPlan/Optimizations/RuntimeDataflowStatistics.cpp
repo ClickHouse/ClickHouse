@@ -331,7 +331,7 @@ static size_t keyColumnBytes(const IColumn & column)
     for (size_t row = 0; row < indexes.size(); ++row)
         referenced[row] = indexes.getUInt(row);
     std::ranges::sort(referenced);
-    const auto [unique_end, _] = std::ranges::unique(referenced);
+    const auto unique_end = std::ranges::unique(referenced).begin();
 
     size_t bytes = indexes.byteSize();
     const auto & dictionary = low_cardinality->getDictionary();

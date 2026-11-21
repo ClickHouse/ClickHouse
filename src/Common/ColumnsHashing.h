@@ -510,7 +510,7 @@ struct HashMethodSingleLowCardinalityDictionaryIndex
     }
 
     template <typename Index>
-    ALWAYS_INLINE UInt64 getIndexAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE UInt64 getIndexAt(size_t row) const
     {
         return unalignedLoad<Index>(positions + row * sizeof(Index));
     }
@@ -543,7 +543,7 @@ struct HashMethodSingleLowCardinalityDictionaryIndex
     }
 
     template <typename Data>
-    ALWAYS_INLINE size_t getHashAtIndex(const Data & data, UInt64 index) const
+    [[nodiscard]] ALWAYS_INLINE size_t getHashAtIndex(const Data & data, UInt64 index) const
     {
         return data.hash(index);
     }
@@ -585,8 +585,8 @@ struct HashMethodSingleLowCardinalityDictionaryIndex
 
         ALWAYS_INLINE bool isNullAt(size_t row) { return state.isNullAt(row); }
         ALWAYS_INLINE void resetCache() { state.resetCache(); }
-        ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const { return state.hasOnlyOneValueSinceLastReset(); }
-        ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const { return state.getCacheMissesSinceLastReset(); }
+        [[nodiscard]] ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const { return state.hasOnlyOneValueSinceLastReset(); }
+        [[nodiscard]] ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const { return state.getCacheMissesSinceLastReset(); }
     };
 
     template <typename Callback>
