@@ -61,3 +61,11 @@ SELECT trim(line) FROM
     WHERE (x != 0 AND y < 6 AND intDiv(10, x) > 0) OR (y < 6 AND x != 0 AND intDiv(10, x) > 0)
 )
 ARRAY JOIN splitByChar('\n', explain) AS line WHERE line LIKE 'WHERE%';
+
+SELECT trim(line) FROM
+(
+    EXPLAIN SYNTAX run_query_tree_passes = 1
+    SELECT count() FROM (SELECT number % 7 AS y, CAST((number % 2, toString(number)), 'Tuple(a UInt8, s String)') AS t FROM numbers(10))
+    WHERE (y > 5 AND t.a = 0 AND nullIf(t.s, '') IS NULL) OR (y < 2 AND t.a = 0 AND nullIf(t.s, '') IS NULL)
+)
+ARRAY JOIN splitByChar('\n', explain) AS line WHERE line LIKE 'WHERE%';

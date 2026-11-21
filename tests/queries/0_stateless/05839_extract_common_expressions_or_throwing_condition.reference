@@ -10,3 +10,4 @@ WHERE and(notEquals(__table1.s, \'zz\'), or(and(notEquals(__table1.x, 0), greate
 WHERE and(like(__table1.s, \'%1%\'), or(greater(__table1.y, 5), less(__table1.y, 2)))
 WHERE and(notEquals(__table1.x, 0), greater(intDiv(10, __table1.x), 0), or(greater(__table1.y, 2), less(__table1.y, 2)))
 WHERE and(less(__table1.y, 6), notEquals(__table1.x, 0), greater(intDiv(10, __table1.x), 0))
+WHERE and(equals(getSubcolumn(__table1.t, \'a\'), 0), isNull(nullIf(getSubcolumn(__table1.t, \'s\'), \'\')), or(greater(__table1.y, 5), less(__table1.y, 2)))

@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -22,6 +23,17 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    /// An element of a tuple is a part of the tuple column, other subcolumns may be computed from the values.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        const auto * tuple = arguments.size() == 2 ? typeid_cast<const DataTypeTuple *>(arguments[0].type.get()) : nullptr;
+        if (!tuple || !arguments[1].column || !isString(arguments[1].type)
+            || !tuple->tryGetPositionByName(arguments[1].column->getDataAt(0)))
+            return {};
+        return false;
+    }
+
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
