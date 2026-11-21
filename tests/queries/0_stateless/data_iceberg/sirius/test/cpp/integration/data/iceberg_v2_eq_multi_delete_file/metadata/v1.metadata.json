@@ -1,0 +1,71 @@
+{
+  "current-schema-id": 0,
+  "current-snapshot-id": 5000000000000000001,
+  "default-sort-order-id": 0,
+  "default-spec-id": 0,
+  "format-version": 2,
+  "last-column-id": 2,
+  "last-partition-id": 999,
+  "last-sequence-number": 2,
+  "last-updated-ms": 1700000000000,
+  "location": "test/cpp/integration/data/iceberg_v2_eq_multi_delete_file",
+  "metadata-log": [],
+  "partition-specs": [
+    {
+      "fields": [],
+      "spec-id": 0
+    }
+  ],
+  "refs": {
+    "main": {
+      "snapshot-id": 5000000000000000001,
+      "type": "branch"
+    }
+  },
+  "schemas": [
+    {
+      "fields": [
+        {
+          "id": 1,
+          "name": "fruit",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "count",
+          "required": false,
+          "type": "long"
+        }
+      ],
+      "schema-id": 0,
+      "type": "struct"
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 5000000000000000001,
+      "timestamp-ms": 1700000000000
+    }
+  ],
+  "snapshots": [
+    {
+      "manifest-list": "test/cpp/integration/data/iceberg_v2_eq_multi_delete_file/metadata/snap-5000000000000000001-1-e5f6a7b8-0005-0005-0005-000000000006.avro",
+      "schema-id": 0,
+      "sequence-number": 1,
+      "snapshot-id": 5000000000000000001,
+      "summary": {
+        "added-data-files": "1",
+        "operation": "append"
+      },
+      "timestamp-ms": 1700000000000
+    }
+  ],
+  "sort-orders": [
+    {
+      "fields": [],
+      "order-id": 0
+    }
+  ],
+  "table-uuid": "b89bf225-7499-4c8b-b944-2ac5c2f5ecd4"
+}
