@@ -304,16 +304,17 @@ DROP ROW POLICY rp_blocknum_rls_proj ON blocknum_rls_proj;
 DROP TABLE blocknum_rls_proj;
 
 -- `_parent_part_offset` is a projection-only name absent on the parent, so a policy on it can't be enforced.
+-- Such a policy is rejected on an existing table, so it is created before the table.
 DROP TABLE IF EXISTS pparent_rls_proj;
 DROP ROW POLICY IF EXISTS rp_pparent_rls_proj ON pparent_rls_proj;
+
+CREATE ROW POLICY rp_pparent_rls_proj ON pparent_rls_proj FOR SELECT USING _parent_part_offset = 0 TO ALL;
 
 CREATE TABLE pparent_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO pparent_rls_proj VALUES (1, 10), (2, 20), (3, 30);
 
 ALTER TABLE pparent_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
 ALTER TABLE pparent_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_pparent_rls_proj ON pparent_rls_proj FOR SELECT USING _parent_part_offset = 0 TO ALL;
 
 SELECT '-- policy on the projection-only _parent_part_offset name: read is refused';
 SELECT id FROM mergeTreeProjection(currentDatabase(), 'pparent_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
