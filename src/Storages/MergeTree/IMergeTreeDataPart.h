@@ -502,6 +502,13 @@ public:
     /// wrong guess cannot suppress a merge that is still needed.
     mutable bool default_codec_is_approximate = false;
 
+    /// Whether the data of the column is stored by general purpose codecs only (`NONE`, `LZ4`, `ZSTD` and the like,
+    /// rather than `Delta`, `T64`, an encryption codec, ...), by the first compressed frame of each of its nonempty
+    /// data files. The codec declared for the column does not tell it: a codec-only `ALTER` leaves the parts as they
+    /// were written. `false` when it is unknown: for a part that is not Wide, or without data of the column. The
+    /// frames are read once, on the first call for the column.
+    [[nodiscard]] bool isColumnStoredWithGeneralPurposeCodecs(const String & column_name) const;
+
     /// Whether `default_codec` was chosen by an explicit `RECOMPRESS` TTL rather than by the
     /// `<compression>` config or the built-in default. It travels with `default_codec` so that the
     /// projections written under this part - merged by `MergeProjectionPartsTask` or rebuilt by
@@ -865,6 +872,10 @@ protected:
 
 private:
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
+
+    /// See `isColumnStoredWithGeneralPurposeCodecs`.
+    mutable std::mutex columns_stored_with_general_purpose_codecs_mutex;
+    mutable std::unordered_map<String, bool> columns_stored_with_general_purpose_codecs TSA_GUARDED_BY(columns_stored_with_general_purpose_codecs_mutex);
 
     /// Columns and secondary indices sizes can be calculated lazily on first request.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
