@@ -1,4 +1,7 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -31,6 +34,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
+    extern const SettingsBool allow_suspicious_aggregate_function_version_0;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -39,6 +43,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
@@ -49,10 +54,52 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
+    , allow_suspicious_aggregate_function_version_0(settings[Setting::allow_suspicious_aggregate_function_version_0])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
 {
+}
+
+namespace
+{
+
+/// A type name does not keep an explicit state version 0, so it reads back as the function's default version.
+void checkAggregateFunctionStateVersion(const IDataType & type, bool check_arguments)
+{
+    const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&type);
+    if (aggregate_type && aggregate_type->getVersionIfExplicit() == 0 && aggregate_type->getFunction()->getDefaultVersion() != 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use state version 0 of aggregate function {} in a type, because the type name does not keep it "
+            "and reads back as the default state version {}. "
+            "Set setting allow_suspicious_aggregate_function_version_0 = 1 in order to allow it",
+            aggregate_type->getFunctionName(),
+            aggregate_type->getFunction()->getDefaultVersion());
+
+    if (!check_arguments)
+        return;
+
+    /// The argument types of `AggregateFunction` and `SimpleAggregateFunction` are not children in the type tree.
+    auto check_types = [](const DataTypes & types)
+    {
+        for (const auto & argument_type : types)
+            forEachInTypeTree(*argument_type, [](const IDataType & nested) { checkAggregateFunctionStateVersion(nested, true); });
+    };
+    if (aggregate_type)
+        check_types(aggregate_type->getArgumentsDataTypes());
+    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName()))
+        check_types(simple->getArgumentsDataTypes());
+}
+
+DataTypeValidationSettings getStructureValidationSettings(const ContextPtr & context)
+{
+    DataTypeValidationSettings validation_settings(context->getSettingsRef());
+    /// A structure is parsed again, with the server's settings, whenever a table defined by a table function is loaded.
+    validation_settings.allow_suspicious_aggregate_function_version_0 = true;
+    return validation_settings;
+}
+
 }
 
 
@@ -128,6 +175,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
+        if (!settings.allow_suspicious_aggregate_function_version_0)
+            checkAggregateFunctionStateVersion(data_type, settings.validate_nested_types);
+
         if (!settings.enable_time_time64_type)
         {
             if (isTime(data_type))
@@ -189,7 +239,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     auto columns_list = make_intrusive<ASTColumns>();
     columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
-    auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
+    auto validation_settings = getStructureValidationSettings(context);
     for (const auto & [name, type] : columns.getAll())
         validateDataType(type, validation_settings);
     return columns;
@@ -228,7 +278,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
         auto columns_list = make_intrusive<ASTColumns>();
         columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
-        auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
+        auto validation_settings = getStructureValidationSettings(context);
         for (const auto & [name, type] : columns.getAll())
             validateDataType(type, validation_settings);
         return true;

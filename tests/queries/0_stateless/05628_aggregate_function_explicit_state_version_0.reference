@@ -1,0 +1,5 @@
+Array(AggregateFunction(sumMap, Array(UInt8), Array(UInt8)))
+(MODIFY COLUMN `s` AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)))
+AggregateFunction(sumMap, Array(UInt8), Array(UInt8))
+([1],[2])
+([1],[2])

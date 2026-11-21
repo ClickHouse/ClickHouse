@@ -14,6 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # storage type. https://github.com/ClickHouse/ClickHouse/pull/112052
 
 $CLICKHOUSE_CLIENT -m -q "
+SET allow_suspicious_aggregate_function_version_0 = 1;
 SET flatten_nested = 0;
 DROP TABLE IF EXISTS nested_agg;
 DROP TABLE IF EXISTS saf_agg;
