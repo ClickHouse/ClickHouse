@@ -1,7 +1,6 @@
 -- A JOIN runtime filter computes its key on rows that are removed before its join, so it is not built on a key that can throw.
 
--- A replica of plan-based parallel replicas gets the join keys already computed, so it cannot tell whether a key can throw.
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, parallel_replicas_plan_based = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0;
 
 -- No query has read these tables yet, so PREWHERE orders the two filters by column size.
 CREATE TABLE probe (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
