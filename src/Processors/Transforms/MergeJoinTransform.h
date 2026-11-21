@@ -270,6 +270,7 @@ public:
 
     void logElapsed(double seconds);
     [[nodiscard]] MergedStats getMergedStats() const override;
+    [[nodiscard]] JoinKind getKind() const { return kind; }
 
     /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
     [[nodiscard]] JoinAnalysisCounters getJoinAnalysisCounters() const;
@@ -360,6 +361,7 @@ public:
 
 protected:
     void onFinish() override;
+    [[nodiscard]] bool finishesOnEmptyInput(size_t input_num) const override;
 };
 
 }
