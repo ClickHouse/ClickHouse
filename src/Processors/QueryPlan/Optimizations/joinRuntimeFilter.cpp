@@ -4,7 +4,9 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
@@ -220,9 +222,9 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
 }
 
 /// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer or an `Enum` to an integer
-/// type, which wraps around, or a number to a float. Arrays and tuples are checked element by element, paired as `CAST`
-/// pairs them. A cast built by `ActionsDAG::addCast` clamps a date out of the range of its target type, so with
-/// `clamps_dates` a conversion between date types cannot throw either.
+/// type, which wraps around, or a number to a float. Arrays, tuples, maps and `QBit`s are checked element by element,
+/// paired as `CAST` pairs them. A cast built by `ActionsDAG::addCast` clamps a date out of the range of its target type, so
+/// with `clamps_dates` a conversion between date types cannot throw either.
 static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to, bool clamps_dates)
 {
     /// A NULL cannot be converted to a type that is not `Nullable`.
@@ -256,6 +258,22 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
         }
         return true;
     }
+
+    /// Not left to `canBeSafelyCast`, which pairs the elements of a tuple in a `Map` by position and takes any `QBit` cast as safe.
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
+    if (from_map && to_map)
+        return canCastWithoutThrowing(from_map->getKeyType(), to_map->getKeyType(), clamps_dates)
+            && canCastWithoutThrowing(from_map->getValueType(), to_map->getValueType(), clamps_dates);
+
+    const auto * from_qbit = typeid_cast<const DataTypeQBit *>(from_nested.get());
+    const auto * to_qbit = typeid_cast<const DataTypeQBit *>(to_nested.get());
+    if (from_qbit && to_qbit)
+        return from_qbit->getDimension() == to_qbit->getDimension()
+            && canCastWithoutThrowing(from_qbit->getElementType(), to_qbit->getElementType(), clamps_dates);
+
+    if (from_map || to_map || from_qbit || to_qbit)
+        return false;
 
     if (canBeSafelyCast(from, to))
         return true;
