@@ -1,0 +1,16 @@
+frame from the partition start to the current row
+300	0	0	0	0
+frame of the whole partition
+300	0	0	0	0
+frame from the partition start to a following row
+300	0	0	0	0
+moving frame
+300	0	0	0	0
+combinators and Nullable arguments
+300	0	0	0	0
+states returned by a window function
+300	0	0
+stored states merged in GROUP BY
+1	1
+stored states merged over a window
+30	0	0
