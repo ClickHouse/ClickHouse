@@ -34,6 +34,21 @@ extern const int CANNOT_RESTORE_TABLE;
 extern const int CANNOT_RESTORE_DATABASE;
 }
 
+namespace
+{
+
+/// The object a parsed definition creates, for error messages.
+String describeDefinedObject(const ASTCreateQuery & create)
+{
+    if (!create.table)
+        return fmt::format("database {}", backQuoteIfNeed(create.getDatabase()));
+    if (create.isTemporary())
+        return fmt::format("temporary table {}", backQuoteIfNeed(create.getTable()));
+    return fmt::format("table {}.{}", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+}
+
+}
+
 BackupMetadataFinder::BackupMetadataFinder(
     const RestoreSettings & restore_settings_,
     const BackupPtr & backup_,
@@ -302,6 +317,19 @@ void BackupMetadataFinder::findTableInBackupImpl(
     String create_table_query_str = create_table_query->formatWithSecretsOneLine();
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
+
+    /// The restore authorizes and creates the object named by the path, so the definition must define that object.
+    /// A predefined table is never created from its definition.
+    if (const auto & create = create_table_query->as<const ASTCreateQuery &>(); !is_predefined_table
+        && (!create.table || create.getTable() != table_name.table
+            || create.isTemporary() != (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+            || (!create.isTemporary() && create.getDatabase() != table_name.database)))
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "The definition of {} in the backup creates {}, which BACKUP never writes",
+            tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
+            describeDefinedObject(create));
+
     auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
@@ -396,6 +424,15 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
 
         String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
         bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(database_name);
+
+        /// The restore authorizes and creates the database named by the path, so the definition must define it.
+        if (const auto & create = create_database_query->as<const ASTCreateQuery &>();
+            !is_predefined_database && (create.table || create.getDatabase() != database_name))
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_DATABASE,
+                "The definition of database {} in the backup creates {}, which BACKUP never writes",
+                backQuoteIfNeed(database_name_in_backup),
+                describeDefinedObject(create));
 
         std::lock_guard lock{mutex};
 
