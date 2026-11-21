@@ -292,7 +292,7 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
     const auto sparse_kind = ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE});
     EXPECT_EQ(object_info->getTypedPathInfo("x")->getKindStack(), sparse_kind);
     EXPECT_EQ(object_info->getTypedPathInfo("z")->getKindStack(), sparse_kind);
-    EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
+    EXPECT_THROW((void)object_info->getTypedPathInfo("y"), DB::Exception);
 }
 
 TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
