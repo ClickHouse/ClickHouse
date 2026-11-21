@@ -102,9 +102,9 @@ struct Topic
     bool binary_format = false;
     NamesAndTypesList value_columns;
 
-    String partitionId(Int32 partition) const;
-    std::optional<Int32> partitionIndex(const String & partition_id) const;
-    bool hasPartition(Int32 partition) const { return partition >= 0 && partition < num_partitions; }
+    [[nodiscard]] String partitionId(Int32 partition) const;
+    [[nodiscard]] std::optional<Int32> partitionIndex(const String & partition_id) const;
+    [[nodiscard]] bool hasPartition(Int32 partition) const { return partition >= 0 && partition < num_partitions; }
 };
 
 using TopicPtr = std::shared_ptr<const Topic>;

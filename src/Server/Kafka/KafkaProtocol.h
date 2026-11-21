@@ -83,7 +83,7 @@ public:
     }
 
     void setFlexible(bool value) { flexible = value; }
-    bool isFlexible() const { return flexible; }
+    [[nodiscard]] bool isFlexible() const { return flexible; }
 
     Int8 int8();
     Int16 int16();
@@ -111,8 +111,8 @@ public:
     std::string_view raw(size_t size);
     void skip(size_t size) { raw(size); }
 
-    bool eof() const { return pos == end; }
-    size_t remaining() const { return end - pos; }
+    [[nodiscard]] bool eof() const { return pos == end; }
+    [[nodiscard]] size_t remaining() const { return end - pos; }
 
 private:
     const char * pos;
@@ -127,7 +127,7 @@ public:
     explicit Writer(String & out_, bool flexible_ = false) : out(out_), flexible(flexible_) {}
 
     void setFlexible(bool value) { flexible = value; }
-    bool isFlexible() const { return flexible; }
+    [[nodiscard]] bool isFlexible() const { return flexible; }
 
     void int8(Int8 x) { out.push_back(static_cast<char>(x)); }
     void int16(Int16 x);
@@ -156,7 +156,7 @@ public:
 
     void raw(std::string_view s) { out.append(s); }
 
-    size_t size() const { return out.size(); }
+    [[nodiscard]] size_t size() const { return out.size(); }
     String & buffer() { return out; }
 
 private:
@@ -184,8 +184,8 @@ struct RecordBatch
     Int32 base_sequence = -1;
     std::vector<Record> records;
 
-    bool isTransactional() const { return attributes & 0x10; }
-    bool isControl() const { return attributes & 0x20; }
+    [[nodiscard]] bool isTransactional() const { return attributes & 0x10; }
+    [[nodiscard]] bool isControl() const { return attributes & 0x20; }
 };
 
 /// Parses a sequence of record batches, verifying the checksums and decompressing the records.

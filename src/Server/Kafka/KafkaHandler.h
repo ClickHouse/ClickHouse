@@ -61,7 +61,7 @@ private:
     void authenticate(const String & user, const String & password);
     void authenticateDefaultUserIfNeeded();
     ContextMutablePtr makeQueryContext();
-    bool isCancelled() const;
+    [[nodiscard]] bool isCancelled() const;
 
     String advertisedHost();
     Int32 advertisedPort();

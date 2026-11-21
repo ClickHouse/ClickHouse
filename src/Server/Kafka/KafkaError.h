@@ -17,7 +17,7 @@ public:
     {
     }
 
-    ErrorCode kafkaCode() const { return kafka_code; }
+    [[nodiscard]] ErrorCode kafkaCode() const { return kafka_code; }
 
     Exception * clone() const override { return new Error(*this); }
     void rethrow() const override { throw *this; } // NOLINT
