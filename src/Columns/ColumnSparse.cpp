@@ -702,28 +702,49 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                     int direction, int nan_direction_hint) const
 {
-    if (row_indexes || !typeid_cast<const ColumnSparse *>(&rhs))
+    /// The value to compare with, as a row of a column of the type of `values`.
+    const IColumn * rhs_column = &rhs;
+    size_t rhs_row = rhs_row_num;
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
     {
-        /// TODO: implement without conversion to full column.
-        auto this_full = convertToFullColumnIfSparse();
-        auto rhs_full = rhs.convertToFullColumnIfSparse();
-        this_full->compareColumn(*rhs_full, rhs_row_num, row_indexes, compare_results, direction, nan_direction_hint);
+        rhs_column = &rhs_sparse->getValuesColumn();
+        rhs_row = rhs_sparse->getValueIndex(rhs_row_num);
     }
-    else
-    {
-        const auto & rhs_sparse = assert_cast<const ColumnSparse &>(rhs);
-        PaddedPODArray<Int8> nested_result;
-        values->compareColumn(
-            rhs_sparse.getValuesColumn(),
-            rhs_sparse.getValueIndex(rhs_row_num),
-            nullptr, nested_result, direction, nan_direction_hint);
 
-        const auto & offsets_data = getOffsetsData();
-        compare_results.resize(size());
-        std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
-        for (size_t i = 0; i < offsets_data.size(); ++i)
-            compare_results[offsets_data[i]] = nested_result[i + 1];
+    if (row_indexes)
+    {
+        /// Compares only the listed rows, each through its value, and keeps the rows that compare equal.
+        if (compare_results.empty())
+            compare_results.resize(_size);
+        else if (compare_results.size() != _size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}",
+                compare_results.size(), _size);
+
+        UInt64 * next_index = row_indexes->data();
+        for (auto row : *row_indexes)
+        {
+            int res = values->compareAt(getValueIndex(row), rhs_row, *rhs_column, nan_direction_hint);
+            chassert(res == 1 || res == -1 || res == 0);
+            compare_results[row] = static_cast<Int8>(res * direction);
+            if (res == 0)
+            {
+                *next_index = row;
+                ++next_index;
+            }
+        }
+        row_indexes->resize(next_index - row_indexes->data());
+        return;
     }
+
+    /// Compares every value once: the result of the default value at position 0 holds for all default rows.
+    PaddedPODArray<Int8> nested_result;
+    values->compareColumn(*rhs_column, rhs_row, nullptr, nested_result, direction, nan_direction_hint);
+
+    const auto & offsets_data = getOffsetsData();
+    compare_results.resize(_size);
+    std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
+    for (size_t i = 0; i < offsets_data.size(); ++i)
+        compare_results[offsets_data[i]] = nested_result[i + 1];
 }
 
 int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
