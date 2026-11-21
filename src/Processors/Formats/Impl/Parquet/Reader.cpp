@@ -2158,6 +2158,9 @@ void Reader::preparePrewhere()
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
 
+    /// Slots of the intermediates the steps of the current `add_step` call pass to each other.
+    UnorderedMapWithMemoryTracking<String, size_t> intermediate_slots;
+
     auto add_single_step = [&] (const ActionsDAG & dag, const String & filter_column_name, bool needs_filter, size_t step_idx)
     {
         if (!actions_settings.has_value())
@@ -2169,6 +2172,12 @@ void Reader::preparePrewhere()
         /// Find inputs in extended sample block.
         for (const auto & col : step.actions.getRequiredColumnsWithTypes())
         {
+            if (auto it = intermediate_slots.find(col.name); it != intermediate_slots.end())
+            {
+                chassert(prewhere_output_column_idxs.contains(it->second));
+                step.input_idxs.push_back(it->second);
+                continue;
+            }
             size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             if (output_idx.has_value())
@@ -2196,6 +2205,13 @@ void Reader::preparePrewhere()
         /// Find outputs in sample block.
         for (const auto * node : dag.getOutputs())
         {
+            if (auto it = intermediate_slots.find(node->result_name); it != intermediate_slots.end())
+            {
+                /// A later step that passes it through does not write it again.
+                if (prewhere_output_column_idxs.insert(it->second).second)
+                    step.idxs_in_output_block.emplace_back(node->result_name, it->second);
+                continue;
+            }
             auto idx = extended_sample_block.findPositionByName(node->result_name);
             /// Note: prewhere output may also be an input, if it's just passed through.
             if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value() && !prewhere_output_column_idxs.contains(*idx))
@@ -2215,6 +2231,7 @@ void Reader::preparePrewhere()
 
         PrewhereExprInfo prewhere_expr_info;
         bool success = false;
+        VectorWithMemoryTracking<NameAndTypePair> new_intermediates;
 
         /// The per-condition split only registers kept prewhere outputs while filtering, so it is
         /// used only when needs_filter is true; otherwise fall through to the single step below.
@@ -2229,13 +2246,12 @@ void Reader::preparePrewhere()
                 prewhere_expr_info,
                 /*force_short_circuit_execution*/ false);
 
-            /// A cross-step column is addressable only if it is an original prewhere input or an
-            /// intermediate an earlier step wrote to a dedicated prewhere-output slot. Otherwise the
-            /// split step is unaddressable (or would resolve to a physical column that only shares the
-            /// generated name), so fall back to a single step.
+            /// A step may read an original prewhere input, a prewhere output of an earlier step, or an earlier
+            /// step's column named like no column of `extended_sample_block`; anything else falls back to one step.
             NameSet addressable_columns;
             for (const auto & col : dag.getRequiredColumns())
                 addressable_columns.insert(col.name);
+            NameSet unslotted_outputs;
 
             for (const auto & step : prewhere_expr_info.steps)
             {
@@ -2243,23 +2259,27 @@ void Reader::preparePrewhere()
                     break;
                 for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
                 {
-                    if (!addressable_columns.contains(col.name))
+                    if (addressable_columns.contains(col.name))
+                        continue;
+                    if (!unslotted_outputs.contains(col.name))
                     {
                         success = false;
                         break;
                     }
+                    new_intermediates.push_back(col);
+                    addressable_columns.insert(col.name);
                 }
                 if (!success)
                     break;
 
-                /// An intermediate this step computes can be read by a later step only through a
-                /// dedicated prewhere-output slot: one present in `extended_sample_block` whose slot is
-                /// not an original output column. This mirrors how `add_single_step` registers prewhere
-                /// outputs, and excludes generated names that only collide with physical columns.
+                /// A column of `extended_sample_block` is addressable only through a prewhere-output slot,
+                /// never through a file column that has the same name.
                 for (const auto * node : step->actions->getActionsDAG().getOutputs())
                 {
                     auto idx = extended_sample_block.findPositionByName(node->result_name);
-                    if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value())
+                    if (!idx.has_value())
+                        unslotted_outputs.insert(node->result_name);
+                    else if (!sample_block_to_output_columns_idx.at(*idx).has_value())
                         addressable_columns.insert(node->result_name);
                 }
             }
@@ -2267,12 +2287,20 @@ void Reader::preparePrewhere()
 
         if (success)
         {
+            for (const auto & column : new_intermediates)
+            {
+                intermediate_slots.emplace(column.name, extended_sample_block.columns() + prewhere_intermediates.size());
+                prewhere_intermediates.push_back(column);
+            }
+
             /// Add all steps separately.
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
                 add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
+
+            intermediate_slots.clear();
         }
         else
         {
@@ -2374,6 +2402,7 @@ void Reader::preparePrewhere()
 
     /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
     if (steps.empty() || steps.back().input_idxs.size() != 1
+        || steps.back().input_idxs[0] >= extended_sample_block.columns()
         || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
         return;
     const auto & output_idx = sample_block_to_output_columns_idx.at(steps.back().input_idxs[0]);
@@ -3468,8 +3497,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             }
 
             row_subgroup.columns.resize(primitive_columns.size());
-            row_subgroup.output = VectorWithMemoryTracking<OutputColumnState>(extended_sample_block.columns());
-            for (size_t idx = 0; idx < row_subgroup.output.size(); ++idx)
+            row_subgroup.output = VectorWithMemoryTracking<OutputColumnState>(extended_sample_block.columns() + prewhere_intermediates.size());
+            for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
             {
                 const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
                 if (output_idx.has_value())
@@ -5070,6 +5099,14 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         Block block;
         for (size_t idx_in_output_block : step.input_idxs)
         {
+            if (idx_in_output_block >= extended_sample_block.columns())
+            {
+                const auto & intermediate = prewhere_intermediates.at(idx_in_output_block - extended_sample_block.columns());
+                const ColumnPtr & column = row_subgroup.output.at(idx_in_output_block).column;
+                chassert(column && column->size() == row_subgroup.filter.rows_pass);
+                block.insert({column, intermediate.type, intermediate.name});
+                continue;
+            }
             const ColumnWithTypeAndName & col = extended_sample_block.getByPosition(idx_in_output_block);
             block.insert({getOrFormOutputColumn(row_group, row_subgroup, idx_in_output_block), col.type, col.name});
         }
