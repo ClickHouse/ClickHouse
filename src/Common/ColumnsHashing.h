@@ -137,10 +137,17 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     PaddedPODArray<UInt32> position_first_rows;
     PaddedPODArray<UInt32> counted_positions;
 
-    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
+    /// `emplaceKey` calls this before it changes the hash table, so that if `emplaceKey` throws, the table has no key whose
+    /// insertion the caller never saw. An index left for a position that stays `Empty` is harmless to `resetCache`.
+    ALWAYS_INLINE void addFilledVisitIndex(size_t index)
     {
         if (visit_cache[index] == VisitValue::Empty)
             filled_visit_cache_indexes.push_back(index);
+    }
+
+    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
+    {
+        addFilledVisitIndex(index);
         visit_cache[index] = value;
     }
 
@@ -284,6 +291,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
+            if (!mappedInTableOnly())
+                addFilledVisitIndex(row);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
@@ -291,12 +300,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             {
                 if (mappedInTableOnly())
                     return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
-                setVisited(row, VisitValue::Found);
+                visit_cache[row] = VisitValue::Found;
                 return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !has_null_key);
             }
             else
             {
-                setVisited(row, VisitValue::Found);
+                visit_cache[row] = VisitValue::Found;
                 return EmplaceResult(!has_null_key);
             }
         }
@@ -309,6 +318,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return EmplaceResult(false);
         }
 
+        if (!mappedInTableOnly())
+            addFilledVisitIndex(row);
         auto key_holder = getKeyHolder(row_, pool);
         auto key = keyHolderGetKey(key_holder);
 
@@ -328,13 +339,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
             if (mappedInTableOnly())
                 return EmplaceResult(mapped, mapped, inserted, std::move(key));
-            setVisited(row, VisitValue::Found);
+            visit_cache[row] = VisitValue::Found;
             mapped_cache[row] = mapped;
             return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
         {
-            setVisited(row, VisitValue::Found);
+            visit_cache[row] = VisitValue::Found;
             return EmplaceResult(inserted);
         }
     }

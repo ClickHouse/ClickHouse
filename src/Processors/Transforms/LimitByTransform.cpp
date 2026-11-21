@@ -186,6 +186,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
 
     UInt64 current_run_start_row = 0;
+    /// If row 0 is in another group, it ends an empty run of group 0, which `processRun` leaves unchanged.
     size_t current_run_group_idx = 0;
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
@@ -194,7 +195,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
     /// per batch loses nothing noticeable. The check sits in an outer loop rather than behind a mask test on
     /// the row index: on AArch64 clang-23 keeps even that test and its branch in the row loop, which costs 20%.
-    for (UInt64 batch_start_row = 0; batch_start_row < row_count; batch_start_row += cancellation_check_batch_rows)
+    for (UInt64 batch_start_row = 0, batch_end_row = 0; batch_start_row < row_count; batch_start_row = batch_end_row)
     {
         if (isCancelled())
         {
@@ -203,26 +204,24 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             return;
         }
 
-        const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
+        /// The mid-loop failpoint pauses before row 5. Row 5 starts a batch, so the row loop needs no test for it.
+        constexpr UInt64 mid_loop_pause_row = 5;
+        if (batch_start_row == mid_loop_pause_row)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
+        batch_end_row = std::min(
+            batch_start_row < mid_loop_pause_row ? mid_loop_pause_row : batch_start_row + cancellation_check_batch_rows, row_count);
         for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
         {
-            if (row_idx == 5)
-                FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
-
             auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-            /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
-            /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
-            /// gets its group the next time it is seen.
-            if (key_emplace_result.isInserted())
-                key_emplace_result.setMapped(nullptr);
-
             size_t row_group_idx = 0;
-            if (!key_emplace_result.getMapped()) /// New grouping key
+            if (key_emplace_result.isInserted()) /// New grouping key
             {
                 /// Assign a stable index into `group_counts` to the grouping key we just inserted.
-                row_group_idx = group_counts.size();
-                group_counts.push_back(0);
+                /// The key gets it before `push_back`, which can throw; see `num_assigned_groups`.
+                row_group_idx = num_assigned_groups++;
                 key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
+                group_counts.push_back(0);
             }
             else /// Existing grouping key
             {
@@ -231,9 +230,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
                 chassert(row_group_idx < group_counts.size());
             }
 
-            if (row_idx == 0)
-                current_run_group_idx = row_group_idx;
-            else if (row_group_idx != current_run_group_idx) /// Local run ended
+            if (row_group_idx != current_run_group_idx) /// Local run ended
             {
                 processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
                 current_run_group_idx = row_group_idx;
@@ -287,6 +284,9 @@ void LimitByTransform::transform(Chunk & chunk)
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
+
+        if (unlikely(group_counts.size() < num_assigned_groups))
+            group_counts.resize(num_assigned_groups);
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
