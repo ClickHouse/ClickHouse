@@ -184,6 +184,12 @@ DiskObjectStorage::DiskObjectStorage(
             {
                 if (entity_type == WorkloadEntityType::Resource)
                 {
+                    // A replaced resource may no longer serve the operations it served before
+                    new_read_resource_name_from_sql.erase(resource_name);
+                    new_write_resource_name_from_sql.erase(resource_name);
+                    new_read_resource_name_from_sql_any.erase(resource_name);
+                    new_write_resource_name_from_sql_any.erase(resource_name);
+
                     if (resource) // CREATE RESOURCE
                     {
                         auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
@@ -209,13 +215,6 @@ DiskObjectStorage::DiskObjectStorage(
                                 }
                             }
                         }
-                    }
-                    else // DROP RESOURCE
-                    {
-                        new_read_resource_name_from_sql.erase(resource_name);
-                        new_write_resource_name_from_sql.erase(resource_name);
-                        new_read_resource_name_from_sql_any.erase(resource_name);
-                        new_write_resource_name_from_sql_any.erase(resource_name);
                     }
                 }
             }

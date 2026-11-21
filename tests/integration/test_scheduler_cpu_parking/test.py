@@ -69,11 +69,11 @@ def get_profile_event(query_id, profile_event):
 
 
 def setup_cpu_workload():
-    # Binding the `cpu` resource to master+worker threads routes the query's CPU slots through
+    # A CPU resource routes the query's CPU slots through
     # the workload scheduler (CPULeaseAllocation). Parking only happens on that path.
     node.query(
         """
-        create resource cpu (master thread, worker thread);
+        create resource cpu (consume cpu);
         create workload all settings max_concurrent_threads=8;
     """
     )

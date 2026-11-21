@@ -12,6 +12,8 @@ enum class ResourceAccessMode
 {
     DiskRead,
     DiskWrite,
+    CPU,
+    /// Deprecated spellings of `CPU`: `WORKER THREAD` acts as `CPU`, `MASTER THREAD` alone schedules nothing
     MasterThread,
     WorkerThread,
     Query,
@@ -24,6 +26,7 @@ inline CostUnit costUnitForMode(ResourceAccessMode mode)
     {
         case ResourceAccessMode::DiskRead: return CostUnit::IOByte;
         case ResourceAccessMode::DiskWrite: return CostUnit::IOByte;
+        case ResourceAccessMode::CPU: return CostUnit::CPUNanosecond;
         case ResourceAccessMode::MasterThread: return CostUnit::CPUNanosecond;
         case ResourceAccessMode::WorkerThread: return CostUnit::CPUNanosecond;
         case ResourceAccessMode::Query: return CostUnit::QuerySlot;

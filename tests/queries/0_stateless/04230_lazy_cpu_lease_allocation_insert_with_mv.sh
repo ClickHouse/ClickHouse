@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage, no-fasttest
-# no-parallel: the server allows at most one MASTER/WORKER THREAD resource at a time,
+# no-parallel: the server allows at most one CPU resource at a time,
 #   and peak_threads_usage is sensitive to concurrent queries
 # no-replicated-database: query_log lookup assumes single-node execution
 # no-async-insert: test measures synchronous INSERT pipeline threading
@@ -11,7 +11,7 @@
 # Regression test for the CPULeaseAllocation half of
 # https://github.com/ClickHouse/ClickHouse/pull/102928 (lazy slot allocation).
 #
-# When workload CPU scheduling is enabled with `cpu_slot_preemption=1` (default),
+# When workload CPU scheduling is enabled,
 # the pipeline uses `CPULeaseAllocation` instead of `ConcurrencyControl::Allocation`.
 # Pre-fix, the lease eagerly requested `max_threads` worth of slots from the
 # workload scheduler at construction time. For an INSERT with one MV and serial
@@ -41,7 +41,7 @@ cleanup() {
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -nm -q "
-    CREATE OR REPLACE RESOURCE ${RESOURCE} (MASTER THREAD, WORKER THREAD);
+    CREATE OR REPLACE RESOURCE ${RESOURCE} (CONSUME CPU);
     CREATE OR REPLACE WORKLOAD ${WORKLOAD};
     DROP TABLE IF EXISTS test_lease_src;
     DROP TABLE IF EXISTS test_lease_mvt;
