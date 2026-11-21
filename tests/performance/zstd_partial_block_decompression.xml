@@ -1,0 +1,38 @@
+<test iceberg="0">
+    <!-- Reads that need only the beginning of a ZSTD-compressed block of a wide `String` column: a filter on a column that
+         is not the first of the sorting key, a filter over two `PREWHERE` steps, the first rows of every granule. The full
+         reads in small and in default blocks are controls. Not on Iceberg tables: it measures the decompression of
+         MergeTree blocks. -->
+    <settings>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE zstd_partial_hits
+        (
+            CounterID UInt32, EventDate Date, UserID UInt64, WatchID UInt64,
+            URL String CODEC(ZSTD(3)), Title String CODEC(ZSTD(3)), Referer String CODEC(ZSTD(3)),
+            OriginalURL String CODEC(ZSTD(3)), SearchPhrase String CODEC(ZSTD(3))
+        )
+        ENGINE = MergeTree ORDER BY (CounterID, EventDate, UserID, WatchID)
+    </create_query>
+    <create_query>CREATE TABLE zstd_partial_prefix (k UInt64, s String CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>
+        INSERT INTO zstd_partial_hits
+        SELECT CounterID, EventDate, UserID, WatchID, URL, Title, Referer, OriginalURL, SearchPhrase
+        FROM hits_100m_single WHERE intHash64(WatchID) % 10 = 0
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE zstd_partial_hits FINAL</fill_query>
+    <fill_query>INSERT INTO zstd_partial_prefix SELECT number, repeat(hex(cityHash64(number)), 6) FROM numbers(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE zstd_partial_prefix FINAL</fill_query>
+
+    <query>SELECT count(), sum(cityHash64(URL, Title)) FROM zstd_partial_hits WHERE UserID % 1000 = 17</query>
+    <query>SELECT URL, Referer, OriginalURL, Title FROM zstd_partial_hits WHERE Title LIKE '%Google%' AND SearchPhrase != '' FORMAT Null</query>
+    <query>SELECT sum(cityHash64(Title, URL, Referer, OriginalURL)) FROM zstd_partial_hits SETTINGS max_block_size = 1024</query>
+    <query>SELECT sum(cityHash64(Title, URL, Referer, OriginalURL)) FROM zstd_partial_hits</query>
+    <query>SELECT sum(cityHash64(s)) FROM zstd_partial_prefix PREWHERE k % 8192 &lt; 64</query>
+
+    <drop_query>DROP TABLE IF EXISTS zstd_partial_hits</drop_query>
+    <drop_query>DROP TABLE IF EXISTS zstd_partial_prefix</drop_query>
+</test>

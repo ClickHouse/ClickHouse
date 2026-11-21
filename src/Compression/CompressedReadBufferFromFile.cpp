@@ -1,16 +1,60 @@
 
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Compression/CompressionInfo.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ByteRangeSet.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event CompressedReadBufferBlocks;
+    extern const Event CompressedReadBufferBytes;
+}
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+
+bool CompressedReadBufferFromFile::startPartialDecompression(size_t size_decompressed, size_t size_compressed_without_checksum, size_t min_bytes)
+{
+    if (!codec || codec->getMethodByte() != static_cast<uint8_t>(CompressionMethodByte::ZSTD)
+        || min_bytes + ZstdIncrementalDecompressor::max_block_size >= size_decompressed)
+        return false;
+
+    const UInt8 header_size = ICompressionCodec::getHeaderSize();
+    if (size_compressed_without_checksum <= header_size)
+        return false;
+
+    const char * frame = compressed_buffer + header_size;
+    const size_t frame_size = size_compressed_without_checksum - header_size;
+    if (!partial_decompressor.start(frame, frame_size, memory.data(), size_decompressed))
+        return false;
+
+    if (frame < own_compressed_buffer.data() || frame + frame_size > own_compressed_buffer.data() + own_compressed_buffer.size())
+    {
+        own_compressed_buffer.resize(frame_size);
+        memcpy(own_compressed_buffer.data(), frame, frame_size);
+        own_compressed_buffer_header_init = false;
+        partial_decompressor.relocateSource(own_compressed_buffer.data());
+    }
+
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
+    continuePartialDecompression(min_bytes);
+    return true;
+}
+
+void CompressedReadBufferFromFile::continuePartialDecompression(size_t min_bytes)
+{
+    const size_t decompressed_before = partial_decompressor.decompressedBytes();
+    const size_t decompressed = partial_decompressor.decompressAtLeast(min_bytes);
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, decompressed - decompressed_before);
+    working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, decompressed);
 }
 
 /// Cached: `getLogger` takes a process-global mutex, and these buffers are created per column stream
@@ -25,6 +69,17 @@ bool CompressedReadBufferFromFile::nextImpl()
 {
     try
     {
+        if (partial_decompressor.inProgress())
+        {
+            /// `working_buffer` keeps the beginning of the block (ZSTD needs it as the history): skip the old part,
+            /// which `next` has already added to `bytes`.
+            const size_t old_size = working_buffer.size();
+            continuePartialDecompression(old_size + 1);
+            bytes -= old_size;
+            nextimpl_working_buffer_offset = old_size;
+            return true;
+        }
+
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
@@ -79,6 +134,21 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 {
     chassert(size_compressed || working_buffer.empty());
 
+    if (partial_decompressor.inProgress())
+    {
+        if (size_compressed && offset_in_compressed_file == file_in.getPosition() - size_compressed)
+        {
+            if (offset_in_decompressed_block > working_buffer.size())
+            {
+                const size_t pos_offset = offset();
+                continuePartialDecompression(offset_in_decompressed_block);
+                pos = working_buffer.begin() + pos_offset;
+            }
+        }
+        else
+            partial_decompressor.reset();
+    }
+
     /// Nothing to do if we already at required position
     if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
         nextimpl_working_buffer_offset == offset_in_decompressed_block) /// we will move our position to correct one
@@ -125,6 +195,14 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// If you need to read more - we will, if possible, decompress at once to `to`.
         while (bytes_read < n)
         {
+            if (partial_decompressor.inProgress())
+            {
+                if (!next())
+                    return bytes_read;
+                bytes_read += read(to + bytes_read, std::min(available(), n - bytes_read));
+                continue;
+            }
+
             size_t size_decompressed = 0;
             size_t size_compressed_without_checksum = 0;
 
@@ -179,9 +257,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 /// This is for clang static analyzer.
                 chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
-                // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.
-                decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+
+                if (!startPartialDecompression(size_decompressed, size_compressed_without_checksum, n - bytes_read))
+                {
+                    working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                    // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.
+                    decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+                }
 
                 /// Read partial data from last block.
                 pos = working_buffer.begin();
