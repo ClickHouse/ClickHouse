@@ -217,6 +217,12 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     {
         auto actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
+        /// `FillingTransform` executes the expression on a single row and copies row 0 of each result,
+        /// but `ARRAY JOIN` changes the number of rows (an empty array leaves none). The analyzer rejects
+        /// it in `INTERPOLATE`, so a plan containing it did not come from a planner.
+        if (actions.hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "FillingStep: ARRAY JOIN is not supported in INTERPOLATE");
+
         /// The plan may come from an untrusted client (`TCPHandler::receiveQueryPlan`), so the description
         /// is rebuilt from the DAG rather than taken from the wire. `FillingTransform` pairs the executed
         /// DAG's output columns with `result_columns_order` by position and stages each required column in

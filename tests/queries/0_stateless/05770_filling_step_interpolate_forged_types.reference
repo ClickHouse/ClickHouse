@@ -1,0 +1,10 @@
+alias type differs from its argument INCORRECT_DATA
+array join type differs from nested type INCORRECT_DATA
+array join of not an array INCORRECT_DATA
+array join in interpolate INCORRECT_DATA
+array join in a lambda body INCORRECT_DATA
+lambda body input type differs from the argument INCORRECT_DATA
+lambda body input is not an argument INCORRECT_DATA
+well-formed lambda accepted
+well-formed alias accepted
+3

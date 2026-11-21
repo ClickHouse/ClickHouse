@@ -5150,6 +5150,54 @@ static void serializeConstant(
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
+/// Check that a deserialized lambda is what `FunctionCaptureOverloadResolver` would have built.
+///
+/// It refuses to capture an expression with `ARRAY JOIN`: `FunctionExpression` expects its body to keep
+/// the number of rows.
+///
+/// It also takes the types of the captured columns from the inputs of the body, and the planner creates
+/// the inputs for the lambda arguments with the types of the arguments. `FunctionExpression` checks the columns
+/// it is called with against the signature in `LambdaCapture`, and then passes them to the body by name, so
+/// every input of the body must be a captured column or a lambda argument with exactly the declared type.
+/// Otherwise the body (which may be JIT-compiled for the types of its inputs) would read a column of another type.
+///
+/// A deserialized lambda is built directly as `FunctionCapture` or `FunctionExpression`, so check the same here,
+/// before the body is compiled. Lambdas nested in the body are checked when they are deserialized themselves.
+static void checkDeserializedLambdaBody(const ActionsDAG & capture_dag, const LambdaCapture & capture)
+{
+    if (capture_dag.hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized lambda body must not contain ARRAY JOIN");
+
+    /// `deserializeCapture` has checked that there are as many captured types as captured names.
+    /// A name may repeat in the signature, so an input must match every column it could be bound to.
+    for (const auto * input : capture_dag.getInputs())
+    {
+        bool found = false;
+        auto check_type = [&](const String & name, const DataTypePtr & type)
+        {
+            if (name != input->result_name)
+                return;
+
+            found = true;
+            if (!input->result_type->equals(*type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized lambda body has input {} of type {}, but the lambda declares it with type {}",
+                    input->result_name, input->result_type->getName(), type->getName());
+        };
+
+        for (size_t i = 0; i < capture.captured_names.size(); ++i)
+            check_type(capture.captured_names[i], capture.captured_types[i]);
+
+        for (const auto & lambda_argument : capture.lambda_arguments)
+            check_type(lambda_argument.name, lambda_argument.type);
+
+        if (!found)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized lambda body has input {} of type {}, which is neither a captured column nor a lambda argument",
+                input->result_name, input->result_type->getName());
+    }
+}
+
 /// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
@@ -5200,6 +5248,7 @@ static ColumnConst::Ptr deserializeConstant(
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+        checkDeserializedLambdaBody(capture_dag, capture);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -5481,6 +5530,14 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+
+            /// `ExpressionActions` passes the child's column and type through an alias, so the declared type
+            /// must be the child's: the consumers of the DAG check only the declared types of its outputs.
+            const auto & child_type = node.children.front()->result_type;
+            if (!node.result_type->equals(*child_type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized alias {} has invalid type. Expected {}, deserialized {}.",
+                    node.result_name, child_type->getName(), node.result_type->getName());
         }
         else if (node.type == ActionType::FUNCTION)
         {
@@ -5504,6 +5561,7 @@ ActionsDAG ActionsDAG::deserialize(
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+                checkDeserializedLambdaBody(capture_dag, capture);
 
                 auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
                 auto expression_actions = createLambdaExpressionActions(
@@ -5543,6 +5601,21 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+
+            /// `ExpressionActions` replaces the result with the nested column of the argument and its type,
+            /// so the declared type must be that one, the same as in `addArrayJoin`.
+            const auto & child_type = node.children.front()->result_type;
+            const auto array_type = getArrayJoinDataType(child_type);
+            if (!array_type)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized array join {} has argument of type {}, which is not an array nor map",
+                    node.result_name, child_type->getName());
+
+            const auto & nested_type = array_type->getNestedType();
+            if (!node.result_type->equals(*nested_type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized array join {} has invalid type. Expected {}, deserialized {}.",
+                    node.result_name, nested_type->getName(), node.result_type->getName());
         }
         else
         {
