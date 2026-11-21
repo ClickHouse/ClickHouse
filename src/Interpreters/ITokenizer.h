@@ -120,6 +120,10 @@ private:
 
 using TokenizerPtr = const ITokenizer *;
 
+/// Whether every token of `value` is also a token of `value` followed by NUL bytes. The n-gram tokenizers clamp their
+/// last token to the buffer end, so for them it needs every UTF-8 sequence started in `value` to end within it.
+bool tokensSurviveTrailingNuls(ITokenizer::Type type, std::string_view value);
+
 template <typename Derived>
 class ITokenizerHelper : public ITokenizer
 {
