@@ -106,9 +106,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     /// storage does not support the other kinds of columns. It is created so only when it has the columns that their `DEFAULT`
     /// expressions use, and it can parse the data with them: the format can read a subset of its columns, or there are as
     /// many of them as inferred columns, not counting the columns of the hive-style partitions of the path, which are read
-    /// from the path in both cases. Otherwise, as for
-    /// `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the data
-    /// with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
+    /// from the path in both cases, and the format is not `Distributed`, whose columns are always those of the data. Otherwise,
+    /// as for `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the
+    /// data with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
     /// inferred columns keeps reading them by name: a query names an ordinary or a `MATERIALIZED` stored column or a
     /// subcolumn of one, also a dynamic one, and the storage has that name as a column or a subcolumn, such as `nested.value`
     /// of `nested Tuple(value UInt32)` or `j.a` of `j JSON` for a `JSONEachRow` file with the key `nested.value` or `j.a`.
@@ -198,6 +198,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
 
         const auto can_parse_data_with_stored_columns = [&]
         {
+            /// `StorageFile` always takes the columns of a `Distributed` file from its header, not the given ones.
+            if (detected_format == "Distributed")
+                return false;
             size_t num_data_columns = 0;
             for (const auto & inferred_column : metadata->columns.getOrdinary())
                 num_data_columns += !is_partition_column(inferred_column.name);
