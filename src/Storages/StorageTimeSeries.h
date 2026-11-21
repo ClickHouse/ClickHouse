@@ -156,6 +156,14 @@ private:
     /// Auxiliary recent samples and time ranges targets do not count as owned data targets.
     bool hasInnerRequiredTables() const;
 
+    /// Names that the inner table of the given kind may have in a non-Atomic database or while it is not attached.
+    Strings getInnerTableNames(ViewTarget::Kind target_kind) const;
+
+    /// The inner table of the given kind if it is attached. Otherwise, if asked, every name it may have.
+    std::vector<StorageID> getInnerTableIDs(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool with_not_attached) const;
+
+    void dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard);
+
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 

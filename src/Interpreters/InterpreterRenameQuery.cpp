@@ -1,4 +1,5 @@
 #include <Parsers/ASTRenameQuery.h>
+#include <Backups/BackupUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -26,6 +27,32 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+/// How deep the name puts a table in a chain of inner tables: 0 for a table that is not inner, 1 for its inner table, and so on.
+static size_t getInnerTableDepth(const String & database_name, const String & table_name)
+{
+    if (!BackupUtils::isInnerTable(database_name, table_name))
+        return 0;
+
+    /// In a non-Atomic database the name of an inner table contains the name of its owner.
+    size_t depth = 0;
+    for (size_t pos = table_name.find(".inner"); pos != String::npos; pos = table_name.find(".inner", pos + 1))
+        ++depth;
+
+    /// In an Atomic database the owner of `.inner_id.<kind>.<uuid>` can itself be an inner table `.inner_id.<uuid>`.
+    static constexpr std::string_view inner_id_prefix = ".inner_id.";
+    if (table_name.starts_with(inner_id_prefix) && table_name.find('.', inner_id_prefix.size()) != String::npos)
+        ++depth;
+
+    return depth;
+}
+
+bool UniqueTableName::operator<(const UniqueTableName & rhs) const
+{
+    size_t depth = getInnerTableDepth(database_name, table_name);
+    size_t rhs_depth = getInnerTableDepth(rhs.database_name, rhs.table_name);
+    return std::tie(depth, database_name, table_name) < std::tie(rhs_depth, rhs.database_name, rhs.table_name);
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
