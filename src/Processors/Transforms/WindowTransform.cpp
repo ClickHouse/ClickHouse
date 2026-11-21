@@ -326,6 +326,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             aggregate_function->sizeOfData(),
             aggregate_function->alignOfData());
         aggregate_function->create(workspace.aggregate_function_state.data());
+        workspace.aggregate_function_state_created = true;
 
         workspaces.push_back(std::move(workspace));
     }
@@ -409,8 +410,8 @@ WindowTransform::~WindowTransform()
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
-        ws.aggregate_function->destroy(
-            ws.aggregate_function_state.data());
+        if (ws.aggregate_function_state_created)
+            ws.aggregate_function->destroy(ws.aggregate_function_state.data());
     }
 }
 
@@ -1013,8 +1014,13 @@ void WindowTransform::updateAggregationState()
 
         if (reset_aggregation)
         {
-            a->destroy(buf);
+            if (ws.aggregate_function_state_created)
+            {
+                a->destroy(buf);
+                ws.aggregate_function_state_created = false;
+            }
             a->create(buf);
+            ws.aggregate_function_state_created = true;
         }
 
         // To achieve better performance, we will have to loop over blocks and
@@ -1333,7 +1339,11 @@ void WindowTransform::appendChunk(Chunk & chunk)
             const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
-            a->destroy(buf);
+            if (ws.aggregate_function_state_created)
+            {
+                a->destroy(buf);
+                ws.aggregate_function_state_created = false;
+            }
         }
 
         // Release the arena we use for aggregate function states, so that it
@@ -1355,6 +1365,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
             auto * buf = ws.aggregate_function_state.data();
 
             a->create(buf);
+            ws.aggregate_function_state_created = true;
         }
     }
 }
