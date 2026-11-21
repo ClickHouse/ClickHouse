@@ -17,6 +17,11 @@ uint16_t getTerminalWidth(int in_fd = STDIN_FILENO, int err_fd = STDERR_FILENO);
   */
 bool terminalSupportsUTF8();
 
+/** Returns true if the terminal can display "●" (U+25CF) in one column, for example, to mask the characters of a password.
+  * It requires UTF-8, and the width of this character is ambiguous in East Asian locales.
+  */
+bool terminalDisplaysBulletInOneColumn();
+
 /** Creates po::options_description with name and an appropriate size for option displaying
  *  when program is called with option --help
  * */
