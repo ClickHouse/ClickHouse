@@ -19,6 +19,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
@@ -219,6 +220,100 @@ template struct KafkaInterceptors<StorageKafka2>;
 namespace
 {
 
+/// Converts a key of the server configuration or of a named collection to the name of a librdkafka property.
+///
+/// librdkafka gets the name as a C string, thus it uses only the part before the first null character.
+/// A key with a null character is rejected: the checks of the name must see the name that librdkafka uses.
+/// Otherwise a key such as `ssl_key_location\0suffix` (a quoted key of a named collection can contain a null character)
+/// passes the checks and sets `ssl.key.location`.
+String toKafkaPropertyName(const String & key)
+{
+    if (key.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property name {} contains a null character", backQuote(key));
+
+    return (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+}
+
+struct ServerLocalProperty
+{
+    std::string_view name;
+    /// The property that takes the contents of the file instead of its path, if librdkafka has one.
+    std::string_view contents_property;
+};
+
+/// librdkafka properties that refer to the filesystem of the server. librdkafka reads the file (certificates, keys,
+/// keytabs, assertions), creates it (`offset.store.path`), loads it as a library (`plugin.library.paths`,
+/// `ssl.engine.location`, `ssl.providers`) or runs it (`sasl.kerberos.kinit.cmd`), all with the privileges of the
+/// server. It also sends the contents of `sasl.oauthbearer.assertion.file` to `sasl.oauthbearer.token.endpoint.url`.
+/// Thus these properties are accepted only from a named collection that is defined in the server configuration.
+/// A named collection created with SQL does not require the privileges to access the files of the server.
+///
+/// librdkafka compares the names of the properties exactly and rejects the unknown ones, so a list of names is enough.
+/// When librdkafka is updated, check `rdkafka_conf.c` for new properties of this kind.
+constexpr ServerLocalProperty server_local_properties[] = {
+    {"ssl.key.location", "ssl.key.pem"},
+    {"ssl.certificate.location", "ssl.certificate.pem"},
+    {"ssl.ca.location", "ssl.ca.pem"},
+    {"ssl.crl.location", ""},
+    {"ssl.keystore.location", ""},
+    {"ssl.engine.location", ""},
+    {"ssl.engine.id", ""},
+    {"ssl.providers", ""},
+    {"https.ca.location", "https.ca.pem"},
+    {"sasl.kerberos.keytab", ""},
+    {"sasl.kerberos.kinit.cmd", ""},
+    {"sasl.oauthbearer.assertion.file", ""},
+    {"sasl.oauthbearer.assertion.private.key.file", "sasl.oauthbearer.assertion.private.key.pem"},
+    {"sasl.oauthbearer.assertion.jwt.template.file", ""},
+    {"plugin.library.paths", ""},
+    {"offset.store.path", ""},
+};
+
+/// Returns the property of `server_local_properties` that `key` sets, if there is one.
+/// `key` is a key of a named collection below `kafka`. The names of the sections can come before the property,
+/// for example `ssl_key_location`, `consumer.ssl_key_location` or `kafka.kafka_topic.ssl.key.location`.
+/// librdkafka also accepts the topic-level properties with the `topic.` prefix.
+/// All of these end with the name of the property.
+const ServerLocalProperty * findServerLocalProperty(const String & key)
+{
+    const String name = toKafkaPropertyName(key);
+    for (const auto & property : server_local_properties)
+    {
+        if (!name.ends_with(property.name))
+            continue;
+        if (name.size() == property.name.size() || name[name.size() - property.name.size() - 1] == '.')
+            return &property;
+    }
+    return nullptr;
+}
+
+void checkNamedCollectionProperty(const NamedCollection & collection, const String & key, const String & value)
+{
+    if (collection.getSourceId() == NamedCollection::SourceId::CONFIG)
+        return;
+
+    const auto * property = findServerLocalProperty(key);
+    if (!property)
+        return;
+
+    /// `probe` is not a path: librdkafka searches a fixed list of the standard locations of CA certificates.
+    if (value == "probe" && (property->name == "ssl.ca.location" || property->name == "https.ca.location"))
+        return;
+
+    if (property->contents_property.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Kafka property `{}` can only be specified in a named collection defined in the server configuration file",
+            property->name);
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Kafka property `{}` can only be specified in a named collection defined in the server configuration file. "
+        "Pass the contents of the file in the property `{}` instead",
+        property->name,
+        property->contents_property);
+}
+
 void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
 {
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
@@ -231,7 +326,7 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
     if (clickhouse_only_kafka_config_keys.contains(key))
         return;
 
-    const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+    const String setting_name_in_kafka_config = toKafkaPropertyName(key);
     /// librdkafka testing properties, e.g. `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member ids.
     if (setting_name_in_kafka_config.starts_with("test."))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", setting_name_in_kafka_config);
@@ -257,7 +352,11 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Str
     {
         // Cut prefix with '.' before actual config tag.
         const auto param_name = key.substr(config_prefix.size() + 1);
-        setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+        const auto value = collection->get<String>(key);
+        /// The check when the table is created or loaded is not sufficient: the collection is read again here,
+        /// and `ALTER NAMED COLLECTION` can add a property while the table exists.
+        checkNamedCollectionProperty(*collection, param_name, value);
+        setKafkaConfigValue(kafka_config, param_name, value);
     }
 }
 
@@ -693,5 +792,11 @@ template cppkafka::Configuration
 KafkaConfigLoader::getProducerConfiguration<StorageKafka>(StorageKafka & storage, const ProducerConfigParams & params);
 template cppkafka::Configuration
 KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ProducerConfigParams & params);
+
+void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
+{
+    for (const auto & key : collection.getKeys(-1, CONFIG_KAFKA_TAG))
+        checkNamedCollectionProperty(collection, key, collection.get<String>(key));
+}
 
 }
