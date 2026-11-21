@@ -136,10 +136,12 @@ def forget_test_process_group(pgid: int) -> None:
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
 # `stop_testing` and no more specific cause was claimed - an observed server death
-# or a generic catastrophic abort; a failed liveness probe uses
-# `HUNG_CHECK_EXIT_CODE` instead. Distinct from the generic failure code 1 so the
-# job side can populate the synthetic "Server died" leaf without fragile log-line
-# matching. Kept in sync with `ci/jobs/scripts/functional_tests_results.py`.
+# (a `<Fatal>` line, or a failed liveness probe with nothing listening on the
+# probed port any more) or a generic catastrophic abort; any other failed
+# liveness probe uses `HUNG_CHECK_EXIT_CODE`. Distinct from the generic failure
+# code 1 so the job side can populate the synthetic "Server died" leaf without
+# fragile log-line matching. Kept in sync with
+# `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
 # Exit code returned when the run stopped *gracefully* because the global time
@@ -160,7 +162,8 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 MAX_FAILURES_EXIT_CODE = 4
 
 # Exit code returned when the run stopped because a `check_server_liveness`
-# probe failed. The probe establishes only that the check failed - it also fails
+# probe failed while the probed listener was still held or its state could not
+# be told. The probe establishes only that the check failed - it also fails
 # on a non-200 *response* - so this must NOT be conflated with
 # `STOP_TESTING_EXIT_CODE`, which the job side reports as "Server died". Kept in
 # sync with `HUNG_CHECK_EXIT_CODE` in
@@ -1794,7 +1797,7 @@ class FailureReason(enum.Enum):
     NO_REFERENCE = "no reference file"
     INTERNAL_ERROR = "Test internal error: "
     NOT_FAILED = (
-        "The test succeeded, but it is listed in parallel_replicas_blacklist.txt or async_insert_blacklist.txt. "
+        "The test succeeded, but it is listed in parallel_replicas_blacklist.txt, parallel_replicas_plan_based_blacklist.txt or async_insert_blacklist.txt. "
         "Please remove it from the list"
     )
 
@@ -1875,6 +1878,66 @@ class SettingsRandomizer:
         "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
             [0, 256, 1048576], weights=[1, 1, 3]
         )[0],
+        # The Parquet settings below change the file layout and the reader's code paths, never the rows a
+        # query returns. A test that observes the layout or the pruning pins the setting. The settings that
+        # change a written or inferred type are not randomized.
+        "input_format_parquet_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_bloom_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_page_filter_push_down": lambda: random.random() > 0.1,
+        "input_format_parquet_use_offset_index": lambda: random.random() > 0.1,
+        "input_format_parquet_verify_checksums": lambda: random.random() > 0.2,
+        "input_format_parquet_enable_row_group_prefetch": lambda: random.random() > 0.2,
+        "input_format_parquet_preserve_order": lambda: random.random() < 0.2,
+        # 0 seeks over every gap between two ranges of a local file, 1 MiB reads through the gaps of a small file
+        "input_format_parquet_local_file_min_bytes_for_seek": lambda: random.choices(
+            [0, 1, 8192, 1024 * 1024], weights=[1, 1, 4, 1]
+        )[0],
+        # Blocks of a hundred rows are left to the tests that need them
+        "input_format_parquet_max_block_size": lambda: random.choices(
+            [1000, 8192, 65409], weights=[1, 2, 4]
+        )[0],
+        # 0 disables it
+        "input_format_parquet_prefer_block_bytes": lambda: random.choices(
+            [0, 64 * 1024, 1024 * 1024, 65409 * 256], weights=[1, 1, 1, 4]
+        )[0],
+        "input_format_parquet_memory_low_watermark": lambda: random.choices(
+            [0, 1, 1024 * 1024, 2 * 1024 * 1024, 64 * 1024 * 1024], weights=[1, 1, 1, 4, 1]
+        )[0],
+        "input_format_parquet_memory_high_watermark": lambda: random.choices(
+            [0, 1, 1024 * 1024, 64 * 1024 * 1024, 4 * 1024 * 1024 * 1024], weights=[1, 1, 1, 1, 4]
+        )[0],
+        # The floors keep the largest write of the tests (a few million rows) at a few thousand row groups
+        # and tens of thousands of pages; one-row groups and pages are left to the tests that need them.
+        "output_format_parquet_row_group_size": lambda: random.choices(
+            [1000, 10000, 100000, 1000000], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_row_group_size_bytes": lambda: random.choices(
+            [64 * 1024, 1024 * 1024, 16 * 1024 * 1024, 512 * 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        # The page size is checked once per batch, so 1 makes every batch a page
+        "output_format_parquet_data_page_size": lambda: random.choices(
+            [1, 1024, 64 * 1024, 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_batch_size": lambda: random.choices(
+            [100, 1024, 8192], weights=[1, 3, 1]
+        )[0],
+        "output_format_parquet_write_page_index": lambda: random.random() > 0.1,
+        "output_format_parquet_write_bloom_filter": lambda: random.random() > 0.1,
+        "output_format_parquet_bloom_filter_bits_per_value": lambda: random.choice([1, 6, 10.5, 41]),
+        # 0 writes the bloom filters of a row group right after it, a large value near the end of the file
+        "output_format_parquet_bloom_filter_flush_threshold_bytes": lambda: random.choice(
+            [0, 1024 * 1024, 128 * 1024 * 1024]
+        ),
+        "output_format_parquet_compression_method": lambda: random.choices(
+            ["zstd", "lz4", "snappy", "gzip", "brotli", "none"], weights=[3, 1, 1, 1, 1, 1]
+        )[0],
+        "output_format_parquet_parallel_encoding": lambda: random.random() > 0.2,
+        # 0 disables dictionary encoding, 1 abandons the dictionary after the first batch
+        "output_format_parquet_max_dictionary_size": lambda: random.choices(
+            [0, 1, 1024, 1024 * 1024], weights=[1, 1, 1, 3]
+        )[0],
+        "output_format_parquet_write_checksums": lambda: random.random() > 0.2,
+        "output_format_parquet_use_alp_encoding": lambda: random.random() < 0.2,
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -2359,6 +2422,7 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "enable_adaptive_codec_selection": lambda: random.randint(0, 1),
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
         ),
@@ -4078,11 +4142,10 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
+                ):
                     # Only a server that is really gone stops the whole run: a
                     # stalled but live server keeps the plain exit-code failure.
-                    and probed_server_is_gone(self.args)
-                ):
-                    reason = FailureReason.LIVENESS_CHECK_FAILED
+                    reason = probed_server_failure(self.args) or reason
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
@@ -4605,13 +4668,16 @@ class TestCase:
                     # A server that is unresponsive but still holds its
                     # listening socket is stalled, not dead - do not stop the
                     # run for it; the parent hung check owns that verdict.
-                    if probed_server_is_gone(self.args):
+                    reason = probed_server_failure(self.args)
+                    if reason is not None:
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
-                            FailureReason.LIVENESS_CHECK_FAILED,
+                            reason,
                             0.0,
-                            "\nServer liveness check failed\n",
+                            "\nServer died\n"
+                            if reason == FailureReason.SERVER_DIED
+                            else "\nServer liveness check failed\n",
                         )
 
             self.runs_count += 1
@@ -4752,20 +4818,13 @@ class TestCase:
             exc_description = self.add_info_about_settings(
                 self.get_description_from_exception_info(sys.exc_info())
             )
-            if probed_server_is_gone(self.args):
-                return TestResult(
-                    self.name,
-                    TestStatus.FAIL,
-                    FailureReason.LIVENESS_CHECK_FAILED,
-                    total_time,
-                    exc_description,
-                )
-            # Server is alive (answering, or silent but still holding its
-            # listening socket) - this was a transient network error or a stall.
+            reason = probed_server_failure(self.args)
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.CONNECTION_ERROR,
+                # Server is alive (answering, or silent but still holding its
+                # listening socket) - this was a transient network error or a stall.
+                reason or FailureReason.CONNECTION_ERROR,
                 total_time,
                 exc_description,
             )
@@ -4806,7 +4865,7 @@ class TestCase:
             # outer handler in run() classifies it as CONNECTION_ERROR — a
             # silent swallow would let a test stay OK while leaving its
             # database behind, hiding the bug.
-            if not probed_server_is_gone(args):
+            if probed_server_failure(args) is None:
                 raise
             # Server died between the test finishing and cleanup running.
             # The test's database is moot; the hung-check or the next test
@@ -5319,7 +5378,7 @@ class StopTesting(Exception):
     benign, expected stop after the time budget was reached,
     `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
     still alive) so the run stopped early, and `HUNG_CHECK_EXIT_CODE` means a
-    `check_server_liveness` probe failed.
+    `check_server_liveness` probe failed and the server was not shown to be gone.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -5752,7 +5811,9 @@ def run_tests_array(
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
-                    stop_tests()
+                    if not is_concurrent:
+                        # A parallel worker must not SIGTERM the parent, which stops the run.
+                        stop_tests()
                     stop_testing.set()
                     raise StopTesting(
                         f"ClickHouse server died during test '{test_case.name}'"
@@ -6037,21 +6098,19 @@ def probed_server_process(
     return True, _pid_owning_sockets(inodes), inodes
 
 
-def probed_server_is_gone(args, max_retries=10) -> bool:
-    """Did the liveness probe fail *and* is the server it talks to really gone?
+def probed_server_failure(args, max_retries=10) -> Optional[FailureReason]:
+    """Why the run must stop for a server that does not answer, or None while it is there.
 
-    The same live-vs-gone split `HungCheckMonitor` makes in the parent loop, for
-    the worker side.  A failed probe alone only says the server is not
-    answering, and a sanitizer build can stop the world for minutes and then
-    carry on; turning every failed probe into a global abort would keep killing
-    such runs at the old `~165 s` latency no matter what the parent monitor
-    decides.  Without positive evidence of a live listener (no `/proc`, a
-    server on another host) the answer is "gone", as in the parent monitor.
+    `SERVER_DIED` when nothing listens on the probed endpoint any more, `LIVENESS_CHECK_FAILED`
+    when that cannot be told (no `/proc`, a server on another host), None when the probe answers
+    or the listener is still held (a stall, which the parent hung check owns).
     """
     if check_server_liveness(args, max_retries=max_retries):
-        return False
+        return None
     alive, _, _ = probed_server_process(args)
-    return alive is not True
+    if alive is True:
+        return None
+    return FailureReason.SERVER_DIED if alive is False else FailureReason.LIVENESS_CHECK_FAILED
 
 
 class HungCheckMonitor:
@@ -6068,7 +6127,7 @@ class HungCheckMonitor:
     So the verdict is split by the evidence that is actually available:
 
       * the server process is gone: abort on the first failed probe, at the
-        same latency as before;
+        same latency as before, and report it as a death (`server_gone`);
       * the process is still there: keep probing, and only call it a hang once
         the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
 
@@ -6123,6 +6182,8 @@ class HungCheckMonitor:
         # answered, and a restart answering inside that lag would then read as
         # an unseen swap on the next failed probe.
         self.answering_holder_inodes = None
+        # Set when `is_hung` returns True because the probed server is gone rather than silent.
+        self.server_gone = False
 
     @staticmethod
     def _listener_changed(
@@ -6169,6 +6230,7 @@ class HungCheckMonitor:
                         "during the silence - the original server is gone and "
                         "was replaced; reporting it dead."
                     )
+                    self.server_gone = True
                     return True
                 print(
                     "Server answered the liveness check again after "
@@ -6192,7 +6254,10 @@ class HungCheckMonitor:
         unresponsive_for = time() - self.unresponsive_since
 
         alive, server_pid, inodes = probed_server_process(self.args)
-        if not alive or self._grace_holder_replaced(inodes):
+        if alive is False or self._grace_holder_replaced(inodes):
+            self.server_gone = True
+            return True
+        if alive is None:
             return True
         if self.grace_holder_inodes is None:
             # First failed probe of this silent stretch.  The probe itself
@@ -6207,6 +6272,7 @@ class HungCheckMonitor:
                     "hands since it last answered - the server the tests were "
                     "talking to is gone and was replaced; reporting it dead."
                 )
+                self.server_gone = True
                 return True
             # Pin the grace to the listener it is being granted for.
             self.grace_holder_inodes = inodes
@@ -6955,10 +7021,15 @@ def do_run_tests(
                 # conclude, so it is not started once a stop is already pending.
                 if args.hung_check and not stop_testing.is_set():
                     if hung_check_monitor.is_hung():
-                        print("Hung check failed: server liveness check failed")
+                        if hung_check_monitor.server_gone:
+                            print("Hung check failed: the server is gone")
+                            stop_cause = STOP_TESTING_EXIT_CODE
+                        else:
+                            print("Hung check failed: server liveness check failed")
+                            stop_cause = HUNG_CHECK_EXIT_CODE
                         # Claim before collecting: the sweep below can block for the
                         # whole lldb budget.
-                        try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                        try_claim_stop_cause(stop_exit_code, stop_cause)
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
                         stop_testing.set()
@@ -7596,9 +7667,15 @@ ORDER BY (test_name, callee_offset)
 
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
+    # Each implementation of parallel replicas fails its own tests, so it has its own list.
     blacklist_tolerate_only = []
     if args.no_parallel_replicas is True:
-        blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
+        blacklist = try_get_skip_list(
+            base_dir,
+            "../parallel_replicas_plan_based_blacklist.txt"
+            if args.parallel_replicas_plan_based
+            else "../parallel_replicas_blacklist.txt",
+        )
         if args.autopr:
             blacklist_tolerate_only.extend(blacklist)
         else:
@@ -8398,6 +8475,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--parallel-replicas-plan-based",
+        action="store_true",
+        default=False,
+        help="The server runs plan-based parallel replicas: apply parallel_replicas_plan_based_blacklist.txt instead of parallel_replicas_blacklist.txt",
     )
     parser.add_argument(
         "--autopr",

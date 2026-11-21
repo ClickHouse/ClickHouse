@@ -156,6 +156,10 @@ Chunk NATSSource::generateImpl()
 
     is_finished = true;
 
+    /// Give this consumer its flush-time budget starting from when consumption actually begins,
+    /// rather than letting the budget expire while waiting for a pipeline CPU slot under constrained concurrency.
+    total_stopwatch.restart();
+
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());

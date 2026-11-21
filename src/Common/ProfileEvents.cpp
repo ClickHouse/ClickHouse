@@ -136,6 +136,7 @@
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
+    M(ParquetMetadataCacheOffsetIndexHits, "Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
@@ -519,6 +520,10 @@
     M(ExternalAggregationMerge, "Number of times temporary files were merged for aggregation in external memory.", ValueType::Number) \
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.", ValueType::Bytes) \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.", ValueType::Bytes) \
+\
+    M(GPUAggregationRows, "Number of rows aggregated on a GPU by the experimental GPU aggregation.", ValueType::Number) \
+    M(GPUAggregationBatches, "Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.", ValueType::Number) \
+    M(GPUAggregationMicroseconds, "Total time spent transferring batches of rows to a GPU and aggregating them there.", ValueType::Microseconds) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
