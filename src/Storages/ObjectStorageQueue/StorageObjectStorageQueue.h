@@ -195,6 +195,7 @@ private:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    void tryRemoveEmptyDatabaseNode() const;
 
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
