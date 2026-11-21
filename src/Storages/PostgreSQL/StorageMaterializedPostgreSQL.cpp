@@ -404,12 +404,14 @@ void StorageMaterializedPostgreSQL::checkTableCanBeRenamed(const StorageID & new
 
 void StorageMaterializedPostgreSQL::checkDatabaseTablesCanBeTruncated(const std::vector<StorageID> & tables_to_truncate) const
 {
-    /// A coordinated setup has no consistent truncate path: the nested `ReplicatedReplacingMergeTree` would be
-    /// truncated on every replica, while the replication slot and the `snapshot_completed` marker stay, so the rows
-    /// that do not change in PostgreSQL would never be loaded again. The wrapper itself does not support `TRUNCATE`,
-    /// but `TRUNCATE ALL TABLES` truncates the nested table, which is a separate table of the same database,
-    /// independently of it. Refuse the whole operation before any table is truncated.
-    if (!is_standalone_coordinated)
+    /// There is no consistent truncate path: the nested table would be truncated (in a coordinated setup, on every
+    /// replica), while the replication slot and the publication (and the `snapshot_completed` marker) stay at their
+    /// positions, so the rows that do not change in PostgreSQL would never be loaded again. The wrapper itself does
+    /// not support `TRUNCATE`, but `TRUNCATE ALL TABLES` truncates the nested table, which is a separate table of
+    /// the same database, independently of it. Refuse the whole operation before any table is truncated. This holds
+    /// for the plain nested engine as well as for a coordinated one. The tables of a `MaterializedPostgreSQL`
+    /// database are covered by `DatabaseMaterializedPostgreSQL::beforeTruncateDatabase`.
+    if (is_materialized_postgresql_database)
         return;
 
     const auto own_id = getStorageID();
@@ -418,8 +420,8 @@ void StorageMaterializedPostgreSQL::checkDatabaseTablesCanBeTruncated(const std:
     {
         if (table_id == own_id || table_id == nested_id)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "TRUNCATE ALL TABLES is not supported for a database containing the coordinated MaterializedPostgreSQL "
-                "table {}: its nested table would be truncated on every replica without reloading the snapshot",
+                "TRUNCATE ALL TABLES is not supported for a database containing the MaterializedPostgreSQL "
+                "table {}: its nested table would be truncated without reloading the snapshot",
                 own_id.getNameForLogs());
     }
 }
@@ -429,13 +431,17 @@ void StorageMaterializedPostgreSQL::checkTableCanBeRenamedByDatabaseRename(const
 {
     /// `DatabaseAtomic::renameDatabase` renames the nested table, but this wrapper and the replication handler keep
     /// its ID with the old database name, so every lookup of the nested table would fail with `TABLE_UUID_MISMATCH`.
-    /// Besides, when the coordination path or the replica name expands `{database}`, the nested table keeps them
-    /// expanded with the old name, and the next startup would reject every attempt as an identity change.
-    if (is_standalone_coordinated)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "RENAME DATABASE is not supported for a database containing the coordinated MaterializedPostgreSQL table {}: "
-            "its replication state is bound to the database name",
-            getStorageID().getNameForLogs());
+    /// This does not depend on the nested engine. Besides, in a coordinated setup, when the coordination path or the
+    /// replica name expands `{database}`, the nested table keeps them expanded with the old name, and the next
+    /// startup would reject every attempt as an identity change. The tables of a `MaterializedPostgreSQL` database
+    /// are covered by `DatabaseMaterializedPostgreSQL::renameDatabase`.
+    if (is_materialized_postgresql_database)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "RENAME DATABASE is not supported for a database containing the MaterializedPostgreSQL table {}: "
+        "its replication state is bound to the database name",
+        getStorageID().getNameForLogs());
 }
 
 

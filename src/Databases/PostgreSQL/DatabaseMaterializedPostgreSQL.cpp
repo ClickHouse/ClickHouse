@@ -1364,20 +1364,18 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
 }
 
 
-void DatabaseMaterializedPostgreSQL::renameDatabase(ContextPtr query_context, const String & new_name)
+void DatabaseMaterializedPostgreSQL::renameDatabase(ContextPtr /*query_context*/, const String & /*new_name*/)
 {
-    /// Refuse a coordinated database before any metadata is changed. `DatabaseAtomic::renameDatabase` renames
-    /// the nested tables, but the wrappers in `materialized_tables` and the replication handler keep the nested
-    /// table IDs with the old database name, so every lookup of a nested table would fail with
-    /// `TABLE_UUID_MISMATCH` until a restart. Besides, when `materialized_postgresql_keeper_path` or
-    /// `materialized_postgresql_replica_name` expands `{database}`, the nested tables keep the coordination
-    /// identity expanded with the old name, and the next startup would reject it as an identity change.
-    if (isCoordinated())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "RENAME DATABASE is not supported for a coordinated MaterializedPostgreSQL database "
-            "(materialized_postgresql_keeper_path is set): the replication state is bound to the database name");
-
-    DatabaseAtomic::renameDatabase(query_context, new_name);
+    /// Refuse it before any metadata is changed. `DatabaseAtomic::renameDatabase` renames the nested tables, but
+    /// the wrappers in `materialized_tables` and the replication handler keep the nested table IDs with the old
+    /// database name, so every lookup of a nested table would fail with `TABLE_UUID_MISMATCH` until a restart.
+    /// This does not depend on the nested engine. Besides, in a coordinated setup, when
+    /// `materialized_postgresql_keeper_path` or `materialized_postgresql_replica_name` expands `{database}`, the
+    /// nested tables keep the coordination identity expanded with the old name, and the next startup would
+    /// reject it as an identity change.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "RENAME DATABASE is not supported for a MaterializedPostgreSQL database: "
+        "the replication state is bound to the database name");
 }
 
 

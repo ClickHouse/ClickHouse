@@ -3557,6 +3557,80 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_plain_engines_reject_database_rename_and_truncate_all_tables(started_cluster):
+    # RENAME DATABASE renames the nested tables, but the wrappers and the replication handler keep their IDs
+    # with the old database name, so reads would fail until a restart. TRUNCATE ALL TABLES of an Atomic
+    # database with a standalone table truncates its nested table while the slot stays at its position, so
+    # the rows that do not change in PostgreSQL would never come back. Both must be refused for the plain
+    # (non-coordinated) engines too, before anything is changed.
+    table = "plain_rename_truncate"
+    database = "plain_rename_truncate_database"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table}'"],
+    )
+    check_tables_are_synchronized(instance, table)
+
+    error = instance.query_and_get_error(
+        "RENAME DATABASE test_database TO test_database_renamed"
+    )
+    assert "RENAME DATABASE is not supported" in error
+    assert "test_database" in instance.query("SHOW DATABASES").split()
+    assert int(instance.query(f"SELECT count() FROM test_database.{table}")) == 100
+
+    instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    instance.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        instance.query(
+            f"""
+            SET enable_materialized_postgresql_table=1;
+            CREATE TABLE {database}.{table} (key Int64, value Int64)
+            ENGINE = MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+            PRIMARY KEY key
+            """
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {database}.{table}",
+            "100\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = instance.query_and_get_error(
+            f"RENAME DATABASE {database} TO {database}_renamed"
+        )
+        assert "RENAME DATABASE is not supported" in error
+        assert database in instance.query("SHOW DATABASES").split()
+
+        error = instance.query_and_get_error(f"TRUNCATE ALL TABLES FROM {database}")
+        assert "TRUNCATE ALL TABLES is not supported" in error
+        assert int(instance.query(f"SELECT count() FROM {database}.{table}")) == 100
+
+        # Nothing was truncated or renamed, and both keep replicating.
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100, 100)"
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {database}.{table}",
+            "200\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+        check_tables_are_synchronized(instance, table)
+    finally:
+        instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+    pg_manager.drop_materialized_db()
+
+
 def test_plain_single_table_engine_refused_drop_recovers(started_cluster):
     # The plain (non-coordinated) single-table engine drops its local nested table BEFORE the authoritative
     # PostgreSQL teardown: if the nested-table drop is refused (throws), the outer DROP TABLE fails and the
