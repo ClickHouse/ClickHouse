@@ -64,7 +64,8 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool drive_loop_on_worker_)
+    bool drive_loop_on_worker_,
+    UInt64 first_poll_timeout_ms_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -78,7 +79,8 @@ RabbitMQSource::RabbitMQSource(
         ack_in_suffix_,
         log_,
         cancel_epoch_,
-        drive_loop_on_worker_)
+        drive_loop_on_worker_,
+        first_poll_timeout_ms_)
 {
 }
 
@@ -95,7 +97,8 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool drive_loop_on_worker_)
+    bool drive_loop_on_worker_,
+    UInt64 first_poll_timeout_ms_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -106,6 +109,7 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , nack_broken_messages(nack_broken_messages_)
     , drive_loop_on_worker(drive_loop_on_worker_)
+    , first_poll_timeout_ms(first_poll_timeout_ms_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -146,6 +150,8 @@ void RabbitMQSource::updateChannel()
 
 uint64_t RabbitMQSource::driveBudgetMs() const
 {
+    if (!drive_loop_on_worker)
+        return max_execution_time_ms ? std::min(first_poll_timeout_ms, max_execution_time_ms) : first_poll_timeout_ms;
     return max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
 }
 
@@ -164,7 +170,7 @@ bool RabbitMQSource::driveLoopUntilMessage()
         if (consumer->isConsumerStopped() || is_cancelled())
             return false;
         const uint64_t elapsed_ms = max_execution_time_ms
-            ? drive_stopwatch->elapsedMilliseconds()
+            ? (drive_loop_on_worker ? *drive_stopwatch : total_stopwatch).elapsedMilliseconds()
             : idle_stopwatch.elapsedMilliseconds();
         if (elapsed_ms >= drive_budget_ms)
             return false;
@@ -410,8 +416,9 @@ Chunk RabbitMQSource::generateImpl()
         }
         else if (total_rows == 0)
         {
-            /// Empty first poll: self-drive the loop instead of returning empty. See driveLoopUntilMessage.
-            if (drive_loop_on_worker && !consumer->isConsumerStopped() && driveLoopUntilMessage())
+            /// Empty first poll: wait for a message instead of returning empty, so that an idle table
+            /// does not build its whole insert pipeline for every retry. See driveLoopUntilMessage.
+            if ((drive_loop_on_worker || first_poll_timeout_ms) && !consumer->isConsumerStopped() && driveLoopUntilMessage())
                 continue;
             break;
         }

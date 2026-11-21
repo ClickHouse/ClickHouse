@@ -2276,6 +2276,56 @@ def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique)
     )
 
 
+def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, db, unique):
+    # An idle table must wait for messages inside one insert pipeline, as Kafka does, instead of building
+    # a new pipeline for each empty read. Each streaming call logs "Processed N rows" once.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.idle (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_idle',
+                     rabbitmq_queue_base = '{unique}_idle',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT * FROM {db}.idle;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(
+            exchange=f"{unique}_idle", routing_key="", body=json.dumps({"key": key, "value": key})
+        )
+
+    # One message first, so the measurement starts with streaming already active.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.view")
+
+    empty_calls = f"StorageRabbitMQ ({db}.idle): Processed 0 rows"
+    before = int(instance.count_in_log(empty_calls))
+    time.sleep(10)
+    empty = int(instance.count_in_log(empty_calls)) - before
+    # About 20 with a 500 ms poll timeout; several hundred when every empty read rebuilds the pipeline.
+    assert empty < 60, f"{empty} insert pipelines built for empty reads in 10 s of idle"
+
+    # A message published while idle still arrives within the flush interval plus the poll timeout.
+    start = time.monotonic()
+    publish(1)
+    check_expected_result_polling(2, f"SELECT count() FROM {db}.view")
+    assert time.monotonic() - start < 5
+    connection.close()
+
+
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

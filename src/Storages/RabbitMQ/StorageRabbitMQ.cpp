@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
 }
 
@@ -1459,7 +1460,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* drive_loop_on_worker */drive_loop_on_worker);
+            /* drive_loop_on_worker */drive_loop_on_worker,
+            /* first_poll_timeout_ms */getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds());
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
