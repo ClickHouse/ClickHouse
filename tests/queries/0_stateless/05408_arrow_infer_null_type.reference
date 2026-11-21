@@ -26,4 +26,4 @@ u	Variant(Array(Nullable(Nothing)), Int32)
 [NULL]	Array(Nullable(Nothing))
 2	Int32
 --- every column skipped
-skipped all of them
+may have skipped all of them
