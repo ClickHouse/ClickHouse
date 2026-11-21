@@ -1,0 +1,39 @@
+-- A column alias list renames the result columns of a query with WITH FILL INTERPOLATE; filled rows keep the interpolated values.
+SELECT y FROM (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y;
+SELECT * FROM (SELECT sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y, z) ORDER BY z;
+SELECT * FROM (SELECT DISTINCT sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y, z) ORDER BY z;
+WITH s(y) AS (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) SELECT y FROM s ORDER BY y;
+SELECT y FROM (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100) UNION ALL SELECT 7) AS s(y) ORDER BY y;
+SELECT * FROM (SELECT sum(a) AS x, max(a) AS y, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, y AS y + 1000)) AS s(y, x, z) ORDER BY z;
+SELECT * FROM (SELECT sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(mb, z) ORDER BY z;
+SELECT * FROM (SELECT sum(a) AS x, x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y1, y2, z) ORDER BY z;
+SELECT sum(number) FROM remote('127.0.0.{1,2}', numbers(200)) WHERE number IN (SELECT y FROM (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y));
+SELECT sum(number) FROM remote('127.0.0.{1,2}', numbers(200)) WHERE number IN (SELECT y FROM (SELECT DISTINCT sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y, z));
+SELECT sum(number) FROM remote('127.0.0.{1,2}', numbers(300)) WHERE number IN (SELECT y1 + y2 FROM (SELECT sum(a) AS x, x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y1, y2, z));
+SELECT sum(number) FROM remote('127.0.0.{1,2}', numbers(20)) WHERE number IN (SELECT a FROM (SELECT DISTINCT k FROM (SELECT number * 2 AS k, number AS a FROM numbers(3)) ORDER BY k WITH FILL INTERPOLATE (a AS a + 10)) AS s(a));
+SELECT number FROM numbers(200) WHERE number IN (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) ORDER BY number SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1;
+SELECT 101 IN (SELECT p FROM (SELECT sum(a) AS x, sum(a) AS z, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(p, q, r) WHERE q >= 0),
+       101 IN (SELECT p FROM (SELECT sum(a) AS z, sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(p, q, r) WHERE q >= 0);
+SELECT 101 IN (SELECT p FROM (SELECT sum(a) AS x, sum(a) AS z, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS 101)) AS s(p, q, r) WHERE q >= 0),
+       101 IN (SELECT p FROM (SELECT sum(a) AS x, sum(a) AS z, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (z AS 101)) AS s(p, q, r) WHERE q >= 0);
+SELECT 101 IN (SELECT x FROM (SELECT sum(a) AS x, sum(a) AS z, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS 101)) WHERE z >= 0),
+       101 IN (SELECT x FROM (SELECT sum(a) AS x, sum(a) AS z, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (z AS 101)) WHERE z >= 0);
+WITH s(y) AS (SELECT sum(a) AS x FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) SELECT number FROM numbers(200) WHERE number IN s ORDER BY number SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1;
+SELECT q FROM (SELECT max(a) AS w, sum(a) AS x, mb FROM (SELECT number AS a, intDiv(number, 2) * 2 AS mb FROM numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(p, q, r) ORDER BY q;
+SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.1', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y;
+SELECT * FROM (SELECT sum(number) AS x, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.{1,2}', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y, z) ORDER BY z, y SETTINGS distributed_group_by_no_merge = 1;
+SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.{1,2}', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y;
+SELECT y FROM (SELECT sum(number) AS x FROM remote('127.0.0.1', numbers(4)) GROUP BY intDiv(number, 2) * 2 AS mb WITH TOTALS ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y) ORDER BY y SETTINGS prefer_localhost_replica = 0;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS y, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, y AS y + 1000)) AS s(y, x, z) ORDER BY z;
+SELECT * FROM (SELECT sum(number) AS x, x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', view(SELECT number, toUInt64(42) AS x FROM numbers(4))) GROUP BY mb, x ORDER BY mb WITH FILL INTERPOLATE (w AS w + 1000)) AS s(y1, y2, y3, z) ORDER BY z SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
+SELECT * FROM (SELECT sum(number) AS x, x, intDiv(number, 2) * 2 AS mb FROM remote('127.0.0.1', numbers(4)) GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100)) AS s(y1, y2, z) ORDER BY z SETTINGS prefer_localhost_replica = 0;
+CREATE TABLE remote_tab (number UInt64) ENGINE = Remote('127.0.0.1', numbers(4));
+CREATE TABLE merge_tab AS remote_tab ENGINE = Merge(currentDatabase(), '^remote_tab$');
+CREATE TABLE null_tab (number UInt64) ENGINE = Null;
+CREATE MATERIALIZED VIEW mv TO remote_tab AS SELECT number FROM null_tab;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM merge_tab GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, w AS w + 1000)) AS s(w, x, z) ORDER BY z;
+SELECT * FROM (SELECT sum(number) AS x, max(number) AS w, intDiv(number, 2) * 2 AS mb FROM mv GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100, w AS w + 1000)) AS s(w, x, z) ORDER BY z;
+DROP TABLE mv;
+DROP TABLE null_tab;
+DROP TABLE merge_tab;
+DROP TABLE remote_tab;

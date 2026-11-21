@@ -1144,6 +1144,70 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
+/// At `Complete` a shard names its result columns by the projection names it is sent with.
+/// The shard's result is matched by name, so a column whose name a different column already has gets a unique one.
+/// Returns the column names the caller expects, or nothing if the projection is not renamed.
+Names useProjectionNamesBeforeOverride(const QueryTreeNodePtr & query_tree)
+{
+    auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasProjectionNamesBeforeOverride())
+        return {};
+
+    const auto & projection_nodes = query_node->getProjection().getNodes();
+    auto projection_columns = query_node->getProjectionColumns();
+    Names output_names;
+    output_names.reserve(projection_columns.size());
+    for (const auto & column : projection_columns)
+        output_names.push_back(column.name);
+
+    std::unordered_set<String> used_names;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+        used_names.insert(query_node->getProjectionNameBeforeOverride(i));
+
+    std::unordered_map<String, size_t> name_to_first_position;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        String name = query_node->getProjectionNameBeforeOverride(i);
+        auto [it, inserted] = name_to_first_position.emplace(name, i);
+        if (!inserted
+            && !projection_nodes[it->second]->isEqual(*projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+        {
+            const String base_name = name;
+            size_t suffix = 1;
+            do
+            {
+                name = fmt::format("{}_{}", base_name, suffix);
+                ++suffix;
+            } while (!used_names.insert(name).second);
+        }
+        projection_columns[i].name = std::move(name);
+    }
+
+    query_node->setProjectionAliasesToOverride({});
+    query_node->resolveProjectionColumns(std::move(projection_columns));
+    return output_names;
+}
+
+void renameColumnsByPosition(QueryPlan & query_plan, const Names & names, const ContextPtr & context)
+{
+    if (names.empty())
+        return;
+
+    auto source = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
+    if (source.size() != names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed read returned {} columns, expected {}", source.size(), names.size());
+
+    auto result = source;
+    for (size_t i = 0; i < result.size(); ++i)
+        result[i].name = names[i];
+
+    auto rename_step = std::make_unique<ExpressionStep>(
+        query_plan.getCurrentHeader(),
+        ActionsDAG::makeConvertingActions(source, result, ActionsDAG::MatchColumnsMode::Position, context));
+    rename_step->setStepDescription("Restore the column alias list names");
+    query_plan.addStep(std::move(rename_step));
+}
+
 }
 
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
@@ -1176,6 +1240,7 @@ void StorageDistributed::read(
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
+    Names output_names;
 
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
@@ -1184,6 +1249,8 @@ void StorageDistributed::read(
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
+        if (processed_stage == QueryProcessingStage::Complete)
+            output_names = useProjectionNamesBeforeOverride(query_tree_distributed);
         Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -1247,6 +1314,8 @@ void StorageDistributed::read(
     /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
+
+    renameColumnsByPosition(query_plan, output_names, local_context);
 }
 
 
