@@ -771,10 +771,18 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
+    /// Only `TCPHandler` sets this interface for a session, and only after the peer proved the cluster secret.
+    const bool is_interserver_session = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER;
+
+    /// The per-query interface comes from the wire. `TCP_INTERSERVER` there means "authenticated with the
+    /// cluster secret" (see `StorageMergeTreeTextIndex::checkAccess`), so do not let any other session claim it.
+    if (!is_interserver_session && query_context->getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER)
+        query_context->setClientInterface(getClientInfo().interface);
+
     /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
     /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
     std::vector<UUID> effective_external_roles = external_roles;
-    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+    const bool apply_initiator_roles = is_interserver_session
         && query_context->getClientInfo().current_roles.has_value()
         && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     if (apply_initiator_roles)
@@ -802,6 +810,29 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         if (const String database = session_context->getCurrentDatabase(); !database.empty())
             query_context->setCurrentDatabase(database);
         query_context->addQueryParameters(session_context->getQueryParameters());
+    }
+
+    /// `initial_user` and `initial_address` of a secondary query come from the wire, yet `currentUser`, row policies
+    /// and `system.user_query_log` take them for the real initiator. Without the cluster secret, keep them only if
+    /// the authenticated user may act as that user anyway, that is where `EXECUTE AS` that user would work.
+    if (!is_interserver_session && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        const auto & client_info = query_context->getClientInfo();
+
+        /// An empty name is not a user, and `isGranted` would check the current database instead of it.
+        const bool may_act_as_initial_user = !client_info.initial_user.empty()
+            && global_context->getAccessControl().isImpersonateUserAllowed()
+            && query_context->getAccess()->isGranted(AccessType::IMPERSONATE, client_info.initial_user);
+
+        if (!may_act_as_initial_user)
+        {
+            if (!client_info.initial_user.empty() && client_info.initial_user != client_info.current_user)
+                LOG_TRACE(log, "Ignoring the initial user {} of a secondary query: user {} is not allowed to impersonate it",
+                    client_info.initial_user, client_info.current_user);
+
+            query_context->setInitialUserName(client_info.current_user);
+            query_context->setInitialAddress(*client_info.current_address);
+        }
     }
 
     /// Query context is ready.
