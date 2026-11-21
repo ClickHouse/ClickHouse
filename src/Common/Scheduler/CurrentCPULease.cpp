@@ -1,5 +1,7 @@
 #include <Common/Scheduler/CurrentCPULease.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -9,6 +11,23 @@ namespace
     thread_local ISlotLease * current_cpu_lease = nullptr;
     /// Number of active CPULeaseParkGuard scopes on this thread (for nesting).
     thread_local size_t cpu_park_depth = 0;
+    /// The CPU slot that the current thread executes processors on, or nullptr.
+    thread_local IAcquiredSlot * current_cpu_slot = nullptr;
+}
+
+IAcquiredSlot * getCurrentCPUSlot()
+{
+    return current_cpu_slot;
+}
+
+CurrentCPUSlotScope::CurrentCPUSlotScope(IAcquiredSlot * slot)
+    : previous_slot(std::exchange(current_cpu_slot, slot))
+{
+}
+
+CurrentCPUSlotScope::~CurrentCPUSlotScope()
+{
+    current_cpu_slot = previous_slot;
 }
 
 ISlotLease * getCurrentCPULease()
