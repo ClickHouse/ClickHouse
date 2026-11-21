@@ -10,6 +10,7 @@
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
+#include <Core/ColumnLessBlock.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -441,7 +442,7 @@ static Block adaptBlockStructure(Block block, const Block & header, bool header_
     /// for it. The columns synthesized below have to be sized from that count, or the rows of such a
     /// block are lost right here.
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
-    const size_t num_rows = block.columns() == 0 ? block.info.num_rows_without_columns : block.rows();
+    const size_t num_rows = getNumRowsIncludingColumnLess(block);
 
     /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
     /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
@@ -1053,7 +1054,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             throwIfColumnLessResultFromOldServer();
 
             /// A block with no columns carries its number of rows in the block info.
-            if (packet.block.rows() > 0 || packet.block.info.num_rows_without_columns > 0)
+            if (getNumRowsIncludingColumnLess(packet.block) > 0)
             {
                 got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(std::move(packet.block), *header, header_describes_result));

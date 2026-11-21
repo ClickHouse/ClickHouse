@@ -22,6 +22,7 @@
 #endif
 
 #include <Core/Block.h>
+#include <Core/ColumnLessBlock.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Common/Config/ConfigHelper.h>
@@ -896,17 +897,19 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (block.empty() || local_format_error_happened)
+    /// A block with no columns is still data when it carries rows that hold no values.
+    if (hasNoColumnsAndNoRows(block) || local_format_error_happened)
         return;
 
-    processed_rows_from_blocks += block.rows();
+    const size_t num_rows = getNumRowsIncludingColumnLess(block);
+    processed_rows_from_blocks += num_rows;
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
+    if (num_rows == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
     try

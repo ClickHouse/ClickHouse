@@ -13,6 +13,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/Block.h>
+#include <Core/ColumnLessBlock.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -1838,7 +1839,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process.
                     // A block with no columns is not empty when it carries rows that hold no values.
-                    const bool block_has_data = !block.empty() || block.info.num_rows_without_columns > 0;
+                    const bool block_has_data = !hasNoColumnsAndNoRows(block);
                     if (block_has_data && !state.io.null_format && !discard_query_data)
                     {
                         /// An older initiator cannot receive the number of rows of a block with no columns, so the
@@ -3250,7 +3251,7 @@ bool TCPHandler::skipDataPacket(QueryState & state)
         ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     /// A block with no columns that carries rows is skipped as data, it is not the end of the data.
     Block skipped_block = skip_block_in.read();
-    bool has_rows = !skipped_block.empty() || skipped_block.info.num_rows_without_columns > 0;
+    bool has_rows = !hasNoColumnsAndNoRows(skipped_block);
 
     state.at_packet_boundary = true;
     return has_rows;
