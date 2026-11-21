@@ -308,4 +308,20 @@ MutableColumnPtr SerializationDynamicElement::createColumnForDeserialization(con
     return nested_serialization->createColumnForDeserialization(type);
 }
 
+bool SerializationDynamicElement::isColumnCompatible(const IColumn & column) const
+{
+    /// Mirrors createColumnForDeserialization above: null maps are UInt8 columns; otherwise the Nullable added
+    /// by the extraction is peeled off and only the nested column is checked.
+    if (is_null_map_subcolumn || selected_subcolumn_is_null_map)
+        return typeid(column) == typeid(ColumnUInt8);
+
+    if (nullable_added_by_extraction && isColumnNullable(column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(column);
+        return nested_serialization->isColumnCompatible(nullable.getNestedColumn());
+    }
+
+    return nested_serialization->isColumnCompatible(column);
+}
+
 }

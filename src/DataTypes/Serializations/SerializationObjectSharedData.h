@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Columns/ColumnArray.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
 
@@ -86,6 +87,8 @@ private:
 public:
     static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
     static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnArray); }
 
     bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnQBit.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -61,6 +62,8 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_);
     static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnQBit); }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 

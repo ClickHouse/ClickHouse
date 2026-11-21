@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -17,6 +18,8 @@ public:
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
 
     static SerializationPtr create(MergeTreeStringSerializationVersion version_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnUInt64); }
 
     size_t allocatedBytes() const override;
 

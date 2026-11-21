@@ -65,6 +65,7 @@ public:
     static bool isNullMapSubstream(Substream::Type type);
     size_t allocatedBytes() const override;
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
+    bool isColumnCompatible(const IColumn & column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

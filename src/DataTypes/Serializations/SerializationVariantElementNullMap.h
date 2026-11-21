@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
@@ -42,6 +43,8 @@ public:
         const String & variant_element_name_,
         ColumnVariant::Discriminator variant_discriminator_,
         size_t num_variants_ = 0);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnUInt8); }
 
     size_t allocatedBytes() const override;
 

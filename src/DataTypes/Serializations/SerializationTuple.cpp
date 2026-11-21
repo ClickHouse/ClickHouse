@@ -960,4 +960,19 @@ MutableColumnPtr SerializationTuple::createColumnForDeserialization(const IDataT
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
+bool SerializationTuple::isColumnCompatible(const IColumn & column) const
+{
+    /// Element columns are passed to the element serializations as-is: each must match its
+    /// serialization (a sparse element needs a ColumnSparse, see SerializationSparse).
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column);
+    if (!tuple_column || tuple_column->tupleSize() != elems.size())
+        return false;
+
+    for (size_t i = 0; i != elems.size(); ++i)
+        if (!elems[i]->isColumnCompatible(tuple_column->getColumn(i)))
+            return false;
+
+    return true;
+}
+
 }

@@ -622,6 +622,29 @@ size_t MergeTreeReaderCompact::readGranules(
     const size_t num_columns = columns_to_read.size();
     checkNumberOfColumns(num_columns);
 
+    auto checkDestination = [&](size_t pos, const IColumn & column)
+    {
+        if (!serializations[pos]->isColumnCompatible(column))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot append to the result column of family {} passed for column {} of part {}: "
+                "the column is stored with serialization kind '{}' that deserializes into a column "
+                "of a specific class and casts to it unchecked, so appending to a different one is "
+                "undefined behaviour. Pass result columns created by the part's serializations "
+                "(e.g. IDataType::createColumn(serialization)), not by the data type alone",
+                column.getFamilyName(),
+                columns_to_read[pos].name,
+                data_part_info_for_read->getPartName(),
+                ISerialization::kindStackToString(serializations[pos]->getKindStack()));
+    };
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        if (res_columns[pos])
+            checkDestination(pos, *res_columns[pos]);
+        if (pos < shared_columns.size() && shared_columns[pos])
+            checkDestination(pos, *shared_columns[pos]);
+    }
+
     if (columns_cache_reads_possible || columns_cache_writes_possible)
     {
         if (shared_columns.size() != num_columns)

@@ -163,6 +163,10 @@ public:
     /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
     virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
+    /// Whether deserializeBinaryBulk* can read into the given column: `SerializationSparse`,
+    /// for example, needs a `ColumnSparse`, not the plain column of the nested type.
+    virtual bool isColumnCompatible(const IColumn &) const { return true; }
+
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnObject.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -25,6 +26,8 @@ public:
     /// typed_paths_serializations_ holds the typed paths under the prefix that are not SHARED; the SHARED ones
     /// are read together by typed_shared_data_serialization_, which is null when there are none.
     static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnObject); }
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;

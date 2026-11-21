@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -17,6 +18,8 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnReplicated); }
 
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
