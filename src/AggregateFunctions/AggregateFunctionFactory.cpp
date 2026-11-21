@@ -418,6 +418,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
+        combinator->transformProperties(out_properties);
+
         /// Same invariant as above.
         chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
@@ -440,6 +442,9 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 {
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
+
+    /// Combinators stripped from the name so far, from the outermost one to the innermost one.
+    VectorWithMemoryTracking<AggregateFunctionCombinatorPtr> stripped_combinators;
 
     while (true)
     {
@@ -464,9 +469,13 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
         if (found)
         {
-            if (const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action))
-                return associated->properties;
-            return found->properties;
+            const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
+            AggregateFunctionProperties properties = associated ? associated->properties : found->properties;
+            /// Apply the stripped combinators from the innermost one to the outermost one,
+            /// the same way as `getImpl` does when it creates the combined function.
+            for (auto it = stripped_combinators.rbegin(); it != stripped_combinators.rend(); ++it)
+                (*it)->transformProperties(properties);
+            return properties;
         }
 
         /// Combinators of aggregate functions.
@@ -478,8 +487,8 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
             if (combinator->isForInternalUsageOnly())
                 return {};
 
-            /// NOTE: It's reasonable to also allow to transform properties by combinator.
             name = name.substr(0, name.size() - combinator->getName().size());
+            stripped_combinators.push_back(combinator);
         }
         else
             return {};

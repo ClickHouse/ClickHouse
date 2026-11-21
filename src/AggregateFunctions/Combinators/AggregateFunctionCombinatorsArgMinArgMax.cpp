@@ -335,6 +335,17 @@ public:
         nested_function->rollbackInsertResult(place, to);
     }
 
+    /// The nested function receives the arguments at the same positions (the extra argument is the last one).
+    /// If the nested function keeps its result type for bare `NULL` arguments (`-Sparkbar`), a bare `NULL` in the
+    /// extra argument keeps it as well: the `Null` adapter skips every row, as for a typed `Nullable` `NULL`.
+    [[nodiscard]] UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    {
+        auto result = nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators();
+        if (!result.empty())
+            result.insert(key_col);
+        return result;
+    }
+
     [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
