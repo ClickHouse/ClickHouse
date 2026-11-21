@@ -442,7 +442,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     int port,
     const ConnectionTimeouts & timeouts,
     const String & user,
-    const SecretString & password,
+    const String & password,
     const String & interserver_scheme,
     ThrottlerPtr throttler,
     bool to_detached,
@@ -532,7 +532,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (!user.empty())
     {
         creds.setUsername(user);
-        creds.setPassword(String(password));
+        creds.setPassword(password);
     }
 
     ReadSettings read_settings = context->getReadSettings();

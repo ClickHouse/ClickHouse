@@ -4,7 +4,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -50,7 +49,12 @@ namespace
 
     bool pathPartEndsWithSlash(const std::string & path)
     {
-        return stripQueryAndFragment(path).ends_with('/');
+        const auto path_end = path.find_first_of("?#");
+        if (path_end == std::string::npos)
+            return path.ends_with('/');
+        if (path_end == 0)
+            return false;
+        return path[path_end - 1] == '/';
     }
 }
 

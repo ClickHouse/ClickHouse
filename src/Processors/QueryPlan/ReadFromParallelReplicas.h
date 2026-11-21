@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/IConnections.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -27,18 +26,18 @@ public:
         ClusterPtr cluster_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         ContextPtr context_,
-        VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use,
+        std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
-    [[nodiscard]] String getName() const override { return "ReadFromParallelReplicas"; }
+    String getName() const override { return "ReadFromParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
     void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
-    [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
     /// See `distributed_group_by_top_k`.
     void enableGroupByTopK(size_t top_k_limit);
@@ -57,7 +56,7 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     ContextPtr context;
     LoggerPtr log;
-    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
+    std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };

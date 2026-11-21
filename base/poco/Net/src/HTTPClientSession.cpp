@@ -193,7 +193,7 @@ void HTTPClientSession::setProxyTunnel(bool tunnel)
 void HTTPClientSession::setProxyCredentials(const std::string& username, const std::string& password)
 {
 	_proxyConfig.username = username;
-	_proxyConfig.password.assign(password.begin(), password.end());
+	_proxyConfig.password = password;
 }
 
 
@@ -205,7 +205,7 @@ void HTTPClientSession::setProxyUsername(const std::string& username)
 
 void HTTPClientSession::setProxyPassword(const std::string& password)
 {
-	_proxyConfig.password.assign(password.begin(), password.end());
+	_proxyConfig.password = password;
 }
 
 
@@ -295,7 +295,6 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
-	_responseParser.reset(HTTPHeaderLimits{});
 	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
 	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
 	/// must not keep the value left by a previous exchange on this session.
@@ -389,7 +388,6 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 	_responseReceived = false;
 	_requestBodyComplete = false;
 	_responseBodyComplete = false;
-	_responseParser.reset(HTTPHeaderLimits{});
 
 	_keepAliveCurrentRequest += 1;
 
@@ -769,7 +767,7 @@ void HTTPClientSession::proxyAuthenticateImpl(HTTPRequest& request)
 {
 	if (!_proxyConfig.username.empty())
 	{
-		HTTPBasicCredentials creds(_proxyConfig.username, getProxyPassword());
+		HTTPBasicCredentials creds(_proxyConfig.username, _proxyConfig.password);
 		creds.proxyAuthenticate(request);
 	}
 }

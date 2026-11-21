@@ -79,7 +79,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -99,8 +99,19 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
     VectorWithMemoryTracking<size_t> result;
-    appendNamedArgumentIndexes(query_node_table_function, result, {"headers"});
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
+
     return result;
 }
 
@@ -118,7 +129,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
-        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -146,10 +156,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
-
-    /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
-    /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
-    is_relative_url = !StorageURL::isAbsoluteURL(filename);
 
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
@@ -322,15 +328,6 @@ bool TableFunctionURL::hasStaticStructure() const
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
 }
 
-bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
-{
-    /// A relative URL is rejected conservatively: the backend it dispatches to depends on the `url_base` setting
-    /// of the replica executing the query, which can differ across replicas of a `Replicated` database.
-    if (is_relative_url)
-        return true;
-    return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
-}
-
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
@@ -351,7 +348,7 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
+    if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -360,7 +357,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            is_structure_not_overridable ? ColumnsDescription{} : columns,
+            getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -496,6 +493,9 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.

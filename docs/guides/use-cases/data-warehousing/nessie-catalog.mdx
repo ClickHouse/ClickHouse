@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge/>
+<ExperimentalBadge/>
 
 <Note>
 Integration with the Nessie Catalog works with Iceberg tables only.
@@ -28,10 +28,8 @@ Nessie is an open-source transactional catalog for data lakes that provides:
 - **Production-ready** deployment on Docker or Kubernetes
 
 <Note>
-This feature is in beta. Enable it with:
-`SET allow_database_iceberg = 1;`
-
-On versions before 25.8, where the feature is experimental, use `SET allow_experimental_database_iceberg = 1;` instead.
+As this feature is experimental, you will need to enable it using:
+`SET allow_experimental_database_iceberg = 1;`
 </Note>
 
 ## Local Development Setup {#local-development-setup}
@@ -158,7 +156,7 @@ docker exec -it nessie-clickhouse clickhouse-client
 Then create the database connection to the Nessie catalog:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')

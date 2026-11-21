@@ -25,8 +25,6 @@ struct SnapshotRemovals
     Int64 position_deletes = 0;
 };
 
-Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object);
-
 class MetadataGenerator
 {
 public:

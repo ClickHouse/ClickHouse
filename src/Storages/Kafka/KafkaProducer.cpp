@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
-#include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 
@@ -19,11 +18,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ABORTED;
-}
 
 namespace
 {
@@ -124,11 +118,8 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
         }
     }
 
-    while (true)
+    while (!shutdown_called)
     {
-        if (shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Table is detached");
-
         try
         {
             producer->produce(builder);
@@ -160,11 +151,7 @@ void KafkaProducer::finish()
         catch (cppkafka::HandleException & e)
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
-            {
-                if (shutdown_called)
-                    throw Exception(ErrorCodes::ABORTED, "Table is detached");
                 continue;
-            }
 
             ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
             throw;

@@ -39,7 +39,7 @@ public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
-    [[nodiscard]] virtual Int32 getBiasBackoffSeconds() const { return 0; }
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
 };
@@ -67,8 +67,7 @@ public:
     /// again before the exception leaves, so the assignee is exactly as it was before the call.
     bool start();
     void trigger();
-    /// `refused_by_executor`: the executor had no free slot, so retry after the first backoff step, not the idle backoff.
-    void postpone(bool refused_by_executor = false);
+    void postpone();
     void finish();
 
     /// Update the cached storage ID after a table rename,

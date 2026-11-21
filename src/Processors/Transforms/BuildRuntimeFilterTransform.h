@@ -29,9 +29,6 @@ public:
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
-    /// The filter that the build streams of the step registered, once one of them has.
-    RuntimeFilterConstPtr getRegisteredFilter() const;
-
     Status prepare() override;
 
     void transform(Chunk & chunk) override;

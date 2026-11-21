@@ -395,7 +395,7 @@
 #define JEMALLOC_HAVE_PTHREAD
 
 /* dlsym() support */
-/* #undef JEMALLOC_HAVE_DLSYM */
+#define JEMALLOC_HAVE_DLSYM
 
 /* Adaptive mutex support in pthreads. */
 #define JEMALLOC_HAVE_PTHREAD_MUTEX_ADAPTIVE_NP
@@ -433,9 +433,6 @@
 
 /* Is C++ support being built? */
 /* #undef JEMALLOC_ENABLE_CXX */
-
-/* Are C++ exceptions enabled? */
-#define JEMALLOC_HAVE_CXX_EXCEPTIONS
 
 /* Performs additional size checks when defined. */
 /* #undef JEMALLOC_OPT_SIZE_CHECKS */

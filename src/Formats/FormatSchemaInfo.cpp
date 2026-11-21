@@ -73,11 +73,10 @@ FormatSchemaInfo::FormatSchemaInfo(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "format_schema_message_name is specified {} when not required", message_name);
     }
 
-    /// Not cached in a static variable: it would keep the path of the first call for the lifetime of the process,
-    /// while `format_schema_path` is an argument and can differ between calls (e.g. between contexts).
     auto default_schema_directory = [&format_schema_path]()
     {
-        return String(fs::canonical(format_schema_path) / "");
+        static const String str = fs::canonical(format_schema_path) / "";
+        return str;
     };
 
     if (format_schema_source == FormatSettings::FORMAT_SCHEMA_SOURCE_FILE)

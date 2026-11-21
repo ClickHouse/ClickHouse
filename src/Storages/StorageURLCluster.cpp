@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -130,7 +129,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
             format_name,
             context
         );

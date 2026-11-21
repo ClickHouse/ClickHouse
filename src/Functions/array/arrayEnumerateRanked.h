@@ -90,22 +90,13 @@ class FunctionArrayEnumerateRankedExtended : public IFunction
 public:
     static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
-    [[nodiscard]] String getName() const override { return Derived::name; }
+    String getName() const override { return Derived::name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Documentation-only — variadic with an optional const-`UInt`
-    /// clear-depth, then per-array (array, optional const-`UInt` depth)
-    /// groups. The result is a nested array of `UInt32` whose depth matches
-    /// the maximum effective input depth — not expressible in the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "([const UInt], Array, [const UInt], ...) -> Array(UInt32)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -123,21 +114,7 @@ public:
         return type;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        /// The documentation signature cannot represent the input-dependent
-        /// nesting depth. Reuse the authoritative implementation so callers
-        /// without columns get the same result where possible, or its normal
-        /// error when a constant depth value is required.
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
