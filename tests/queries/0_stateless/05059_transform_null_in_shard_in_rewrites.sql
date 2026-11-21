@@ -64,9 +64,9 @@ SELECT 'nullable dict declined, setting off', count(dictGet('d_112032', 'a', nid
 SELECT 'nullable dict not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: in%';
 SELECT 'nullable dict rewritten, setting off', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: in%' SETTINGS transform_null_in = 0;
 
--- Only a NULL the argument holds itself is compared differently by the two names, so an expression
--- whose NULLs are nested stays rewritten, and the two names agree on its value.
-SELECT 'nested nullable rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)) FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%';
+-- A tuple equality propagates the NULL of a member, which a set lookup treats as a value, so a chain
+-- over a tuple with a `Nullable` member is not rewritten, and both settings agree on its value.
+SELECT 'nested nullable not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)) FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%';
 SELECT 'nested nullable', count(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)), sum(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)) FROM t_112032;
 SELECT 'nested nullable, setting off', count(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)), sum(tu = (1, 1) OR tu = (2, 2) OR tu = (3, 3)) FROM t_112032 SETTINGS transform_null_in = 0;
 
