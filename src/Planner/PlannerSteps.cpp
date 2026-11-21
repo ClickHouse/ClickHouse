@@ -5,6 +5,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -85,7 +86,6 @@
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
@@ -104,7 +104,6 @@ namespace Setting
     extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
-    extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
@@ -119,7 +118,6 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
     extern const SettingsFloat totals_auto_threshold;
@@ -128,36 +126,14 @@ namespace Setting
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_adaptive_aggregator;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
-    extern const SettingsBool adaptive_aggregator_disable_thaw;
-    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
-    extern const SettingsBool enable_parallel_single_level_merge;
-    extern const SettingsBool enable_parallel_single_level_merge_by_index;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
-    extern const SettingsString temporary_files_codec;
-    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
 namespace ErrorCodes
@@ -451,17 +427,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     bool aggregate_descriptions_remove_arguments = false,
     std::optional<UInt64> trivial_group_by_limit = {})
 {
-    const auto & query_context = planner_context->getQueryContext();
-
-    /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
-    /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
-    /// max_size_to_preallocate is still carried here because it is consumed at runtime.
-    const auto stats_collecting_params = StatsCollectingParams(
-        /*key_=*/ 0,
-        settings[Setting::collect_hash_table_stats_during_aggregation],
-        query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
-        settings[Setting::max_size_to_preallocate_for_aggregation]);
-
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;
     if (aggregate_descriptions_remove_arguments)
     {
@@ -469,9 +434,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    auto tmp_data_scope = query_context->getTempDataOnDisk();
-    if (tmp_data_scope)
-        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
     /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
@@ -479,41 +441,22 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     /// abandons the cutoff, and after the freeze a table already rebuilt to the kept keys still
     /// spills and is re-seeded with them (see `Aggregator::Params::SharedKeptKeysControl`), so a
     /// query that needs to spill keeps spilling exactly as without the optimization.
-    Aggregator::Params aggregator_params = Aggregator::Params(
+    auto aggregator_params = getAggregatorParams(
+        planner_context->getQueryContext(),
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
-        query_analysis_result.aggregate_overflow_row,
-        trivial_group_by_limit.value_or(settings[Setting::max_rows_to_group_by]),
-        trivial_group_by_limit ? OverflowMode::ANY : settings[Setting::group_by_overflow_mode].value,
-        settings[Setting::group_by_two_level_threshold],
-        settings[Setting::group_by_two_level_threshold_bytes],
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
-        settings[Setting::min_bytes_before_external_group_by],
-        settings[Setting::empty_result_for_aggregation_by_empty_set]
-            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
-                && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
-        tmp_data_scope,
-        getEffectiveMaxThreads(*query_context),
-        settings[Setting::min_free_disk_space_for_temporary_data],
-        settings[Setting::compile_aggregate_expressions],
-        settings[Setting::min_count_to_compile_aggregate_expression],
-        settings[Setting::max_block_size],
-        settings[Setting::enable_software_prefetch_in_aggregation],
-        /* only_merge */ false,
-        settings[Setting::optimize_group_by_constant_keys],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge],
-        settings[Setting::enable_parallel_single_level_merge_by_index],
-        settings[Setting::enable_packed_string_keys_in_aggregation],
-        settings[Setting::enable_adaptive_aggregator],
-        settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
-        settings[Setting::adaptive_aggregator_disable_thaw],
-        settings[Setting::use_aggregation_memory_tracker]);
+        query_analysis_result.aggregate_overflow_row);
+
+    if (trivial_group_by_limit)
+    {
+        aggregator_params.max_rows_to_group_by = *trivial_group_by_limit;
+        aggregator_params.group_by_overflow_mode = OverflowMode::ANY;
+    }
+
+    if (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
+        && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys)
+        aggregator_params.empty_result_for_aggregation_by_empty_set = true;
+
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -609,8 +552,8 @@ void applyTopKPushdownToPartialAggregation(
     const auto * before_order_by_dag
         = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
+    VectorWithMemoryTracking<int> directions;
+    VectorWithMemoryTracking<int> nulls_directions;
     directions.reserve(sort_description.size());
     nulls_directions.reserve(sort_description.size());
 
@@ -1033,7 +976,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -1848,6 +1792,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 

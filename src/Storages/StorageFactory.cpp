@@ -118,24 +118,27 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
 {
     auto disk = getContext()->getDisk(name);
+    /// A short `ATTACH` uses the disk of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
-        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
     return disk;
 }
 
 std::pair<DiskPtr, CustomDiskRegistrationPtr> StorageFactory::Arguments::getDiskWithCustomDiskRegistration(const String & name) const
 {
     auto result = getContext()->getDiskWithCustomDiskRegistration(name);
+    /// A short `ATTACH` uses the disk of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
-        DiskFromAST::ensureDiskIsAllowed(result.first, getLocalContext());
+        DiskFromAST::ensureDiskIsAllowed(result.first, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
     return result;
 }
 
 StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
 {
     auto storage_policy = getContext()->getStoragePolicy(name);
+    /// A short `ATTACH` uses the policy of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
-        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
     return storage_policy;
 }
 

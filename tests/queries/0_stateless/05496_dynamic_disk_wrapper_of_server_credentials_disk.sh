@@ -11,6 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # policies and Keeper nodes removed below, and the server could not start again.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0"
 
+# The stress test can also stop the test anywhere, so the tables live in a Memory database: the next server start loads
+# none of them.
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}; CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = Memory" || exit 1
+CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$CLICKHOUSE_DATABASE_1}
+
 # A session without `s3_allow_server_credentials_in_user_queries` may not wrap, by name, a disk that a session with it
 # created with the server's own credentials, nor a wrapper of such a disk. A `type` read with `from_zk` counts as a
 # disk that may use server credentials; here it resolves to an `encrypted` disk, so no object storage is needed.
@@ -78,3 +83,4 @@ echo "without the opt-in: Log on the disk without server credentials: $(run -q "
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_indirect SYNC; DROP TABLE t_wrapper SYNC; DROP TABLE t_server SYNC; DROP TABLE t_plain SYNC"
 $CLICKHOUSE_KEEPER_CLIENT -q "rmr '${ZK_PATH}'"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${CLICKHOUSE_DATABASE_1}"
