@@ -1,0 +1,4 @@
+#ifndef DWYU_SIBLING_API_H
+#define DWYU_SIBLING_API_H
+#define DWYU_GUARDED_VALUE 43
+#endif

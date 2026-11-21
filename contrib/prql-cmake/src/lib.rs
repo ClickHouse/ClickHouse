@@ -93,7 +93,7 @@ mod tests {
 
         unsafe {
             let success = prql_to_sql(query_ptr, query_size, &mut out, &mut out_size);
-            let output = CStr::from_ptr(out as *const i8)
+            let output = CStr::from_ptr(out as *const c_char)
                 .to_str()
                 .unwrap()
                 .to_string();

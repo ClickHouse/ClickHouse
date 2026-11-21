@@ -1,0 +1,165 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE.md",
+])
+
+expand_template(
+    name = "configure_gzread_c",
+    out = "config/contrib/zlib-ng-cmake/gzread.c",
+    substitutions = {
+        "@ZLIB_SYMBOL_PREFIX@": "",
+    },
+    template = ":gzread.c.in",
+)
+
+expand_template(
+    name = "configure_zconf_h",
+    out = "config/contrib/zlib-ng-cmake/zconf.h",
+    substitutions = {
+        "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */": "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */",
+        "#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by configure/cmake/etc */": "#if 1    /* was set to #if 1 by configure/cmake/etc */",
+    },
+    template = ":zconf.h.in",
+)
+
+expand_template(
+    name = "configure_zlib_h",
+    out = "config/contrib/zlib-ng-cmake/zlib.h",
+    substitutions = {
+        "@ZLIB_SYMBOL_PREFIX@": "",
+    },
+    template = ":zlib.h.in",
+)
+
+expand_template(
+    name = "configure_zlib_name_mangling_h",
+    out = "config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    substitutions = {
+        "@ZLIB_SYMBOL_PREFIX@": "",
+    },
+    template = ":zlib_name_mangling.h.in",
+)
+
+ch_cc_library(
+    name = "_zlib",
+    srcs = [
+        "adler32.c",
+        "adler32_fold.c",
+        "chunkset.c",
+        "compare256.c",
+        "compress.c",
+        "cpu_features.c",
+    ] + glob(["crc32_*.c"]) + [
+        "deflate.c",
+    ] + glob(["deflate_*.c"]) + [
+        "functable.c",
+        "infback.c",
+        "inflate.c",
+        "inftrees.c",
+        "insert_string.c",
+        "insert_string_roll.c",
+        "slide_hash.c",
+        "trees.c",
+        "uncompr.c",
+        "zutil.c",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "arch/x86/x86_features.c",
+            "arch/x86/slide_hash_avx2.c",
+            "arch/x86/chunkset_avx2.c",
+            "arch/x86/compare256_avx2.c",
+            "arch/x86/adler32_avx2.c",
+            "arch/x86/adler32_sse42.c",
+            "arch/x86/insert_string_sse42.c",
+            "arch/x86/adler32_ssse3.c",
+            "arch/x86/chunkset_ssse3.c",
+            "arch/x86/crc32_pclmulqdq.c",
+        ] + glob(["arch/x86/*_sse2.c"]),
+        "@platforms//cpu:aarch64": [
+            "arch/arm/arm_features.c",
+            "arch/arm/crc32_acle.c",
+            "arch/arm/insert_string_acle.c",
+        ] + glob(["arch/arm/*_neon.c"]),
+    }) + [
+        "gzlib.c",
+        ":config/contrib/zlib-ng-cmake/gzread.c",
+        "gzwrite.c",
+    ] + glob([
+        "*.h",
+        "arch/generic/**/*.h",
+    ]) + select({
+        "@platforms//cpu:x86_64": glob([
+            "arch/x86/*avx2*.h",
+            "arch/x86/*ssse3*.h",
+            "arch/x86/*_pclmulqdq*.h",
+            "arch/x86/x86_*.h",
+        ]),
+        "@platforms//cpu:aarch64": glob(["arch/arm/**/*.h"]),
+    }),
+    hdrs = [
+        ":config/contrib/zlib-ng-cmake/zconf.h",
+        ":config/contrib/zlib-ng-cmake/zlib.h",
+        ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    ],
+    includes = [
+        ".",
+        "config/contrib/zlib-ng-cmake",
+    ],
+    language = "C",
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED64_OK",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_NOCHECK_SSE2",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LARGEFILE64_SOURCE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "__USE_LARGEFILE64",
+    ],
+)

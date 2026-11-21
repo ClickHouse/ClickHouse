@@ -1,0 +1,13 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "include/jemalloc/internal/jemalloc_preamble.h",
+    "include/jemalloc/jemalloc.h",
+    "include/jemalloc/jemalloc_defs.h",
+    "include/jemalloc/jemalloc_macros.h",
+    "include/jemalloc/jemalloc_protos.h",
+    "include/jemalloc/jemalloc_rename.h",
+    "include/jemalloc/jemalloc_typedefs.h",
+    "include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h.in",
+    "include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in",
+])

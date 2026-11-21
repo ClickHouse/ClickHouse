@@ -1,0 +1,11 @@
+--- a/libraries/liblber/debug.c
++++ b/libraries/liblber/debug.c
+@@ -30,7 +30,7 @@
+ #include "ldap_log.h"
+ #include "ldap_defaults.h"
+ #include "lber.h"
+-#include "ldap_pvt.h"
++#include "lber_pvt.h"
+
+ int lutil_debug_file( FILE *file )
+ {

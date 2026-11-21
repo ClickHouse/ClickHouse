@@ -1,0 +1,58 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(":fixture_rules.bzl", "fixture_exec_root", "fixture_return_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "leaf",
+    hdrs = ["leaf.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":leaf"],
+)
+
+cc_library(
+    name = "declared",
+    srcs = ["reader.c"],
+    implementation_deps = [":leaf"],
+)
+
+cc_library(
+    name = "missing_direct",
+    srcs = ["reader.c"],
+    implementation_deps = [":bridge"],
+)
+
+fixture_return_cpp(
+    name = "after_tool_declared",
+    actual = ":declared",
+)
+
+fixture_return_cpp(
+    name = "after_tool_missing",
+    actual = ":missing_direct",
+)
+
+cc_library(
+    name = "tool_declared",
+    srcs = ["tool.c"],
+    implementation_deps = [":after_tool_declared"],
+)
+
+cc_library(
+    name = "tool_missing",
+    srcs = ["tool.c"],
+    implementation_deps = [":after_tool_missing"],
+)
+
+fixture_exec_root(
+    name = "positive",
+    tool = ":tool_declared",
+)
+
+fixture_exec_root(
+    name = "negative",
+    tool = ":tool_missing",
+)

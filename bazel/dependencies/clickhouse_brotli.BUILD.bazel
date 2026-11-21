@@ -1,0 +1,27 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_brotli",
+    srcs = glob([
+        "c/common/*.c",
+        "c/dec/*.c",
+        "c/enc/*.c",
+        "c/common/**/*.h",
+        "c/dec/**/*.h",
+        "c/enc/**/*.h",
+    ]),
+    hdrs = glob(["c/include/**/*.h"]),
+    includes = [
+        "c/include",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+    source_header_directories = source_header_directories(["c/include"]),
+)

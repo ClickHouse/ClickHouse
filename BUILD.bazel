@@ -1,0 +1,23 @@
+load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "cmake/generate_export_header.h.in",
+    "cmake/localize_rust_c_symbols.sh",
+    "cmake/strip_rust_symbols.sh",
+] + glob(["utils/list-licenses/*.txt"]))
+
+cmake_link(
+    name = "clickhouse",
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+alias(
+    name = "unit_tests_dbms",
+    actual = "//src:unit_tests_dbms",
+)

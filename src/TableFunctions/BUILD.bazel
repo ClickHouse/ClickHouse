@@ -1,0 +1,127 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "DBMS_CONSUMER_DEFINES")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_DBMS_COMPILE_0_SOURCES = [
+    "ITableFunction.cpp",
+    "TableFunctionView.cpp",
+    "TableFunctionFactory.cpp",
+]
+
+filegroup(
+    name = "dbms_compile_0_sources",
+    srcs = _DBMS_COMPILE_0_SOURCES,
+    visibility = ["//src:__pkg__"],
+)
+
+_OBJECT_STORAGE_HEADERS = [
+    "ITableFunctionCluster.h",
+    "TableFunctionFileCluster.h",
+    "TableFunctionObjectStorage.h",
+    "TableFunctionURLCluster.h",
+]
+
+exports_files(
+    ["TableFunctionView.h"],
+    visibility = ["//src:__pkg__"],
+)
+
+_PRIVATE_TABLE_FUNCTIONS_HEADERS = [
+    "TableFunctionArrowFlight.h",
+    "TableFunctionDictionary.h",
+    "TableFunctionFilesystem.h",
+    "TableFunctionFuzzJSON.h",
+    "TableFunctionFuzzQuery.h",
+    "TableFunctionMongoDB.h",
+    "TableFunctionObfuscate.h",
+    "TableFunctionObjectStorageCluster.h",
+    "TableFunctionPrometheusQuery.h",
+    "TableFunctionRemote.h",
+    "TableFunctionTimeSeries.h",
+    "TableFunctionTimeSeriesSelector.h",
+    "TableFunctionTraceView.h",
+]
+
+ch_cc_library(
+    name = "clickhouse_table_functions",
+    srcs = glob(
+        ["*.cpp"],
+        exclude = _DBMS_COMPILE_0_SOURCES,
+    ) + ["Hive/TableFunctionHive.cpp"] + _PRIVATE_TABLE_FUNCTIONS_HEADERS,
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:object_storage_configuration",
+        ":object_storage",
+        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
+        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
+        "@clickhouse_arrow//:_arrow",
+        "@clickhouse_llvm_project//:LLVMSupport",
+    ] + select({
+        "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_librdkafka//:_rdkafka",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
+        "@clickhouse_grpc//:grpc",
+        "@clickhouse_vectorscan//:_vectorscan",
+        "//src/Common:memory_tracking_api",
+        "//src:core_types",
+        ":headers",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//bazel:clickhouse_config_headers",
+        "//src:clickhouse_common_io__compile_0",
+        "//src/Access/Common:clickhouse_common_access",
+        "//src/Common",
+        "//src/Functions:headers",
+        "//src/Parsers:headers",
+        "//src/Storages/System:clickhouse_storages_system__compile_1",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_fmtlib//:_fmt",
+        "//src:dbms",
+        "//src/Common:exception_api",
+        "//src:dbms__compile_0",
+        "//src/Common:assert_cast",
+        "//src/Common:parser_support_api",
+        "//src:io_string_buffers",
+        "//src/Storages/System:headers",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+        "//src:headers",
+        "//src/Access/Common:headers",
+        "//src:external_dictionaries_loader",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+)
+
+cc_library(
+    name = "headers",
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS + ["TableFunctionView.h"] + _OBJECT_STORAGE_HEADERS,
+    ),
+    deps = [
+        "//src/Common/ZooKeeper:headers",
+        "//src:headers",
+        "//src/Parsers:clickhouse_parsers",
+    ],
+)
+
+cc_library(
+    name = "object_storage",
+    hdrs = _OBJECT_STORAGE_HEADERS,
+    deps = [
+        ":headers",
+        "//bazel:clickhouse_config_headers",
+        "//src:headers",
+        "//src:object_storage_configuration",
+        "//src/Parsers:headers",
+    ],
+)

@@ -1,0 +1,95 @@
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "common_io_defines")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_NET_SSL_PRIVATE_HEADERS = [
+    "include/Poco/Net/HTTPSSessionInstantiator.h",
+    "include/Poco/Net/HTTPSStreamFactory.h",
+    "include/Poco/Net/KeyConsoleHandler.h",
+    "include/Poco/Net/KeyFileHandler.h",
+    "include/Poco/Net/SecureServerSocketImpl.h",
+]
+
+exports_files([
+    "src/EmbeddedCertificates.cpp",
+])
+
+_NET_SSL_COPTS = [
+    "-Wno-cast-qual",
+    "-Wno-covered-switch-default",
+    "-Wno-deprecated-copy-with-user-provided-dtor",
+    "-Wno-deprecated-dynamic-exception-spec",
+    "-Wno-extra-semi",
+    "-Wno-extra-semi-stmt",
+    "-Wno-implicit-fallthrough",
+    "-Wno-old-style-cast",
+    "-Wno-shorten-64-to-32",
+    "-Wno-sign-compare",
+    "-Wno-unused-exception-parameter",
+    "-Wno-unused-macros",
+    "-Wno-unused-parameter",
+    "-Wno-zero-as-null-pointer-constant",
+]
+
+_NET_SSL_DEFINES = common_io_defines()
+
+poco_cc_library(
+    name = "_poco_net_ssl__compile_0",
+    srcs = glob(
+        ["src/*.cpp"],
+        exclude = [
+            "src/EmbeddedCertificates.cpp",
+            "src/SecureSocketImpl.cpp",
+        ],
+    ) + _NET_SSL_PRIVATE_HEADERS,
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = _NET_SSL_PRIVATE_HEADERS,
+    ),
+    copts = _NET_SSL_COPTS,
+    includes = ["include"],
+    local_defines = _NET_SSL_DEFINES,
+    deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
+)
+
+poco_cc_library(
+    name = "_poco_net_ssl__compile_1",
+    srcs = ["//bazel:gen/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
+    additional_compiler_inputs = ["//bazel:gen/embedded/contrib/grpc/etc/roots.pem"],
+    copts = _NET_SSL_COPTS,
+    implementation_deps = [":_poco_net_ssl__compile_0"],
+    local_defines = _NET_SSL_DEFINES + ["POCO_EMBEDDED_CA_CERTIFICATES=1"],
+)
+
+poco_cc_library(
+    name = "secure_socket",
+    srcs = ["src/SecureSocketImpl.cpp"],
+    copts = _NET_SSL_COPTS,
+    implementation_deps = [
+        ":_poco_net_ssl__compile_0",
+        "//src/Common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_openssl//:crypto",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+    ],
+    local_defines = _NET_SSL_DEFINES,
+)
+
+cc_library(
+    name = "_poco_net_ssl",
+    implementation_deps = [
+        ":_poco_net_ssl__compile_1",
+        ":secure_socket",
+    ],
+    deps = [":_poco_net_ssl__compile_0"],
+)

@@ -1,0 +1,8 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+cc_library(
+    name = "undef_only",
+    testonly = True,
+    srcs = ["undef_only.cc"],
+    deps = ["@clickhouse_grpc//:grpc++"],
+)

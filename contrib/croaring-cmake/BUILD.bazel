@@ -1,0 +1,4 @@
+exports_files(
+    ["page_aligned_functions.h"],
+    visibility = ["@clickhouse_croaring//:__pkg__"],
+)

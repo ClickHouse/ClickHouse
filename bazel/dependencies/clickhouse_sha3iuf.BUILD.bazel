@@ -1,0 +1,24 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_sha3iuf",
+    srcs = [
+        "sha3.c",
+    ],
+    hdrs = glob(["**/*.h"]),
+    copts = [
+        "-w",
+        "-std=gnu99",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+)

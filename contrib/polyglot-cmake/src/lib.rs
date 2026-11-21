@@ -132,7 +132,7 @@ mod tests {
                 &mut out,
                 &mut out_size,
             );
-            let output = CStr::from_ptr(out as *const i8)
+            let output = CStr::from_ptr(out as *const c_char)
                 .to_str()
                 .unwrap()
                 .to_string();

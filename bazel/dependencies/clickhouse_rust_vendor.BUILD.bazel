@@ -1,0 +1,39 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_registry_inputs", "cargo_repository_sources")
+load("@clickhouse//bazel/rules:codegen_actions.bzl", "rust_vendor_licenses")
+load("@clickhouse_cargo_sources//:delta_vendor.bzl", "DELTA_VENDOR_ROOTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cargo_repository_sources(
+    name = "sources",
+)
+
+cargo_registry_inputs(
+    name = "delta_cbindgen_vendor",
+    fallback = ":sources",
+    roots = DELTA_VENDOR_ROOTS,
+)
+
+rust_vendor_licenses(
+    name = "licenses",
+    filenames = [
+        "LICENSE",
+        "LICENCE",
+        "LICENSE.md",
+        "LICENSE.txt",
+        "LICENSE.TXT",
+        "COPYING",
+        "LICENSE_APACHE",
+        "LICENSE-APACHE",
+        "license-apache-2.0",
+        "LICENSES/Apache-2.0.txt",
+        "LICENSE-MIT",
+        "LICENSE-MIT.txt",
+        "LICENSE-MIT.md",
+        "LICENSE.MIT",
+        "LICENSE_A2",
+        "LICENSE_CC0",
+        "LICENSE_A2LLVM",
+        "LICENSE-0BSD.txt",
+    ],
+)

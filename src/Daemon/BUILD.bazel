@@ -1,0 +1,52 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "common_io_defines")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "daemon",
+    srcs = [
+        "BaseDaemon.cpp",
+        "GraphiteWriter.cpp",
+        "CrashWriter.cpp",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_llvm_project//:LLVMSupport",
+        "//base/poco/Net:_poco_net",
+        "//src/Loggers:headers",
+        "//src/Loggers:loggers",
+        ":headers",
+        "//src/Common/Config:clickhouse_common_config",
+        "//src/Common",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+        "//src:headers",
+    ],
+    local_defines = common_io_defines([
+        "ENABLE_MULTITARGET_CODE=1",
+        "USE_CLICKHOUSE_THREADS=1",
+    ]),
+)
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["**/*.h"]),
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//src/Common",
+        "//base/poco/Util:_poco_util",
+        "//src/Loggers:headers",
+        "//src/Common/Config:clickhouse_common_config",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+    ],
+)

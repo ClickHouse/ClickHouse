@@ -1,0 +1,11 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "aarch64/config.h",
+    "amd64/config.h",
+    "common/hs_version.h",
+    "rageled_files/aarch64/Parser.cpp",
+    "rageled_files/aarch64/control_verbs.cpp",
+    "rageled_files/amd64/Parser.cpp",
+    "rageled_files/amd64/control_verbs.cpp",
+])

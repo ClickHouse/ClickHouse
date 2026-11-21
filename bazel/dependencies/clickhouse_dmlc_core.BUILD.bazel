@@ -1,0 +1,88 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_dmlc_core_dmlc_build_config_h",
+    out = "config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+    substitutions = {
+        "#cmakedefine CMAKE_CURRENT_SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\"": "#define CMAKE_CURRENT_SOURCE_DIR \"contrib/xgboost-cmake\"",
+        "  #cmakedefine DMLC_EXECINFO_H <${DMLC_EXECINFO_H}>": "/* #undef DMLC_EXECINFO_H */",
+        "#cmakedefine DMLC_EXECINFO_H_PRESENT": "/* #undef DMLC_EXECINFO_H_PRESENT */",
+        "#cmakedefine DMLC_NANOSLEEP_PRESENT": "#define DMLC_NANOSLEEP_PRESENT",
+        "#cmakedefine DMLC_CXXABI_H_PRESENT": "#define DMLC_CXXABI_H_PRESENT",
+        "#cmakedefine DMLC_FOPEN_64_PRESENT": "#define DMLC_FOPEN_64_PRESENT",
+        "#cmakedefine DMLC_USE_PARQUET": "/* #undef DMLC_USE_PARQUET */",
+        "${DMLC_CMAKE_LITTLE_ENDIAN}": "1",
+    },
+    template = "cmake/build_config.h.in",
+)
+
+ch_cc_library(
+    name = "_dmlc_core",
+    srcs = [
+        "src/data.cc",
+        "src/io.cc",
+        "src/recordio.cc",
+        "src/io/recordio_split.cc",
+        "src/io/local_filesys.cc",
+        "src/io/input_split_base.cc",
+        "src/io/indexed_recordio_split.cc",
+        "src/io/line_split.cc",
+        "src/io/filesys.cc",
+        "src/config.cc",
+    ] + glob(
+        ["src/**/*.h"],
+        # DMLC's generated build_config disables Parquet; its default config
+        # disables Azure, HDFS and S3. None of their .cc backends is compiled.
+        exclude = [
+            "src/data/parquet_parser.h",
+            "src/io/azure_filesys.h",
+            "src/io/hdfs_filesys.h",
+            "src/io/s3_filesys.h",
+            # Unused debugging class; production uses ThreadedInputSplit.
+            "src/io/single_threaded_input_split.h",
+        ],
+    ),
+    hdrs = [
+        ":configure_dmlc_core_dmlc_build_config_h",
+    ] + glob(
+        ["include/dmlc/*.h"],
+        # The Lua/Torch integration is not enabled.
+        exclude = ["include/dmlc/lua.h"],
+    ),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-Wall",
+        "-Wno-unknown-pragmas",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-msse2",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
+    includes = [
+        "include",
+        "config/contrib/xgboost/dmlc-core",
+    ],
+    local_defines = [
+        "DMLC_CORE_USE_CMAKE",
+        "DMLC_USE_CXX11=1",
+        "DMLC_USE_CXX14=1",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_DARWIN_C_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_POSIX_C_SOURCE=200809L",
+        "_POSIX_SOURCE",
+        "_XOPEN_SOURCE=700",
+        "__USE_XOPEN2K8",
+    ],
+)

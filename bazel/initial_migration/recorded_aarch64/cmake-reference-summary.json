@@ -1,0 +1,31 @@
+{
+  "arch": "aarch64",
+  "host_system": "Linux",
+  "host_processor": "aarch64",
+  "bytes": 907067440,
+  "compiler_sha256": "3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f",
+  "compiler_elf_machine": 183,
+  "rustc_sha256": "4abf39ba829a0ac7164d1b070f50880634d668f5f103ba6359c1d2b9e36d5e12",
+  "cargo_sha256": "ab26726c80168f6f43dc89b15baf8e5ca03105338184e3ff46dff17f78a38487",
+  "rustc_elf_machine": 183,
+  "cargo_elf_machine": 183,
+  "cmake_sha256": "cd204de2504bbe77c5e2b0babce701943133374e77490f36ad8b679d18b56646",
+  "elf_machine": 183,
+  "strip_flags": [
+    "--strip-all",
+    "--remove-section=.note.gnu.build-id"
+  ],
+  "native_tablegen": {
+    "llvm-tblgen": {
+      "sha256": "677459ffe152f88fa9b62dfe86a64065b28365787f93e6568b8e86215b074a39",
+      "elf_machine": 183
+    },
+    "llvm-min-tblgen": {
+      "sha256": "d74cf5ebd54aae7ca1267f569aa9e7b2429bb4e668fd0c712b3cd33c5237bd59",
+      "elf_machine": 183
+    }
+  },
+  "plain_stripped_sha256": "5180f5d1ee2918cccf2e872ec9c92a2e8de8c1021e75972ad1ba2df53097b88a",
+  "stripped_sha256": "a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03",
+  "stripped_bytes": 637316696
+}

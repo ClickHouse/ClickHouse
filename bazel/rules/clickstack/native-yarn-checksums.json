@@ -1,0 +1,46 @@
+{
+  "@esbuild-linux-x64-npm-0.25.1-fca13db7a3-10c0.zip": {
+    "sha256": "eef74e4e59476e9f11fe5e5e2406e67d9a4f10dd53d276145e4698d5e357d9a5",
+    "size": 10245777
+  },
+  "@esbuild-linux-x64-npm-0.27.1-aa70a451a4-10c0.zip": {
+    "sha256": "3686fe27162a573a3713e7607319348479dc9ca09d3764fb61759e0579d32c70",
+    "size": 11089585
+  },
+  "@esbuild-linux-x64-npm-0.27.4-2d927c488f-10c0.zip": {
+    "sha256": "ef49add4205d0adb5494809aaa9942185355bb763534b395a029423a9909f105",
+    "size": 11118257
+  },
+  "@img-sharp-libvips-linux-x64-npm-1.2.4-105fd6d44d-10c0.zip": {
+    "sha256": "c044c2e8374e44af8c558a4eca2895d4beb7a9c0b95e98b9b90ed3fc44c79c56",
+    "size": 16658955
+  },
+  "@img-sharp-linux-x64-npm-0.34.5-06b002e5f6-10c0.zip": {
+    "sha256": "3e78c59f41174e048367a0abb2ba5987e9f4d7a81527689d834975f00aa171c6",
+    "size": 424076
+  },
+  "@next-swc-linux-x64-gnu-npm-16.1.7-cbbe55c9d8-10c0.zip": {
+    "sha256": "01362ceef26204f1bb130d02f8d0549d691e848ba6879aa3b944d001a863d9c6",
+    "size": 117917847
+  },
+  "@nx-nx-linux-x64-gnu-npm-21.3.11-a5dc4af6d8-10c0.zip": {
+    "sha256": "f5e9067ad0c5d191d6564df249610c9613a08c5769ad09d3dfdab0244d6005ba",
+    "size": 17613836
+  },
+  "@oxc-parser-binding-linux-x64-gnu-npm-0.120.0-2ebedab73f-10c0.zip": {
+    "sha256": "aba651a5a1a117c74e81257821b03f0354f5261bf441f464ea3534e226d31d29",
+    "size": 2598533
+  },
+  "@oxc-resolver-binding-linux-x64-gnu-npm-11.19.1-718d0ecf5c-10c0.zip": {
+    "sha256": "cdaa62643d250cbfca1f4af22a53a6d0ca2db61c94093752e452c5f78379445b",
+    "size": 2532326
+  },
+  "@rollup-rollup-linux-x64-gnu-npm-4.59.0-da6c703f69-10c0.zip": {
+    "sha256": "5426c37c7a5da26715cb0cf6d51c8e5a19c936dee407868fdc5258f64297a55f",
+    "size": 2032229
+  },
+  "@unrs-resolver-binding-linux-x64-gnu-npm-1.11.1-93a00570de-10c0.zip": {
+    "sha256": "2fcab80a11732b3b6c6835813517ec32dae7f3f03f82e4c76247c3a460fd1e47",
+    "size": 2273794
+  }
+}

@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package dwyu.proto_compile;
+
+message Leaf {
+  int64 value = 1;
+}

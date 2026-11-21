@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package dwyu.proto_compile;
+
+import "dwyu_proto/bridge.proto";
+import "dwyu_proto/leaf.proto";
+
+message NegativeMissingDirect {
+  Bridge bridge = 1;
+  Leaf leaf = 2;
+}

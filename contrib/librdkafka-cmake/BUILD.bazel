@@ -1,0 +1,35 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load(":flags.bzl", "RDKAFKA_LOCAL_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "config.h.in",
+    "rdhttp_poco.c",
+    "rdhttp_poco_transport.h",
+    "rdkafka_conf_sensitive.c",
+])
+
+ch_cc_library(
+    name = "rdhttp_poco_transport",
+    srcs = [
+        "rdhttp_poco_transport.cpp",
+        "rdhttp_poco_transport.h",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-fno-sanitize=undefined",
+    ],
+    implementation_deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
+    local_defines = RDKAFKA_LOCAL_DEFINES,
+    strip_include_prefix = "include",
+    deps = ["@clickhouse_librdkafka//:_rdkafka__compile_0"],
+)
