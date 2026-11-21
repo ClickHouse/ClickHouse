@@ -755,7 +755,10 @@ public:
 
     /// Once `enable_join_in_memory_compression` decided to compress, compresses the stored blocks of every
     /// build stream that has not caught up yet, so that `getTotalByteCount` sees the compressed size of the
-    /// whole join. A build stream catches up on its own only on its next insert, which may never come, so call
+    /// whole join. It also makes that decision itself when the stored size has reached
+    /// `join_in_memory_compression_min_bytes` and no build stream has noticed it yet (build streams storing
+    /// their blocks concurrently can cross the threshold together). A build stream catches up on its own only
+    /// on its next insert, which may never come, so call
     /// this before enforcing a size limit or deciding to spill. Must not be called by a thread that holds the
     /// mutex of a build stream.
     void compressPendingBuildStreams();

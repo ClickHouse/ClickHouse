@@ -1350,8 +1350,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     /// The total counts the blocks of the other build streams as they are now: one of them may still hold blocks
     /// stored uncompressed before the join decided to compress, with no later insert to catch it up. Compress them
     /// before reporting that the limit is exceeded, so that the limit sees the compressed size of the whole join.
+    /// This does not depend on the join having decided to compress already: several build streams can each store
+    /// a block below the threshold and cross it together, and this thread can get here before any of them
+    /// notices; `compressPendingBuildStreams` makes the decision itself in that case.
     const auto & size_limits = table_join->sizeLimits();
-    if (compress_stored_blocks.load(std::memory_order_relaxed) && !size_limits.softCheck(total_rows, total_bytes))
+    if (in_memory_compression_min_bytes && !size_limits.softCheck(total_rows, total_bytes))
     {
         compressPendingBuildStreams();
         total_rows = getTotalRowCount();
@@ -1362,8 +1365,21 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
 void HashJoin::compressPendingBuildStreams()
 {
-    if (!compress_stored_blocks.load(std::memory_order_relaxed))
+    if (!in_memory_compression_min_bytes)
         return;
+
+    /// Re-evaluate the decision to compress instead of relying on a build stream having made it: build streams
+    /// that store their blocks concurrently can cross the threshold together, each of them counting only its own
+    /// block before storing it, and they notice it only after they have inserted the keys of their blocks.
+    /// A caller that is about to report an overflow (or to spill) must not see these blocks uncompressed.
+    if (!compress_stored_blocks.load(std::memory_order_relaxed))
+    {
+        if (data->allocated_size.load(std::memory_order_relaxed) < *in_memory_compression_min_bytes)
+            return;
+        bool expected = false;
+        if (compress_stored_blocks.compare_exchange_strong(expected, true, std::memory_order_relaxed))
+            LOG_DEBUG(log, "{}Started compressing stored blocks in memory, {} rows", instance_log_id, getTotalRowCount());
+    }
 
     /// A build stream that is storing a block holds its mutex until it is done, and compresses that block too
     /// since the compression is already decided; waiting for it is enough. The locks are taken one at a time,
