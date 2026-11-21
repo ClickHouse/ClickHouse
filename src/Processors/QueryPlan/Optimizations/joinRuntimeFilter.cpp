@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/joinRuntimeFilterKeyPath.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -288,7 +289,11 @@ static size_t countHashTableKeys(const JoinStepLogical & join_step)
     return count;
 }
 
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> * kept_for_key_path)
 {
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -364,8 +369,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (join_operator.expression.empty())
         return false;
 
-    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
-    /// Planning and pipeline overhead outweighs any saving on a tiny probe.
+    /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
+    /// that would have matches in the right table. This means we need to add something like NOT IN filter.
+    const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
+
+    /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows.
+    /// Planning and pipeline overhead outweighs any saving on a tiny probe, unless the filter is pushed down to a larger input.
     ///
     /// The decision is recorded on the step and travels with a copy of it. It is the one decision
     /// this pass takes from a row estimate, and estimates are not part of the plan format, so on a
@@ -378,19 +387,20 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (join_step->isRuntimeFilterDeclinedForSmallProbe())
         return false;
 
+    bool kept_for_small_probe = false;
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
         if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
-            join_step->setRuntimeFilterDeclinedForSmallProbe();
-            return false;
+            if (!runtimeFilterReachesInputAbove(node, check_left_does_not_contain, optimization_settings))
+            {
+                join_step->setRuntimeFilterDeclinedForSmallProbe();
+                return false;
+            }
+            kept_for_small_probe = true;
         }
     }
-
-    /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
-    /// that would have matches in the right table. This means we need to add something like NOT IN filter.
-    const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
@@ -508,6 +518,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const UInt64 base_fingerprint = calculateJoinFingerprint(
         *join_step, check_left_does_not_contain, total_join_on_predicates_count, join_keys_probe_side, join_keys_build_side);
 
+    VectorWithMemoryTracking<String> filter_keys;
     auto make_id = [&](size_t i) -> RuntimeFilterId
     {
         SipHash h;
@@ -515,6 +526,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         h.update(i);
         const UInt64 structural_hash = h.get64();
         const String random_key = fmt::format("_rf_rnd_{:016x}_{:016x}", thread_local_rng(), thread_local_rng());
+        filter_keys.push_back(random_key);
         return RuntimeFilterId{.name = runtimeFilterName(structural_hash), .key = random_key};
     };
 
@@ -695,6 +707,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
     join_step->setHasRuntimeFilters();
+
+    if (kept_for_small_probe && kept_for_key_path)
+        kept_for_key_path->push_back({.join_step = join_step, .filter_keys = std::move(filter_keys)});
 
     return true;
 }

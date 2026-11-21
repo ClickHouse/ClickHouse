@@ -1,0 +1,25 @@
+<!-- The probe side of the JOIN with key_path_dim_k is estimated small (a selective condition on skewed keys), but its
+     runtime filter is pushed down to the scan of key_path_fact. -->
+<test>
+    <create_query>CREATE TABLE key_path_fact (a UInt32, k UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE key_path_dim_a (a UInt32, name String, label String) ENGINE = MergeTree ORDER BY a</create_query>
+    <create_query>CREATE TABLE key_path_dim_k (k UInt32) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <!-- 90% of the rows have one of three hot keys, the rest is spread over 1M keys -->
+    <fill_query>INSERT INTO key_path_fact SELECT if(number % 10 != 0, number % 3, 100 + intHash32(number) % 1000000), intHash32(number * 7) % 3000 FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO key_path_dim_a SELECT number, if(number &lt; 3, 'hot', toString(number % 300000)), concat('label_', hex(intHash64(number))) FROM numbers(1000100)</fill_query>
+    <fill_query>INSERT INTO key_path_dim_k SELECT number FROM numbers(30)</fill_query>
+
+    <query>
+        SELECT key_path_dim_a.label, count()
+        FROM key_path_fact
+        JOIN key_path_dim_a ON key_path_fact.a = key_path_dim_a.a
+        JOIN key_path_dim_k ON key_path_fact.k = key_path_dim_k.k
+        WHERE key_path_dim_a.name = 'hot'
+        GROUP BY key_path_dim_a.label
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS key_path_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS key_path_dim_a</drop_query>
+    <drop_query>DROP TABLE IF EXISTS key_path_dim_k</drop_query>
+</test>
