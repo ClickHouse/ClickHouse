@@ -6,7 +6,7 @@ SELECT divideDecimal(toDecimal64(123.123, 3), toDecimal64(0, 1)); -- { serverErr
 SELECT multiplyDecimal(toDecimal32(0, 2), toDecimal128(11.123456, 6));
 SELECT multiplyDecimal(toDecimal32(123.123, 3), toDecimal128(0, 1));
 
--- don't look at strange query result -- it happens due to bad float precision: toUInt256(1e38) == 99999999999999997752612184630461283328
+-- don't look at strange query result -- it happens due to bad float precision: toUInt256(1e38) == 99999999999999997748809823456034029568
 SELECT multiplyDecimal(toDecimal256(1e38, 0), toDecimal256(1e38, 0));
 SELECT divideDecimal(toDecimal256(1e66, 0), toDecimal256(1e-10, 10), 0);
 

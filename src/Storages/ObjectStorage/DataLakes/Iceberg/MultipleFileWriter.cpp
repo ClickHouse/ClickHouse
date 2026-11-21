@@ -20,12 +20,43 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
     field_ids.reserve(written_block.columns());
     for (const auto & column : written_block)
     {
-        auto it = field_id_by_name.find(column.name);
-        if (it == field_id_by_name.end())
-            return {};
-        field_ids.push_back(it->second);
+        validateIcebergFieldIds(column.type, column.name, field_id_by_name);
+        field_ids.push_back(field_id_by_name.find(column.name)->second);
     }
     return field_ids;
+}
+
+DataFileUploads::DataFileUploads(size_t max_files_in_upload_)
+    : max_files_in_upload(max_files_in_upload_)
+{
+}
+
+void DataFileUploads::add(std::unique_ptr<WriteBufferFromFileBase> && buffer)
+{
+    buffers.push_back(std::move(buffer));
+    finalizeUntilAtMost(max_files_in_upload);
+}
+
+void DataFileUploads::finalize()
+{
+    finalizeUntilAtMost(0);
+}
+
+void DataFileUploads::cancel() noexcept
+{
+    for (auto & buffer : buffers)
+        buffer->cancel();
+    buffers.clear();
+}
+
+void DataFileUploads::finalizeUntilAtMost(size_t max_files)
+{
+    while (buffers.size() > max_files)
+    {
+        auto buffer = std::move(buffers.front());
+        buffers.pop_front();
+        buffer->finalize();
+    }
 }
 
 MultipleFileWriter::MultipleFileWriter(
@@ -33,6 +64,7 @@ MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_bytes_,
     Poco::JSON::Array::Ptr schema_,
     FileNamesGenerator & filename_generator_,
+    DataFileUploads & data_file_uploads_,
     const Iceberg::IcebergPathResolver & path_resolver_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
@@ -41,10 +73,11 @@ MultipleFileWriter::MultipleFileWriter(
     SharedHeader sample_block_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
-    , schema(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , required_field_ids(DataFileStatistics::getRequiredFieldIds(schema_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_), required_field_ids)
     , filename_generator(filename_generator_)
+    , data_file_uploads(data_file_uploads_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
     , context(context_)
@@ -59,7 +92,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block), required_field_ids);
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
@@ -85,7 +118,10 @@ void MultipleFileWriter::startNewFile()
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-    output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+    /// Not `getOutputFormatParallelIfPossible`: `ParallelFormattingOutputFormat` writes to `buffer` from its own thread,
+    /// and `consume` reads `buffer->count()` to cut the file. The Iceberg data file formats are not formatted
+    /// in parallel anyway: the Parquet writer encodes row groups in parallel itself and writes them on the calling thread.
+    output_format = FormatFactory::instance().getOutputFormat(
         write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
 }
 
@@ -120,7 +156,10 @@ void MultipleFileWriter::finalize()
     }
     stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
 
-    buffer->finalize();
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    output_format.reset();
+
+    /// Read before `preFinalize`: the S3 and Azure buffers move their unflushed tail out of `count` there.
     UInt64 file_bytes = buffer->count();
     total_bytes += file_bytes;
 
@@ -129,8 +168,8 @@ void MultipleFileWriter::finalize()
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
 
-    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
-    release();
+    buffer->preFinalize();
+    data_file_uploads.add(std::move(buffer));
 }
 
 void MultipleFileWriter::release()

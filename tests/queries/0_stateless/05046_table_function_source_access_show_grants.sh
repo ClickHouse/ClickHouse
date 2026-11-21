@@ -92,6 +92,7 @@ DROP USER IF EXISTS $user_alias_both;
 CREATE USER $user_alias_both NOT IDENTIFIED;
 GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.t_alias_src TO $user_alias_both;
 GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.t_source_access TO $user_alias_both;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user_alias_both;
 "
 
 echo "=== SHOW COLUMNS on alias and target ==="

@@ -1,13 +1,12 @@
 ---
 title: 'Using JOINs in ClickHouse'
-sidebar_label: 'Overview'
+sidebarTitle: 'Overview'
 description: 'JOIN types and strictness in ClickHouse.'
 keywords: ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'ANY JOIN', 'ASOF JOIN', 'JOIN strictness']
 slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 This overview explains JOIN types and strictness. For complete syntax, see the [`JOIN` clause reference](/reference/statements/select/join). For prescriptive optimization guidance and worked examples, see [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins).
 
@@ -17,13 +16,29 @@ Every JOIN has a type and a strictness. The type determines which rows without a
 
 ### `INNER JOIN` {#inner-join}
 
-<Image img="/images/guides/join-algorithms/inner-join.png" size="sm" alt="Venn diagram of an INNER JOIN: only the intersection of left and right table rows with matching JOIN keys is returned, as the Cartesian product of the matching rows"/>
+<div className="ch-image-sm">
+
+<Frame>
+
+![Venn diagram of an INNER JOIN: only the intersection of left and right table rows with matching JOIN keys is returned, as the Cartesian product of the matching rows](/images/guides/join-algorithms/inner-join.png)
+
+</Frame>
+
+</div>
 
 An `INNER JOIN` returns, for each pair of rows with matching JOIN keys, the columns of the left-hand row combined with the columns of the right-hand row. If a row has more than one match, all matches are returned, so the result contains the Cartesian product of the rows with the same key. The `INNER` keyword can be omitted.
 
 ### `LEFT`, `RIGHT`, and `FULL OUTER JOIN` {#outer-join}
 
-<Image img="/images/guides/join-algorithms/outer-join.png" size="lg" alt="Venn diagrams of LEFT, RIGHT, and FULL OUTER JOIN: each returns the Cartesian product of matching rows, plus the non-matching rows of the left table, the right table, or both tables"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Venn diagrams of LEFT, RIGHT, and FULL OUTER JOIN: each returns the Cartesian product of matching rows, plus the non-matching rows of the left table, the right table, or both tables](/images/guides/join-algorithms/outer-join.png)
+
+</Frame>
+
+</div>
 
 An outer JOIN returns the same rows as an `INNER JOIN` and also returns rows without a match:
 
@@ -35,7 +50,15 @@ The [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls)
 
 ### `ALL` and `ANY` strictness {#all-and-any-strictness}
 
-<Image img="/images/guides/join-algorithms/any-join.png" size="lg" alt="Venn diagrams of LEFT, RIGHT, and INNER ANY JOIN: each returns matching rows without a Cartesian product, plus the non-matching rows of the left table or the right table for LEFT and RIGHT"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Venn diagrams of LEFT, RIGHT, and INNER ANY JOIN: each returns matching rows without a Cartesian product, plus the non-matching rows of the left table or the right table for LEFT and RIGHT](/images/guides/join-algorithms/any-join.png)
+
+</Frame>
+
+</div>
 
 With `ALL` strictness, a JOIN returns every match, as described for the JOIN types above. With `ANY` strictness, a JOIN returns at most one match for each row and does not produce a Cartesian product:
 
@@ -70,7 +93,15 @@ With `ALL` strictness, the same query returns five rows, because the keys `2` an
 
 ### `ASOF JOIN` {#asof-join}
 
-<Image img="/images/guides/join-algorithms/asof-join.png" size="sm" alt="Venn diagram of an ASOF JOIN: rows with non-exactly matching JOIN keys are joined, returning the closest match for each row without a Cartesian product"/>
+<div className="ch-image-sm">
+
+<Frame>
+
+![Venn diagram of an ASOF JOIN: rows with non-exactly matching JOIN keys are joined, returning the closest match for each row without a Cartesian product](/images/guides/join-algorithms/asof-join.png)
+
+</Frame>
+
+</div>
 
 An `ASOF JOIN` joins rows that have no exact match. In ClickHouse, `ASOF` is a strictness that is combined with an `INNER` or `LEFT` JOIN. The `ON` clause contains equality conditions and exactly one closest-match condition that uses `>`, `>=`, `<`, or `<=`. For each left-hand row, ClickHouse selects, among the right-hand rows that satisfy the equality conditions, the row that is closest according to the closest-match condition. Each left-hand row is joined with at most one right-hand row.
 
@@ -114,6 +145,7 @@ For the column types that the closest-match column supports and the `USING` synt
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
 - [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [JOIN settings](/concepts/features/operations/select/join-settings)
 
 ## Further reading {#further-reading}
 
