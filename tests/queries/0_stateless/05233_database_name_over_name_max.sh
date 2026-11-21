@@ -91,10 +91,13 @@ ${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}/*.csv\`" 2>&1 | grep -o -m1
 echo "--- local: control, a glob under a short absent directory ---"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent_dir/*.csv\`" 2>&1 | grep -o -m1 -E 'CANNOT_EXTRACT_TABLE_STRUCTURE|STD_EXCEPTION'
 
-echo "--- local: a name over NAME_MAX with archive syntax is an unknown table ---"
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
+# In `clickhouse-local` the default database also resolves a name that looks like a path through
+# `file://`, so an absent archive written with archive syntax is reported as a missing file rather
+# than an unknown table.
+echo "--- local: a name over NAME_MAX with archive syntax is a missing file ---"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'FILE_DOESNT_EXIST|UNKNOWN_TABLE|STD_EXCEPTION'
 echo "--- local: control, a short name with archive syntax ---"
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'FILE_DOESNT_EXIST|UNKNOWN_TABLE|STD_EXCEPTION'
 
 # `file()` carries only the archive component into the path listing, where it is stated.
 echo "--- local: file() on an archive over NAME_MAX with a member glob is not a filesystem error ---"
