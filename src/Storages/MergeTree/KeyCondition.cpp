@@ -6287,6 +6287,19 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     return std::nullopt;
                 }
 
+                if (const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get()))
+                {
+                    auto & bytes = const_value.safeGet<String>();
+                    /// With a `Nullable` operand, `isNotDistinctFrom` compares a `FixedString` without its trailing zero bytes.
+                    if (func_name == "isNotDistinctFrom" && !candidate.const_is_fixed_string && bytes.ends_with('\0'))
+                        return std::nullopt;
+
+                    /// `FixedString(N)` compares with a longer string as if zero-padded: zero bytes past N do not change the result.
+                    const size_t n = fixed_key->getN();
+                    if (bytes.size() > n && bytes.find_first_not_of('\0', n) == String::npos)
+                        bytes.resize(n);
+                }
+
                 /// A string that does not parse as the key type, such as `'2026-07-16T12:30:45.123Z'` for a
                 /// `DateTime64` key, cannot supply a comparison bound. The comparison itself may still accept
                 /// it (for example, with `cast_string_to_date_time_mode = 'best_effort'`), so the index
