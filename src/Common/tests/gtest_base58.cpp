@@ -466,6 +466,63 @@ TEST(Base58, GenericCancellationInterval)
         Cancelled);
 }
 
+/// A value that completes well within one check interval reaches no check of its own, so the count has to
+/// survive the value for a run of such values to be interruptible at all. The counts are integer functions
+/// of the exact inputs, so they are asserted exactly.
+TEST(Base58, GenericCancellationCountAcrossValues)
+{
+    /// 1025 bytes converts in about 0.68 of the work between two checks, so eight of them are worth five.
+    constexpr size_t values = 8;
+    constexpr size_t expected_encode_calls = 5;
+    constexpr size_t expected_decode_calls = 5;
+    constexpr size_t expected_rejected_decode_calls = 5;
+
+    const std::string body = bodyOfLength(1025, 0);
+    const auto * body_src = reinterpret_cast<const UInt8 *>(body.data());
+    std::vector<UInt8> encoded(2 * body.size() + 1);
+
+    /// A count of its own dies with the value, so repeating the conversion never reaches a check. This is
+    /// what makes the counts below a property of the shared count rather than of the interval's size.
+    size_t own_encode_calls = 0;
+    size_t encoded_size = 0;
+    for (size_t i = 0; i < values; ++i)
+        encoded_size = encodeBase58(body_src, body.size(), encoded.data(), [&] { ++own_encode_calls; });
+    EXPECT_EQ(own_encode_calls, 0u);
+
+    size_t encode_work = 0;
+    size_t encode_calls = 0;
+    for (size_t i = 0; i < values; ++i)
+        encodeBase58(body_src, body.size(), encoded.data(), [&] { ++encode_calls; }, &encode_work);
+    EXPECT_EQ(encode_calls, expected_encode_calls);
+
+    const std::string encoded_text(reinterpret_cast<const char *>(encoded.data()), encoded_size);
+    const auto * text_src = reinterpret_cast<const UInt8 *>(encoded_text.data());
+    std::vector<UInt8> decoded(encoded_text.size());
+
+    size_t own_decode_calls = 0;
+    for (size_t i = 0; i < values; ++i)
+        decodeBase58(text_src, encoded_text.size(), decoded.data(), [&] { ++own_decode_calls; });
+    EXPECT_EQ(own_decode_calls, 0u);
+
+    size_t decode_work = 0;
+    size_t decode_calls = 0;
+    for (size_t i = 0; i < values; ++i)
+        decodeBase58(text_src, encoded_text.size(), decoded.data(), [&] { ++decode_calls; }, &decode_work);
+    EXPECT_EQ(decode_calls, expected_decode_calls);
+
+    /// A value rejected at its last character has still done the work, and a block of such values is only
+    /// interruptible if that work is charged.
+    std::string rejected = encoded_text;
+    rejected.back() = '0';
+    size_t rejected_work = 0;
+    size_t rejected_calls = 0;
+    for (size_t i = 0; i < values; ++i)
+        EXPECT_FALSE(decodeBase58(reinterpret_cast<const UInt8 *>(rejected.data()), rejected.size(),
+                                  decoded.data(), [&] { ++rejected_calls; }, &rejected_work)
+                         .has_value());
+    EXPECT_EQ(rejected_calls, expected_rejected_decode_calls);
+}
+
 TEST(Base58, DecodeInvalid)
 {
     /// The generic decoder must reject an invalid character wherever it appears, including inside the

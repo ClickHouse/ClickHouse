@@ -14,10 +14,14 @@ namespace DB
 /// time, so they accept an optional `check_cancellation` callback that is invoked periodically;
 /// it is expected to throw if the query has been cancelled or exceeded its time limit.
 ///
+/// A caller converting many values can pass `shared_work_since_check` to have the work counted
+/// across them: a value that completes well within one interval reaches no check of its own, so a
+/// count that restarts at every value leaves a long run of small values uninterruptible.
+///
 /// `dst` also holds the conversion's intermediate state: it must have room for
 /// `2 * src_length + 1` bytes to encode and `src_length` bytes to decode.
-size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
-std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {}, size_t * shared_work_since_check = nullptr);
+std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {}, size_t * shared_work_since_check = nullptr);
 
 /// Maximum base58-encoded lengths for fixed-size inputs.
 /// A 32-byte value uses 9 intermediate digits of radix 58^5, producing at most
