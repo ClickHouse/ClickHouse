@@ -57,7 +57,8 @@ public:
 
         auto & group_by = query->getGroupBy().getNodes();
 
-        auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
+        const auto keys_to_keep = getGroupingFunctionArguments(*query);
+        auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types, &keys_to_keep);
 
         /// At least one key is needed for GROUP BY: with an empty key list the query does not aggregate.
         if (!new_group_by.empty())

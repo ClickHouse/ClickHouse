@@ -1,0 +1,64 @@
+not deterministic
+[0,1]	0
+[1,2]	1
+[0,1]	0
+[1,2]	1
+0
+1
+2
+0	1
+1	1
+2	1
+WITH FILL
+-2	-2
+-1	-1
+0	0
+0	1
+0	2
+2	1
+3	0
+4	1
+2	2
+3	0
+4	4
+3	3
+4	0
+5	5
+0
+2
+types with a custom name
+false	0	UInt8
+true	1	UInt8
+0	0	UInt8
+1	1	UInt8
+arrayJoin
+[0,5]	0	0
+[0,5]	0	5
+[0,5]	5	0
+[0,5]	5	5
+[0,5]	0
+[0,5]	5
+grouping
+1	1	0
+2	2	0
+1	1	2
+2	2	2
+0	((0,2),2)	0
+1	((1,2),2)	0
+positional arguments with aliases
+[2,4]
+(3,3)
+0	1
+1	0
+2	2
+0	z=1
+1	z=2
+self join
+0	-1	0
+1	-1	-1
+1	0	0
+time zones
+0	0	0
+0	0	9
+0	0	10
+1	1	10
