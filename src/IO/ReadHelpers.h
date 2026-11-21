@@ -1097,6 +1097,43 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     const char * s = buf.position();
     const char * buf_end = buf.buffer().end();
 
+    const char * token_end = s;
+    while (token_end < buf_end && (isNumericASCII(*token_end) || isSymbolIn(*token_end, allowed_time_delimiters)))
+        ++token_end;
+
+    /// The value may continue in the next buffer, so copy it and parse the copy.
+    if (token_end == buf_end)
+    {
+        /// hhh:mm:ss and a terminating zero byte
+        char token[10];
+        size_t token_size = 0;
+        while (token_size + 1 < sizeof(token) && !buf.eof()
+               && (isNumericASCII(*buf.position()) || isSymbolIn(*buf.position(), allowed_time_delimiters)))
+        {
+            token[token_size] = *buf.position();
+            ++token_size;
+            ++buf.position();
+        }
+        token[token_size] = '\0';
+
+        ReadBufferFromMemory token_buf(token, token_size + 1);
+        if constexpr (throw_exception)
+            readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+        else if (!readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
+            return false;
+
+        if (token_buf.position() != token + token_size)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time {}", std::string_view(token, token_size));
+            else
+                return false;
+        }
+
+        time *= negative_multiplier;
+        return ReturnType(true);
+    }
+
     // Additional safety check for buffer boundaries
     size_t available_bytes = buf_end - s;
 
