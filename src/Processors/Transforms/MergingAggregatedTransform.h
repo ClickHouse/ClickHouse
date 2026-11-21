@@ -37,6 +37,7 @@ private:
         ExpressionActionsPtr reordering_key_columns_actions;
         ExpressionActionsPtr creating_missing_keys_actions;
         AggregatingTransformParamsPtr params;
+        bool has_nullable_keys = false;
     };
 
     using GroupingSets = VectorWithMemoryTracking<GroupingSet>;

@@ -108,6 +108,10 @@ MergingAggregatedTransform::MergingAggregatedTransform(
             groupiung_set.reordering_key_columns_actions = std::make_shared<ExpressionActions>(std::move(reordering));
             groupiung_set.creating_missing_keys_actions = std::make_shared<ExpressionActions>(std::move(creating));
             groupiung_set.params = std::move(transform_params);
+            groupiung_set.has_nullable_keys = std::ranges::any_of(grouping_set_params.used_keys, [&](const auto & key)
+            {
+                return isNullableOrLowCardinalityNullable(in_header.getByName(key).type);
+            });
         }
     }
     else
@@ -243,6 +247,24 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
 }
 
+static void mergeMixedLevelsAsSingleLevel(Aggregator::BucketToChunks & bucket_to_chunks)
+{
+    auto unknown_bucket = bucket_to_chunks.find(-1);
+    if (unknown_bucket == bucket_to_chunks.end() || bucket_to_chunks.rbegin()->first < 0)
+        return;
+
+    auto & single_level_chunks = unknown_bucket->second;
+    if (std::ranges::all_of(single_level_chunks, [](const auto & agg_chunk) { return agg_chunk.is_overflows; }))
+        return;
+
+    for (auto it = std::next(unknown_bucket); it != bucket_to_chunks.end(); it = bucket_to_chunks.erase(it))
+    {
+        for (auto & agg_chunk : it->second)
+            agg_chunk.bucket_num = -1;
+        single_level_chunks.splice(single_level_chunks.end(), it->second);
+    }
+}
+
 Chunk MergingAggregatedTransform::generate()
 {
     if (!generate_started)
@@ -258,6 +280,11 @@ Chunk MergingAggregatedTransform::generate()
             auto & params = grouping_set.params;
             auto & bucket_to_chunks = grouping_set.bucket_to_chunks;
             AggregatedDataVariants data_variants;
+
+            /// With group_by_use_nulls, producers bucket a set by its keys before they become Nullable, so their
+            /// bucket numbers may not match this merge's hash; mixed with single-level chunks, equal keys would split.
+            if (grouping_set.has_nullable_keys)
+                mergeMixedLevelsAsSingleLevel(bucket_to_chunks);
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
             params->aggregator.mergeBlocks(std::move(bucket_to_chunks), data_variants, is_cancelled);
