@@ -455,6 +455,56 @@ FOR_EACH_ARITHMETIC_TYPE(INVOKE);
 #undef DISPATCH
 
 
+template <typename FromDataType, typename ToDataType>
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+void convertFromDecimalBatch(
+    const typename FromDataType::FieldType * __restrict from,
+    typename ToDataType::FieldType * __restrict to,
+    size_t size,
+    UInt32 scale)
+{
+    using FromFieldType = typename FromDataType::FieldType;
+    using NativeType = typename FromFieldType::NativeType;
+    using ToFieldType = typename ToDataType::FieldType;
+
+    /// `convertToImpl`'s formula with the multiplier converted once: the compiler keeps the 256-bit conversion in the loop.
+    if constexpr (std::is_same_v<NativeType, Int256> && is_floating_point<ToFieldType>)
+    {
+        const Float64 divisor = static_cast<Float64>(DecimalUtils::scaleMultiplier<NativeType>(scale));
+        for (size_t i = 0; i < size; ++i)
+            to[i] = static_cast<ToFieldType>(static_cast<Float64>(from[i].value) / divisor);
+        return;
+    }
+
+    /// A wide value that fits into Int64 has the same whole part in 64 bits, where the division is much cheaper.
+    if constexpr (is_big_int_v<NativeType> && !is_floating_point<ToFieldType>)
+    {
+        if (scale <= DecimalUtils::max_precision<Decimal64>)
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                const auto value64 = static_cast<Int64>(from[i].value);
+                if (NativeType(value64) == from[i].value)
+                    [[clang::always_inline]] DecimalUtils::convertToImpl<ToFieldType, Decimal64, void>(Decimal64(value64), scale, to[i]);
+                else
+                    [[clang::always_inline]] DecimalUtils::convertToImpl<ToFieldType, FromFieldType, void>(from[i], scale, to[i]);
+            }
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < size; ++i)
+        [[clang::always_inline]] DecimalUtils::convertToImpl<ToFieldType, FromFieldType, void>(from[i], scale, to[i]);
+}
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    template void convertFromDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_ARITHMETIC_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
+
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
 ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result)
