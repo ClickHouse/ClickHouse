@@ -49,17 +49,11 @@ test_01155_ordinary	mv2
 test_01155_ordinary	src
 CREATE DATABASE test_01155_atomic\nENGINE = Atomic
 4	.inner.mv1	after renaming databasemv1
-4	.inner.mv1	after renaming tablesmv1
 4	.inner.mv1	before moving tablesmv1
 4	dst	after renaming databasemv2
-4	dst	after renaming tablesmv2
 4	dst	before moving tablesmv2
 4	mv1	after renaming databasemv1
-4	mv1	after renaming tablesmv1
 4	mv1	before moving tablesmv1
-4	mv2	after renaming databasemv2
-4	mv2	after renaming tablesmv2
-4	mv2	before moving tablesmv2
 4	src	after moving tables
 4	src	after moving tables
 4	src	after renaming database

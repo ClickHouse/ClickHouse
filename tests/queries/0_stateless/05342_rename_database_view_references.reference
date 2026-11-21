@@ -1,0 +1,54 @@
+tmp_v: 0
+-- after the rename
+_dst.inline_mv: 5
+_dst.tgt: 5
+_dst.pv: 5
+_dst.not_in_v: 5
+_dst.tgt2: 5
+_dst.qualified_v: 5
+_dst.regexp_v: 5
+_dst.list_v: 5
+_dst.join_v: 3
+_dst.intersect_v: 3
+_dst.except_v: 2
+_dst.literal_v: 5
+_dst.tgt4: 10
+_ext.tgt: 5
+_ext.cte_tgt: 5
+_dst.tgt3: 2
+_ext.v: 5
+_mem.v: 5
+_ext.merge_v: 5
+_ext.param_call_v: 5
+_ext.literal_arg_v: 5
+occurrences of the old name: 0
+_dst.rt: 5
+_ext.rt: 2
+_dst.union_rmv: 10
+_ext.prt: 5
+CREATE VIEW _ext.remote_v (`a` UInt64) AS SELECT a FROM _dst.sample UNION ALL SELECT a FROM remote('127.0.0.2', merge('_src', '^sample$')) UNION ALL SELECT a FROM remote('127.0.0.2', _src.sample) UNION ALL SELECT a FROM remoteSecure('127.0.0.2', view(SELECT a FROM _src.sample)) UNION ALL SELECT a FROM cluster('test_shard_localhost', merge('_src', '^sample$')) UNION ALL SELECT a FROM clusterAllReplicas('test_shard_localhost', view(SELECT a FROM _src.sample))
+unchanged: _dst.unrelated_v
+unchanged: _ext.unrelated_v
+-- after a reload
+_dst.inline_mv: 10
+_dst.tgt: 10
+_dst.pv: 10
+_dst.not_in_v: 10
+_dst.tgt2: 10
+_dst.qualified_v: 10
+_dst.regexp_v: 10
+_dst.list_v: 10
+_dst.join_v: 6
+_dst.intersect_v: 3
+_dst.except_v: 2
+_dst.literal_v: 10
+_dst.tgt4: 20
+_ext.tgt: 10
+_ext.cte_tgt: 10
+_dst.tgt3: 4
+_ext.v: 10
+_mem.v: 10
+_ext.merge_v: 10
+_ext.param_call_v: 10
+_ext.literal_arg_v: 10
+['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_dst.union_mv','_ext.cte_mv','_ext.mv']

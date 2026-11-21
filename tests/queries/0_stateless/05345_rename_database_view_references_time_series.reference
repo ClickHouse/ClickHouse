@@ -1,0 +1,7 @@
+-- after the rename
+_dst.samples: 1
+_dst.samples2: 1
+occurrences of the old name: 0
+-- after a reload
+_dst.samples: 2
+_dst.samples2: 2
