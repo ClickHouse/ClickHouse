@@ -2201,7 +2201,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
 
-                if (prewhere_actions && select_query_options.build_logical_plan)
+                /// A view does not execute `PREWHERE` itself. The condition is a filter step above the plan of the view,
+                /// which is then moved into the read of its table, see `QueryPlan::tryMoveRootFilterToPrewhere`.
+                const bool is_prewhere_on_view = prewhere_actions && typeid_cast<const StorageView *>(storage.get());
+                /// The other replicas would read the table of the view by a query that does not have the condition.
+                if (is_prewhere_on_view && !select_query_options.build_logical_plan && query_context->canUseParallelReplicasOnInitiator())
+                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+
+                if (prewhere_actions && (select_query_options.build_logical_plan || is_prewhere_on_view))
                 {
                     /// Collect columns needed by row policy and additional filters
                     NameSet columns_needed_by_other_filters;
@@ -2287,6 +2294,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
                 if (row_policy_filter_info)
                 {
+                    /// The policy of a view is a filter above its plan, so the condition would see the rows that the policy hides.
+                    if (is_prewhere_on_view)
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                            "PREWHERE is not supported for the view {} with a row policy", storage->getStorageID().getNameForLogs());
+
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
 
                     const bool can_push_down_filter = canPushDownRowPolicyFilter(
@@ -2394,7 +2406,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto * view = (is_single_table_expression
                                      && settings[Setting::optimize_trivial_view_pushdown_to_distributed]
                                      && !settings[Setting::distributed_group_by_no_merge]
-                                     && !select_query_options.build_logical_plan)
+                                     && !select_query_options.build_logical_plan
+                                     && !is_prewhere_on_view)
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
                 if (view)
@@ -3118,6 +3131,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
+                /// A logical plan keeps the `PREWHERE` of a view as a filter step, like for any other storage.
+                bool move_prewhere_into_view = is_prewhere_on_view && !select_query_options.build_logical_plan;
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&
@@ -3129,8 +3144,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
                         query_plan.addStep(std::move(filter_step));
+
+                        /// The `PREWHERE` of a view is the first of the filters.
+                        if (move_prewhere_into_view && !query_plan.tryMoveRootFilterToPrewhere())
+                            break;
+                        move_prewhere_into_view = false;
                     }
                 }
+
+                if (move_prewhere_into_view)
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                        "PREWHERE cannot be executed by the table of the view {}", storage->getStorageID().getNameForLogs());
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {

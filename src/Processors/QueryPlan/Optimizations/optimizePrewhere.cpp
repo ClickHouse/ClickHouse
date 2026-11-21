@@ -14,13 +14,16 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -462,6 +465,55 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         *parent_node.step->getInputHeaders()[0],
         "after removing unused columns in optimizePrewhere");
 #endif
+}
+
+bool tryMoveFilterToPrewhere(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+{
+    /// Of the filters only the `WHERE` of the query of a view is merged. A row policy or an additional filter must see the rows first.
+    auto is_child_where = [&] { return node.children.size() == 1 && node.children.front()->step->getStepDescription() == "WHERE"; };
+    while (tryMergeExpressions(&node, nodes, {}) || (is_child_where() && tryMergeFilters(&node, nodes, {})))
+    {
+    }
+
+    if (node.children.size() != 1)
+        return false;
+
+    /// A table without data is not read at all.
+    const auto & child_step = node.children.front()->step;
+    if (typeid_cast<const ReadNothingStep *>(child_step.get()))
+        return true;
+
+    auto * source = dynamic_cast<SourceStepWithFilter *>(child_step.get());
+    if (!source || source->getPrewhereInfo() || source->isQueryWithFinal())
+        return false;
+
+    const auto & storage_snapshot = source->getStorageSnapshot();
+    const auto & storage = storage_snapshot->storage;
+    if (!storage.canMoveConditionsToPrewhere())
+        return false;
+
+    /// A function that depends on other rows, like `rowNumberInAllBlocks`, would see only the rows that pass the filter.
+    auto & filter_step = typeid_cast<FilterStep &>(*node.step);
+    auto & dag = filter_step.getExpression();
+    if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
+        return false;
+
+    const auto & condition = dag.findInOutputs(filter_step.getFilterColumnName());
+    if (const auto supported_columns = storage.supportedPrewhereColumns())
+        for (const auto * input : ActionsDAG::cloneSubDAG({&condition}, false).getInputs())
+            if (!prewhereSupportedColumnsContain(*supported_columns,
+                    storage.supportedPrewhereColumnsIncludeSubcolumns(), storage_snapshot->metadata->getColumns(), input->result_name))
+                return false;
+
+    auto prewhere_info = std::make_shared<PrewhereInfo>();
+    auto remaining_expression = splitAndFillPrewhereInfo(
+        prewhere_info, filter_step.removesFilterColumn(), std::move(dag), filter_step.getFilterColumnName(), {&condition}, {&condition});
+    source->updatePrewhereInfo(prewhere_info);
+
+    auto expression_step = std::make_unique<ExpressionStep>(source->getOutputHeader(), std::move(remaining_expression));
+    expression_step->setStepDescription(filter_step);
+    node.step = std::move(expression_step);
+    return true;
 }
 
 }

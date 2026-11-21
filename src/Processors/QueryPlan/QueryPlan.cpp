@@ -1041,6 +1041,11 @@ void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
 }
 
 
+bool QueryPlan::tryMoveRootFilterToPrewhere()
+{
+    return QueryPlanOptimizations::tryMoveFilterToPrewhere(*root, nodes);
+}
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);

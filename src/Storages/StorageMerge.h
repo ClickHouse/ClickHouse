@@ -243,6 +243,7 @@ public:
     void resetChildPlans();
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
