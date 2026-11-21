@@ -407,29 +407,55 @@ String escapeXMLAttribute(std::string_view str)
     return buf.str();
 }
 
-/// The number of code points in a valid UTF-8 string.
-size_t utf8Length(std::string_view str)
+/// Whether the string is valid UTF-8, by the rules of `decodeUTF8Sequence`, the decoder used by `writeXMLText` and `excelTextLength`.
+bool isValidUTF8(std::string_view str)
 {
-    size_t length = 0;
-    for (char c : str)
-        length += (static_cast<UInt8>(c) & 0xC0) != 0x80;
-    return length;
+    const auto * pos = reinterpret_cast<const UInt8 *>(str.data());
+    const auto * end = pos + str.size();
+    while (pos < end)
+    {
+        if (*pos < 0x80)
+        {
+            ++pos;
+            continue;
+        }
+        UInt32 code_point = 0;
+        size_t sequence_length = decodeUTF8Sequence(pos, end, code_point);
+        if (!sequence_length)
+            return false;
+        pos += sequence_length;
+    }
+    return true;
 }
 
-/// The prefix of a valid UTF-8 string with at most `length` code points.
-std::string_view utf8Prefix(std::string_view str, size_t length)
+/// The longest prefix of a valid UTF-8 string, whose length as counted by `excelTextLength` is at most `length`.
+/// It does not split a character.
+std::string_view excelTextPrefix(std::string_view str, size_t length)
 {
+    const auto * begin = reinterpret_cast<const UInt8 *>(str.data());
+    const auto * pos = begin;
+    const auto * end = pos + str.size();
     size_t count = 0;
-    for (size_t i = 0; i < str.size(); ++i)
+    while (pos < end)
     {
-        if ((static_cast<UInt8>(str[i]) & 0xC0) != 0x80)
+        size_t sequence_length = 1;
+        size_t units = 1;
+        if (*pos >= 0x80)
         {
-            if (count == length)
-                return str.substr(0, i);
-            ++count;
+            UInt32 code_point = 0;
+            sequence_length = decodeUTF8Sequence(pos, end, code_point);
+            chassert(sequence_length);
+            if (!sequence_length)
+                sequence_length = 1;
+            else if (code_point >= 0x10000)
+                units = 2;
         }
+        if (count + units > length)
+            break;
+        count += units;
+        pos += sequence_length;
     }
-    return str;
+    return str.substr(0, pos - begin);
 }
 
 constexpr size_t MAX_SHEET_NAME_LENGTH = 31;
@@ -438,11 +464,15 @@ constexpr size_t MAX_CELL_TEXT_LENGTH = 32767;
 
 void validateSheetName(const String & name)
 {
-    if (name.empty() || utf8Length(name) > MAX_SHEET_NAME_LENGTH || name.find_first_of("[]:*?/\\") != String::npos || name.front() == '\''
-        || name.back() == '\'')
+    /// The name is written by `writeXMLText`, which replaces every invalid byte with a replacement character, so that the name in the file
+    /// would differ from the requested one, and its length would differ from the length of the setting value. Such names are rejected,
+    /// and the length is counted by the same decoder as the writer uses, in UTF-16 code units, as Excel counts it.
+    if (name.empty() || !isValidUTF8(name) || excelTextLength(name) > MAX_SHEET_NAME_LENGTH
+        || name.find_first_of("[]:*?/\\") != String::npos || name.front() == '\'' || name.back() == '\'')
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid sheet name '{}' for the XLSX format: it must have from 1 to {} characters, must not contain any of the characters "
+            "Invalid sheet name '{}' for the XLSX format: it must be valid UTF-8, must have from 1 to {} characters "
+            "(the characters outside of the Basic Multilingual Plane count as two), must not contain any of the characters "
             "[ ] : * ? / \\, and must not start or end with an apostrophe",
             name, MAX_SHEET_NAME_LENGTH);
 }
@@ -513,7 +543,7 @@ public:
             sheet_buffer->cancel();
     }
 
-    String getName() const override { return "XLSX"; }
+    [[nodiscard]] String getName() const override { return "XLSX"; }
 
 private:
     enum class ColumnKind : uint8_t
@@ -662,7 +692,7 @@ private:
         {
             ++next_sheet_suffix;
             String suffix = fmt::format(" ({})", next_sheet_suffix);
-            String name = String(utf8Prefix(base, MAX_SHEET_NAME_LENGTH - suffix.size())) + suffix;
+            String name = String(excelTextPrefix(base, MAX_SHEET_NAME_LENGTH - suffix.size())) + suffix;
             if (!is_used(name))
                 return name;
         }
@@ -705,7 +735,7 @@ private:
                     default: break;
                 }
                 if (write_header)
-                    width = std::max(width, utf8Length(header.getByPosition(i).name) + 2);
+                    width = std::max(width, excelTextLength(header.getByPosition(i).name) + 2);
                 width = std::min<size_t>(width, 60);
                 writeString(fmt::format(R"(<col min="{0}" max="{0}" width="{1}" customWidth="1"/>)", i + 1, width), buf);
             }
