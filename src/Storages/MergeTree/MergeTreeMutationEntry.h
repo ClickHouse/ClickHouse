@@ -97,7 +97,7 @@ struct MergeTreeMutationEntry
 
     [[nodiscard]] std::shared_ptr<const IBackupEntry> backup() const;
 
-    bool affectsPartition(const String & partition_id) const
+    [[nodiscard]] bool affectsPartition(const String & partition_id) const
     {
         return containsInPartitionIdsOrEmpty(partition_ids, partition_id);
     }
