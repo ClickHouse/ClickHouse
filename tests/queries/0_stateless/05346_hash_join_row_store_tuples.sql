@@ -40,6 +40,7 @@ INSERT INTO right_spill SELECT
 FROM numbers(20000);
 
 SET join_algorithm = 'hash';
+SET enable_join_in_memory_compression = 0; -- it disables the row store
 SET join_use_nulls = 0;
 
 -- Pin planner settings
