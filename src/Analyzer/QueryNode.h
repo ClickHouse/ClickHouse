@@ -175,7 +175,7 @@ public:
     }
 
     /// Returns true if query node is a CTE declared as NOT MATERIALIZED, false otherwise
-    bool isNotMaterialized() const noexcept
+    [[nodiscard]] bool isNotMaterialized() const noexcept
     {
         return is_not_materialized;
     }
