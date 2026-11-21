@@ -1466,6 +1466,9 @@ void FillingTransform::transformImpl(Chunk & chunk)
     if (!chunk.hasRows() && !all_chunks_processed)
         return;
 
+    /// The result columns are new: the last row of a previous call that threw is not in them.
+    last_result_row_not_remembered = false;
+
     Columns input_fill_columns;
     Columns input_interpolate_columns;
     Columns input_sort_prefix_columns;

@@ -91,3 +91,8 @@ SELECT DISTINCT i FROM
     ORDER BY i ASC NULLS LAST WITH FILL TO 2, k WITH FILL
 )
 SETTINGS optimize_distinct_in_order = 1;
+
+-- The rows of a call that threw are not in the result of the next one
+SELECT * FROM values('a Int64', (0), (10000000000)) ORDER BY a WITH FILL TO 20000000000
+UNION ALL SELECT 1
+FORMAT Null SETTINGS max_memory_usage = '20Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
