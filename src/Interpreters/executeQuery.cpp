@@ -920,8 +920,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -3673,7 +3678,7 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
                     context->enablePlanLogCapture();
 
                 if (out_ast)
