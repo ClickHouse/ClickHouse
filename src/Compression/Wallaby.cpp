@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <numeric>
+#include <type_traits>
 #include <vector>
 
 /** Wallaby: lossless compression of `Float32` and `Float64` columns.
@@ -60,6 +61,11 @@
   *   the model and the sizes of the main stream; of the stream of adjustments; of the two streams of exceptions
   *     (gaps between positions, values).
   * A signed number: the length of the magnitude in bits (7 bits); if not zero: the sign (1 bit) and the magnitude.
+  *
+  * The latents of `Float64` are 64-bit integers, and the latents of `Float32` are 32-bit integers: all the arithmetic
+  * that leads from the residuals to the latent (the differences, the center, the multiplier, the base) is modulo
+  * 2^64 or 2^32, and the latent of DIV and MUL is then read as a signed number of that width. An encoder for
+  * `Float32` can therefore work with 32-bit integers throughout.
   *
   * After the header, byte-aligned: verbatim exceptions (positions as `UInt16`, then the values), the payload of the
   * main stream, of the adjustments, of the gaps and of the values of the coded exceptions.
@@ -1435,10 +1441,15 @@ struct StreamDecoder
     }
 };
 
+/// Turns a sequence of integers into tokens and codes them. V is the type of the values: Int32 for the streams
+/// of 4-byte floats, whose values always fit, and Int64 otherwise. Half the memory to go through is what matters.
+template <typename V>
 struct StreamEncoder
 {
+    using UV = std::make_unsigned_t<V>;
+
     /// --- Analysis.
-    const Int64 * data = nullptr;
+    const V * data = nullptr;
     UInt32 n = 0;
     ClassLayout fine;
     std::vector<UInt32> fine_hist;
@@ -1452,7 +1463,7 @@ struct StreamEncoder
     StreamModel model;
     TokenTable table;
     std::vector<UInt16> tok;
-    std::vector<UInt64> raw;
+    std::vector<UV> raw;
     std::vector<UInt8> rawbits;
     std::vector<UInt32> token_counts;
     std::vector<UInt32> ctx_counts;
@@ -1462,7 +1473,7 @@ struct StreamEncoder
     std::vector<UInt32> prov;
     std::vector<UInt32> bin_counts;
     std::vector<std::pair<Int64, UInt32>> promoted;
-    std::vector<UInt64> hash_keys;
+    std::vector<UV> hash_keys;
     std::vector<UInt32> hash_counts;
     std::vector<UInt32> hash_slots;
     Scratch<UInt8> model_bytes;
@@ -1513,9 +1524,9 @@ struct StreamEncoder
     }
 
     /// Takes up to DICT_SAMPLE values that carry raw bits, sorted. Returns their number.
-    UInt32 sampleForDictionary(Int64 * sample) const
+    UInt32 sampleForDictionary(V * sample) const
     {
-        const Int64 * r = data;
+        const V * r = data;
         UInt32 ns = 0;
         UInt32 step = std::max<UInt32>(1, n / DICT_SAMPLE);
         for (UInt32 i = 0; i < n && ns < DICT_SAMPLE; i += step)
@@ -1525,7 +1536,7 @@ struct StreamEncoder
                 continue;
             if (valueBits(v) == 0)
                 continue;
-            sample[ns++] = v;
+            sample[ns++] = V(v);
         }
         std::sort(sample, sample + ns);
         return ns;
@@ -1534,7 +1545,7 @@ struct StreamEncoder
     /// Looks at a sample of the residuals: every `1 << skip_log`-th stripe. Chooses the family of bins and the
     /// zero handling (the estimate of the size that it leaves does not know about the dictionary).
     /// `try_fixed` allows the fixed-width bins.
-    void analyze(const Int64 * r, UInt32 count, bool try_fixed, UInt32 skip_log)
+    void analyze(const V * r, UInt32 count, bool try_fixed, UInt32 skip_log)
     {
         const double * xlx = xlog2xTable();
         data = r;
@@ -1779,7 +1790,7 @@ struct StreamEncoder
     void count()
     {
         const double * xlx = xlog2xTable();
-        const Int64 * r = data;
+        const V * r = data;
         const bool runs = model.runs;
 
         /// --- The exact range for the fixed bins: the analysis has seen only a sample.
@@ -1788,11 +1799,15 @@ struct StreamEncoder
         bool have_range = false;
         auto findRange = [&]
         {
+            V smallest = r[0];
+            V largest = r[0];
             for (UInt32 i = 1; i < n; ++i)
             {
-                rmin = std::min(rmin, r[i]);
-                rmax = std::max(rmax, r[i]);
+                smallest = std::min(smallest, r[i]);
+                largest = std::max(largest, r[i]);
             }
+            rmin = smallest;
+            rmax = largest;
             have_range = true;
         };
         if (model.fixed)
@@ -1834,7 +1849,7 @@ struct StreamEncoder
         promoted.clear();
         dict_counted = false;
         {
-            Int64 sample[DICT_SAMPLE];
+            V sample[DICT_SAMPLE];
             UInt32 ns = sampleForDictionary(sample);
             UInt32 dup = 0;
             for (UInt32 i = 1; i < ns; ++i)
@@ -1859,7 +1874,7 @@ struct StreamEncoder
                         hash_keys.resize(cap);
                     hash_counts.assign(cap, 0);
                     hash_slots.resize(std::min(cap, n));
-                    UInt64 * const keys = hash_keys.data();
+                    UV * const keys = hash_keys.data();
                     UInt32 * const counts = hash_counts.data();
                     UInt32 * const used = hash_slots.data();
                     for (UInt32 i = 0; i < n; ++i)
@@ -1870,7 +1885,7 @@ struct StreamEncoder
                         UInt32 h = UInt32(UInt64(v) - UInt64(rmin));
                         if (counts[h]++ == 0)
                         {
-                            keys[h] = UInt64(v);
+                            keys[h] = UV(v);
                             used[num_slots++] = h;
                         }
                         slot_of[i] = h;
@@ -1890,7 +1905,7 @@ struct StreamEncoder
                         hash_counts.assign(cap, 0);
                         const UInt32 limit = cap / 2;
                         hash_slots.resize(limit + 1);
-                        UInt64 * const keys = hash_keys.data();
+                        UV * const keys = hash_keys.data();
                         UInt32 * const counts = hash_counts.data();
                         UInt32 * const used = hash_slots.data();
                         const UInt32 hmask = cap - 1;
@@ -1903,11 +1918,11 @@ struct StreamEncoder
                             if (v == 0 && runs)
                                 continue;
                             UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
-                            while (counts[h] && keys[h] != UInt64(v))
+                            while (counts[h] && keys[h] != UV(v))
                                 h = (h + 1) & hmask;
                             if (counts[h]++ == 0)
                             {
-                                keys[h] = UInt64(v);
+                                keys[h] = UV(v);
                                 used[num_slots++] = h;
                                 if (num_slots > limit)
                                 {
@@ -1931,7 +1946,7 @@ struct StreamEncoder
                     UInt32 c = hash_counts[h];
                     if (c < 2)
                         continue;
-                    Int64 v = Int64(hash_keys[h]);
+                    Int64 v = V(hash_keys[h]);
                     UInt32 nb = valueBits(v);
                     if (nb == 0)
                         continue;
@@ -1965,7 +1980,7 @@ struct StreamEncoder
                     else
                     {
                         h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
-                        while (hash_keys[h] != UInt64(v))
+                        while (hash_keys[h] != UV(v))
                             h = (h + 1) & hmask;
                     }
                     slot_tok[h] = UInt16(k);
@@ -2071,7 +2086,7 @@ struct StreamEncoder
     void complete()
     {
         const double * xlx = xlog2xTable();
-        const Int64 * r = data;
+        const V * r = data;
         const UInt32 alphabet = table.alphabet;
 
         /// --- Pass B: the tokens.
@@ -2094,7 +2109,7 @@ struct StreamEncoder
                 UInt32 len = j - i;
                 UInt32 e = 31 - std::countl_zero(len);
                 t = run_tok[e];
-                raw[k] = len - (1u << e);
+                raw[k] = UV(len - (1u << e));
                 rawbits[k] = UInt8(e);
                 pos = j;
             }
@@ -2105,7 +2120,7 @@ struct StreamEncoder
                 UInt32 bin_tok = id2tok[p];
                 t = dict_tok == NO_TOKEN ? bin_tok : dict_tok;
                 Int64 v = r[pos++];
-                raw[k] = UInt64(v) - UInt64(lo[t]);
+                raw[k] = UV(UInt64(v) - UInt64(lo[t]));
                 rawbits[k] = nbv[t];
             }
             tok[k] = UInt16(t);
@@ -2409,6 +2424,10 @@ template <>
 struct FloatTraits<Float32>
 {
     using U = UInt32;
+    /// The integers that the values turn into are 32-bit numbers, and the arithmetic on them (the base, the
+    /// differences) is modulo 2^32 on both sides.
+    using L = Int32;
+    static constexpr double MAX_CANDIDATE = 2147483647.0;
     static constexpr UInt32 W = 32;
     static constexpr UInt32 MAX_DECIMAL = 10;
     /// A decimal with more digits than this is not a short decimal for the type.
@@ -2423,6 +2442,8 @@ template <>
 struct FloatTraits<Float64>
 {
     using U = UInt64;
+    using L = Int64;
+    static constexpr double MAX_CANDIDATE = 9007199254740992.0;
     static constexpr UInt32 W = 64;
     static constexpr UInt32 MAX_DECIMAL = 18;
     static constexpr UInt32 SUSPICIOUS_DECIMAL = 14;
@@ -2489,12 +2510,13 @@ F reconstruct(Int64 q, bool mul, bool single, double scale)
     return mul ? F(double(q) * scale) : F(double(q) / scale);
 }
 
-/// The integer candidate for the value: q = round(v * den), |q| < 2^53. False for NaN, infinities and huge values.
+/// The integer candidate for the value: q = round(v * den), |q| < 2^53 (2^31 for 4-byte floats).
+/// False for NaN, infinities and huge values.
 template <typename F>
 bool integerCandidate(F v, double den, Int64 & q)
 {
     double scaled = double(v) * den;
-    if (!(std::fabs(scaled) < 9007199254740992.0))
+    if (!(std::fabs(scaled) < FloatTraits<F>::MAX_CANDIDATE))
         return false;
     q = std::llround(scaled);
     return true;
@@ -2852,8 +2874,15 @@ struct Decoder
                     U b = (o & sign) ? U(o ^ sign) : U(~o & ~low);
                     storeBits<F>(out + size_t(i) * sizeof(F), b);
                 }
+                return;
             }
-            else if (p.single)
+            /// The integers of 4-byte floats are 32-bit numbers, and the arithmetic on them is modulo 2^32.
+            if (sizeof(F) == sizeof(Float32))
+            {
+                for (UInt32 i = from; i < to; ++i)
+                    v[i] = Int64(Int32(UInt32(UInt64(v[i]))));
+            }
+            if (p.single)
             {
                 const float fs = float(scale);
                 bool narrow = true;
@@ -3001,14 +3030,16 @@ template <typename F>
 struct Encoder
 {
     using U = typename FloatTraits<F>::U;
+    using L = typename FloatTraits<F>::L;
+    using UL = std::make_unsigned_t<L>;
     static constexpr UInt32 W = FloatTraits<F>::W;
     static constexpr UInt32 SAMPLE = 64;
 
     /// The chunk converted with the DIV or MUL front-end.
     struct Converted
     {
-        std::vector<Int64> lat;        /// integers of the regular values
-        std::vector<Int64> adj;        /// their adjustments
+        std::vector<L> lat;            /// integers of the regular values
+        std::vector<L> adj;            /// their adjustments
         std::vector<UInt16> exc_pos;    /// positions of the exceptions
         std::vector<UInt16> inexact;    /// positions of the regular values with a non-zero adjustment
         bool mul = false;
@@ -3017,26 +3048,26 @@ struct Encoder
         double den = 1;
     };
 
-    std::vector<Int64> lat_bits;
+    std::vector<L> lat_bits;
     Converted conv;
     Converted conv_saved;
-    std::vector<Int64> diff[2];
+    std::vector<L> diff[2];
     static constexpr UInt32 MAX_CANDIDATES = 3;
     static constexpr double PROXY_BAND = 1.35;        /// between the proxies of the candidates that are looked at
     static constexpr double VERY_CLOSE_CALL = 1.003;  /// between the estimates from the counts of the tokens
-    std::vector<Int64> resid[MAX_CANDIDATES];
-    std::vector<Int64> gaps;
-    std::vector<Int64> exc_values;
+    std::vector<L> resid[MAX_CANDIDATES];
+    std::vector<L> gaps;
+    std::vector<L> exc_values;
     std::vector<UInt8> payload_main;
     std::vector<UInt8> payload_adj;
     std::vector<UInt8> payload_gap;
     std::vector<UInt8> payload_exc;
     std::vector<UInt8> scratch;
     std::vector<UInt64> bitmap;
-    StreamEncoder streams[MAX_CANDIDATES];
-    StreamEncoder adj_stream;
-    StreamEncoder gap_stream;
-    StreamEncoder exc_stream;
+    StreamEncoder<L> streams[MAX_CANDIDATES];
+    StreamEncoder<L> adj_stream;
+    StreamEncoder<L> gap_stream;
+    StreamEncoder<L> exc_stream;
 
     struct Plan
     {
@@ -3081,7 +3112,7 @@ struct Encoder
         return 2 * bitLength(magnitude(v)) - 1 + (v < 0);
     }
 
-    static double proxyOf(const Int64 * v, UInt32 n)
+    static double proxyOf(const L * v, UInt32 n)
     {
         UInt32 hist[PROXY_CLASSES] = {};
         for (UInt32 i = 0; i < n; ++i)
@@ -3090,20 +3121,20 @@ struct Encoder
     }
 
     /// The exact size in bits of the header of a completed stream: the model and the sizes.
-    static double modelBits(const StreamEncoder & s)
+    static double modelBits(const StreamEncoder<L> & s)
     {
         return double(s.model_bits) + 48;
     }
 
     /// Evaluates the differencing orders for the latent `m` (wrapping arithmetic) and appends the promising plans.
     /// `distinct` is the estimated number of distinct values, for the dictionary variant of order 0.
-    void choosePredictor(const Int64 * m, UInt32 n, double distinct, std::vector<Plan> & plans)
+    void choosePredictor(const L * m, UInt32 n, double distinct, std::vector<Plan> & plans)
     {
         /// The orders are compared on a sample: a few stripes of consecutive values.
         constexpr UInt32 STRIPES = 8;
         constexpr UInt32 LENGTH = 256;
-        Int64 buf[STRIPES * LENGTH];
-        Int64 sorted[STRIPES * LENGTH];
+        L buf[STRIPES * LENGTH];
+        L sorted[STRIPES * LENGTH];
         UInt32 nstripes;
         UInt32 length;
         if (n <= STRIPES * LENGTH)
@@ -3133,8 +3164,8 @@ struct Encoder
             for (UInt32 i = 0; i < sampled; ++i)
             {
                 ++hist[proxyClass(buf[i])];
-                mn = std::min(mn, buf[i]);
-                mx = std::max(mx, buf[i]);
+                mn = std::min<Int64>(mn, buf[i]);
+                mx = std::max<Int64>(mx, buf[i]);
             }
             zero.proxy = proxyCost(hist, sampled) * (double(n) / sampled);
             zero.class_proxy = zero.proxy;
@@ -3156,9 +3187,9 @@ struct Encoder
             UInt32 ns = 0;
             for (UInt32 s = 0; s < nstripes; ++s)
             {
-                Int64 * x = buf + s * length;
+                L * x = buf + s * length;
                 for (UInt32 i = length - 1; i >= order; --i)
-                    x[i] = Int64(UInt64(x[i]) - UInt64(x[i - 1]));
+                    x[i] = L(UL(x[i]) - UL(x[i - 1]));
                 for (UInt32 i = order; i < length; ++i)
                     sorted[ns++] = x[i];
             }
@@ -3170,11 +3201,11 @@ struct Encoder
             std::fill(hist_c, hist_c + PROXY_CLASSES, 0);
             for (UInt32 s = 0; s < nstripes; ++s)
             {
-                const Int64 * x = buf + s * length;
+                const L * x = buf + s * length;
                 for (UInt32 i = order; i < length; ++i)
                 {
                     ++hist[proxyClass(x[i])];
-                    ++hist_c[proxyClass(Int64(UInt64(x[i]) - UInt64(med)))];
+                    ++hist_c[proxyClass(L(UL(x[i]) - UL(med)))];
                 }
             }
             double scale = double(n - order) / ns;
@@ -3374,7 +3405,7 @@ struct Encoder
     /// Turns the few values that need an adjustment into exceptions, so that the chunk needs no adjustment stream.
     void demoteInexact(UInt32 n, Converted & c)
     {
-        std::vector<Int64> lat;
+        std::vector<L> lat;
         std::vector<UInt16> exc;
         lat.reserve(c.lat.size());
         exc.reserve(c.exc_pos.size() + c.inexact.size());
@@ -3435,13 +3466,13 @@ struct Encoder
                 a = sizeof(F) == 4 ? Int64(Int32(d)) : Int64(d);
                 c.inexact.push_back(UInt16(i));
             }
-            c.lat.push_back(q);
-            c.adj.push_back(a);
+            c.lat.push_back(L(q));
+            c.adj.push_back(L(a));
         }
     }
 
     /// The residuals of the plan for the latent, into `resid`; fills the initial values of the predictor.
-    UInt32 computeResiduals(const std::vector<Int64> & lat, const Plan & plan, ChunkParams & p, std::vector<Int64> & out)
+    UInt32 computeResiduals(const std::vector<L> & lat, const Plan & plan, ChunkParams & p, std::vector<L> & out)
     {
         UInt32 n = UInt32(lat.size());
         p.order = plan.order;
@@ -3452,55 +3483,76 @@ struct Encoder
             std::copy(lat.begin(), lat.end(), out.begin());
             return n;
         }
-        std::vector<Int64> & a = diff[0];
-        std::vector<Int64> & b = diff[1];
+        std::vector<L> & a = diff[0];
+        std::vector<L> & b = diff[1];
         a.assign(lat.begin(), lat.end());
         p.initial[0] = a[0];
         for (UInt32 order = 1; order <= p.order; ++order)
         {
-            std::vector<Int64> & from = (order & 1) ? a : b;
-            std::vector<Int64> & to = (order & 1) ? b : a;
+            std::vector<L> & from = (order & 1) ? a : b;
+            std::vector<L> & to = (order & 1) ? b : a;
             to.resize(n);
             for (UInt32 i = order; i < n; ++i)
-                to[i] = Int64(UInt64(from[i]) - UInt64(from[i - 1]));
+                to[i] = L(UL(from[i]) - UL(from[i - 1]));
             if (order < p.order)
                 p.initial[order] = to[order];
             if (order == p.order)
                 for (UInt32 i = order; i < n; ++i)
-                    out[i - order] = Int64(UInt64(to[i]) - UInt64(p.center));
+                    out[i - order] = L(UL(to[i]) - UL(p.center));
         }
         return n - p.order;
     }
 
-    /// Base (a sampled median, an actual element) and the common divisor of the differences from it.
-    static void prepareLatent(std::vector<Int64> & lat, ChunkParams & p, bool with_gcd)
+    /// The median of a sample of the values, an actual element. The bit patterns of 4-byte floats are unsigned
+    /// numbers that are kept in a signed type; all the rest is compared as signed.
+    static Int64 sampledMedian(const L * values, UInt32 n, bool bit_patterns)
     {
-        UInt32 n = UInt32(lat.size());
-        Int64 sample[255];
+        L sample[255];
         UInt32 ns = 0;
         UInt32 step = std::max<UInt32>(1, n / 255);
         for (UInt32 i = 0; i < n && ns < 255; i += step)
-            sample[ns++] = lat[i];
+            sample[ns++] = values[i];
+        if (bit_patterns && sizeof(L) < sizeof(Int64))
+        {
+            std::nth_element(sample, sample + ns / 2, sample + ns, [](L a, L b) { return UL(a) < UL(b); });
+            return Int64(UInt64(UL(sample[ns / 2])));
+        }
         std::nth_element(sample, sample + ns / 2, sample + ns);
-        p.base = sample[ns / 2];
+        return sample[ns / 2];
+    }
+
+    /// Base (a sampled median) and the common divisor of the differences from it. The bit patterns have no
+    /// divisor, and their differences may wrap around. Returns the bit length of the widest result.
+    static UInt32 prepareLatent(std::vector<L> & lat, ChunkParams & p, bool with_gcd)
+    {
+        UInt32 n = UInt32(lat.size());
+        p.base = sampledMedian(lat.data(), n, !with_gcd);
         UInt64 g = 0;
         if (with_gcd)
         {
             for (UInt32 i = 0; i < n && g != 1; ++i)
-                g = std::gcd(g, magnitude(Int64(UInt64(lat[i]) - UInt64(p.base))));
+                g = std::gcd(g, magnitude(Int64(lat[i]) - p.base));
         }
+        UInt64 widest = 0;
         if (g > 1)
         {
             p.gcd = g;
             for (UInt32 i = 0; i < n; ++i)
-                lat[i] = (lat[i] - p.base) / Int64(g);
+            {
+                lat[i] = L((Int64(lat[i]) - p.base) / Int64(g));
+                widest |= magnitude(lat[i]);
+            }
         }
         else
         {
             p.gcd = 1;
             for (UInt32 i = 0; i < n; ++i)
-                lat[i] = Int64(UInt64(lat[i]) - UInt64(p.base));
+            {
+                lat[i] = L(UL(lat[i]) - UL(p.base));
+                widest |= magnitude(lat[i]);
+            }
         }
+        return bitLength(widest);
     }
 
     UInt32 sampleValues(const UInt8 * src, UInt32 n, const UInt16 * positions, UInt32 count, F * sample)
@@ -3684,7 +3736,7 @@ struct Encoder
             for (UInt32 i = 0; i < n; ++i)
             {
                 U b = loadBits<F>(src + size_t(i) * sizeof(F));
-                lat_bits[i] = Int64(UInt64(orderedBits<F>(b) >> pb.shift));
+                lat_bits[i] = L(UL(orderedBits<F>(b) >> pb.shift));
             }
             prepareLatent(lat_bits, pb, false);
             plans.clear();
@@ -3698,7 +3750,7 @@ struct Encoder
             double bits = 1e300;
             ChunkParams params;
             bool div = false;
-            StreamEncoder * stream = nullptr;
+            StreamEncoder<L> * stream = nullptr;
         };
         Evaluated evals[MAX_CANDIDATES];
         UInt32 evaluated = 0;
@@ -3711,9 +3763,9 @@ struct Encoder
             if (evaluated >= MAX_CANDIDATES)
                 break;
             ChunkParams p = c.div ? pd : pb;
-            const std::vector<Int64> & lat = c.div ? conv.lat : lat_bits;
+            const std::vector<L> & lat = c.div ? conv.lat : lat_bits;
             /// Without differencing the residuals are the latent itself.
-            const Int64 * residuals = lat.data();
+            const L * residuals = lat.data();
             UInt32 nres = UInt32(lat.size());
             if (c.plan.order)
             {
@@ -3722,7 +3774,7 @@ struct Encoder
             }
             /// The analysis chooses the bins on a sample; the counts of the tokens then give the size within
             /// about a percent, short of the gain of the contexts.
-            StreamEncoder & s = streams[evaluated];
+            StreamEncoder<L> & s = streams[evaluated];
             s.analyze(residuals, nres, true, 1);
             s.count();
             double bits = s.counted_bits + 64.0 * p.order;
@@ -3764,7 +3816,7 @@ struct Encoder
         double exact_best = exactBits(evals[0]);
         if (evaluated > 1 && evals[1].bits <= evals[0].bits * VERY_CLOSE_CALL && exactBits(evals[1]) < exact_best)
             best = 1;
-        StreamEncoder & stream = *evals[best].stream;
+        StreamEncoder<L> & stream = *evals[best].stream;
         ChunkParams & p = evals[best].params;
         const bool best_div = evals[best].div;
         p.has_adj = best_div && have_adj;
@@ -3779,24 +3831,18 @@ struct Encoder
             {
                 gaps.resize(nexc);
                 exc_values.resize(nexc);
-                Int64 sample[255];
-                UInt32 ns = 0;
-                UInt32 step = std::max<UInt32>(1, nexc / 255);
                 UInt32 prev = 0;
                 for (UInt32 k = 0; k < nexc; ++k)
                 {
                     UInt32 at = conv.exc_pos[k];
-                    gaps[k] = at - prev;
+                    gaps[k] = L(at - prev);
                     prev = at + 1;
                     U b = loadBits<F>(src + size_t(at) * sizeof(F));
-                    exc_values[k] = Int64(UInt64(orderedBits<F>(b)));
-                    if (k % step == 0 && ns < 255)
-                        sample[ns++] = exc_values[k];
+                    exc_values[k] = L(UL(orderedBits<F>(b)));
                 }
-                std::nth_element(sample, sample + ns / 2, sample + ns);
-                p.exc_base = sample[ns / 2];
+                p.exc_base = sampledMedian(exc_values.data(), nexc, true);
                 for (UInt32 k = 0; k < nexc; ++k)
-                    exc_values[k] = Int64(UInt64(exc_values[k]) - UInt64(p.exc_base));
+                    exc_values[k] = L(UL(exc_values[k]) - UL(p.exc_base));
                 gap_stream.analyze(gaps.data(), nexc, false, 0);
                 gap_stream.finalize();
                 exc_stream.analyze(exc_values.data(), nexc, false, 0);
