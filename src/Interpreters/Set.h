@@ -118,8 +118,6 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
-    /// Also stops after the row whose key makes the set hold more than `max_keys` keys (for a set that does not spill),
-    /// and sets `rows_taken` to the number of rows it took, that row included.
     bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 

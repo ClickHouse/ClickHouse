@@ -203,10 +203,7 @@ public:
     /// Bound the bytes of the stored keys instead of the hash table buffer. Call before inserts.
     void boundKeyBytes() { bound_key_bytes = true; }
 
-    void insert(ColumnPtr values);
-    /// Like insert, but stops after the row whose key makes the set full, so it holds at most exact_values_limit + 1 keys.
-    /// Returns the number of rows it took.
-    size_t insertUntilFull(const ColumnPtr & values);
+    size_t insert(ColumnPtr values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
@@ -240,7 +237,6 @@ private:
     Set & getExactValues();
     [[nodiscard]] const Set & getExactValues() const;
     [[nodiscard]] ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
-    size_t insertKeys(const ColumnPtr & values, size_t max_keys);
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;

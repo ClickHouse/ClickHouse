@@ -439,19 +439,7 @@ ColumnPtr ExactSetRuntimeFilter<negate>::toFilterColumnType(const ColumnPtr & se
 }
 
 template <bool negate>
-void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
-{
-    insertKeys(values, std::numeric_limits<size_t>::max());
-}
-
-template <bool negate>
-size_t ExactSetRuntimeFilter<negate>::insertUntilFull(const ColumnPtr & values)
-{
-    return insertKeys(values, exact_values_limit);
-}
-
-template <bool negate>
-size_t ExactSetRuntimeFilter<negate>::insertKeys(const ColumnPtr & values, size_t max_keys)
+size_t ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 {
     if (is_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter exact set after it was marked as finished");
@@ -461,7 +449,8 @@ size_t ExactSetRuntimeFilter<negate>::insertKeys(const ColumnPtr & values, size_
 
     auto & set = getExactValues();
     size_t rows_taken = 0;
-    set.insertFromColumns({values}, max_keys, rows_taken);
+    /// A full positive set is dropped, while `NOT IN` filters by every key it took.
+    set.insertFromColumns({values}, negate ? std::numeric_limits<size_t>::max() : exact_values_limit, rows_taken);
     const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
     is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
     return rows_taken;
@@ -894,7 +883,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     if (!exact_filter || exact_filter->isFull())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
-    const size_t rows_taken = exact_filter->insertUntilFull(values);
+    const size_t rows_taken = exact_filter->insert(values);
 
     if (exact_filter->isFull())
         switchFromExactFilter(filter_, values, rows_taken);

@@ -391,15 +391,47 @@ TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesToABloomFilterAtTheFirstNewKeyPa
     expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 1});
 }
 
+TEST(RuntimeFilterLookup, ReplacementFiltersTakeTheRowsFromFirstRow)
+{
+    /// The rows before `first_row` are in the exact set that seeds the replacement, so they are not inserted again.
+    tryRegisterFunctions();
+    const auto type = std::make_shared<DataTypeUInt16>();
+    auto column = ColumnUInt16::create();
+    for (UInt16 key = 1; key <= 4; ++key)
+        column->insertValue(key);
+    const ColumnPtr keys = std::move(column);
+    const ColumnWithTypeAndName probe(keys, type, "k");
+    std::optional<size_t> rows_passed;
+
+    DenseBitsetRuntimeFilter bitset_filter(type);
+    bitset_filter.insert(keys, /*first_row=*/2);
+    expectMask(bitset_filter.find(probe, rows_passed), {0, 0, 1, 1});
+
+    ApproximateSetRuntimeFilter bloom_filter(1_MiB, 3);
+    bloom_filter.insert(keys, /*first_row=*/2);
+    expectMask(bloom_filter.find(probe, rows_passed), {0, 0, 1, 1});
+}
+
 TEST(RuntimeFilterLookup, ExactSetReportsTheRowsItTookUntilItIsFull)
 {
     /// With a limit of 2 keys, the second block is taken up to the new key 7, which fills the set.
     const auto type = makeUInt64Type();
     ExactSetRuntimeFilter<false> filter(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/2);
-    EXPECT_EQ(filter.insertUntilFull(makeUInt64Column({0, 5, 0})), 3);
+    EXPECT_EQ(filter.insert(makeUInt64Column({0, 5, 0})), 3);
     EXPECT_FALSE(filter.isFull());
-    EXPECT_EQ(filter.insertUntilFull(makeUInt64Column({5, 7, 8, 0})), 2);
+    EXPECT_EQ(filter.insert(makeUInt64Column({5, 7, 8, 0})), 2);
     EXPECT_TRUE(filter.isFull());
+    EXPECT_EQ(filter.getValuesColumn()->size(), 3);
+}
+
+TEST(RuntimeFilterLookup, ExactNotContainsTakesTheWholeBlockPastTheLimit)
+{
+    /// `NOT IN` filters by every key of a full set, so it does not stop at the limit.
+    const auto type = makeUInt64Type();
+    ExactSetRuntimeFilter<true> filter(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/2);
+    EXPECT_EQ(filter.insert(makeUInt64Column({0, 5, 7, 8, 0})), 5);
+    EXPECT_TRUE(filter.isFull());
+    EXPECT_EQ(filter.getValuesColumn()->size(), 4);
 }
 
 TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterThrows)
