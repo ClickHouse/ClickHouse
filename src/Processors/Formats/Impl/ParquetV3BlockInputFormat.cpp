@@ -237,11 +237,24 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
             /// The cell may have been evicted and replaced since the split, then share nothing.
             if (has_bucket_footer && footer_cache_cell->footer != buckets_to_read->file_footer)
                 shared_column_chunks = nullptr;
-            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks, shared_column_chunks);
+            /// Offset indexes lie outside the footer: use and keep them only under a key that identifies the file content.
+            const bool key_identifies_content = object_with_metadata->metadata->getContentCacheToken().has_value();
+            new_reader->reader.setFileFooter(
+                footer_cache_cell->footer,
+                footer_cache_cell->column_chunks,
+                shared_column_chunks,
+                key_identifies_content ? footer_cache_cell->kept_offset_indexes : nullptr);
             if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
             {
                 metadata_cache_cell = footer_cache_cell;
                 metadata_cache_key = *footer_cache_key;
+            }
+            /// Only a hit may add to the cell.
+            if (footer_cache_hit && key_identifies_content)
+            {
+                new_reader->reader.max_read_offset_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingBytes();
+                if (new_reader->reader.max_read_offset_indexes_bytes)
+                    offset_indexes_cache_cell = footer_cache_cell;
             }
         }
         else if (has_bucket_footer)
@@ -486,6 +499,11 @@ Chunk ParquetV3BlockInputFormat::read()
         return chunk;
     }
     auto res = reader->read();
+    if (!res.chunk && offset_indexes_cache_cell)
+    {
+        metadata_cache->keepOffsetIndexes(*footer_cache_key, offset_indexes_cache_cell, reader->reader.takeReadOffsetIndexes());
+        offset_indexes_cache_cell.reset();
+    }
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
     return std::move(res.chunk);
@@ -501,6 +519,13 @@ std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3Bloc
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
+            continue;
+
+        /// A row group skipped by a threshold that also filters rows holds no row of the result: its whole
+        /// range of the sort column sorts strictly beyond the threshold, which only tightens. It may have been
+        /// skipped only when delivered, after its rows were read and counted in `rows_pass` (see
+        /// `ReadManager::read`), and then it never updates `top_k_best_value`, so it must not count as matched.
+        if (!top_k_statistics_only && row_group.skipped_by_top_k.load())
             continue;
 
         bool produced_rows = false;
@@ -601,6 +626,7 @@ void ParquetV3BlockInputFormat::resetParser()
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
+        offset_indexes_cache_cell.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
@@ -1194,6 +1220,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
+| `output_format_parquet_data_page_row_limit`                                    | Maximum number of rows in a data page; a page also ends at `output_format_parquet_data_page_size`. 0 means no limit.                                                                                                                | `20000`     |
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |

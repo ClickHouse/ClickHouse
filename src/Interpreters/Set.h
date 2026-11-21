@@ -2,7 +2,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
 #include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -12,6 +11,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ namespace DB
 
 struct Range;
 using Ranges = VectorWithMemoryTracking<Range>;
+
+struct NonClearableSet;
+template <typename Variant> struct SetVariantsTemplate;
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
 
 class Context;
 class IFunctionBase;
@@ -148,7 +153,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
+    bool hasExplicitSetElements() const;
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -188,7 +193,7 @@ private:
     /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
     /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
     /// the members that `spillAfterBuild` replaces are `mutable`.
-    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    mutable std::unique_ptr<SetVariants> data;
 
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;

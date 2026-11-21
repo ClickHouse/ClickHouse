@@ -27,6 +27,7 @@
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
 

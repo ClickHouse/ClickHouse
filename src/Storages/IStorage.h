@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
@@ -24,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <list>
+#include <Poco/Timespan.h>
 
 
 namespace DB
@@ -211,6 +211,9 @@ public:
     /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
+    /// Whether splitting a single input stream among parallel sinks can change the result.
+    virtual bool isInsertOrderSensitive() const { return false; }
+
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
@@ -232,6 +235,8 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Same, for the functions of a `Map` that read only its keys or only its values (`mapKeys(m)` -> reading `m.keys`).
+    virtual bool supportsOptimizationToMapKeysAndValuesSubcolumns() const { return supportsOptimizationToSubcolumns(); }
     /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
     /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
     virtual bool hasBucketedMapSerialization() const { return false; }

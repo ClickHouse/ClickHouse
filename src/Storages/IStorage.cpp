@@ -23,6 +23,7 @@
 #include <Planner/collectSelectedColumnsFromTable.h>
 
 #include <algorithm>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
