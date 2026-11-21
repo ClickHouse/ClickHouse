@@ -980,6 +980,22 @@ def test_limit_pushdown(started_cluster):
     assert result == "5"
     assert len(queries) == 1 and "LIMIT" not in queries[0]
 
+    # `SHUFFLE` samples from all rows, so its LIMIT must stay local. This table is read in insertion order, so a
+    # sample of its first 10 rows would have `max(id) = 10`.
+    result, queries = run(
+        "SELECT count(), max(id) > 10 FROM (SELECT id FROM pg_limit_pushdown SHUFFLE LIMIT 10)",
+        allow_experimental_shuffle_query=1,
+    )
+    assert result == "10\t1"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    result, queries = run(
+        "SELECT count() FROM (SELECT id FROM pg_limit_pushdown SHUFFLE LIMIT 5 OFFSET 3)",
+        allow_experimental_shuffle_query=1,
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
     # `arrayJoin` multiplies the rows after they have been read, so the LIMIT must stay local. The
     # same holds when it is hidden inside a SQL UDF that is inlined into the query later.
     node1.query("DROP FUNCTION IF EXISTS pg_limit_pushdown_array_join")

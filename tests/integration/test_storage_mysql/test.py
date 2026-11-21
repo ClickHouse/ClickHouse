@@ -1,6 +1,7 @@
 import os
 import shlex
 import time
+import uuid
 from contextlib import contextmanager
 
 ## sudo -H pip install PyMySQL
@@ -263,6 +264,64 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGI
         ).rstrip()
         == "1"
     )
+    conn.close()
+
+
+def test_limit_pushdown(started_cluster):
+    table_name = "test_limit_pushdown"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query(
+        f"CREATE TABLE {table_name} (id UInt32, name String) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    node1.query(
+        f"INSERT INTO {table_name} SELECT number + 1, toString(number) FROM numbers(100)"
+    )
+
+    def run(query, **settings):
+        """Return the query result and the queries that `StorageMySQL` sent to MySQL for it."""
+        query_id = uuid.uuid4().hex
+        result = node1.query(query, settings=settings, query_id=query_id)
+        node1.query("SYSTEM FLUSH LOGS text_log")
+        # The default profile's `max_block_size = 2` would read the whole log in two-row blocks.
+        sent = node1.query(
+            "SELECT message FROM system.text_log "
+            f"WHERE query_id = '{query_id}' AND message LIKE 'Query: SELECT%' ORDER BY event_time_microseconds",
+            settings={"max_block_size": 65536},
+        )
+        return result.strip(), sent.strip().splitlines()
+
+    # A plain LIMIT is sent to MySQL. The OFFSET is applied locally, so the rows it skips are read remotely as well.
+    result, queries = run(f"SELECT count() FROM (SELECT id FROM {table_name} LIMIT 5)")
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 5")
+
+    result, queries = run(
+        f"SELECT count() FROM (SELECT id FROM {table_name} LIMIT 5 OFFSET 3)"
+    )
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 8")
+
+    # `SHUFFLE` samples from all rows, so its LIMIT must stay local. InnoDB returns the rows in primary key order,
+    # so a sample of the first 10 rows would have `max(id) = 10`.
+    result, queries = run(
+        f"SELECT count(), max(id) > 10 FROM (SELECT id FROM {table_name} SHUFFLE LIMIT 10)",
+        allow_experimental_shuffle_query=1,
+    )
+    assert result == "10\t1"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    result, queries = run(
+        f"SELECT count() FROM (SELECT id FROM {table_name} SHUFFLE LIMIT 5 OFFSET 3)",
+        allow_experimental_shuffle_query=1,
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    node1.query(f"DROP TABLE {table_name}")
+    drop_mysql_table(conn, table_name)
     conn.close()
 
 
