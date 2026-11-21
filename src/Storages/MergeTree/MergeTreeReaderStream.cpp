@@ -155,6 +155,9 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
+    if (compressed_data_buffer)
+        compressed_data_buffer->setBlocksReadSink(blocks_read);
+
     announceReadRequestMap();
 
     initialized = true;
@@ -326,6 +329,66 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
+}
+
+CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
+{
+    std::lock_guard lock(mutex);
+    /// References to the elements of an unordered map stay valid when it grows.
+    return counted[path];
+}
+
+size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges)
+{
+    std::lock_guard lock(mutex);
+    size_t bytes = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        chassert(begin <= end);
+        /// The first counted range that overlaps or touches the range.
+        auto it = counted_ranges.upper_bound(begin);
+        if (it != counted_ranges.begin() && std::prev(it)->second >= begin)
+            --it;
+        if (it == counted_ranges.end() || it->first > end)
+        {
+            bytes += end - begin;
+            counted_ranges.emplace_hint(it, begin, end);
+            continue;
+        }
+
+        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
+        /// as reading goes on from where the previous block ended.
+        const auto first = it;
+        size_t covered = 0;
+        size_t merged_end = end;
+        for (; it != counted_ranges.end() && it->first <= end; ++it)
+        {
+            if (it->second > begin && it->first < end)
+                covered += std::min(end, it->second) - std::max(begin, it->first);
+            merged_end = std::max(merged_end, it->second);
+        }
+        bytes += end - begin - covered;
+        first->second = merged_end;
+        counted_ranges.erase(std::next(first), it);
+        if (begin < first->first)
+        {
+            auto node = counted_ranges.extract(first);
+            node.key() = begin;
+            counted_ranges.insert(std::move(node));
+        }
+    }
+    ranges.clear();
+    return bytes;
+}
+
+void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
+{
+    if (!settings.is_compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
+    /// The buffer is created on the first read, see `init`.
+    blocks_read = blocks_read_;
+    if (compressed_data_buffer)
+        compressed_data_buffer->setBlocksReadSink(blocks_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

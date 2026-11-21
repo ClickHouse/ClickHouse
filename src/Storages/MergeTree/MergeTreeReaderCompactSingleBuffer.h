@@ -25,6 +25,8 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
+    std::optional<size_t> takeCompressedBytesRead() override;
+
     void updateReadRequestMap(MarkRangesPtr request_map) override
     {
         MergeTreeReaderCompact::updateReadRequestMap(request_map);
@@ -45,6 +47,11 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
+    /// The ranges in the file of the compressed blocks read since `takeCompressedBytesRead` was called, see
+    /// `CompressedReadBufferBase::setBlocksReadSink`.
+    CompressedBlockRanges ranges_read;
+    /// Of `counted_compressed_blocks`, looked up at the first take.
+    CountedCompressedBlocks::CountedRanges * counted_ranges = nullptr;
 };
 
 }

@@ -36,11 +36,7 @@ LoggerPtr getMergeTreeReadersChainLogger();
 
 class MergeTreeReadersChain
 {
-    using DataflowCacheUpdateCallback = std::function<void(
-        const ColumnsWithTypeAndName & columns,
-        const NameSet & partially_read_columns,
-        size_t read_bytes,
-        std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback = std::function<void(std::optional<size_t> compressed_bytes_read)>;
 
 public:
     MergeTreeReadersChain() = default;

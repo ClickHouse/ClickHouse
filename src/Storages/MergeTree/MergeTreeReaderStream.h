@@ -4,6 +4,11 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <base/defines.h>
+
+#include <map>
+#include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -14,6 +19,28 @@ using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 
 class UncompressedCache;
 class CachedCompressedReadBuffer;
+
+/// The parts of the files counted already, as merged ranges by file, for the readers of a read: a compressed block may hold
+/// the data of several columns, and may be loaded more than once, by one reader or by several, each reading other granules
+/// of it. It is counted once.
+class CountedCompressedBlocks
+{
+public:
+    /// The counted ranges of a file, merged, by their begin.
+    using CountedRanges = std::map<size_t, size_t>;
+
+    /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
+    CountedRanges & getCountedRanges(const String & path);
+
+    /// The bytes of the ranges in the file not counted yet, which become counted. Clears the ranges.
+    size_t take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges);
+
+private:
+    std::mutex mutex;
+    std::unordered_map<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
+};
+
+using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -61,6 +88,9 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
+    /// See `CompressedReadBufferBase::setBlocksReadSink`. Must not be called for a stream of uncompressed data.
+    void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
+
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
 
@@ -89,6 +119,7 @@ private:
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
+    CompressedBlockRanges * blocks_read = nullptr;
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;

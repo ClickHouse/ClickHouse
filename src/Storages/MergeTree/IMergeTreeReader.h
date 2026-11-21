@@ -105,6 +105,21 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Returns the compressed size of the blocks loaded since the previous call (from the uncompressed cache too) that the
+    /// `CountedCompressedBlocks` of `countCompressedBytesRead` has not counted yet. `nullopt` if the reader cannot tell.
+    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
+
+    /// Enables `takeCompressedBytesRead`. The readers of a read share `counted`, so a block several of them load is counted
+    /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
+    /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
+    /// reading from the cache; it still writes to it.
+    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+    {
+        chassert(!counted_compressed_blocks || counted_compressed_blocks == counted);
+        counted_compressed_blocks = std::move(counted);
+        columns_cache_reads_possible = false;
+    }
+
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -165,6 +180,12 @@ protected:
     [[nodiscard]] StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `countCompressedBytesRead`.
+    CountedCompressedBlocksPtr counted_compressed_blocks;
+    /// Granules served from the columns cache load nothing from the part, so the bytes read are not measured then. Not
+    /// expected after `countCompressedBytesRead`, which stops the reads from the cache.
+    bool served_from_columns_cache = false;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

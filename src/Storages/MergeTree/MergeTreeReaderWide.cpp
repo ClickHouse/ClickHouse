@@ -760,6 +760,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
 
         if (served_columns)
         {
+            served_from_columns_cache = true;
             for (size_t i = run_begin; i < run_end; ++i)
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     hits += served_columns;
@@ -1165,6 +1166,53 @@ std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() 
     return result;
 }
 
+void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [stream_name, stream] : streams)
+        callback(stream_name, *stream);
+}
+
+CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
+{
+    std::lock_guard lock(ranges_read_mutex);
+    return ranges_read[stream_name].ranges;
+}
+
+void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+{
+    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    /// The streams created later get their sink in `getOrAddStream`.
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+}
+
+std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
+{
+    if (!counted_compressed_blocks)
+        return std::nullopt;
+
+    std::lock_guard lock(ranges_read_mutex);
+    if (served_from_columns_cache)
+    {
+        /// Not measured, but the buffers of the streams keep appending the blocks they load: drop them.
+        for (auto & [_, stream_ranges] : ranges_read)
+            stream_ranges.ranges.clear();
+        return std::nullopt;
+    }
+
+    size_t bytes = 0;
+    for (auto & [stream_name, stream_ranges] : ranges_read)
+    {
+        if (stream_ranges.ranges.empty())
+            continue;
+        if (!stream_ranges.counted)
+            stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
+                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
+        bytes += counted_compressed_blocks->take(*stream_ranges.counted, stream_ranges.ranges);
+    }
+    return bytes;
+}
+
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
@@ -1225,6 +1273,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
+            if (counted_compressed_blocks)
+                stream->setBlocksReadSink(&getRangesRead(stream_name));
             return stream;
         };
 
