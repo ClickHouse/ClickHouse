@@ -1,0 +1,10 @@
+status before stop, running: 1
+start before stop, already running: 1
+stop: 0
+kill signals sent: 1
+status after stop, running: 0
+start after stop, already running: 0
+killed process still exists: 1
+stop, unlocked pid file: 0
+terminate signals sent: 1
+process with an unlocked pid file still exists: 0
