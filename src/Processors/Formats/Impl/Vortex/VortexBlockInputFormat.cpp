@@ -585,7 +585,15 @@ void VortexBlockInputFormat::prepareReader()
         std::rethrow_exception(makeVortexException(message, read_context->getException()));
     }
 
-    /// Debug-only cross-check that the library projects the schema the same way.
+    /// The scan is owned from here on: what follows can throw (the import of the schema allocates),
+    /// and `closeReader` cancels and frees only the scan it finds in the member.
+    {
+        std::lock_guard scan_lock(scan_mutex);
+        scan = new_scan;
+    }
+
+    /// Cross-check that the library projects the schema the same way (the comparison itself is
+    /// done in debug and sanitizer builds only).
     ::ArrowSchema c_schema{};
     if (vortex_ffi_scan_schema(new_scan, &c_schema, &error) == 0)
     {
@@ -603,9 +611,6 @@ void VortexBlockInputFormat::prepareReader()
     {
         vortex_ffi_free_string(error);
     }
-
-    std::lock_guard scan_lock(scan_mutex);
-    scan = new_scan;
 }
 
 std::shared_ptr<ChunkInfoRowNumbers> VortexBlockInputFormat::rowNumbersWithoutColumns(UInt64 first_delivered, size_t num_rows) const
