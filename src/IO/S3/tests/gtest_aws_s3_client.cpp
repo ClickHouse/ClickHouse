@@ -1940,7 +1940,7 @@ class FunctionHTTPServer
 public:
     explicit FunctionHTTPServer(HTTPHandlerFunction handler, int max_threads = 16)
         : thread_pool(std::make_unique<Poco::ThreadPool>(/* minCapacity = */ 2, max_threads))
-        , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server_socket(std::make_unique<Poco::Net::ServerSocket>(/* port = */ 0, /* backlog = */ std::max(64, max_threads)))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new Factory(std::move(handler)), *thread_pool, *server_socket, makeServerParams(max_threads)))
     {
@@ -2532,8 +2532,10 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
         MockStsRequestHandler(request_info, role_access_key, "role_secret_key").handleRequest(request, response);
     });
 
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     std::atomic<size_t> requests_signed_with_refreshed_credentials = 0;
     std::atomic<size_t> other_requests = 0;
+    /// A thread per fiber: the server closes, instead of queueing, a connection that finds no idle thread in its pool.
     FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
     {
         if (getCredentialString(request).starts_with("Credential=refreshed_role_access_key/"))
@@ -2541,7 +2543,7 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
         else
             ++other_requests;
         sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "");
-    });
+    }, /* max_threads = */ static_cast<int>(fiber_count));
 
     const DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAssumeRoleRefreshInConcurrentFibers/test.txt");
     /// The role is unique, so the provider is not shared with other tests through the credentials cache.
@@ -2561,7 +2563,6 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
     release.reset();
     const size_t sts_requests_before = sts_requests;
 
-    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t) { doReadRequest(client, uri); });
 
     EXPECT_EQ(sts_requests, sts_requests_before + 1);
