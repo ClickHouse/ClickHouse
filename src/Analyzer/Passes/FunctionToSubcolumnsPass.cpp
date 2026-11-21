@@ -2,6 +2,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -431,6 +432,11 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
         if (key_value.isNull())
             return;
     }
+
+    /// A short `FixedString` key would be padded below, but `arrayElement` compares it unpadded.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeLowCardinality(key_type).get());
+        fixed_string_type && key_value.getType() == Field::Types::String && key_value.safeGet<String>().size() != fixed_string_type->getN())
+        return;
 
     auto tmp_key_column = key_type->createColumn();
     /// Verify that the constant value is compatible with the map's key type.
