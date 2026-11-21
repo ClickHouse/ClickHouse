@@ -20,6 +20,7 @@ struct KafkaConfigLoader
     static inline const String CONFIG_NAME_TAG = "name";
     static inline const String CONFIG_KAFKA_CONSUMER_TAG = "consumer";
     static inline const String CONFIG_KAFKA_PRODUCER_TAG = "producer";
+    static inline const String CONFIG_ALLOW_OAUTHBEARER_METADATA_AUTHENTICATION_TAG = "allow_oauthbearer_metadata_authentication";
     using LogCallback = cppkafka::Configuration::LogCallback;
 
 
