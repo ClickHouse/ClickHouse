@@ -70,7 +70,7 @@ struct KeyDistinctValues
     /// its relation of 10000 rows and without a known number of distinct values, would then make the join 100 times
     /// larger than its foreign key side. With the row count of that key as well, the join of a foreign key with its
     /// primary key stays as large as the foreign key side, as when no key has a known number of distinct values.
-    UInt64 getNumberOfDistinctValues() const
+    [[nodiscard]] UInt64 getNumberOfDistinctValues() const
     {
         if (has_ndv_from_metadata)
             return std::max(max_ndv, max_rows_without_ndv);

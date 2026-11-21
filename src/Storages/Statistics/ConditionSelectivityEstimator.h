@@ -53,7 +53,7 @@ public:
 
     /// Whether the number of distinct values of the column in `estimateRelationProfile` is measured (by a `uniq`
     /// statistic, or set by `ConditionSelectivityEstimatorBuilder::setCardinality`) rather than a fixed fraction of the rows.
-    bool hasCardinality(const String & column_name) const;
+    [[nodiscard]] bool hasCardinality(const String & column_name) const;
 
     struct RPNElement
     {
