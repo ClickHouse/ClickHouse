@@ -592,6 +592,40 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
         postgres_database=clickhouse_postgres_db,
     )
 
+    # A table of a schema outside `materialized_postgresql_schema_list` cannot be attached: it would not be
+    # discovered after restart.
+    create_postgres_schema(cursor, "schema_extra")
+    create_postgres_table_with_schema(cursor, "schema_extra", "postgresql_replica_0")
+    error = instance.query_and_get_error(
+        f"ATTACH TABLE {materialized_db}.`schema_extra.postgresql_replica_0`"
+    )
+    assert "is not in the schemas of `materialized_postgresql_schema_list`" in error
+    cursor.execute("DROP SCHEMA schema_extra CASCADE")
+
+    # A permanently detached table stays detached after restart, and the other tables keep replicating.
+    instance.query(f"DETACH TABLE {altered_materialized_table} PERMANENTLY")
+    instance.restart_clickhouse()
+    remaining_tables = [
+        (f"schema{i}", f"postgresql_replica_{ti}")
+        for i in range(schemas_num)
+        for ti in range(NUM_TABLES)
+        if (i, ti) != (altered_schema, altered_table)
+    ]
+    assert_show_tables(
+        "".join(f"{schema}.{table}\n" for schema, table in remaining_tables)
+    )
+    for schema, table in remaining_tables:
+        instance.query(
+            f"INSERT INTO clickhouse_postgres_db{schema[len('schema'):]}.{table} SELECT number, number from numbers(1000000, 1000)"
+        )
+    for schema, table in remaining_tables:
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema,
+            postgres_database=f"clickhouse_postgres_db{schema[len('schema'):]}",
+        )
+
 
 if __name__ == "__main__":
     cluster.start()

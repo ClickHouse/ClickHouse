@@ -114,6 +114,15 @@ public:
 
     void setSetting(const SettingChange & setting);
 
+    /// lsn - log sequence number, like wal offset (64 bit).
+    static Int64 getLSNValue(const std::string & lsn)
+    {
+        UInt32 upper_half = 0;
+        UInt32 lower_half = 0;
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
+        return (static_cast<Int64>(upper_half) << 32) + lower_half;
+    }
+
 private:
     void syncTables();
 
@@ -123,7 +132,7 @@ private:
 
     void processReplicationMessage(const char * replication_message, size_t size);
 
-    bool isSyncAllowed(Int32 relation_id, const String & relation_name);
+    bool isSyncAllowed(Int32 relation_id, const String & relation_name, bool is_relation_message = false);
 
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
     /// Returns true if a source-value conversion failure was replaced with the column default.
@@ -159,15 +168,6 @@ private:
         const String & relation_name,
         const String & skip_reason = "because its structure has changes");
 
-    /// lsn - log sequence number, like wal offset (64 bit).
-    static Int64 getLSNValue(const std::string & lsn)
-    {
-        UInt32 upper_half = 0;
-        UInt32 lower_half = 0;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
-        return (static_cast<Int64>(upper_half) << 32) + lower_half;
-    }
-
     LoggerPtr log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
@@ -180,6 +180,12 @@ private:
 
     /// current_lsn converted from String to Int64 via getLSNValue().
     UInt64 lsn_value;
+
+    /// The position of the commit record of the current transaction, from its `Begin` message. A snapshot exported at
+    /// a position contains exactly the transactions that committed before it, so this position, and not the position
+    /// of a change, decides whether the change is already in the snapshot of a table: a change can be written to WAL
+    /// before the snapshot position by a transaction that commits after it.
+    Int64 transaction_commit_lsn = 0;
 
     size_t max_block_size;
 
@@ -202,7 +208,7 @@ private:
     /// After it is finished, a temporary replication slot is created with 'export snapshot' option, and start_lsn is returned.
     /// Skipped tables are reloaded from snapshot (nested tables are also updated). Afterwards, if a replication message is
     /// related to a table in a skip_list, we compare current lsn with start_lsn, which was returned with according snapshot.
-    /// If current_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
+    /// If transaction_commit_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
     /// No needed message, related to reloaded table will be missed, because messages are not consumed in the meantime,
     /// i.e. we will not miss the first start_lsn position for reloaded table.
     std::unordered_map<Int32, String> skip_list;
@@ -214,6 +220,14 @@ private:
     /// while the process of adding a table to replication is not finished,
     /// because we might go beyond this start lsn position before consumer knows that a new table was added.
     std::unordered_map<String, String> waiting_list;
+
+    /// `postgres_table_name` -> the latest `Relation` message received for a table of `waiting_list` in a transaction that
+    /// committed before its start lsn.
+    /// It is not checked against the nested table on arrival: the snapshot may have been taken after a schema change, so an
+    /// earlier column layout is expected to differ. `pgoutput` sends a `Relation` message only before the first change after
+    /// a schema change, so the changes after the start lsn may come without one and need this layout. It is processed when
+    /// the table reaches its start lsn, unless a newer `Relation` message arrives by then.
+    std::unordered_map<String, String> pending_relation_messages;
 
     /// Since replication may be some time behind, we need to ensure that replication messages for deleted tables are ignored.
     std::unordered_set<String> deleted_tables;
