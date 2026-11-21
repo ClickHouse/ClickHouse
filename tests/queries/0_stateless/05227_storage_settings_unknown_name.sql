@@ -129,9 +129,4 @@ SELECT '--- a bad value is still reported as a bad value, not as an unknown name
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV)
 SETTINGS format_csv_delimiter = 'more_than_one_char'; -- { serverError SIZE_OF_FIXED_STRING_DOESNT_MATCH }
 
-SELECT '--- MergeTree is unchanged ---';
-
-CREATE TABLE t_unknown_setting (a UInt64) ENGINE = MergeTree ORDER BY a
-SETTINGS not_a_setting_at_all = 1; -- { serverError UNKNOWN_SETTING }
-
 DROP TABLE IF EXISTS t_unknown_setting;

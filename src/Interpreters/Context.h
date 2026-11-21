@@ -672,6 +672,10 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set while a refreshable materialized view re-creates its target table from the view's own
+    /// stored definition. That definition also describes existing state, but the re-creation runs under
+    /// the view's definer later, so it licenses the storage setting-name check only, no access check.
+    bool is_storage_settings_from_stored_metadata = false;
     /// Set while analyzing expressions that are executed later in the background, without a user:
     /// mutations and the expressions stored in a table definition.
     bool is_analyzing_background_expressions = false;
@@ -2114,6 +2118,8 @@ public:
     void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
+    bool isStorageSettingsFromStoredMetadata() const { return is_storage_settings_from_stored_metadata; }
+    void setStorageSettingsFromStoredMetadata(bool value) { is_storage_settings_from_stored_metadata = value; }
     bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
     void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
 
