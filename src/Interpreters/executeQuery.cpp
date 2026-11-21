@@ -3873,16 +3873,53 @@ static bool settingsHideSourcesFromCollector(const IAST & ast, const ContextPtr 
     return false;
 }
 
+/// Whether the statement or the stored definition names the aggregate function `flameGraph` (with any
+/// combinator): a call of it, or a column of the type `AggregateFunction(flameGraph, Array(UInt64))`. Creating
+/// the function checks the `INTROSPECTION` grant of the querying user (`createAggregateFunctionFlameGraph`),
+/// both when a query calls it and when a definition with such a type is re-parsed. An unrelated identifier with
+/// this prefix only errs toward skipping.
+static bool containsFlameGraphAggregateFunction(const IAST & ast)
+{
+    std::vector<const IAST *> stack{&ast};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * function = node->as<ASTFunction>(); function && function->name.starts_with("flameGraph"))
+            return true;
+        if (const auto * identifier = node->as<ASTIdentifier>(); identifier && identifier->name().starts_with("flameGraph"))
+            return true;
+
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+
+    return false;
+}
+
 /// Whether the stored definition of a table carries an expression that `ATTACH` rebuilds under the querying
 /// user's grants and that may fail there: e.g. a skip index `INDEX i demangle(s) TYPE minmax` requires the
 /// `INTROSPECTION` grant (checked in `FunctionDemangle::create`) when `ATTACH` rebuilds the index in
 /// `IndexDescription::initExpressionInfo`, so a user lacking it would `DETACH` the table and then fail to
 /// `ATTACH` it back. The same scalar functions and SQL UDFs the query-level guards reject are rejected here.
+/// A column of an `AggregateFunction` type over `flameGraph` is reattached only for a user who holds the
+/// `INTROSPECTION` grant the type needs: the internal `ATTACH` keeps the querying user, so without the grant
+/// both it and the recovery `ATTACH` would fail with `ACCESS_DENIED` and leave the table detached.
 static bool storedDefinitionMayFailToAttach(const IDatabase & database, const StorageID & table_id, const ContextPtr & context)
 {
     const auto create_query = database.tryGetCreateTableQuery(table_id.getTableName(), context);
     if (!create_query)
         return true;
+    if (containsFlameGraphAggregateFunction(*create_query))
+    {
+        /// The grant is in effect only under `allow_introspection_functions`, which the internal `ATTACH` turns
+        /// on whatever the outer query has, so ask the way that `ATTACH` is going to be checked.
+        auto attach_access_context = Context::createCopy(context);
+        attach_access_context->setSetting("allow_introspection_functions", Field(true));
+        if (!attach_access_context->getAccess()->isGranted(AccessType::INTROSPECTION))
+            return true;
+    }
     return containsStorageReadingScalarFunctionCall(*create_query) || containsSQLUserDefinedFunctionCall(*create_query);
 }
 
@@ -3905,6 +3942,11 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// The same goes for the storages that scalar functions read by name: a query rejected on such a storage
     /// would still detach the tables the preflights do see.
     if (containsStorageReadingScalarFunctionCall(*query))
+        return;
+
+    /// The aggregate function `flameGraph` checks a grant of its own when it is created, which none of the
+    /// preflights sees either: a query rejected there would still detach its tables.
+    if (containsFlameGraphAggregateFunction(*query))
         return;
 
     if (settingsHideSourcesFromCollector(*query, context))
