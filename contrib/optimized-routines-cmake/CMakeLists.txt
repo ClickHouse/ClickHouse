@@ -77,6 +77,21 @@ set(SRCS
     "${AOR_SOURCE_DIR}/string/aarch64/strnlen.S"
 )
 
+if (ENABLE_PG83_STR)
+    # Keep unrelated `strchr` and `strnlen`; the experimental provider owns
+    # the overlapping strong definitions in both glibc and musl builds.
+    list (REMOVE_ITEM SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/dispatch.c"
+        "${AOR_SOURCE_DIR}/string/aarch64/memcpy-advsimd.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/memcpy-sve.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/memcpy-mops.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/memmove-mops.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/memcmp.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/memchr-mte.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/strlen.S"
+        "${AOR_SOURCE_DIR}/string/aarch64/strcmp.S")
+endif ()
+
 add_library(aor ${SRCS})
 set_target_properties(aor PROPERTIES FOLDER "contrib/optimized-routines-cmake")
 

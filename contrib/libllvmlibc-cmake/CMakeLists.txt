@@ -85,9 +85,12 @@ if (NOT ARCH_S390X)
     # there and let the interceptor wrap the system memmem, as before this PR.
     if (NOT SANITIZE)
         list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
-        # x86_64-only strong memchr/strlen (the file is empty on other arches, where
-        # the Arm Optimized Routines already provide vectorized versions).
-        list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
+        # `pg83str` already defines the strong `memchr` and `strlen` symbols.
+        if (NOT ENABLE_PG83_STR)
+            # x86_64-only strong memchr/strlen (the file is empty on other arches, where
+            # the Arm Optimized Routines already provide vectorized versions).
+            list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
+        endif ()
     endif ()
 endif ()
 

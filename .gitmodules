@@ -481,3 +481,6 @@
 	path = contrib/gdeflate
 	url = https://github.com/ClickHouse/libdeflate.git
 	branch = gdeflate
+[submodule "contrib/str"]
+	path = contrib/str
+	url = https://github.com/ClickHouse/pg83str.git
