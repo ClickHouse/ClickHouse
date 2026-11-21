@@ -56,6 +56,7 @@ private:
     bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;
 
     const NamesAndTypesList & getSourceColumns() const;
+    const NameSet & getSubcolumnParents() const;
 
     const ColumnsDescription & columns;
     ContextPtr context;
@@ -67,6 +68,9 @@ private:
     /// Physical columns plus EPHEMERAL ones, built on the first analysis.
     mutable std::optional<NamesAndTypesList> source_columns;
     mutable NameSet ephemeral_columns;
+
+    /// The columns whose subcolumns any default of the table reads, built on the first analysis.
+    mutable std::optional<NameSet> subcolumn_parents;
 
     mutable std::optional<NameSet> memo_changed_columns;
     mutable std::unordered_map<String, bool> will_be_recalculated;
