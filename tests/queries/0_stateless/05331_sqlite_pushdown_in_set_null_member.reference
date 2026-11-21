@@ -12,7 +12,7 @@ isNotNull(s IN ('7', NULL))
 Query: SELECT `k`, `s` FROM `tn` WHERE (`s` IN ('7')) IS NOT NULL
 NOT ((s, k) IN (('7', 1), ('x', NULL)))
 2,3
-Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s`, `k`) IN (('7', 1)))
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s` IS NOT NULL) AND ((`s`, `k`) IN (('7', 1))))
 NOT (s IN (NULL))
 1,2
 Query: SELECT `k`, `s` FROM `tn`
@@ -22,3 +22,15 @@ Query: SELECT `k`, `s` FROM `tn` WHERE `s` IN ('7')
 s IN ('7', NULL, 'x')
 1,2
 Query: SELECT `k`, `s` FROM `tn` WHERE `s` IN ('7', 'x')
+NOT ((s, k) IN (('7', 3)))
+1,2,3
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s` IS NOT NULL) AND ((`s`, `k`) IN (('7', 3))))
+((s, k) IN (('7', 3))) = 0
+1,2,3
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s` IS NOT NULL) AND ((`s`, `k`) IN (('7', 3))))
+NOT (tuple(s) IN (tuple('7')))
+2,3
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s` IS NOT NULL) AND ((`s`) IN ('7')))
+(s, k) IN (('7', 1))
+1
+Query: SELECT `k`, `s` FROM `tn` WHERE (`s`, `k`) IN (('7', 1))
