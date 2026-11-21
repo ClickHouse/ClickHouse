@@ -7143,18 +7143,24 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
 
     IStorage::ColumnSizeByName result;
-    for (const auto & part : parts)
+    if (calculate_subcolumn_sizes)
     {
-        for (const auto & column_name : columns)
+        MergeTreeData::DataPartsVector data_parts;
+        data_parts.reserve(parts.size());
+        for (const auto & part : parts)
+            data_parts.push_back(part.data_part);
+        MergeTreeData::addColumnSizesOfParts(
+            data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result);
+    }
+    else
+    {
+        for (const auto & part : parts)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
-            if (!column)
-                continue;
-
-            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
-                ? part.data_part->getSubcolumnSize(column_name)
-                : part.data_part->getColumnSize(column->getNameInStorage());
-            result[column_name].add(size);
+            for (const auto & column_name : columns)
+            {
+                if (const auto column = part.data_part->tryGetColumn(column_name))
+                    result[column_name].add(part.data_part->getColumnSize(column->getNameInStorage()));
+            }
         }
     }
 
