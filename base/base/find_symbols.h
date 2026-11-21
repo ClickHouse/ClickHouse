@@ -15,6 +15,16 @@
     #include <arm_neon.h>
 #endif
 
+/// SVE2 is detected at runtime with `__builtin_cpu_supports`, which reads the feature bits that compiler-rt
+/// fills from `AT_HWCAP2` before any constructor of the program runs. Linux and FreeBSD only, like the SVE
+/// dispatch in `TargetSpecific.h`: Darwin has no SVE.
+#if defined(__aarch64__) && defined(__clang__) && (defined(__linux__) || defined(__FreeBSD__))
+    #define FIND_SYMBOLS_USE_SVE2 1
+    #include <arm_sve.h>
+#else
+    #define FIND_SYMBOLS_USE_SVE2 0
+#endif
+
 
 /** find_first_symbols<c1, c2, ...>(begin, end):
   *
@@ -32,6 +42,8 @@
   * In the case of parsing tab separated dump with short strings, there is no performance degradation over trivial loop.
   *
   * Note: the optimal threshold to choose between SSE 2 and SSE 4.2 may depend on CPU model.
+  *
+  * On AArch64 uses NEON, or SVE2 `MATCH` (the equivalent of SSE 4.2 `pcmpestri`) when the CPU supports it.
   *
   * find_last_symbols_or_null<c1, c2, ...>(begin, end):
   *
@@ -123,6 +135,64 @@ enum class ReturnMode : uint8_t
 };
 
 
+#if FIND_SYMBOLS_USE_SVE2
+/// SVE2 `MATCH` compares every byte with a set of up to 16 bytes in one instruction, so unlike the NEON
+/// body below its cost does not grow with the number of symbols. The set is replicated into every
+/// 128-bit segment and `MATCH` compares each byte with the set in its own segment, so the code works
+/// for any vector length.
+template <bool positive>
+[[gnu::always_inline]] __attribute__((target("+sve2")))
+inline svbool_t sve2_match(svbool_t pg, svuint8_t bytes, svuint8_t set)
+{
+    if constexpr (positive)
+        return svmatch_u8(pg, bytes, set);
+    else
+        return svnmatch_u8(pg, bytes, set);
+}
+
+template <bool positive, ReturnMode return_mode, char... symbols>
+[[gnu::noinline]] __attribute__((target("+sve2")))
+const char * find_first_symbols_sve2(const char * const begin, const char * const end)
+    requires(sizeof...(symbols) > 0)
+{
+    /// Unused slots repeat the first symbol: padding with zero bytes would make `MATCH` find zero bytes.
+    static constexpr char symbols_array[] = {symbols...};
+    static constexpr auto set_bytes = []
+    {
+        std::array<uint8_t, 16> res{};
+        for (size_t i = 0; i < res.size(); ++i)
+            res[i] = static_cast<uint8_t>(symbols_array[i % sizeof...(symbols)]);
+        return res;
+    }();
+
+    const svbool_t all = svptrue_b8();
+    const svuint8_t set = svld1rq_u8(all, set_bytes.data());
+
+    const auto * const data = reinterpret_cast<const uint8_t *>(begin);
+    const auto size = static_cast<uint64_t>(end - begin);
+    const uint64_t step = svcntb();
+
+    uint64_t i = 0;
+    for (; i + step <= size; i += step)
+    {
+        svbool_t found = sve2_match<positive>(all, svld1_u8(all, data + i), set);
+        if (svptest_any(all, found))
+            return begin + i + svcntp_b8(all, svbrkb_b_z(all, found));
+    }
+
+    /// The tail is shorter than a vector: the predicated load does not touch the bytes past `end`.
+    if (i < size)
+    {
+        svbool_t pg = svwhilelt_b8_u64(i, size);
+        svbool_t found = sve2_match<positive>(pg, svld1_u8(pg, data + i), set);
+        if (svptest_any(pg, found))
+            return begin + i + svcntp_b8(pg, svbrkb_b_z(pg, found));
+    }
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+#endif
+
 #if defined(__aarch64__)
 /// NEON body for long haystacks (>= 16 bytes), kept out-of-line so the inline
 /// dispatcher above stays small enough for the compiler to keep auto-vectorising
@@ -147,6 +217,11 @@ template <bool positive, ReturnMode return_mode, char... symbols>
     if (maybe_negate<positive>(is_in<symbols...>(pos[6]))) return pos + 6;
     if (maybe_negate<positive>(is_in<symbols...>(pos[7]))) return pos + 7;
     pos += 8;
+
+#if FIND_SYMBOLS_USE_SVE2
+    if (__builtin_cpu_supports("sve2"))
+        return find_first_symbols_sve2<positive, return_mode, symbols...>(pos, end);
+#endif
 
     for (; pos + 15 < end; pos += 16)
     {
