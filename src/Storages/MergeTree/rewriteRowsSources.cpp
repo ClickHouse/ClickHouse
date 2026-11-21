@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 
 #include <deque>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -25,7 +26,7 @@ namespace
 {
 
 /// One part's `_row_exists`, pulled a block at a time as the rewrite reaches the part's rows.
-class PartRowExists
+class PartRowExists : private boost::noncopyable
 {
 public:
     explicit PartRowExists(QueryPipeline pipeline_) : pipeline(std::move(pipeline_)), executor(pipeline) {}
