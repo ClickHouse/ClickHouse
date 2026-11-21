@@ -1,0 +1,32 @@
+-- a table the user cannot see is not named
+ACCESS_DENIED: SELECT on the tables that use the path, or SELECT ON *.*
+ACCESS_DENIED: SELECT on the tables that use the path, or SELECT ON *.*
+0
+-- the source is not readable
+ACCESS_DENIED: SELECT ON db.src
+ACCESS_DENIED: SELECT ON db.src
+ACCESS_DENIED: SELECT ON db.src
+-- a materialized view passes the command to its target, which checks the source
+ACCESS_DENIED: SELECT ON db.src
+-- a grant on some columns is not a grant to read the table
+ACCESS_DENIED: SELECT ON db.src, SELECT(id) ON db.src
+-- the destination needs INSERT
+ACCESS_DENIED: INSERT ON db.dst
+-- every table of this server that uses the path must be readable
+ACCESS_DENIED: SELECT ON db.src_r2
+-- allowed once all of them are readable
+OK
+OK
+OK
+OK
+1	a
+2	b
+-- the same path on an auxiliary ZooKeeper is another source
+ACCESS_DENIED: SELECT on the tables that use the path, or SELECT ON *.*
+-- SELECT ON *.* allows a source no table of this server uses
+KEEPER_EXCEPTION
+-- a lazily loaded source is checked without loading it
+TableProxy
+ACCESS_DENIED: SELECT ON db1.lsrc
+NO_ACTIVE_REPLICAS
+TableProxy
