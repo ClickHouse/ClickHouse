@@ -229,31 +229,27 @@ namespace
 {
 
 /// `createBlockWithNestedColumns` only strips the null map, it does not touch the values under it, so
-/// the nested value of a null slot is whatever happened to be stored there. For an `Enum`, or for a
-/// `Tuple`/`Object` that contains one, that value is usually not a member of the type: both
-/// `INSERT ... VALUES (NULL)` and the padding of non-joined rows in a `LEFT JOIN` leave a raw 0
-/// there, and 0 is a declared value only if the enum happens to define it. A function that reads the
-/// nested column of such an argument - `like`, `match`, anything that turns an `Enum` into its name -
-/// is then handed a code that does not exist and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose
-/// result is NULL anyway.
+/// the nested value of a null slot is whatever happened to be stored there. For a `Nullable(Enum)`
+/// that value is usually not a member of the type: both `INSERT ... VALUES (NULL)` and the padding of
+/// non-joined rows in a `LEFT JOIN` leave a raw 0 there, and 0 is a declared value only if the enum
+/// happens to define it. A function that reads the nested column of such an argument - `like`,
+/// `match`, anything that turns an `Enum` into its name - is then handed a code that does not exist
+/// and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose result is NULL anyway.
+/// The same applies to an enum nested in a tuple or a typed object path.
 ///
-/// Normalize the null slots to the default of the nested type, which for any type containing an
-/// `Enum` is a declared value. With `only_enum_containing_types` the other argument types are left
-/// alone, which is what the paths that discard the values of null rows afterwards want; the path that
-/// has to produce `f(default(input))` for a null row (see below) passes false and normalizes
-/// everything.
+/// Normalize the null slots to the default of the nested type, which for an `Enum` is a declared
+/// value. With the flag set, the other argument types are left alone, which is what the paths that
+/// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
+/// for a null row (see below) passes false and normalizes everything.
 ///
-/// The gate is `isDefaultInsertTrivial`, used as a "contains an `Enum`" test: the only types that
-/// override it to return false are `Enum` itself and `Tuple`/`Object`, which recurse into their
-/// elements. If a future type also starts returning false, it will silently join the per-row copy
-/// below; that is correct only if its null slots can hold a value outside of its domain too, otherwise
-/// this gate has to be narrowed to the types that actually contain an `Enum`.
+/// `isDefaultInsertTrivial()` currently identifies non-trivial defaults for Enum and recursively for Tuple/Object.
+/// Revisit this check if another type gains a non-trivial default.
 ///
-/// `only_enum_containing_types` is deliberately not "every type whose payload some function might
-/// reject". An `Enum` payload is outside the domain of its own type - no valid `Enum` column can hold
-/// it - so `createBlockWithNestedColumns` hands the function a malformed column, and installing the
-/// type's default repairs a type invariant. A `String` or a number under a null map, in contrast, is
-/// a well formed value of its type, and a function that rejects it - `match` handed an invalid regular
+/// This mode is deliberately not "every type whose payload some function might reject". An `Enum`
+/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
+/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
+/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
+/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
 /// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
 /// non-null row. Installing the type default there would only swap one arbitrary value for another,
 /// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
