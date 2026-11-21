@@ -246,6 +246,9 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return Transform::valid_on_default_arguments; }
+    /// `divideDecimal` throws on a zero divisor, `multiplyDecimal` on overflow.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Documentation-only — arithmetic on two `Decimal` operands; the optional
     /// third argument is a const-`UInt8` scale for the result. The output is
