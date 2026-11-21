@@ -29,6 +29,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_close;
 }
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_IS_READ_ONLY;
+}
+
 ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(server.context())
 {
 }
@@ -76,10 +82,24 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 time_t absolute_delay = 0;
                 time_t relative_delay = 0;
 
-                if (!table_replicated->isTableReadOnly())
+                bool is_readonly = table_replicated->isTableReadOnly();
+                if (!is_readonly)
                 {
-                    table_replicated->getReplicaDelays(absolute_delay, relative_delay);
+                    try
+                    {
+                        table_replicated->getReplicaDelays(absolute_delay, relative_delay);
+                    }
+                    catch (const Exception & e)
+                    {
+                        /// The replica can turn read-only after the check above, e.g. on a concurrent `DROP TABLE`.
+                        if (e.code() != ErrorCodes::TABLE_IS_READ_ONLY && e.code() != ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY)
+                            throw;
+                        is_readonly = true;
+                    }
+                }
 
+                if (!is_readonly)
+                {
                     if ((settings[MergeTreeSetting::min_absolute_delay_to_close] && absolute_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_absolute_delay_to_close]))
                         || (settings[MergeTreeSetting::min_relative_delay_to_close] && relative_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_relative_delay_to_close])))
                         ok = false;
