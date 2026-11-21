@@ -62,6 +62,8 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -178,6 +180,16 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
+        /// A streaming read reports its cursor once it has read everything up to the end of the bounded stream. A `LIMIT`
+        /// stops the read earlier and may drop the rows of an already read chunk, so the next refresh would start from
+        /// a cursor that does not match the appended rows (and append the same rows again, or skip some of them).
+        const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
+        if (context->getSettingsRef()[Setting::limit] != 0 || context->getSettingsRef()[Setting::offset] != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The settings `limit` and `offset` are not supported in the query of an incremental refresh");
+
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
             return;
@@ -191,16 +203,17 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
-        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
-        /// read from the beginning on every refresh, appending the same rows again.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (!merge_tree)
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`. A source
+        /// that supports STREAM but does not report the cursor would be read from the beginning on every refresh,
+        /// appending the same rows again.
+        if (!source->reportsStreamingCursor())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                "Incremental refresh source table {} has engine {}, which does not report the cursor of a streaming read",
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
+        if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
