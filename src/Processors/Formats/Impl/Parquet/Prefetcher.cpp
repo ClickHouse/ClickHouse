@@ -9,7 +9,9 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
+#include <optional>
 #include <shared_mutex>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -33,6 +35,7 @@ namespace DB::Parquet
 void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_)
 {
     min_bytes_for_seek = options.min_bytes_for_seek;
+    local_min_bytes_for_seek = options.format.parquet.local_read_min_bytes_for_seek;
     bytes_per_read_task = options.bytes_per_read_task;
     parser_shared_resources = parser_shared_resources_;
     determineReadModeAndFileSize(reader_, options);
@@ -118,6 +121,11 @@ bool Prefetcher::readsThroughPageCache() const
     return read_mode == ReadMode::RandomRead && reader->readsThroughPageCache();
 }
 
+bool Prefetcher::isRangeCachedLocally(size_t offset, size_t size) const
+{
+    return read_mode == ReadMode::RandomRead && reader->isRangeCachedLocally(offset, size);
+}
+
 void Prefetcher::readSync(char * to, size_t n, size_t offset)
 {
     readImpl(to, n, offset);
@@ -192,6 +200,32 @@ void Prefetcher::finalizeRanges()
             req->range_idx = i;
         else
             chassert(s == RequestState::State::Cancelled);
+    }
+
+    /// Remote reads also cover gaps shorter than `min_bytes_for_seek`. When everything the reads would cover with the
+    /// local threshold is in a local cache, they are local reads, so skip gaps as for a local file.
+    if (local_min_bytes_for_seek < min_bytes_for_seek && read_mode == ReadMode::RandomRead)
+    {
+        bool all_cached = true;
+        std::optional<std::pair<size_t, size_t>> run;
+        for (const RangeState & range : ranges)
+        {
+            if (range.request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange)
+                continue;
+            if (run && range.start < run->second + local_min_bytes_for_seek)
+            {
+                run->second = std::max(run->second, range.end);
+                continue;
+            }
+            if (run && !reader->isRangeCachedLocally(run->first, run->second - run->first))
+            {
+                all_cached = false;
+                break;
+            }
+            run.emplace(range.start, range.end);
+        }
+        if (all_cached && run && reader->isRangeCachedLocally(run->first, run->second - run->first))
+            min_bytes_for_seek = local_min_bytes_for_seek;
     }
 }
 

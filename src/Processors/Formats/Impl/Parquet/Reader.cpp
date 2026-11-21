@@ -385,10 +385,16 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// A second read of a local file is cheap. Elsewhere a tail sized to the file (1%, clamped to [128 KiB, 2 MiB])
-    /// usually covers the whole footer in one round trip. A non-zero `footer_read_size` is a fixed read size.
+    /// A second read of a local file, or of a tail already in a local cache, is cheap. Elsewhere a tail sized to the file
+    /// (1%, clamped to [128 KiB, 2 MiB]) usually covers the whole footer in one round trip. A non-zero `footer_read_size`
+    /// is a fixed read size.
     if (footer_read_size == 0)
-        footer_read_size = prefetcher.isLocalFile() ? 64ul << 10 : std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
+    {
+        const size_t adaptive_read_size = std::min(file_size, std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20));
+        const bool second_read_is_cheap = prefetcher.isLocalFile()
+            || prefetcher.isRangeCachedLocally(file_size - adaptive_read_size, adaptive_read_size);
+        footer_read_size = second_read_is_cheap ? 64ul << 10 : adaptive_read_size;
+    }
     /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
     /// don't underflow; an explicit `footer_read_size` smaller than that is bumped up to 8.
     size_t initial_read_size = std::min(file_size, std::max<size_t>(footer_read_size, 8));
