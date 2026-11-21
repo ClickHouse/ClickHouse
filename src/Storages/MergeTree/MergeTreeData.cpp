@@ -11292,22 +11292,26 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     }
     else
     {
-        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
-        /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over. A negative `DateTime64`
-        /// timestamp such as `'-123.5'` is always read as a timestamp.
+        /// Classify the literal the same way as `readDateTimeTextImpl` does: it is a broken-down `YYYY-MM-DD[ hh:mm:ss]`
+        /// only if it has no sign, four digits, a plausible date delimiter, two digits, the same delimiter, and two
+        /// digits. Otherwise it is a Unix timestamp, such as `'1709254800'`, `'-123.5'`, `'+123.5'` or `'1234.5'`
+        /// (the last three only for `DateTime64`), which is read as a number and cannot roll over.
         auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
         auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
-        const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
+        auto is_date_delimiter_at = [&](size_t pos)
+        {
+            return pos < literal.size() && (literal[pos] == '-' || literal[pos] == '/' || literal[pos] == '.' || literal[pos] == ':');
+        };
+        const bool is_broken_down = is_digit_at(0) && is_digit_at(1) && is_digit_at(2) && is_digit_at(3)
+            && is_date_delimiter_at(4) && is_digit_at(5) && is_digit_at(6) && is_date_delimiter_at(7) && literal[7] == literal[4]
+            && is_digit_at(8) && is_digit_at(9);
         const bool has_time = is_broken_down && literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
         if (is_broken_down)
         {
-            /// The broken-down reader takes the characters at their positions without checking them, so `'2024-02-2/'`
-            /// would be read as `2024-02-19` and `'20/4-03-01 00:00:00'` as `1994-03-01 00:00:00`, and the comparison
-            /// below would agree with it.
-            if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3)
-                || !is_digit_at(5) || !is_digit_at(6) || !is_separator_at(7) || !is_digit_at(8) || !is_digit_at(9)
-                || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
-                    || !is_digit_at(15) || !is_separator_at(16) || !is_digit_at(17) || !is_digit_at(18))))
+            /// The broken-down reader takes the characters of the time of day at their positions without checking them,
+            /// so `'2024-02-19 1/:00:00'` would be read as a valid time, and the comparison below would agree with it.
+            if (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
+                    || !is_digit_at(15) || !is_separator_at(16) || !is_digit_at(17) || !is_digit_at(18)))
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Partition value '{}' is not a valid value of type {}: expected a date and time "
                                 "in the YYYY-MM-DD hh:mm:ss format",
