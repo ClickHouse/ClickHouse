@@ -119,8 +119,9 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
-    /// Filter entity names before reading permissions. Only evaluate simple name predicates
-    /// here because an entity can have no grant rows on which to evaluate a general expression.
+    /// The base class extracts predicates on grantee names. Restrict early evaluation to simple
+    /// name comparisons because entities with no grants produce no rows on which a general
+    /// expression could otherwise throw. Keep the expression intact when filtering the names.
     if (predicate && canFilterGrantees(*predicate))
     {
         Block grantees = getFilterSampleBlock();
