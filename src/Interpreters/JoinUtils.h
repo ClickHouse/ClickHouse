@@ -162,6 +162,10 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 void createMissedColumns(Block & block);
 void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block);
 
+/// The single row of a totals column: `arrayJoin` in the totals expression can leave more or fewer rows than one.
+/// An empty column that is not constant gets the default of `type` where it differs from the column zero (an `Enum`'s smallest value).
+ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type);
+
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);

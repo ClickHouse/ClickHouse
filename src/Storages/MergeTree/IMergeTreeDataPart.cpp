@@ -652,7 +652,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
-    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+    getDataPartStorage().setPreferredFileOrder(getCommonMetadataFiles());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -742,14 +742,14 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
 }
 
 /// Remove all vector similarity index cache entries for this part.
-/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-/// the key used during insertion in `MergeTreeIndexReader::read`.
+/// The cache key must use `getPathForCacheKey` to match the
+/// key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -2436,6 +2436,52 @@ void IMergeTreeDataPart::removeVersionMetadata()
 void IMergeTreeDataPart::removeMetadataVersion()
 {
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
+}
+
+bool IMergeTreeDataPart::isColumnStoredWithGeneralPurposeCodecs(const String & column_name) const
+{
+    std::lock_guard lock(columns_stored_with_general_purpose_codecs_mutex);
+    if (const auto it = columns_stored_with_general_purpose_codecs.find(column_name); it != columns_stored_with_general_purpose_codecs.end())
+        return it->second;
+
+    const auto is_general_purpose = [](const ICompressionCodec & codec)
+    {
+        return codec.isNone() || (codec.isGenericCompression() && !codec.isEncryption());
+    };
+
+    /// A Compact part keeps the columns in one file, whose first frame belongs to whichever column is the first.
+    bool has_data = false;
+    bool only_general_purpose = true;
+    const auto & part_columns = getColumns();
+    const auto part_column = std::ranges::find_if(part_columns, [&](const auto & column) { return column.name == column_name; });
+    if (getType() == MergeTreeDataPartType::Wide && part_column != part_columns.end())
+    {
+        getSerialization(column_name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (!only_general_purpose)
+                return;
+
+            const auto stream_name = getStreamNameForColumn(*part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+            if (!stream_name)
+                return;
+
+            /// A file can exist and be empty, e.g. `column_name.dict.null.bin` of `LowCardinality(Nullable(...))`.
+            const auto file_name = *stream_name + ".bin";
+            if (getDataPartStorage().getFileSize(file_name) == 0)
+                return;
+
+            has_data = true;
+            const auto codec = getCompressionCodecForFile(getDataPartStorage(), file_name);
+            if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+                only_general_purpose = std::ranges::all_of(multiple->getCodecs(), [&](const auto & stage) { return is_general_purpose(*stage); });
+            else
+                only_general_purpose = is_general_purpose(*codec);
+        });
+    }
+
+    const bool result = has_data && only_general_purpose;
+    columns_stored_with_general_purpose_codecs.emplace(column_name, result);
+    return result;
 }
 
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const
