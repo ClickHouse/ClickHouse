@@ -28,10 +28,7 @@
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
-#include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
-
-#include <ranges>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -44,12 +41,10 @@
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/ReadFromSealedViewStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -364,93 +359,6 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_context->setIsViewInnerQuery(true);
     return view_context;
 }
-
-/// Reads a sealed view (see `StorageView::isSealed`). The view's plan is a child plan of this step rather
-/// than its subtree, so the optimizations of the outer query cannot see through it; it is optimized on its own.
-/// The plan runs with the privileges of the view's definer and may hold values folded from data the invoker
-/// cannot read, such as a scalar subquery over a private table, so EXPLAIN shows it only if `show_plan` is set.
-class ReadFromSealedViewStep final : public ISourceStep
-{
-public:
-    ReadFromSealedViewStep(QueryPlan view_plan_, const ContextPtr & view_context, bool show_plan_)
-        : ISourceStep(view_plan_.getCurrentHeader())
-        , view_plan(std::move(view_plan_))
-        , optimization_settings(view_context)
-        , show_plan(show_plan_)
-    {
-        /// The view's plan becomes a part of the outer pipeline, so parallel replicas, which ship the fragment
-        /// of the outer plan around the read, cannot apply. A distributed plan is decided for the view's plan
-        /// on its own, as for a child plan of `ReadFromMerge`: the outer plan cannot be distributed, because
-        /// this step is not serializable, but the view's plan still can.
-        optimization_settings.enable_parallel_replicas = false;
-        view_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
-        view_plan.optimize(optimization_settings);
-    }
-
-    String getName() const override { return "ReadFromSealedView"; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::unique_ptr<ReadFromSealedViewStep>(new ReadFromSealedViewStep(view_plan.clone(), optimization_settings, show_plan));
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
-    {
-        pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
-
-        /// The processors name the steps they come from and carry their descriptions, which show up in
-        /// `EXPLAIN PIPELINE graph = 1` and in `system.processors_profile_log`. Attribute them to this step instead.
-        if (!show_plan)
-        {
-            for (const auto & processor : pipeline.getProcessors())
-            {
-                processor->setQueryPlanStep(this);
-                processor->setDescription({});
-            }
-        }
-    }
-
-    QueryPlanRawPtrs getChildPlans(bool for_explain) override
-    {
-        if (for_explain && !show_plan)
-            return {};
-        return {&view_plan};
-    }
-
-    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
-    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
-    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
-    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
-    /// opaque leaf of the captured plan.
-
-    void describePipeline(FormatSettings & settings) const override
-    {
-        if (!show_plan)
-            return;
-
-        WriteBufferFromOwnString out;
-        view_plan.explainPipeline(out, {.header = settings.write_header, .compact_repeated_processor_chains = settings.compact_repeated_processor_chains});
-
-        const String indent(settings.offset + settings.base_indent, settings.indent_char);
-        for (const auto line : std::views::split(std::string_view(out.str()), '\n'))
-            if (!line.empty())
-                settings.out << indent << std::string_view(line) << '\n';
-    }
-
-private:
-    /// For `clone`: the plan is already optimized.
-    ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_)
-        : ISourceStep(view_plan_.getCurrentHeader())
-        , view_plan(std::move(view_plan_))
-        , optimization_settings(std::move(optimization_settings_))
-        , show_plan(show_plan_)
-    {
-    }
-
-    QueryPlan view_plan;
-    QueryPlanOptimizationSettings optimization_settings;
-    bool show_plan;
-};
 
 /// Whether the query runs with the identity the query of the view runs with: its definer, with the definer's default roles
 /// and without a limit from the authentication method. Such a query can read whatever the view reads.
