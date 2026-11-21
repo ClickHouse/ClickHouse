@@ -10,6 +10,7 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>
+#include <Storages/MemoryTableStreaming.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ struct MemorySettings;
 class StorageMemory final : public StorageWithCommonVirtualColumns
 {
 friend class MemorySink;
+friend class MemoryStreamingSource;
 
 public:
     StorageMemory(
@@ -70,6 +72,9 @@ public:
     size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
 
     bool supportsParallelInsert() const override { return true; }
+    /// A streaming query reads the blocks of the table and then the blocks inserted later, see `MemoryStreamingSource`.
+    bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPinnedSnapshot() const override { return true; }
@@ -192,6 +197,10 @@ private:
         UInt64 generation = nextGeneration();
         UInt64 first_block_number = 0;
 
+        /// The generation is made of the rows of a previous generation rewritten by a mutation (rather than started
+        /// empty, e.g. by `TRUNCATE`), so a streaming read cannot resume in it after a position in a previous generation.
+        bool rows_rewritten = false;
+
         static UInt64 nextGeneration();
     };
 
@@ -209,6 +218,9 @@ private:
     MaterializedCTEWeakPtr materialized_cte;
 
     MultiVersion<MemorySettings> memory_settings;
+
+    /// The streaming queries, woken up on every change of `data`.
+    const std::shared_ptr<MemoryTableSubscribers> stream_subscribers = std::make_shared<MemoryTableSubscribers>();
 
     friend class ReadFromMemoryStorageStep;
 };

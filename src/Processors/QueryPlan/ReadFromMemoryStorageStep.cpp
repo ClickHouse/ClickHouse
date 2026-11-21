@@ -241,7 +241,7 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
 }
 
 /// A column that is read together with some of its subcolumns is decompressed once, and the subcolumns are taken from it.
-static Columns readColumnsFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays)
+Columns readColumnsFromMemoryBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays)
 {
     UnorderedSetWithMemoryTracking<String> parents_of_subcolumns;
     for (const auto & column : columns_to_read)
@@ -405,7 +405,7 @@ private:
 
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
     {
-        result_columns = readColumnsFromBlock(src, physical_columns, nested_arrays);
+        result_columns = readColumnsFromMemoryBlock(src, physical_columns, nested_arrays);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -556,7 +556,7 @@ private:
             if (missing.empty())
                 return;
 
-            Columns columns = readColumnsFromBlock(src, missing, nested_arrays);
+            Columns columns = readColumnsFromMemoryBlock(src, missing, nested_arrays);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -744,7 +744,7 @@ protected:
 
             const Block & src = (*data)[block_index];
 
-            Columns block_columns = readColumnsFromBlock(src, columns, nested_arrays);
+            Columns block_columns = readColumnsFromMemoryBlock(src, columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
             {
@@ -1314,7 +1314,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
-static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
+Names getArraysOfRequestedNestedFromMemory(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
 {
     NameSet nested_names;
     for (const auto & column : physical_columns)
@@ -1353,7 +1353,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     /// Virtual columns are not filled by a source with a filter. Such a filter is needed only for the query condition cache then.
     if (source_filter && source_filter->steps.empty() && !virtual_columns.empty())
         source_filter = nullptr;
-    auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
+    auto nested_arrays = getArraysOfRequestedNestedFromMemory(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -1427,7 +1427,7 @@ void LazilyReadFromMemoryStorage::initializePipeline(QueryPipelineBuilder & pipe
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto source = std::make_shared<LazyReadFromMemorySource>(
         getOutputHeader(), columns, snapshot_data.blocks, lazy_materializing_rows, num_streams,
-        getArraysOfRequestedNested(columns, storage_snapshot));
+        getArraysOfRequestedNestedFromMemory(columns, storage_snapshot));
 
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));

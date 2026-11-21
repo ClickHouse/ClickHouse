@@ -1,0 +1,30 @@
+--- a cursor that is not of a Memory table
+BAD_ARGUMENTS
+--- bounded
+a	1
+b	2
+--- unbounded
+a 1
+b 2
+c 3
+1
+3
+first
+d 4
+e 5
+f 6
+second
+4
+5
+6
+--- the data is replaced by a mutation
+ABORTED
+ABORTED
+--- a stream that falls behind max_rows_to_keep
+TOO_SLOW
+--- incremental refresh
+round1	2	3
+round2	3	6
+round3	3	6
+round4	4	16
+was rewritten by a mutation
