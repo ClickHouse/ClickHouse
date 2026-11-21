@@ -8,5 +8,23 @@
                 </replica>
             </shard>
         </default>
+        <!-- 127.0.0.2 is not a local address, so the second shard is reached over the network. A
+             secret makes that connection carry the initiator's identity, so the remote shard
+             authorizes what it runs as the original user rather than as the cluster's own user. -->
+        <secret_cluster>
+            <secret>interserver_secret</secret>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </secret_cluster>
     </remote_servers>
 </clickhouse>
