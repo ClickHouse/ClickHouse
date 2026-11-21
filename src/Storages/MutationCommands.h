@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Core/Defines.h>
 #include <Core/Names.h>

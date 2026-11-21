@@ -183,6 +183,11 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
+    /// `CLEAR COLUMN` is represented as a `DROP_COLUMN` command with `clear` set. Like `DROP COLUMN` and
+    /// `RENAME COLUMN`, its effect (the column reads back as default values) must always be reflected on the
+    /// fly, so it is a metadata mutation and is included in the snapshot regardless of the snapshot parameters.
+    /// Partition scoping of `CLEAR COLUMN IN PARTITION` is handled separately via the mutation's partition ids,
+    /// so it does not need to be excluded from the metadata mutations here.
     return type == MutationCommand::RENAME_COLUMN
         || type == MutationCommand::DROP_COLUMN;
 }

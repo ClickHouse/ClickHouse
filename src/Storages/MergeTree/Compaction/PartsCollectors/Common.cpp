@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Disks/IStoragePolicy.h>
 
