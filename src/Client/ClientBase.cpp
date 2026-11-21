@@ -1097,15 +1097,13 @@ try
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
                 bool output_may_mix_with_progress = output_goes_to_terminal && (!select_into_file || select_into_file_and_stdout);
 
-                if (need_render_progress && tty_buf && output_may_mix_with_progress)
+                if (output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
-                    progress_indication.clearProgressOutput(*tty_buf, lock);
-                }
-                if (need_render_progress_table && tty_buf && output_may_mix_with_progress)
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_table.clearTableOutput(*tty_buf, lock);
+                    if (need_render_progress && tty_buf)
+                        progress_indication.clearProgressOutput(*tty_buf, lock);
+                    if (need_render_progress_table && tty_buf)
+                        progress_table.clearTableOutput(*tty_buf, lock);
                 }
             }
         );
@@ -1185,7 +1183,7 @@ try
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
-                if (is_interactive && is_default_format)
+                if ((is_interactive || default_format_is_for_terminal) && is_default_format)
                     current_format = "TabSeparated";
             }
             if (query_with_output->format_ast != nullptr)
@@ -1239,6 +1237,7 @@ try
         bool logs_into_stdout = server_logs_file == "-";
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
+        onOutputFormatSelected(current_format, !select_only_into_file);
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
             out_file_buf = wrapWriteBufferWithCompressionMethod(
@@ -1346,7 +1345,7 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                out_logs_buf = createDefaultLogsOutputBuffer();
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -1366,6 +1365,11 @@ void ClientBase::initLogsOutputStream()
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
+}
+
+std::unique_ptr<WriteBuffer> ClientBase::createDefaultLogsOutputBuffer()
+{
+    return std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
 }
 
 void ClientBase::adjustSettings(ContextMutablePtr context)
@@ -1635,10 +1639,24 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
+    const bool supports_progress_toggle = need_render_progress_table && progress_table_toggle_enabled;
+#if USE_REPLXX
+    /// replxx reads these terminals with getline, so it would lose the keys taken while a query runs.
+    const char * term_env = getenv("TERM"); // NOLINT(concurrency-mt-unsafe)
+    const std::string_view term = term_env ? term_env : "";
+    const bool replays_typed_keys = !boost::iequals(term, "dumb") && !boost::iequals(term, "cons25") && !boost::iequals(term, "emacs");
+#else
+    const bool replays_typed_keys = false;
+#endif
+    const bool supports_detachment = supportsQueryDetachment() && replays_typed_keys;
+    if (is_interactive && (supports_progress_toggle || supports_detachment))
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
-        keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
+        if (supports_progress_toggle)
+            keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
+
+        if (supports_detachment)
+            keystroke_interceptor->registerCallback('\x02', [this]() { requestQueryDetachment(); });
 
         if (isEmbeeddedClient())
             keystroke_interceptor->registerCallback(0x03, [this]() { tryStopQuery(); });
@@ -1960,6 +1978,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         {
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
+            if (isQueryCancellationRequested())
+            {
+                query_interrupt_handler.stop();
+                return;
+            }
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -2003,7 +2026,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (!out_file_if_truncated.empty())
             {
-                if (have_error)
+                /// A killed background job stops without finishing its output, so keep the old file.
+                if (have_error || (cancelled && isQueryCancellationRequested()))
                     cleanupTempFile(parsed_query, out_file);
                 else
                     performAtomicRename(parsed_query, out_file_if_truncated);
@@ -2048,7 +2072,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
-    constexpr size_t default_poll_interval = 1000000; /// in microseconds
+    /// Attached workers must notice Ctrl+B promptly even while the server is
+    /// quiet (for example during a long aggregation before its first row).
+    const size_t default_poll_interval = poll_for_query_detachment ? 50000 : 1000000; /// in microseconds
     constexpr size_t min_poll_interval = 5000; /// in microseconds
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
@@ -2066,6 +2092,16 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
         while (true)
         {
+            /// The owning worker switches output at a receive-loop checkpoint.
+            checkQueryDetachment();
+
+            /// Disposable jobs disconnect after cancellation instead of draining forever.
+            if (cancelled && isQueryCancellationRequested())
+            {
+                connection->disconnect();
+                return;
+            }
+
             /// Has the Ctrl+C been pressed and thus the query should be cancelled?
             /// If this is the case, inform the server about it and receive the remaining packets
             /// to avoid losing sync.
@@ -2074,6 +2110,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 if (partial_result_on_first_cancel && query_interrupt_handler.cancelled_status() == signals_before_stop - 1)
                 {
                     sendCancel();
+                    if (keystroke_interceptor)
+                        keystroke_interceptor->takeUnhandledInput();
                     /// First cancel reading request was sent. Next requests will only be with a full cancel
                     partial_result_on_first_cancel = false;
                 }
@@ -2145,7 +2183,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     if (local_format_error)
         std::rethrow_exception(local_format_error);
 
-    if (cancelled && is_interactive && !cancelled_printed.exchange(true))
+    if (cancelled && (is_interactive || print_interactive_query_summary) && !cancelled_printed.exchange(true))
         output_stream << "Query was cancelled." << std::endl;
 }
 
@@ -2211,6 +2249,8 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
+    onQueryProgress(value);
+
     if (!progress_indication.updateProgress(value))
     {
         // Just a keep-alive update.
@@ -2288,7 +2328,7 @@ void ClientBase::onEndOfStream()
 
     resetOutput();
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
     {
         if (cancelled && !cancelled_printed.exchange(true))
             output_stream << "Query was cancelled." << std::endl;
@@ -2363,6 +2403,7 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
+        onQueryProfileEvents();
         progress_table.updateTable(block);
 
         if (need_render_progress && tty_buf)
@@ -2482,6 +2523,7 @@ void ClientBase::resetOutput()
     logs_out_stream.reset();
 
     out_logs_buf.reset();
+    onLogsOutputBufferReset();
 
     if (pager_cmd)
     {
@@ -2629,6 +2671,11 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
+    if (isQueryCancellationRequested())
+    {
+        query_interrupt_handler.stop();
+        return;
+    }
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
@@ -3105,6 +3152,9 @@ void ClientBase::cancelQuery()
     sendCancel();
 
     stopKeystrokeInterceptorIfExists();
+    /// Like the terminal on Ctrl+C, drop the keys typed while the interrupted query ran.
+    if (keystroke_interceptor && query_interrupt_handler.cancelled())
+        keystroke_interceptor->takeUnhandledInput();
 
     if (need_render_progress && tty_buf)
     {
@@ -3117,7 +3167,7 @@ void ClientBase::cancelQuery()
         progress_table.clearTableOutput(*tty_buf, lock);
     }
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
         output_stream << "Cancelling query." << std::endl;
 
     cancelled = true;
@@ -3155,6 +3205,10 @@ void ClientBase::processParsedSingleQuery(
             std_out->next();
         }
     }
+
+    /// A detachable client may move the connection to a worker running this query path.
+    if (tryExecuteDetachableQuery(query_, parsed_query, insert_query_without_data_length))
+        return;
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
@@ -3197,7 +3251,8 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
+            if (connection)
+                connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3233,7 +3288,7 @@ void ClientBase::processParsedSingleQuery(
         /// having noticed it yet.
         if (connection_needs_resynchronization)
             resynchronizeConnectionAfterError();
-        else if (!connection->checkConnectedWithoutRoundTrip())
+        else if (!connection || !connection->checkConnectedWithoutRoundTrip())
             connect();
 
         connection->setFormatSettings(getNativeWireFormatSettings(client_context));
@@ -3393,7 +3448,7 @@ void ClientBase::processParsedSingleQuery(
 
     auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
     {
         output_stream << std::endl;
         if (!server_exception || processed_rows != 0)
@@ -3426,7 +3481,8 @@ void ClientBase::processParsedSingleQuery(
             error_stream << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\n";
     }
 
-    if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
+    if (!is_interactive && !print_interactive_query_summary
+        && getClientConfiguration().getBool("print-num-processed-rows", false))
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
@@ -4064,6 +4120,9 @@ bool ClientBase::processQueryText(const String & text)
     if (isExitString(trimmed_input))
         return false;
 
+    if (is_interactive && tryProcessInteractiveClientCommand(trimmed_input))
+        return true;
+
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
@@ -4447,11 +4506,11 @@ void ClientBase::initAIProvider()
 
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
-    if (!connection)
-        return "";
-
     try
     {
+        if (!connection)
+            connect();
+
         std::string result;
 
         /// Only the compression knobs: the rest of the session settings must not leak into this
@@ -4553,6 +4612,8 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
     /// resynchronization discipline as the regular queries.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
+    else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+        connect();
 
     armResynchronizationAndSendQuery([&]
     {
@@ -4628,11 +4689,9 @@ bool ClientBase::processHelpCommand(const String & word_arg)
         return true;
     }
 
+    /// After Ctrl+B the connection belongs to the background job, so connect again like a query does.
     if (!connection)
-    {
-        error_stream << "The help command is not available: not connected to a server." << std::endl;
-        return true;
-    }
+        connect();
 
     TerminalMarkdownRenderer renderer;
     renderer.ansi = stdout_is_a_tty;
@@ -5251,7 +5310,10 @@ void ClientBase::runInteractive()
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos, bool & last_is_delimiter)
         {
-            highlight(query, colors, *client_context, pos, rainbow_parentheses, &last_is_delimiter);
+            if (highlightClientCommand(query, colors, getInteractiveClientCommandNames()))
+                last_is_delimiter = true;
+            else
+                highlight(query, colors, *client_context, pos, rainbow_parentheses, &last_is_delimiter);
         };
     }
 
@@ -5382,6 +5444,9 @@ void ClientBase::runInteractive()
                 next_query_to_prepopulate.clear();
             }
 
+            /// Keys typed while the previous query ran go to this prompt.
+            if (keystroke_interceptor)
+                lr->addTypedInput(keystroke_interceptor->takeUnhandledInput());
             if (on_waiting_for_query_input)
                 on_waiting_for_query_input(true);
             SCOPE_EXIT_SAFE({
@@ -5452,6 +5517,8 @@ void ClientBase::runInteractive()
             /// connection with a round trip.
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
+            else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+                connect();
             connection_needs_resynchronization = true;
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())

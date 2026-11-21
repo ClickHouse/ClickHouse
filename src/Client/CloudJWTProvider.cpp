@@ -95,7 +95,7 @@ CloudJWTProvider::CloudJWTProvider(
     }
 }
 
-std::string CloudJWTProvider::getJWT()
+std::string CloudJWTProvider::fetchJWT()
 {
     Poco::Timestamp now;
     Poco::Timestamp expiration_buffer = 30 * Poco::Timespan::SECONDS;
