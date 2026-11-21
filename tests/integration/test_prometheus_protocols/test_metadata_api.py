@@ -207,3 +207,31 @@ def test_table_of_version_5():
     }
     data = get_json_from_api("/v5/api/v1/metadata?metric=cpu_usage")["data"]
     assert data == {"cpu_usage": ALL_METADATA["cpu_usage"]}
+
+
+def test_metadata_refuses_a_row_policy_on_the_table():
+    node.query("CREATE ROW POLICY p_metadata ON prometheus USING 0 TO ALL")
+    try:
+        data = get_bad_data_from_api("/api/v1/metadata")
+        assert "row policy" in data["error"]
+    finally:
+        node.query("DROP ROW POLICY p_metadata ON prometheus")
+
+
+def test_metadata_refuses_a_table_filter_on_the_table():
+    data = get_bad_data_from_api(
+        "/api/v1/metadata", params={"additional_table_filters": "{'default.prometheus': '0'}"}
+    )
+    assert "additional_table_filters" in data["error"]
+
+
+def test_metadata_requires_select_on_the_table():
+    node.query("CREATE USER IF NOT EXISTS metadata_no_select IDENTIFIED BY 'pass'")
+    node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO metadata_no_select")
+    try:
+        data = get_bad_data_from_api(
+            "/api/v1/metadata", params={"user": "metadata_no_select", "password": "pass"}
+        )
+        assert "Not enough privileges" in data["error"]
+    finally:
+        node.query("DROP USER metadata_no_select")

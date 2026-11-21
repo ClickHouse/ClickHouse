@@ -720,6 +720,7 @@ void Cluster::addShard(
 
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
+    ConnectionPoolPtrs remote_replicas_pools;
 
     std::string insert_path_for_internal_replication;
     if (internal_replication)
@@ -750,6 +751,8 @@ void Cluster::addShard(
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
+        else
+            remote_replicas_pools.push_back(replica_pool);
     }
 
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -757,6 +760,16 @@ void Cluster::addShard(
         settings[Setting::load_balancing],
         settings[Setting::distributed_replica_error_half_life].totalSeconds(),
         settings[Setting::distributed_replica_error_cap]);
+
+    ConnectionPoolWithFailoverPtr remote_replicas_pool;
+    if (!shard_local_addresses.empty() && !remote_replicas_pools.empty())
+        remote_replicas_pool = std::make_shared<ConnectionPoolWithFailover>(
+            remote_replicas_pools,
+            settings[Setting::load_balancing],
+            settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+            settings[Setting::distributed_replica_error_cap]);
+    else
+        remote_replicas_pools.clear();
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -770,7 +783,9 @@ void Cluster::addShard(
         std::move(shard_pool),
         std::move(all_replicas_pools),
         internal_replication,
-        addresses.at(0).default_database
+        addresses.at(0).default_database,
+        std::move(remote_replicas_pools),
+        std::move(remote_replicas_pool)
     );
 }
 

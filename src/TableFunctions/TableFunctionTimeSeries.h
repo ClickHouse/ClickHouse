@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Parsers/ASTViewTargets.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageTimeSeries.h>
@@ -44,6 +45,9 @@ private:
     const char * getStorageEngineName() const override;
 
     StoragePtr getTargetTable(const ContextPtr & context) const;
+
+    /// The planner and the insert interpreter leave the access check of a table function's storage to the function.
+    StoragePtr getTargetTableWithAccess(const ContextPtr & context, AccessType access_type) const;
 
     StorageID time_series_storage_id = StorageID::createEmpty();
     String target_table_type_name;

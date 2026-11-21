@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -33,6 +34,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -41,6 +43,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -57,6 +60,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -127,11 +131,12 @@ DateTime64 convertToScale(DateTime64 timestamp, UInt32 timestamp_scale, UInt32 t
 }
 
 /// Parses the value of the argument `return_columns` of the table function: 'samples' or 'timestamp_and_value'.
+/// The distributed read sends 'timestamp_and_value_checked', the same columns: a shard without the source policy check refuses it.
 StorageTimeSeriesSelector::Configuration::ReturnColumns parseReturnColumns(std::string_view str, std::string_view function_name)
 {
     if (str == "samples")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples;
-    if (str == "timestamp_and_value")
+    if (str == "timestamp_and_value" || str == "timestamp_and_value_checked")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::TimestampAndValue;
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Table function '{}' requires the argument 'return_columns' to be 'samples' or 'timestamp_and_value', got {}",
@@ -281,6 +286,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// Checked before the engine or the metadata of the table is revealed.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -288,6 +295,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto [table_timestamp_type, table_value_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())).type);
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    /// The selector reads the tags target, and the metadata of an external `Alias` target is that of the table it points to.
+    context->checkAccess(AccessType::SELECT, tags_target->getStorageID());
+    if (const auto * alias = tags_target->as<StorageAlias>(); alias && !alias->isTargetTableGranted(context, AccessType::SELECT, {}))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to",
+                        tags_target->getStorageID().getNameForLogs());
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr table_id_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
@@ -1337,8 +1349,11 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Checked again: a table created AS this function keeps its configuration, and is read later, and by another user.
+    context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    checkTimeSeriesSelectorSource(config.time_series_storage_id, context);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;

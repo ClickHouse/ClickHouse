@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
@@ -26,6 +27,72 @@ namespace
             make_intrusive<ASTLiteral>(STALE_NAN_BITS));
     }
 
+    /// Selects on each shard and evaluates centrally, so every shard only sends raw samples.
+    ASTPtr fromRangeSelectorOnCluster(std::string_view instant_selector_text,
+                                      TimestampType min_time,
+                                      TimestampType max_time,
+                                      bool filter_stale_markers,
+                                      const ConverterContext & context)
+    {
+        /// Per shard: SELECT timeSeriesIdToTags(id) AS tags, timestamp, value FROM timeSeriesSelector(...)
+        SelectQueryBuilder shard_builder;
+
+        shard_builder.select_list.push_back(makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+        shard_builder.select_list.back()->setAlias(ColumnNames::Tags);
+
+        shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        const auto & remote_storage_id = context.distributed->remote_time_series_storage_id;
+        auto selector_function = makeASTFunction("timeSeriesSelector");
+        /// An empty database name means each shard uses its own default database.
+        if (remote_storage_id.hasDatabase())
+            selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(remote_storage_id.database_name));
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(remote_storage_id.getTableName()));
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{instant_selector_text}));
+        selector_function->arguments->children.push_back(timeSeriesTimestampToAST(min_time, context.result_timestamp_type));
+        selector_function->arguments->children.push_back(timeSeriesTimestampToAST(max_time, context.result_timestamp_type));
+        /// One sample per row, whatever a shard's table stores. An older shard refuses this value, instead of skipping the source policy.
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{"timestamp_and_value_checked"}));
+        shard_builder.from_table_function = std::move(selector_function);
+
+        /// Filtered on each shard, as on the local path, see fromRangeSelector().
+        if (filter_stale_markers)
+            shard_builder.where = makeASTFunction("not", isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
+
+        /// SELECT tags, timestamp, value FROM cluster(<cluster>, view(<shard query>))
+        SelectQueryBuilder cluster_builder;
+
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        /// Set on cluster() so that the settings of the caller still override them.
+        auto cluster_settings = make_intrusive<ASTSetQuery>();
+        cluster_settings->is_standalone = false;
+        cluster_settings->changes.emplace_back("skip_unavailable_shards", context.distributed->skip_unavailable_shards);
+        cluster_settings->changes.emplace_back("skip_unavailable_shards_mode", context.distributed->skip_unavailable_shards_mode);
+
+        cluster_builder.from_table_function = makeASTFunction(
+            "cluster",
+            make_intrusive<ASTLiteral>(context.distributed->cluster_name),
+            makeASTFunction("view", shard_builder.getSelectQuery()),
+            std::move(cluster_settings));
+
+        /// Group numbers are node-local, so view() keeps this part on the initiator instead of the shards.
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(makeASTFunction("timeSeriesTagsToGroup", make_intrusive<ASTIdentifier>(ColumnNames::Tags)));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        builder.from_table_function = makeASTFunction("view", cluster_builder.getSelectQuery());
+
+        return builder.getSelectQuery();
+    }
+
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
                                     const Node * node,
                                     bool filter_stale_markers,
@@ -41,6 +108,19 @@ namespace
         /// for a table of an earlier version storing one sample per row.
         const bool table_has_bucketed_samples = (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, table_has_bucketed_samples ? StoreMethod::SAMPLES : StoreMethod::TIMESTAMP_AND_VALUE};
+
+        /// The range is (start_time - window, end_time] at the result scale. The table function converts the bounds to the scale
+        /// of the table itself, rounding them towards the inside of the range.
+        TimestampType min_time = node_range.start_time - node_range.window + 1;
+        TimestampType max_time = node_range.end_time;
+
+        /// The shards return one sample per row, whatever their tables store.
+        if (context.distributed)
+        {
+            res.store_method = StoreMethod::TIMESTAMP_AND_VALUE;
+            res.select_query = fromRangeSelectorOnCluster(instant_selector_text, min_time, max_time, filter_stale_markers, context);
+            return res;
+        }
 
         /// SELECT timeSeriesIdToGroup(id) AS group, samples
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
@@ -83,11 +163,6 @@ namespace
             if (filter_stale_markers)
                 builder.where = makeASTFunction("not", isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
         }
-
-        /// The range is (start_time - window, end_time] at the result scale. The table function converts the bounds to the scale
-        /// of the table itself, rounding them towards the inside of the range.
-        TimestampType min_time = node_range.start_time - node_range.window + 1;
-        TimestampType max_time = node_range.end_time;
 
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",

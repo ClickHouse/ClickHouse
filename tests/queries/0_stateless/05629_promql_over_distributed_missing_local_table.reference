@@ -1,0 +1,30 @@
+--- skip_unavailable_shards = 0
+--- skip_unavailable_shards = 1 in the query
+1
+1
+1
+--- skip_unavailable_shards = 1 on the table
+1
+1
+--- skip_unavailable_shards_mode = unavailable skips no shard without the table
+1
+--- a skipped local shard counts against the limits
+1
+1
+--- a table created from cluster() decides on every read
+1
+--- the remote replica of the shard of the missing local table answers, whatever the shard skip settings are
+x	UInt8					
+x	UInt8					
+x	UInt8					
+1
+1
+1
+1
+x	UInt8					
+1
+--- a timeSeriesSelector inside cluster() is not looked up on the initiator, a shard without the table is left out or skipped
+1
+1
+--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error
+3

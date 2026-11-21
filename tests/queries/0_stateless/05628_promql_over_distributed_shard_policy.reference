@@ -1,0 +1,6 @@
+--- no restriction
+1
+1
+--- a row policy on a shard-local table
+--- a table filter on a shard-local table
+1
