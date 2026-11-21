@@ -34,6 +34,10 @@ public:
     /// The registration of the disk `name`. If there is none yet, creates it, and the new
     /// registration takes over `nested`. Otherwise `nested` is left to the caller: destroying a
     /// registration may release a disk, which locks the mutexes the caller may be holding.
+    /// If the last registration is being destroyed and the disk is not unregistered yet, the disk stays, and the
+    /// new registration owns the same nested registrations as the one being destroyed, not `nested`. Those are
+    /// the registrations of the disks this disk wraps, while `nested` are the ones its definition names now, which
+    /// may be other disks: e.g. `disk = 'from_zk /path'` in the definition of a wrapper may resolve to another name.
     CustomDiskRegistrationPtr getOrCreate(const String & name, CustomDiskRegistrations & nested);
     /// The registration of the disk `name`, or nullptr if there is none. Throws if the last registration
     /// of the disk is being destroyed: the disk is about to be unregistered, so it must not get a new user.
@@ -96,7 +100,15 @@ private:
     LoggerPtr log;
 
     mutable std::mutex mutex;
-    std::map<String, std::weak_ptr<CustomDiskRegistration>> registrations TSA_GUARDED_BY(mutex);
+    struct RegistrationEntry
+    {
+        std::weak_ptr<CustomDiskRegistration> registration;
+        /// The nested registrations of `registration`. They outlive the body of its destructor,
+        /// so they are available while the last registration is being destroyed.
+        std::weak_ptr<const CustomDiskRegistrations> nested;
+    };
+
+    std::map<String, RegistrationEntry> registrations TSA_GUARDED_BY(mutex);
     std::deque<DiskToShutdown> disks_to_shutdown TSA_GUARDED_BY(mutex);
     std::condition_variable disks_to_shutdown_cv;
     /// The names of the released disks that are scheduled for shutdown or being shut down.

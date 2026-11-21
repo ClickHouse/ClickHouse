@@ -71,12 +71,19 @@ CustomDiskRegistrationPtr CustomDiskRegistry::getOrCreate(const String & name, C
 {
     std::lock_guard lock(mutex);
 
-    auto & weak_registration = registrations[name];
-    auto registration = weak_registration.lock();
+    auto & entry = registrations[name];
+    auto registration = entry.registration.lock();
     if (!registration)
     {
-        registration = std::make_shared<CustomDiskRegistration>(name, std::move(nested));
-        weak_registration = registration;
+        /// The entry is removed in `release`, together with the disk. If it is still here, the last registration is
+        /// being destroyed, and the disk it was created for stays registered: keep the registrations of the disks
+        /// that disk wraps. The destructor of a registration keeps them until it has called `canRelease`.
+        auto shared_nested = entry.nested.lock();
+        if (!shared_nested)
+            shared_nested = std::make_shared<const CustomDiskRegistrations>(std::move(nested));
+        registration = std::make_shared<CustomDiskRegistration>(name, shared_nested);
+        entry.registration = registration;
+        entry.nested = shared_nested;
     }
     return registration;
 }
@@ -89,7 +96,7 @@ CustomDiskRegistrationPtr CustomDiskRegistry::tryGet(const String & name) const
     if (it == registrations.end())
         return nullptr;
 
-    auto registration = it->second.lock();
+    auto registration = it->second.registration.lock();
     /// The last registration is being destroyed, and the disk is about to be unregistered. Taking no
     /// registration and using the disk anyway would leave the user of the disk without it.
     if (!registration)
@@ -105,7 +112,7 @@ CustomDiskRegistrationPtr CustomDiskRegistry::tryGetAlive(const String & name) c
     auto it = registrations.find(name);
     if (it == registrations.end())
         return nullptr;
-    return it->second.lock();
+    return it->second.registration.lock();
 }
 
 bool CustomDiskRegistry::canRelease(const String & name) const
@@ -113,7 +120,7 @@ bool CustomDiskRegistry::canRelease(const String & name) const
     std::lock_guard lock(mutex);
 
     auto it = registrations.find(name);
-    return it != registrations.end() && it->second.expired();
+    return it != registrations.end() && it->second.registration.expired();
 }
 
 void CustomDiskRegistry::release(const String & name, const DiskPtr & disk)
