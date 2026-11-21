@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -1997,8 +1998,27 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+    ColumnsDescription columns{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)};
+    if (auto schema = persistent_components.schema_processor->getIcebergTableSchemaById(iceberg_state.schema_id))
+    {
+        auto fields = schema->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            const auto field_name = field->getValue<String>(f_name);
+            const auto * column = columns.tryGet(field_name);
+            if (!column)
+                continue;
+            if (auto write_default = getIcebergDefault(field, column->type, f_write_default))
+                columns.modify(field_name, [&](ColumnDescription & description)
+                {
+                    description.default_desc.kind = ColumnDefaultKind::Default;
+                    description.default_desc.expression = columnConstantToExactLiteralAST(
+                        column->type->createColumnConst(1, *write_default), 0, column->type, /*date_time_as_numbers=*/true);
+                });
+        }
+    }
+    result->setColumns(std::move(columns));
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
