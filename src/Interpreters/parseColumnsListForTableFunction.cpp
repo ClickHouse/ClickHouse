@@ -314,7 +314,15 @@ String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescr
         if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
             || column.default_desc.expression->hasSecretParts())
             continue;
-        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
+        auto required = getStorageColumnsReadByDefault(columns, column);
+        /// A name that is not a column of the table the `DEFAULT`s come from either is resolved by the nodes the same way as by
+        /// this server, as a function, dictionary, table or set.
+        if (std::ranges::all_of(required, [&](const String & read)
+                {
+                    return names.contains(read) || !insertion_columns
+                        || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
+                }))
+            reads.emplace(column.name, std::move(required));
     }
 
     /// The least fixed point, so cycles and self-reads are never sent.
@@ -323,17 +331,9 @@ String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescr
     {
         changed = false;
         for (const auto & [name, required] : reads)
-        {
-            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
-                    {
-                        if (names.contains(read))
-                            return !columns.hasDefault(read) || sent.contains(read);
-                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
-                        /// this server, as a function, dictionary, table or set.
-                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-                    }))
+            if (!sent.contains(name)
+                && std::ranges::all_of(required, [&](const String & read) { return !reads.contains(read) || sent.contains(read); }))
                 changed |= sent.insert(name).second;
-        }
     }
 
     WriteBufferFromOwnString buf;
