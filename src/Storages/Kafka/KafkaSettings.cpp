@@ -58,6 +58,17 @@ namespace ErrorCodes
     DECLARE(String, kafka_aws_region, "", "AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Required for PrivateLink or custom DNS.", 0) \
     DECLARE(String, kafka_partition_shard_num, "", "The shard number of this instance for static partition-to-shard affinity. Must be between 1 and kafka_shard_count inclusive. Supports macro expansion (e.g. '{shard}'). Must be used together with kafka_shard_count.", 0) \
     DECLARE(UInt64, kafka_shard_count, 0, "Total number of shards participating in consumption. Must be used together with kafka_partition_shard_num and be identical across all shards.", 0) \
+    /* Sticky partition-to-shard ingestion */ \
+    DECLARE(String, kafka_partition_assignment, "", "Partition assignment strategy. Empty (default): broker-managed consumer group rebalancing. " \
+        "'shard_sticky': partitions are pinned to this shard via explicit assign(), bypassing broker rebalancing entirely. " \
+        "Requires kafka_shard_partitions to be set with the list of partitions owned by this shard.", 0) \
+    DECLARE(String, kafka_shard_partitions, "", "Comma-separated Kafka partition IDs owned exclusively by this shard when " \
+        "kafka_partition_assignment='shard_sticky'. Example: '0,1,2,3'. Each shard in the cluster must list a disjoint " \
+        "set of partition IDs that together cover all partitions of the topic.", 0) \
+    DECLARE(String, kafka_replica_consume_mode, "cooperative_split", "How replicas within a shard share their assigned partition range " \
+        "when kafka_partition_assignment='shard_sticky'. " \
+        "'cooperative_split' (default): consumers divide the shard's partitions round-robin for maximum parallelism. " \
+        "'redundant': every consumer reads all shard partitions for higher fault tolerance at the cost of 2× intra-shard writes.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
@@ -154,6 +165,29 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
+
+    if ((*impl)[KafkaSetting::kafka_partition_assignment].value == "shard_sticky")
+    {
+        if ((*impl)[KafkaSetting::kafka_shard_partitions].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "kafka_partition_assignment='shard_sticky' requires kafka_shard_partitions to be set. "
+                "Example: kafka_shard_partitions = '0,1,2,3'. Each shard in the cluster must declare "
+                "a disjoint set of partition IDs that together cover all topic partitions.");
+
+        const auto & mode = (*impl)[KafkaSetting::kafka_replica_consume_mode].value;
+        if (mode != "cooperative_split" && mode != "redundant")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "kafka_replica_consume_mode must be 'cooperative_split' or 'redundant', got '{}'", mode);
+    }
+    else if (!(*impl)[KafkaSetting::kafka_partition_assignment].value.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown kafka_partition_assignment value '{}'. Supported values: '' (default, broker-managed) or 'shard_sticky'.",
+            (*impl)[KafkaSetting::kafka_partition_assignment].value);
+    }
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const
